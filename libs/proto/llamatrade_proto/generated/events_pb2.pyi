@@ -23,7 +23,9 @@ class _EventType:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _EventTypeEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_EventType.ValueType], builtins.type):
+class _EventTypeEnumTypeWrapper(
+    enum_type_wrapper._EnumTypeWrapper[_EventType.ValueType], builtins.type
+):
     DESCRIPTOR: descriptor.EnumDescriptor
     EVENT_TYPE_UNSPECIFIED: _EventType.ValueType  # 0
     EVENT_TYPE_ORDER_SUBMITTED: _EventType.ValueType  # 1
@@ -43,6 +45,8 @@ class _EventTypeEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_EventType.Va
     """Backtest progress (UI stream)"""
     EVENT_TYPE_BAR: _EventType.ValueType  # 40
     """Market data — live bars (high-volume; carried raw, no envelope)"""
+    EVENT_TYPE_NOTIFICATION: _EventType.ValueType  # 50
+    """Notification — user-directed messaging (durable, consumed by notification)"""
 
 class EventType(_EventType, metaclass=_EventTypeEnumTypeWrapper):
     """Every event the system emits. Grouped by domain; the trailing gaps leave room
@@ -67,6 +71,153 @@ EVENT_TYPE_BACKTEST_PROGRESS: EventType.ValueType  # 30
 """Backtest progress (UI stream)"""
 EVENT_TYPE_BAR: EventType.ValueType  # 40
 """Market data — live bars (high-volume; carried raw, no envelope)"""
+EVENT_TYPE_NOTIFICATION: EventType.ValueType  # 50
+"""Notification — user-directed messaging (durable, consumed by notification)"""
+
+class _NotificationCategory:
+    ValueType = typing.NewType("ValueType", builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
+
+class _NotificationCategoryEnumTypeWrapper(
+    enum_type_wrapper._EnumTypeWrapper[_NotificationCategory.ValueType], builtins.type
+):
+    DESCRIPTOR: descriptor.EnumDescriptor
+    NOTIFICATION_CATEGORY_UNSPECIFIED: _NotificationCategory.ValueType  # 0
+    NOTIFICATION_CATEGORY_SLEEVE_FROZEN: _NotificationCategory.ValueType  # 1
+    """Money (portfolio)"""
+    NOTIFICATION_CATEGORY_FILL_QUARANTINED: _NotificationCategory.ValueType  # 2
+    NOTIFICATION_CATEGORY_EXTERNAL_TRADE_ADOPTED: _NotificationCategory.ValueType  # 3
+    NOTIFICATION_CATEGORY_CORPORATE_ACTION_PROPOSED: _NotificationCategory.ValueType  # 4
+    NOTIFICATION_CATEGORY_CORPORATE_ACTION_APPLIED: _NotificationCategory.ValueType  # 5
+    NOTIFICATION_CATEGORY_ORDER_FILLED: _NotificationCategory.ValueType  # 10
+    """Trading"""
+    NOTIFICATION_CATEGORY_ORDER_REJECTED: _NotificationCategory.ValueType  # 11
+    NOTIFICATION_CATEGORY_POSITION_OPENED: _NotificationCategory.ValueType  # 12
+    NOTIFICATION_CATEGORY_POSITION_CLOSED: _NotificationCategory.ValueType  # 13
+    NOTIFICATION_CATEGORY_POSITION_DRIFT: _NotificationCategory.ValueType  # 14
+    NOTIFICATION_CATEGORY_RISK_BREACH: _NotificationCategory.ValueType  # 15
+    NOTIFICATION_CATEGORY_EVALUATION_STALLED: _NotificationCategory.ValueType  # 16
+    NOTIFICATION_CATEGORY_SYMBOL_NOT_TRADABLE: _NotificationCategory.ValueType  # 17
+    NOTIFICATION_CATEGORY_CONNECTION_LOST: _NotificationCategory.ValueType  # 18
+    NOTIFICATION_CATEGORY_STRATEGY_ERROR: _NotificationCategory.ValueType  # 19
+    NOTIFICATION_CATEGORY_SESSION_STARTED: _NotificationCategory.ValueType  # 20
+    NOTIFICATION_CATEGORY_SESSION_STOPPED: _NotificationCategory.ValueType  # 21
+    NOTIFICATION_CATEGORY_SESSION_ERROR: _NotificationCategory.ValueType  # 22
+    NOTIFICATION_CATEGORY_CIRCUIT_BREAKER_TRIGGERED: _NotificationCategory.ValueType  # 23
+    NOTIFICATION_CATEGORY_CIRCUIT_BREAKER_RESET: _NotificationCategory.ValueType  # 24
+    NOTIFICATION_CATEGORY_STOP_LOSS_HIT: _NotificationCategory.ValueType  # 25
+    NOTIFICATION_CATEGORY_TAKE_PROFIT_HIT: _NotificationCategory.ValueType  # 26
+    NOTIFICATION_CATEGORY_RECONCILIATION_DRIFT: _NotificationCategory.ValueType  # 27
+    NOTIFICATION_CATEGORY_EXECUTION_STARTED: _NotificationCategory.ValueType  # 40
+    """Strategy lifecycle"""
+    NOTIFICATION_CATEGORY_EXECUTION_STOPPED: _NotificationCategory.ValueType  # 41
+    NOTIFICATION_CATEGORY_FUNDING_FAILED: _NotificationCategory.ValueType  # 42
+    NOTIFICATION_CATEGORY_SLEEVE_RELEASE_DEFERRED: _NotificationCategory.ValueType  # 43
+    NOTIFICATION_CATEGORY_EXECUTION_CANCELLED: _NotificationCategory.ValueType  # 44
+    NOTIFICATION_CATEGORY_PLAN_LIMIT_REACHED: _NotificationCategory.ValueType  # 45
+    NOTIFICATION_CATEGORY_BACKTEST_COMPLETED: _NotificationCategory.ValueType  # 50
+    """Backtest"""
+    NOTIFICATION_CATEGORY_BACKTEST_FAILED: _NotificationCategory.ValueType  # 51
+    NOTIFICATION_CATEGORY_PAYMENT_SUCCEEDED: _NotificationCategory.ValueType  # 60
+    """Billing"""
+    NOTIFICATION_CATEGORY_PAYMENT_FAILED: _NotificationCategory.ValueType  # 61
+    NOTIFICATION_CATEGORY_TRIAL_ENDING: _NotificationCategory.ValueType  # 62
+    NOTIFICATION_CATEGORY_SUBSCRIPTION_UPDATED: _NotificationCategory.ValueType  # 63
+    NOTIFICATION_CATEGORY_SUBSCRIPTION_CANCELED: _NotificationCategory.ValueType  # 64
+    NOTIFICATION_CATEGORY_WELCOME: _NotificationCategory.ValueType  # 70
+    """Auth and security"""
+    NOTIFICATION_CATEGORY_PASSWORD_CHANGED: _NotificationCategory.ValueType  # 71
+    NOTIFICATION_CATEGORY_ACCOUNT_LOCKED: _NotificationCategory.ValueType  # 72
+    NOTIFICATION_CATEGORY_EMAIL_VERIFICATION: _NotificationCategory.ValueType  # 73
+    NOTIFICATION_CATEGORY_PASSWORD_RESET: _NotificationCategory.ValueType  # 74
+    NOTIFICATION_CATEGORY_CONFIRMATION_PENDING: _NotificationCategory.ValueType  # 80
+    """Agent"""
+    NOTIFICATION_CATEGORY_PRICE_ALERT_TRIGGERED: _NotificationCategory.ValueType  # 90
+    """Generated by the notification service itself"""
+    NOTIFICATION_CATEGORY_WEBHOOK_DISABLED: _NotificationCategory.ValueType  # 91
+
+class NotificationCategory(_NotificationCategory, metaclass=_NotificationCategoryEnumTypeWrapper):
+    """Every user-facing notification flow. Grouped by producing domain; this is
+    the single vocabulary for routing, preferences, and webhook event filters.
+    """
+
+NOTIFICATION_CATEGORY_UNSPECIFIED: NotificationCategory.ValueType  # 0
+NOTIFICATION_CATEGORY_SLEEVE_FROZEN: NotificationCategory.ValueType  # 1
+"""Money (portfolio)"""
+NOTIFICATION_CATEGORY_FILL_QUARANTINED: NotificationCategory.ValueType  # 2
+NOTIFICATION_CATEGORY_EXTERNAL_TRADE_ADOPTED: NotificationCategory.ValueType  # 3
+NOTIFICATION_CATEGORY_CORPORATE_ACTION_PROPOSED: NotificationCategory.ValueType  # 4
+NOTIFICATION_CATEGORY_CORPORATE_ACTION_APPLIED: NotificationCategory.ValueType  # 5
+NOTIFICATION_CATEGORY_ORDER_FILLED: NotificationCategory.ValueType  # 10
+"""Trading"""
+NOTIFICATION_CATEGORY_ORDER_REJECTED: NotificationCategory.ValueType  # 11
+NOTIFICATION_CATEGORY_POSITION_OPENED: NotificationCategory.ValueType  # 12
+NOTIFICATION_CATEGORY_POSITION_CLOSED: NotificationCategory.ValueType  # 13
+NOTIFICATION_CATEGORY_POSITION_DRIFT: NotificationCategory.ValueType  # 14
+NOTIFICATION_CATEGORY_RISK_BREACH: NotificationCategory.ValueType  # 15
+NOTIFICATION_CATEGORY_EVALUATION_STALLED: NotificationCategory.ValueType  # 16
+NOTIFICATION_CATEGORY_SYMBOL_NOT_TRADABLE: NotificationCategory.ValueType  # 17
+NOTIFICATION_CATEGORY_CONNECTION_LOST: NotificationCategory.ValueType  # 18
+NOTIFICATION_CATEGORY_STRATEGY_ERROR: NotificationCategory.ValueType  # 19
+NOTIFICATION_CATEGORY_SESSION_STARTED: NotificationCategory.ValueType  # 20
+NOTIFICATION_CATEGORY_SESSION_STOPPED: NotificationCategory.ValueType  # 21
+NOTIFICATION_CATEGORY_SESSION_ERROR: NotificationCategory.ValueType  # 22
+NOTIFICATION_CATEGORY_CIRCUIT_BREAKER_TRIGGERED: NotificationCategory.ValueType  # 23
+NOTIFICATION_CATEGORY_CIRCUIT_BREAKER_RESET: NotificationCategory.ValueType  # 24
+NOTIFICATION_CATEGORY_STOP_LOSS_HIT: NotificationCategory.ValueType  # 25
+NOTIFICATION_CATEGORY_TAKE_PROFIT_HIT: NotificationCategory.ValueType  # 26
+NOTIFICATION_CATEGORY_RECONCILIATION_DRIFT: NotificationCategory.ValueType  # 27
+NOTIFICATION_CATEGORY_EXECUTION_STARTED: NotificationCategory.ValueType  # 40
+"""Strategy lifecycle"""
+NOTIFICATION_CATEGORY_EXECUTION_STOPPED: NotificationCategory.ValueType  # 41
+NOTIFICATION_CATEGORY_FUNDING_FAILED: NotificationCategory.ValueType  # 42
+NOTIFICATION_CATEGORY_SLEEVE_RELEASE_DEFERRED: NotificationCategory.ValueType  # 43
+NOTIFICATION_CATEGORY_EXECUTION_CANCELLED: NotificationCategory.ValueType  # 44
+NOTIFICATION_CATEGORY_PLAN_LIMIT_REACHED: NotificationCategory.ValueType  # 45
+NOTIFICATION_CATEGORY_BACKTEST_COMPLETED: NotificationCategory.ValueType  # 50
+"""Backtest"""
+NOTIFICATION_CATEGORY_BACKTEST_FAILED: NotificationCategory.ValueType  # 51
+NOTIFICATION_CATEGORY_PAYMENT_SUCCEEDED: NotificationCategory.ValueType  # 60
+"""Billing"""
+NOTIFICATION_CATEGORY_PAYMENT_FAILED: NotificationCategory.ValueType  # 61
+NOTIFICATION_CATEGORY_TRIAL_ENDING: NotificationCategory.ValueType  # 62
+NOTIFICATION_CATEGORY_SUBSCRIPTION_UPDATED: NotificationCategory.ValueType  # 63
+NOTIFICATION_CATEGORY_SUBSCRIPTION_CANCELED: NotificationCategory.ValueType  # 64
+NOTIFICATION_CATEGORY_WELCOME: NotificationCategory.ValueType  # 70
+"""Auth and security"""
+NOTIFICATION_CATEGORY_PASSWORD_CHANGED: NotificationCategory.ValueType  # 71
+NOTIFICATION_CATEGORY_ACCOUNT_LOCKED: NotificationCategory.ValueType  # 72
+NOTIFICATION_CATEGORY_EMAIL_VERIFICATION: NotificationCategory.ValueType  # 73
+NOTIFICATION_CATEGORY_PASSWORD_RESET: NotificationCategory.ValueType  # 74
+NOTIFICATION_CATEGORY_CONFIRMATION_PENDING: NotificationCategory.ValueType  # 80
+"""Agent"""
+NOTIFICATION_CATEGORY_PRICE_ALERT_TRIGGERED: NotificationCategory.ValueType  # 90
+"""Generated by the notification service itself"""
+NOTIFICATION_CATEGORY_WEBHOOK_DISABLED: NotificationCategory.ValueType  # 91
+
+class _NotificationSeverity:
+    ValueType = typing.NewType("ValueType", builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
+
+class _NotificationSeverityEnumTypeWrapper(
+    enum_type_wrapper._EnumTypeWrapper[_NotificationSeverity.ValueType], builtins.type
+):
+    DESCRIPTOR: descriptor.EnumDescriptor
+    NOTIFICATION_SEVERITY_UNSPECIFIED: _NotificationSeverity.ValueType  # 0
+    NOTIFICATION_SEVERITY_INFO: _NotificationSeverity.ValueType  # 1
+    NOTIFICATION_SEVERITY_ACTIONABLE: _NotificationSeverity.ValueType  # 2
+    NOTIFICATION_SEVERITY_CRITICAL: _NotificationSeverity.ValueType  # 3
+    NOTIFICATION_SEVERITY_SECURITY: _NotificationSeverity.ValueType  # 4
+
+class NotificationSeverity(
+    _NotificationSeverity, metaclass=_NotificationSeverityEnumTypeWrapper
+): ...
+
+NOTIFICATION_SEVERITY_UNSPECIFIED: NotificationSeverity.ValueType  # 0
+NOTIFICATION_SEVERITY_INFO: NotificationSeverity.ValueType  # 1
+NOTIFICATION_SEVERITY_ACTIONABLE: NotificationSeverity.ValueType  # 2
+NOTIFICATION_SEVERITY_CRITICAL: NotificationSeverity.ValueType  # 3
+NOTIFICATION_SEVERITY_SECURITY: NotificationSeverity.ValueType  # 4
 
 @typing.final
 class EventEnvelope(message.Message):
@@ -133,7 +284,120 @@ class EventEnvelope(message.Message):
         payload: builtins.bytes = ...,
         metadata: abc.Mapping[builtins.str, builtins.str] | None = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["created_at_unix_ms", b"created_at_unix_ms", "id", b"id", "metadata", b"metadata", "payload", b"payload", "tenant_id", b"tenant_id", "type", b"type", "user_id", b"user_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "created_at_unix_ms",
+        b"created_at_unix_ms",
+        "id",
+        b"id",
+        "metadata",
+        b"metadata",
+        "payload",
+        b"payload",
+        "tenant_id",
+        b"tenant_id",
+        "type",
+        b"type",
+        "user_id",
+        b"user_id",
+    ]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class NotificationEvent(message.Message):
+    """Notification event — any service → notification (durable). Producers send
+    the category plus machine-readable fields; rendering (title, body, email
+    subject) happens in the notification service per (category, channel).
+    Tenant/user scope and the deterministic dedup id ride the envelope.
+    """
+
+    DESCRIPTOR: descriptor.Descriptor
+
+    @typing.final
+    class ExtraEntry(message.Message):
+        DESCRIPTOR: descriptor.Descriptor
+
+        KEY_FIELD_NUMBER: builtins.int
+        VALUE_FIELD_NUMBER: builtins.int
+        key: builtins.str
+        value: builtins.str
+        def __init__(
+            self,
+            *,
+            key: builtins.str = ...,
+            value: builtins.str = ...,
+        ) -> None: ...
+        _ClearFieldArgType: _TypeAlias = typing.Literal["key", b"key", "value", b"value"]  # noqa: Y015
+        def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+    CATEGORY_FIELD_NUMBER: builtins.int
+    SEVERITY_FIELD_NUMBER: builtins.int
+    EXECUTION_ID_FIELD_NUMBER: builtins.int
+    STRATEGY_ID_FIELD_NUMBER: builtins.int
+    SESSION_ID_FIELD_NUMBER: builtins.int
+    ACCOUNT_ID_FIELD_NUMBER: builtins.int
+    SLEEVE_ID_FIELD_NUMBER: builtins.int
+    BACKTEST_ID_FIELD_NUMBER: builtins.int
+    SYMBOL_FIELD_NUMBER: builtins.int
+    AMOUNT_FIELD_NUMBER: builtins.int
+    REASON_FIELD_NUMBER: builtins.int
+    EXTRA_FIELD_NUMBER: builtins.int
+    category: NotificationCategory.ValueType
+    severity: NotificationSeverity.ValueType
+    execution_id: builtins.str
+    strategy_id: builtins.str
+    session_id: builtins.str
+    account_id: builtins.str
+    sleeve_id: builtins.str
+    backtest_id: builtins.str
+    symbol: builtins.str
+    amount: builtins.str
+    """decimal string, optional"""
+    reason: builtins.str
+    """optional"""
+    @builtins.property
+    def extra(self) -> containers.ScalarMap[builtins.str, builtins.str]: ...
+    def __init__(
+        self,
+        *,
+        category: NotificationCategory.ValueType = ...,
+        severity: NotificationSeverity.ValueType = ...,
+        execution_id: builtins.str = ...,
+        strategy_id: builtins.str = ...,
+        session_id: builtins.str = ...,
+        account_id: builtins.str = ...,
+        sleeve_id: builtins.str = ...,
+        backtest_id: builtins.str = ...,
+        symbol: builtins.str = ...,
+        amount: builtins.str = ...,
+        reason: builtins.str = ...,
+        extra: abc.Mapping[builtins.str, builtins.str] | None = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "account_id",
+        b"account_id",
+        "amount",
+        b"amount",
+        "backtest_id",
+        b"backtest_id",
+        "category",
+        b"category",
+        "execution_id",
+        b"execution_id",
+        "extra",
+        b"extra",
+        "reason",
+        b"reason",
+        "session_id",
+        b"session_id",
+        "severity",
+        b"severity",
+        "sleeve_id",
+        b"sleeve_id",
+        "strategy_id",
+        b"strategy_id",
+        "symbol",
+        b"symbol",
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -193,7 +457,34 @@ class LedgerFill(message.Message):
         realized_pnl: builtins.str = ...,
         filled_at: builtins.str = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "client_order_id", b"client_order_id", "cost_basis", b"cost_basis", "fees", b"fees", "filled_at", b"filled_at", "order_id", b"order_id", "price", b"price", "qty", b"qty", "realized_pnl", b"realized_pnl", "side", b"side", "sleeve_id", b"sleeve_id", "symbol", b"symbol", "tenant_id", b"tenant_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "account_id",
+        b"account_id",
+        "client_order_id",
+        b"client_order_id",
+        "cost_basis",
+        b"cost_basis",
+        "fees",
+        b"fees",
+        "filled_at",
+        b"filled_at",
+        "order_id",
+        b"order_id",
+        "price",
+        b"price",
+        "qty",
+        b"qty",
+        "realized_pnl",
+        b"realized_pnl",
+        "side",
+        b"side",
+        "sleeve_id",
+        b"sleeve_id",
+        "symbol",
+        b"symbol",
+        "tenant_id",
+        b"tenant_id",
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -238,5 +529,24 @@ class LedgerReservation(message.Message):
         side: builtins.str = ...,
         order_id: builtins.str = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "client_order_id", b"client_order_id", "event_type", b"event_type", "order_id", b"order_id", "reserved", b"reserved", "side", b"side", "sleeve_id", b"sleeve_id", "symbol", b"symbol", "tenant_id", b"tenant_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "account_id",
+        b"account_id",
+        "client_order_id",
+        b"client_order_id",
+        "event_type",
+        b"event_type",
+        "order_id",
+        b"order_id",
+        "reserved",
+        b"reserved",
+        "side",
+        b"side",
+        "sleeve_id",
+        b"sleeve_id",
+        "symbol",
+        b"symbol",
+        "tenant_id",
+        b"tenant_id",
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...

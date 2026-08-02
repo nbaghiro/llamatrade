@@ -23,7 +23,9 @@ class _SortDirection:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _SortDirectionEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_SortDirection.ValueType], builtins.type):
+class _SortDirectionEnumTypeWrapper(
+    enum_type_wrapper._EnumTypeWrapper[_SortDirection.ValueType], builtins.type
+):
     DESCRIPTOR: descriptor.EnumDescriptor
     SORT_DIRECTION_UNSPECIFIED: _SortDirection.ValueType  # 0
     SORT_DIRECTION_ASC: _SortDirection.ValueType  # 1
@@ -40,7 +42,9 @@ class _ExecutionMode:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _ExecutionModeEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_ExecutionMode.ValueType], builtins.type):
+class _ExecutionModeEnumTypeWrapper(
+    enum_type_wrapper._EnumTypeWrapper[_ExecutionMode.ValueType], builtins.type
+):
     DESCRIPTOR: descriptor.EnumDescriptor
     EXECUTION_MODE_UNSPECIFIED: _ExecutionMode.ValueType  # 0
     EXECUTION_MODE_PAPER: _ExecutionMode.ValueType  # 1
@@ -61,7 +65,9 @@ class _ExecutionStatus:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _ExecutionStatusEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_ExecutionStatus.ValueType], builtins.type):
+class _ExecutionStatusEnumTypeWrapper(
+    enum_type_wrapper._EnumTypeWrapper[_ExecutionStatus.ValueType], builtins.type
+):
     DESCRIPTOR: descriptor.EnumDescriptor
     EXECUTION_STATUS_UNSPECIFIED: _ExecutionStatus.ValueType  # 0
     EXECUTION_STATUS_PENDING: _ExecutionStatus.ValueType  # 1
@@ -89,6 +95,31 @@ EXECUTION_STATUS_STOPPED: ExecutionStatus.ValueType  # 4
 """Manually stopped"""
 EXECUTION_STATUS_ERROR: ExecutionStatus.ValueType  # 5
 """Stopped due to error"""
+
+class _SizingMode:
+    ValueType = typing.NewType("ValueType", builtins.int)
+    V: _TypeAlias = ValueType  # noqa: Y015
+
+class _SizingModeEnumTypeWrapper(
+    enum_type_wrapper._EnumTypeWrapper[_SizingMode.ValueType], builtins.type
+):
+    DESCRIPTOR: descriptor.EnumDescriptor
+    SIZING_MODE_UNSPECIFIED: _SizingMode.ValueType  # 0
+    """Unset: caller falls back to the engine default"""
+    SIZING_MODE_BINARY: _SizingMode.ValueType  # 1
+    """All-or-nothing: open/close, do not resize"""
+    SIZING_MODE_DRIFT: _SizingMode.ValueType  # 2
+    """Trade the delta to target, skipping inside the drift band"""
+
+class SizingMode(_SizingMode, metaclass=_SizingModeEnumTypeWrapper):
+    """How target weights become orders. Shared by live and backtest sizing."""
+
+SIZING_MODE_UNSPECIFIED: SizingMode.ValueType  # 0
+"""Unset: caller falls back to the engine default"""
+SIZING_MODE_BINARY: SizingMode.ValueType  # 1
+"""All-or-nothing: open/close, do not resize"""
+SIZING_MODE_DRIFT: SizingMode.ValueType  # 2
+"""Trade the delta to target, skipping inside the drift band"""
 
 @typing.final
 class UUID(message.Message):
@@ -212,7 +243,20 @@ class PaginationResponse(message.Message):
         has_next: builtins.bool = ...,
         has_previous: builtins.bool = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["current_page", b"current_page", "has_next", b"has_next", "has_previous", b"has_previous", "page_size", b"page_size", "total_items", b"total_items", "total_pages", b"total_pages"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "current_page",
+        b"current_page",
+        "has_next",
+        b"has_next",
+        "has_previous",
+        b"has_previous",
+        "page_size",
+        b"page_size",
+        "total_items",
+        b"total_items",
+        "total_pages",
+        b"total_pages",
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -235,7 +279,9 @@ class TenantContext(message.Message):
         user_id: builtins.str = ...,
         roles: abc.Iterable[builtins.str] | None = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["roles", b"roles", "tenant_id", b"tenant_id", "user_id", b"user_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "roles", b"roles", "tenant_id", b"tenant_id", "user_id", b"user_id"
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -279,7 +325,9 @@ class Error(message.Message):
         message: builtins.str = ...,
         details: abc.Mapping[builtins.str, builtins.str] | None = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["code", b"code", "details", b"details", "message", b"message"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "code", b"code", "details", b"details", "message", b"message"
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final

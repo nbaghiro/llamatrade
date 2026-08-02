@@ -24,7 +24,9 @@ class _AgentSessionStatus:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _AgentSessionStatusEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_AgentSessionStatus.ValueType], builtins.type):
+class _AgentSessionStatusEnumTypeWrapper(
+    enum_type_wrapper._EnumTypeWrapper[_AgentSessionStatus.ValueType], builtins.type
+):
     DESCRIPTOR: descriptor.EnumDescriptor
     AGENT_SESSION_STATUS_UNSPECIFIED: _AgentSessionStatus.ValueType  # 0
     AGENT_SESSION_STATUS_ACTIVE: _AgentSessionStatus.ValueType  # 1
@@ -48,7 +50,9 @@ class _MessageRole:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _MessageRoleEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_MessageRole.ValueType], builtins.type):
+class _MessageRoleEnumTypeWrapper(
+    enum_type_wrapper._EnumTypeWrapper[_MessageRole.ValueType], builtins.type
+):
     DESCRIPTOR: descriptor.EnumDescriptor
     MESSAGE_ROLE_UNSPECIFIED: _MessageRole.ValueType  # 0
     MESSAGE_ROLE_USER: _MessageRole.ValueType  # 1
@@ -67,7 +71,9 @@ class _StreamEventType:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _StreamEventTypeEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_StreamEventType.ValueType], builtins.type):
+class _StreamEventTypeEnumTypeWrapper(
+    enum_type_wrapper._EnumTypeWrapper[_StreamEventType.ValueType], builtins.type
+):
     DESCRIPTOR: descriptor.EnumDescriptor
     STREAM_EVENT_TYPE_UNSPECIFIED: _StreamEventType.ValueType  # 0
     STREAM_EVENT_TYPE_CONTENT_DELTA: _StreamEventType.ValueType  # 1
@@ -112,7 +118,9 @@ class _ArtifactType:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _ArtifactTypeEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_ArtifactType.ValueType], builtins.type):
+class _ArtifactTypeEnumTypeWrapper(
+    enum_type_wrapper._EnumTypeWrapper[_ArtifactType.ValueType], builtins.type
+):
     DESCRIPTOR: descriptor.EnumDescriptor
     ARTIFACT_TYPE_UNSPECIFIED: _ArtifactType.ValueType  # 0
     ARTIFACT_TYPE_STRATEGY: _ArtifactType.ValueType  # 1
@@ -164,9 +172,28 @@ class AgentSession(message.Message):
         created_at: common_pb2.Timestamp | None = ...,
         last_activity_at: common_pb2.Timestamp | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at", "last_activity_at", b"last_activity_at"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal[
+        "created_at", b"created_at", "last_activity_at", b"last_activity_at"
+    ]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at", "id", b"id", "last_activity_at", b"last_activity_at", "message_count", b"message_count", "status", b"status", "tenant_id", b"tenant_id", "title", b"title", "user_id", b"user_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "created_at",
+        b"created_at",
+        "id",
+        b"id",
+        "last_activity_at",
+        b"last_activity_at",
+        "message_count",
+        b"message_count",
+        "status",
+        b"status",
+        "tenant_id",
+        b"tenant_id",
+        "title",
+        b"title",
+        "user_id",
+        b"user_id",
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -211,7 +238,24 @@ class AgentMessage(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["content", b"content", "created_at", b"created_at", "id", b"id", "inline_artifact_ids", b"inline_artifact_ids", "role", b"role", "session_id", b"session_id", "thinking", b"thinking", "tool_calls", b"tool_calls"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "content",
+        b"content",
+        "created_at",
+        b"created_at",
+        "id",
+        b"id",
+        "inline_artifact_ids",
+        b"inline_artifact_ids",
+        "role",
+        b"role",
+        "session_id",
+        b"session_id",
+        "thinking",
+        b"thinking",
+        "tool_calls",
+        b"tool_calls",
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -242,7 +286,20 @@ class ToolCall(message.Message):
         duration_ms: builtins.int = ...,
         success: builtins.bool = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["arguments_json", b"arguments_json", "duration_ms", b"duration_ms", "id", b"id", "name", b"name", "result_json", b"result_json", "success", b"success"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "arguments_json",
+        b"arguments_json",
+        "duration_ms",
+        b"duration_ms",
+        "id",
+        b"id",
+        "name",
+        b"name",
+        "result_json",
+        b"result_json",
+        "success",
+        b"success",
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -287,7 +344,26 @@ class PendingArtifact(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["artifact_type", b"artifact_type", "committed_resource_id", b"committed_resource_id", "created_at", b"created_at", "description", b"description", "id", b"id", "is_committed", b"is_committed", "name", b"name", "preview_json", b"preview_json", "session_id", b"session_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "artifact_type",
+        b"artifact_type",
+        "committed_resource_id",
+        b"committed_resource_id",
+        "created_at",
+        b"created_at",
+        "description",
+        b"description",
+        "id",
+        b"id",
+        "is_committed",
+        b"is_committed",
+        "name",
+        b"name",
+        "preview_json",
+        b"preview_json",
+        "session_id",
+        b"session_id",
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -350,7 +426,32 @@ class AgentStreamEvent(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["artifact", b"artifact"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["artifact", b"artifact", "confirmation_id", b"confirmation_id", "content_delta", b"content_delta", "error_message", b"error_message", "event_type", b"event_type", "message_id", b"message_id", "session_id", b"session_id", "thinking_delta", b"thinking_delta", "tool_arguments_json", b"tool_arguments_json", "tool_name", b"tool_name", "tool_result_preview", b"tool_result_preview", "tool_status", b"tool_status"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "artifact",
+        b"artifact",
+        "confirmation_id",
+        b"confirmation_id",
+        "content_delta",
+        b"content_delta",
+        "error_message",
+        b"error_message",
+        "event_type",
+        b"event_type",
+        "message_id",
+        b"message_id",
+        "session_id",
+        b"session_id",
+        "thinking_delta",
+        b"thinking_delta",
+        "tool_arguments_json",
+        b"tool_arguments_json",
+        "tool_name",
+        b"tool_name",
+        "tool_result_preview",
+        b"tool_result_preview",
+        "tool_status",
+        b"tool_status",
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -381,7 +482,16 @@ class AgentContextData(message.Message):
         backtest_id: builtins.str = ...,
         suggested_prompts: abc.Iterable[builtins.str] | None = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["backtest_id", b"backtest_id", "page", b"page", "strategy_id", b"strategy_id", "suggested_prompts", b"suggested_prompts"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "backtest_id",
+        b"backtest_id",
+        "page",
+        b"page",
+        "strategy_id",
+        b"strategy_id",
+        "suggested_prompts",
+        b"suggested_prompts",
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -413,9 +523,13 @@ class CreateSessionRequest(message.Message):
         initial_message: builtins.str = ...,
         ui_context: AgentContextData | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "ui_context", b"ui_context"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal[
+        "context", b"context", "ui_context", b"ui_context"
+    ]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "initial_message", b"initial_message", "ui_context", b"ui_context"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "context", b"context", "initial_message", b"initial_message", "ui_context", b"ui_context"
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -436,9 +550,13 @@ class CreateSessionResponse(message.Message):
         session: AgentSession | None = ...,
         initial_response: AgentStreamEvent | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["initial_response", b"initial_response", "session", b"session"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal[
+        "initial_response", b"initial_response", "session", b"session"
+    ]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["initial_response", b"initial_response", "session", b"session"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "initial_response", b"initial_response", "session", b"session"
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -468,7 +586,16 @@ class GetSessionRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "include_messages", b"include_messages", "message_limit", b"message_limit", "session_id", b"session_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "context",
+        b"context",
+        "include_messages",
+        b"include_messages",
+        "message_limit",
+        b"message_limit",
+        "session_id",
+        b"session_id",
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -493,7 +620,9 @@ class GetSessionResponse(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["session", b"session"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["messages", b"messages", "pending_artifacts", b"pending_artifacts", "session", b"session"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "messages", b"messages", "pending_artifacts", b"pending_artifacts", "session", b"session"
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -517,9 +646,13 @@ class ListSessionsRequest(message.Message):
         status_filter: AgentSessionStatus.ValueType = ...,
         pagination: common_pb2.PaginationRequest | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "pagination", b"pagination"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal[
+        "context", b"context", "pagination", b"pagination"
+    ]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "pagination", b"pagination", "status_filter", b"status_filter"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "context", b"context", "pagination", b"pagination", "status_filter", b"status_filter"
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -540,7 +673,9 @@ class ListSessionsResponse(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["pagination", b"pagination"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["pagination", b"pagination", "sessions", b"sessions"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "pagination", b"pagination", "sessions", b"sessions"
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -562,7 +697,9 @@ class DeleteSessionRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "session_id", b"session_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "context", b"context", "session_id", b"session_id"
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -613,9 +750,24 @@ class SendMessageRequest(message.Message):
         strategy_dsl: builtins.str = ...,
         strategy_name: builtins.str = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "ui_context", b"ui_context"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal[
+        "context", b"context", "ui_context", b"ui_context"
+    ]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["content", b"content", "context", b"context", "session_id", b"session_id", "strategy_dsl", b"strategy_dsl", "strategy_name", b"strategy_name", "ui_context", b"ui_context"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "content",
+        b"content",
+        "context",
+        b"context",
+        "session_id",
+        b"session_id",
+        "strategy_dsl",
+        b"strategy_dsl",
+        "strategy_name",
+        b"strategy_name",
+        "ui_context",
+        b"ui_context",
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -638,9 +790,18 @@ class SendMessageResponse(message.Message):
         assistant_message: AgentMessage | None = ...,
         new_artifacts: abc.Iterable[PendingArtifact] | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["assistant_message", b"assistant_message", "user_message", b"user_message"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal[
+        "assistant_message", b"assistant_message", "user_message", b"user_message"
+    ]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["assistant_message", b"assistant_message", "new_artifacts", b"new_artifacts", "user_message", b"user_message"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "assistant_message",
+        b"assistant_message",
+        "new_artifacts",
+        b"new_artifacts",
+        "user_message",
+        b"user_message",
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -685,7 +846,9 @@ class CommitArtifactRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["artifact_id", b"artifact_id", "context", b"context", "overrides", b"overrides"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "artifact_id", b"artifact_id", "context", b"context", "overrides", b"overrides"
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -707,7 +870,9 @@ class CommitArtifactResponse(message.Message):
         resource_id: builtins.str = ...,
         resource_type: builtins.str = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["resource_id", b"resource_id", "resource_type", b"resource_type", "success", b"success"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "resource_id", b"resource_id", "resource_type", b"resource_type", "success", b"success"
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -745,7 +910,20 @@ class ConfirmToolCallRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["approved", b"approved", "confirmation_id", b"confirmation_id", "context", b"context", "session_id", b"session_id", "tool_arguments_json", b"tool_arguments_json", "tool_name", b"tool_name"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "approved",
+        b"approved",
+        "confirmation_id",
+        b"confirmation_id",
+        "context",
+        b"context",
+        "session_id",
+        b"session_id",
+        "tool_arguments_json",
+        b"tool_arguments_json",
+        "tool_name",
+        b"tool_name",
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -766,9 +944,13 @@ class GetSuggestedPromptsRequest(message.Message):
         context: common_pb2.TenantContext | None = ...,
         ui_context: AgentContextData | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "ui_context", b"ui_context"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal[
+        "context", b"context", "ui_context", b"ui_context"
+    ]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "ui_context", b"ui_context"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "context", b"context", "ui_context", b"ui_context"
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -805,7 +987,9 @@ class GetArtifactRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["artifact_id", b"artifact_id", "context", b"context"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "artifact_id", b"artifact_id", "context", b"context"
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final

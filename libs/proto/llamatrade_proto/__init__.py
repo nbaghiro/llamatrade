@@ -14,7 +14,7 @@ Usage:
     from llamatrade_proto.clients import MarketDataClient, AuthClient
 
     # Or import clients directly from package root
-    from llamatrade_proto import MarketDataClient, AuthInterceptor
+    from llamatrade_proto import MarketDataClient
 """
 
 # Re-export clients for convenience
@@ -25,22 +25,28 @@ from llamatrade_proto.clients import (
 
 # Re-export interceptors
 from llamatrade_proto.interceptors import (
-    AuthInterceptor,
     LoggingInterceptor,
 )
 
-# Re-export server utilities
-from llamatrade_proto.server import GRPCServer
+# Re-export timestamp helpers
+from llamatrade_proto.timestamps import (
+    date_from_proto_timestamp,
+    date_to_proto_timestamp,
+    from_proto_timestamp,
+    to_proto_timestamp,
+)
 
 __all__ = [
     # Clients
     "AuthClient",
     "MarketDataClient",
     # Interceptors
-    "AuthInterceptor",
     "LoggingInterceptor",
-    # Server
-    "GRPCServer",
+    # Timestamp helpers
+    "date_from_proto_timestamp",
+    "date_to_proto_timestamp",
+    "from_proto_timestamp",
+    "to_proto_timestamp",
 ]
 
 __version__ = "0.1.0"

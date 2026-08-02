@@ -57,6 +57,11 @@ message BacktestConfig {
   // Benchmark configuration
   string benchmark_symbol = 14;      // Symbol to use as benchmark (default: SPY)
   bool include_benchmark = 15;       // Whether to calculate benchmark comparison
+
+  // Position sizing (optional; unset fields fall back to the engine defaults)
+  SizingMode sizing_mode = 16;
+  Decimal drift_tolerance = 17;      // DRIFT-mode band before a resize is worth doing (fraction)
+  Decimal min_order_notional = 18;   // Dollar floor under which an intended order is skipped
 }
 
 // Backtest run

@@ -16,57 +16,115 @@ from . import auth_pb2 as auth__pb2
 
 
 class AuthService(Protocol):
-    async def login(self, request: auth__pb2.LoginRequest, ctx: RequestContext) -> auth__pb2.LoginResponse:
+    async def login(
+        self, request: auth__pb2.LoginRequest, ctx: RequestContext
+    ) -> auth__pb2.LoginResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def register(self, request: auth__pb2.RegisterRequest, ctx: RequestContext) -> auth__pb2.RegisterResponse:
+    async def register(
+        self, request: auth__pb2.RegisterRequest, ctx: RequestContext
+    ) -> auth__pb2.RegisterResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def refresh_token(self, request: auth__pb2.RefreshTokenRequest, ctx: RequestContext) -> auth__pb2.RefreshTokenResponse:
+    async def refresh_token(
+        self, request: auth__pb2.RefreshTokenRequest, ctx: RequestContext
+    ) -> auth__pb2.RefreshTokenResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def logout(self, request: auth__pb2.LogoutRequest, ctx: RequestContext) -> auth__pb2.LogoutResponse:
+    async def logout(
+        self, request: auth__pb2.LogoutRequest, ctx: RequestContext
+    ) -> auth__pb2.LogoutResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_current_user(self, request: auth__pb2.GetCurrentUserRequest, ctx: RequestContext) -> auth__pb2.GetCurrentUserResponse:
+    async def get_current_user(
+        self, request: auth__pb2.GetCurrentUserRequest, ctx: RequestContext
+    ) -> auth__pb2.GetCurrentUserResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def change_password(self, request: auth__pb2.ChangePasswordRequest, ctx: RequestContext) -> auth__pb2.ChangePasswordResponse:
+    async def change_password(
+        self, request: auth__pb2.ChangePasswordRequest, ctx: RequestContext
+    ) -> auth__pb2.ChangePasswordResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def validate_token(self, request: auth__pb2.ValidateTokenRequest, ctx: RequestContext) -> auth__pb2.ValidateTokenResponse:
+    async def request_password_reset(
+        self, request: auth__pb2.RequestPasswordResetRequest, ctx: RequestContext
+    ) -> auth__pb2.RequestPasswordResetResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def validate_a_p_i_key(self, request: auth__pb2.ValidateAPIKeyRequest, ctx: RequestContext) -> auth__pb2.ValidateAPIKeyResponse:
+    async def reset_password(
+        self, request: auth__pb2.ResetPasswordRequest, ctx: RequestContext
+    ) -> auth__pb2.ResetPasswordResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_user(self, request: auth__pb2.GetUserRequest, ctx: RequestContext) -> auth__pb2.GetUserResponse:
+    async def verify_email(
+        self, request: auth__pb2.VerifyEmailRequest, ctx: RequestContext
+    ) -> auth__pb2.VerifyEmailResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_tenant(self, request: auth__pb2.GetTenantRequest, ctx: RequestContext) -> auth__pb2.GetTenantResponse:
+    async def resend_verification(
+        self, request: auth__pb2.ResendVerificationRequest, ctx: RequestContext
+    ) -> auth__pb2.ResendVerificationResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def check_permission(self, request: auth__pb2.CheckPermissionRequest, ctx: RequestContext) -> auth__pb2.CheckPermissionResponse:
+    async def validate_token(
+        self, request: auth__pb2.ValidateTokenRequest, ctx: RequestContext
+    ) -> auth__pb2.ValidateTokenResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def create_alpaca_credentials(self, request: auth__pb2.CreateAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.CreateAlpacaCredentialsResponse:
+    async def validate_a_p_i_key(
+        self, request: auth__pb2.ValidateAPIKeyRequest, ctx: RequestContext
+    ) -> auth__pb2.ValidateAPIKeyResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_alpaca_credentials(self, request: auth__pb2.GetAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.GetAlpacaCredentialsResponse:
+    async def get_user(
+        self, request: auth__pb2.GetUserRequest, ctx: RequestContext
+    ) -> auth__pb2.GetUserResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_alpaca_credentials(self, request: auth__pb2.ListAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.ListAlpacaCredentialsResponse:
+    async def get_tenant(
+        self, request: auth__pb2.GetTenantRequest, ctx: RequestContext
+    ) -> auth__pb2.GetTenantResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def delete_alpaca_credentials(self, request: auth__pb2.DeleteAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.DeleteAlpacaCredentialsResponse:
+    async def check_permission(
+        self, request: auth__pb2.CheckPermissionRequest, ctx: RequestContext
+    ) -> auth__pb2.CheckPermissionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def validate_alpaca_credentials(self, request: auth__pb2.ValidateAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.ValidateAlpacaCredentialsResponse:
+    async def create_alpaca_credentials(
+        self, request: auth__pb2.CreateAlpacaCredentialsRequest, ctx: RequestContext
+    ) -> auth__pb2.CreateAlpacaCredentialsResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    async def get_alpaca_credentials(
+        self, request: auth__pb2.GetAlpacaCredentialsRequest, ctx: RequestContext
+    ) -> auth__pb2.GetAlpacaCredentialsResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    async def list_alpaca_credentials(
+        self, request: auth__pb2.ListAlpacaCredentialsRequest, ctx: RequestContext
+    ) -> auth__pb2.ListAlpacaCredentialsResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    async def delete_alpaca_credentials(
+        self, request: auth__pb2.DeleteAlpacaCredentialsRequest, ctx: RequestContext
+    ) -> auth__pb2.DeleteAlpacaCredentialsResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    async def validate_alpaca_credentials(
+        self, request: auth__pb2.ValidateAlpacaCredentialsRequest, ctx: RequestContext
+    ) -> auth__pb2.ValidateAlpacaCredentialsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class AuthServiceASGIApplication(ConnectASGIApplication[AuthService]):
-    def __init__(self, service: AuthService | AsyncGenerator[AuthService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None) -> None:
+    def __init__(
+        self,
+        service: AuthService | AsyncGenerator[AuthService],
+        *,
+        interceptors: Iterable[Interceptor] = (),
+        read_max_bytes: int | None = None,
+    ) -> None:
         super().__init__(
             service=service,
             endpoints=lambda svc: {
@@ -129,6 +187,46 @@ class AuthServiceASGIApplication(ConnectASGIApplication[AuthService]):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=svc.change_password,
+                ),
+                "/llamatrade.AuthService/RequestPasswordReset": Endpoint.unary(
+                    method=MethodInfo(
+                        name="RequestPasswordReset",
+                        service_name="llamatrade.AuthService",
+                        input=auth__pb2.RequestPasswordResetRequest,
+                        output=auth__pb2.RequestPasswordResetResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.request_password_reset,
+                ),
+                "/llamatrade.AuthService/ResetPassword": Endpoint.unary(
+                    method=MethodInfo(
+                        name="ResetPassword",
+                        service_name="llamatrade.AuthService",
+                        input=auth__pb2.ResetPasswordRequest,
+                        output=auth__pb2.ResetPasswordResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.reset_password,
+                ),
+                "/llamatrade.AuthService/VerifyEmail": Endpoint.unary(
+                    method=MethodInfo(
+                        name="VerifyEmail",
+                        service_name="llamatrade.AuthService",
+                        input=auth__pb2.VerifyEmailRequest,
+                        output=auth__pb2.VerifyEmailResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.verify_email,
+                ),
+                "/llamatrade.AuthService/ResendVerification": Endpoint.unary(
+                    method=MethodInfo(
+                        name="ResendVerification",
+                        service_name="llamatrade.AuthService",
+                        input=auth__pb2.ResendVerificationRequest,
+                        output=auth__pb2.ResendVerificationResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.resend_verification,
                 ),
                 "/llamatrade.AuthService/ValidateToken": Endpoint.unary(
                     method=MethodInfo(
@@ -362,6 +460,86 @@ class AuthServiceClient(ConnectClient):
             timeout_ms=timeout_ms,
         )
 
+    async def request_password_reset(
+        self,
+        request: auth__pb2.RequestPasswordResetRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> auth__pb2.RequestPasswordResetResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="RequestPasswordReset",
+                service_name="llamatrade.AuthService",
+                input=auth__pb2.RequestPasswordResetRequest,
+                output=auth__pb2.RequestPasswordResetResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    async def reset_password(
+        self,
+        request: auth__pb2.ResetPasswordRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> auth__pb2.ResetPasswordResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="ResetPassword",
+                service_name="llamatrade.AuthService",
+                input=auth__pb2.ResetPasswordRequest,
+                output=auth__pb2.ResetPasswordResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    async def verify_email(
+        self,
+        request: auth__pb2.VerifyEmailRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> auth__pb2.VerifyEmailResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="VerifyEmail",
+                service_name="llamatrade.AuthService",
+                input=auth__pb2.VerifyEmailRequest,
+                output=auth__pb2.VerifyEmailResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    async def resend_verification(
+        self,
+        request: auth__pb2.ResendVerificationRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> auth__pb2.ResendVerificationResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="ResendVerification",
+                service_name="llamatrade.AuthService",
+                input=auth__pb2.ResendVerificationRequest,
+                output=auth__pb2.ResendVerificationResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
     async def validate_token(
         self,
         request: auth__pb2.ValidateTokenRequest,
@@ -564,42 +742,114 @@ class AuthServiceClient(ConnectClient):
 
 
 class AuthServiceSync(Protocol):
-    def login(self, request: auth__pb2.LoginRequest, ctx: RequestContext) -> auth__pb2.LoginResponse:
+    def login(
+        self, request: auth__pb2.LoginRequest, ctx: RequestContext
+    ) -> auth__pb2.LoginResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def register(self, request: auth__pb2.RegisterRequest, ctx: RequestContext) -> auth__pb2.RegisterResponse:
+
+    def register(
+        self, request: auth__pb2.RegisterRequest, ctx: RequestContext
+    ) -> auth__pb2.RegisterResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def refresh_token(self, request: auth__pb2.RefreshTokenRequest, ctx: RequestContext) -> auth__pb2.RefreshTokenResponse:
+
+    def refresh_token(
+        self, request: auth__pb2.RefreshTokenRequest, ctx: RequestContext
+    ) -> auth__pb2.RefreshTokenResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def logout(self, request: auth__pb2.LogoutRequest, ctx: RequestContext) -> auth__pb2.LogoutResponse:
+
+    def logout(
+        self, request: auth__pb2.LogoutRequest, ctx: RequestContext
+    ) -> auth__pb2.LogoutResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def get_current_user(self, request: auth__pb2.GetCurrentUserRequest, ctx: RequestContext) -> auth__pb2.GetCurrentUserResponse:
+
+    def get_current_user(
+        self, request: auth__pb2.GetCurrentUserRequest, ctx: RequestContext
+    ) -> auth__pb2.GetCurrentUserResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def change_password(self, request: auth__pb2.ChangePasswordRequest, ctx: RequestContext) -> auth__pb2.ChangePasswordResponse:
+
+    def change_password(
+        self, request: auth__pb2.ChangePasswordRequest, ctx: RequestContext
+    ) -> auth__pb2.ChangePasswordResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def validate_token(self, request: auth__pb2.ValidateTokenRequest, ctx: RequestContext) -> auth__pb2.ValidateTokenResponse:
+
+    def request_password_reset(
+        self, request: auth__pb2.RequestPasswordResetRequest, ctx: RequestContext
+    ) -> auth__pb2.RequestPasswordResetResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def validate_a_p_i_key(self, request: auth__pb2.ValidateAPIKeyRequest, ctx: RequestContext) -> auth__pb2.ValidateAPIKeyResponse:
+
+    def reset_password(
+        self, request: auth__pb2.ResetPasswordRequest, ctx: RequestContext
+    ) -> auth__pb2.ResetPasswordResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def get_user(self, request: auth__pb2.GetUserRequest, ctx: RequestContext) -> auth__pb2.GetUserResponse:
+
+    def verify_email(
+        self, request: auth__pb2.VerifyEmailRequest, ctx: RequestContext
+    ) -> auth__pb2.VerifyEmailResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def get_tenant(self, request: auth__pb2.GetTenantRequest, ctx: RequestContext) -> auth__pb2.GetTenantResponse:
+
+    def resend_verification(
+        self, request: auth__pb2.ResendVerificationRequest, ctx: RequestContext
+    ) -> auth__pb2.ResendVerificationResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def check_permission(self, request: auth__pb2.CheckPermissionRequest, ctx: RequestContext) -> auth__pb2.CheckPermissionResponse:
+
+    def validate_token(
+        self, request: auth__pb2.ValidateTokenRequest, ctx: RequestContext
+    ) -> auth__pb2.ValidateTokenResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def create_alpaca_credentials(self, request: auth__pb2.CreateAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.CreateAlpacaCredentialsResponse:
+
+    def validate_a_p_i_key(
+        self, request: auth__pb2.ValidateAPIKeyRequest, ctx: RequestContext
+    ) -> auth__pb2.ValidateAPIKeyResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def get_alpaca_credentials(self, request: auth__pb2.GetAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.GetAlpacaCredentialsResponse:
+
+    def get_user(
+        self, request: auth__pb2.GetUserRequest, ctx: RequestContext
+    ) -> auth__pb2.GetUserResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def list_alpaca_credentials(self, request: auth__pb2.ListAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.ListAlpacaCredentialsResponse:
+
+    def get_tenant(
+        self, request: auth__pb2.GetTenantRequest, ctx: RequestContext
+    ) -> auth__pb2.GetTenantResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def delete_alpaca_credentials(self, request: auth__pb2.DeleteAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.DeleteAlpacaCredentialsResponse:
+
+    def check_permission(
+        self, request: auth__pb2.CheckPermissionRequest, ctx: RequestContext
+    ) -> auth__pb2.CheckPermissionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def validate_alpaca_credentials(self, request: auth__pb2.ValidateAlpacaCredentialsRequest, ctx: RequestContext) -> auth__pb2.ValidateAlpacaCredentialsResponse:
+
+    def create_alpaca_credentials(
+        self, request: auth__pb2.CreateAlpacaCredentialsRequest, ctx: RequestContext
+    ) -> auth__pb2.CreateAlpacaCredentialsResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    def get_alpaca_credentials(
+        self, request: auth__pb2.GetAlpacaCredentialsRequest, ctx: RequestContext
+    ) -> auth__pb2.GetAlpacaCredentialsResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    def list_alpaca_credentials(
+        self, request: auth__pb2.ListAlpacaCredentialsRequest, ctx: RequestContext
+    ) -> auth__pb2.ListAlpacaCredentialsResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    def delete_alpaca_credentials(
+        self, request: auth__pb2.DeleteAlpacaCredentialsRequest, ctx: RequestContext
+    ) -> auth__pb2.DeleteAlpacaCredentialsResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    def validate_alpaca_credentials(
+        self, request: auth__pb2.ValidateAlpacaCredentialsRequest, ctx: RequestContext
+    ) -> auth__pb2.ValidateAlpacaCredentialsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class AuthServiceWSGIApplication(ConnectWSGIApplication):
-    def __init__(self, service: AuthServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None) -> None:
+    def __init__(
+        self,
+        service: AuthServiceSync,
+        interceptors: Iterable[InterceptorSync] = (),
+        read_max_bytes: int | None = None,
+    ) -> None:
         super().__init__(
             endpoints={
                 "/llamatrade.AuthService/Login": EndpointSync.unary(
@@ -661,6 +911,46 @@ class AuthServiceWSGIApplication(ConnectWSGIApplication):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=service.change_password,
+                ),
+                "/llamatrade.AuthService/RequestPasswordReset": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="RequestPasswordReset",
+                        service_name="llamatrade.AuthService",
+                        input=auth__pb2.RequestPasswordResetRequest,
+                        output=auth__pb2.RequestPasswordResetResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.request_password_reset,
+                ),
+                "/llamatrade.AuthService/ResetPassword": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="ResetPassword",
+                        service_name="llamatrade.AuthService",
+                        input=auth__pb2.ResetPasswordRequest,
+                        output=auth__pb2.ResetPasswordResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.reset_password,
+                ),
+                "/llamatrade.AuthService/VerifyEmail": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="VerifyEmail",
+                        service_name="llamatrade.AuthService",
+                        input=auth__pb2.VerifyEmailRequest,
+                        output=auth__pb2.VerifyEmailResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.verify_email,
+                ),
+                "/llamatrade.AuthService/ResendVerification": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="ResendVerification",
+                        service_name="llamatrade.AuthService",
+                        input=auth__pb2.ResendVerificationRequest,
+                        output=auth__pb2.ResendVerificationResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.resend_verification,
                 ),
                 "/llamatrade.AuthService/ValidateToken": EndpointSync.unary(
                     method=MethodInfo(
@@ -888,6 +1178,86 @@ class AuthServiceClientSync(ConnectClientSync):
                 service_name="llamatrade.AuthService",
                 input=auth__pb2.ChangePasswordRequest,
                 output=auth__pb2.ChangePasswordResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def request_password_reset(
+        self,
+        request: auth__pb2.RequestPasswordResetRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> auth__pb2.RequestPasswordResetResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="RequestPasswordReset",
+                service_name="llamatrade.AuthService",
+                input=auth__pb2.RequestPasswordResetRequest,
+                output=auth__pb2.RequestPasswordResetResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def reset_password(
+        self,
+        request: auth__pb2.ResetPasswordRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> auth__pb2.ResetPasswordResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="ResetPassword",
+                service_name="llamatrade.AuthService",
+                input=auth__pb2.ResetPasswordRequest,
+                output=auth__pb2.ResetPasswordResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def verify_email(
+        self,
+        request: auth__pb2.VerifyEmailRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> auth__pb2.VerifyEmailResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="VerifyEmail",
+                service_name="llamatrade.AuthService",
+                input=auth__pb2.VerifyEmailRequest,
+                output=auth__pb2.VerifyEmailResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def resend_verification(
+        self,
+        request: auth__pb2.ResendVerificationRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> auth__pb2.ResendVerificationResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="ResendVerification",
+                service_name="llamatrade.AuthService",
+                input=auth__pb2.ResendVerificationRequest,
+                output=auth__pb2.ResendVerificationResponse,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
             ),
             headers=headers,

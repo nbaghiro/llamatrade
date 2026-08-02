@@ -1,21 +1,11 @@
-"""gRPC interceptors for LlamaTrade services."""
+"""Client-side interceptors for LlamaTrade service calls."""
 
-from llamatrade_proto.interceptors.auth import (
-    AuthInterceptor,
-    ClientAuthInterceptor,
-    ServiceAuthClientInterceptor,
-)
+from llamatrade_proto.interceptors.auth import ServiceAuthClientInterceptor
 from llamatrade_proto.interceptors.logging import LoggingInterceptor
-from llamatrade_proto.interceptors.telemetry import (
-    TelemetryClientInterceptor,
-    TelemetryServerInterceptor,
-)
+from llamatrade_proto.interceptors.telemetry import TelemetryClientInterceptor
 
 __all__ = [
-    "AuthInterceptor",
-    "ClientAuthInterceptor",
     "ServiceAuthClientInterceptor",
     "LoggingInterceptor",
     "TelemetryClientInterceptor",
-    "TelemetryServerInterceptor",
 ]

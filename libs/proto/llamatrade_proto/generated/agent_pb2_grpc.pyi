@@ -19,7 +19,6 @@ else:
 _T = _typing.TypeVar("_T")
 
 class _MaybeAsyncIterator(_abc.AsyncIterator[_T], _abc.Iterator[_T], metaclass=_abc_1.ABCMeta): ...
-
 class _ServicerContext(_grpc.ServicerContext, _aio.ServicerContext):  # type: ignore[misc, type-arg]
     ...
 
@@ -36,19 +35,39 @@ class AgentServiceStub:
     def __new__(cls, channel: _grpc.Channel) -> _Self: ...
     @_typing.overload
     def __new__(cls, channel: _aio.Channel) -> AgentServiceAsyncStub: ...
-    CreateSession: _grpc.UnaryUnaryMultiCallable[_agent_pb2.CreateSessionRequest, _agent_pb2.CreateSessionResponse]
+    CreateSession: _grpc.UnaryUnaryMultiCallable[
+        _agent_pb2.CreateSessionRequest, _agent_pb2.CreateSessionResponse
+    ]
     """Session management"""
-    GetSession: _grpc.UnaryUnaryMultiCallable[_agent_pb2.GetSessionRequest, _agent_pb2.GetSessionResponse]
-    ListSessions: _grpc.UnaryUnaryMultiCallable[_agent_pb2.ListSessionsRequest, _agent_pb2.ListSessionsResponse]
-    DeleteSession: _grpc.UnaryUnaryMultiCallable[_agent_pb2.DeleteSessionRequest, _agent_pb2.DeleteSessionResponse]
-    SendMessage: _grpc.UnaryUnaryMultiCallable[_agent_pb2.SendMessageRequest, _agent_pb2.SendMessageResponse]
+    GetSession: _grpc.UnaryUnaryMultiCallable[
+        _agent_pb2.GetSessionRequest, _agent_pb2.GetSessionResponse
+    ]
+    ListSessions: _grpc.UnaryUnaryMultiCallable[
+        _agent_pb2.ListSessionsRequest, _agent_pb2.ListSessionsResponse
+    ]
+    DeleteSession: _grpc.UnaryUnaryMultiCallable[
+        _agent_pb2.DeleteSessionRequest, _agent_pb2.DeleteSessionResponse
+    ]
+    SendMessage: _grpc.UnaryUnaryMultiCallable[
+        _agent_pb2.SendMessageRequest, _agent_pb2.SendMessageResponse
+    ]
     """Messaging"""
-    StreamMessage: _grpc.UnaryStreamMultiCallable[_agent_pb2.SendMessageRequest, _agent_pb2.AgentStreamEvent]
-    ConfirmToolCall: _grpc.UnaryStreamMultiCallable[_agent_pb2.ConfirmToolCallRequest, _agent_pb2.AgentStreamEvent]
-    CommitArtifact: _grpc.UnaryUnaryMultiCallable[_agent_pb2.CommitArtifactRequest, _agent_pb2.CommitArtifactResponse]
+    StreamMessage: _grpc.UnaryStreamMultiCallable[
+        _agent_pb2.SendMessageRequest, _agent_pb2.AgentStreamEvent
+    ]
+    ConfirmToolCall: _grpc.UnaryStreamMultiCallable[
+        _agent_pb2.ConfirmToolCallRequest, _agent_pb2.AgentStreamEvent
+    ]
+    CommitArtifact: _grpc.UnaryUnaryMultiCallable[
+        _agent_pb2.CommitArtifactRequest, _agent_pb2.CommitArtifactResponse
+    ]
     """Artifacts"""
-    GetArtifact: _grpc.UnaryUnaryMultiCallable[_agent_pb2.GetArtifactRequest, _agent_pb2.GetArtifactResponse]
-    GetSuggestedPrompts: _grpc.UnaryUnaryMultiCallable[_agent_pb2.GetSuggestedPromptsRequest, _agent_pb2.GetSuggestedPromptsResponse]
+    GetArtifact: _grpc.UnaryUnaryMultiCallable[
+        _agent_pb2.GetArtifactRequest, _agent_pb2.GetArtifactResponse
+    ]
+    GetSuggestedPrompts: _grpc.UnaryUnaryMultiCallable[
+        _agent_pb2.GetSuggestedPromptsRequest, _agent_pb2.GetSuggestedPromptsResponse
+    ]
     """Context-aware suggestions"""
 
 @_typing.type_check_only
@@ -59,19 +78,39 @@ class AgentServiceAsyncStub(AgentServiceStub):
     """
 
     def __init__(self, channel: _aio.Channel) -> None: ...
-    CreateSession: _aio.UnaryUnaryMultiCallable[_agent_pb2.CreateSessionRequest, _agent_pb2.CreateSessionResponse]  # type: ignore[assignment]
+    CreateSession: _aio.UnaryUnaryMultiCallable[
+        _agent_pb2.CreateSessionRequest, _agent_pb2.CreateSessionResponse
+    ]  # type: ignore[assignment]
     """Session management"""
-    GetSession: _aio.UnaryUnaryMultiCallable[_agent_pb2.GetSessionRequest, _agent_pb2.GetSessionResponse]  # type: ignore[assignment]
-    ListSessions: _aio.UnaryUnaryMultiCallable[_agent_pb2.ListSessionsRequest, _agent_pb2.ListSessionsResponse]  # type: ignore[assignment]
-    DeleteSession: _aio.UnaryUnaryMultiCallable[_agent_pb2.DeleteSessionRequest, _agent_pb2.DeleteSessionResponse]  # type: ignore[assignment]
-    SendMessage: _aio.UnaryUnaryMultiCallable[_agent_pb2.SendMessageRequest, _agent_pb2.SendMessageResponse]  # type: ignore[assignment]
+    GetSession: _aio.UnaryUnaryMultiCallable[
+        _agent_pb2.GetSessionRequest, _agent_pb2.GetSessionResponse
+    ]  # type: ignore[assignment]
+    ListSessions: _aio.UnaryUnaryMultiCallable[
+        _agent_pb2.ListSessionsRequest, _agent_pb2.ListSessionsResponse
+    ]  # type: ignore[assignment]
+    DeleteSession: _aio.UnaryUnaryMultiCallable[
+        _agent_pb2.DeleteSessionRequest, _agent_pb2.DeleteSessionResponse
+    ]  # type: ignore[assignment]
+    SendMessage: _aio.UnaryUnaryMultiCallable[
+        _agent_pb2.SendMessageRequest, _agent_pb2.SendMessageResponse
+    ]  # type: ignore[assignment]
     """Messaging"""
-    StreamMessage: _aio.UnaryStreamMultiCallable[_agent_pb2.SendMessageRequest, _agent_pb2.AgentStreamEvent]  # type: ignore[assignment]
-    ConfirmToolCall: _aio.UnaryStreamMultiCallable[_agent_pb2.ConfirmToolCallRequest, _agent_pb2.AgentStreamEvent]  # type: ignore[assignment]
-    CommitArtifact: _aio.UnaryUnaryMultiCallable[_agent_pb2.CommitArtifactRequest, _agent_pb2.CommitArtifactResponse]  # type: ignore[assignment]
+    StreamMessage: _aio.UnaryStreamMultiCallable[
+        _agent_pb2.SendMessageRequest, _agent_pb2.AgentStreamEvent
+    ]  # type: ignore[assignment]
+    ConfirmToolCall: _aio.UnaryStreamMultiCallable[
+        _agent_pb2.ConfirmToolCallRequest, _agent_pb2.AgentStreamEvent
+    ]  # type: ignore[assignment]
+    CommitArtifact: _aio.UnaryUnaryMultiCallable[
+        _agent_pb2.CommitArtifactRequest, _agent_pb2.CommitArtifactResponse
+    ]  # type: ignore[assignment]
     """Artifacts"""
-    GetArtifact: _aio.UnaryUnaryMultiCallable[_agent_pb2.GetArtifactRequest, _agent_pb2.GetArtifactResponse]  # type: ignore[assignment]
-    GetSuggestedPrompts: _aio.UnaryUnaryMultiCallable[_agent_pb2.GetSuggestedPromptsRequest, _agent_pb2.GetSuggestedPromptsResponse]  # type: ignore[assignment]
+    GetArtifact: _aio.UnaryUnaryMultiCallable[
+        _agent_pb2.GetArtifactRequest, _agent_pb2.GetArtifactResponse
+    ]  # type: ignore[assignment]
+    GetSuggestedPrompts: _aio.UnaryUnaryMultiCallable[
+        _agent_pb2.GetSuggestedPromptsRequest, _agent_pb2.GetSuggestedPromptsResponse
+    ]  # type: ignore[assignment]
     """Context-aware suggestions"""
 
 class AgentServiceServicer(metaclass=_abc_1.ABCMeta):
@@ -85,7 +124,9 @@ class AgentServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _agent_pb2.CreateSessionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_agent_pb2.CreateSessionResponse, _abc.Awaitable[_agent_pb2.CreateSessionResponse]]:
+    ) -> _typing.Union[
+        _agent_pb2.CreateSessionResponse, _abc.Awaitable[_agent_pb2.CreateSessionResponse]
+    ]:
         """Session management"""
 
     @_abc_1.abstractmethod
@@ -93,28 +134,33 @@ class AgentServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _agent_pb2.GetSessionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_agent_pb2.GetSessionResponse, _abc.Awaitable[_agent_pb2.GetSessionResponse]]: ...
-
+    ) -> _typing.Union[
+        _agent_pb2.GetSessionResponse, _abc.Awaitable[_agent_pb2.GetSessionResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def ListSessions(
         self,
         request: _agent_pb2.ListSessionsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_agent_pb2.ListSessionsResponse, _abc.Awaitable[_agent_pb2.ListSessionsResponse]]: ...
-
+    ) -> _typing.Union[
+        _agent_pb2.ListSessionsResponse, _abc.Awaitable[_agent_pb2.ListSessionsResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def DeleteSession(
         self,
         request: _agent_pb2.DeleteSessionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_agent_pb2.DeleteSessionResponse, _abc.Awaitable[_agent_pb2.DeleteSessionResponse]]: ...
-
+    ) -> _typing.Union[
+        _agent_pb2.DeleteSessionResponse, _abc.Awaitable[_agent_pb2.DeleteSessionResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def SendMessage(
         self,
         request: _agent_pb2.SendMessageRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_agent_pb2.SendMessageResponse, _abc.Awaitable[_agent_pb2.SendMessageResponse]]:
+    ) -> _typing.Union[
+        _agent_pb2.SendMessageResponse, _abc.Awaitable[_agent_pb2.SendMessageResponse]
+    ]:
         """Messaging"""
 
     @_abc_1.abstractmethod
@@ -122,21 +168,25 @@ class AgentServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _agent_pb2.SendMessageRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_abc.Iterator[_agent_pb2.AgentStreamEvent], _abc.AsyncIterator[_agent_pb2.AgentStreamEvent]]: ...
-
+    ) -> _typing.Union[
+        _abc.Iterator[_agent_pb2.AgentStreamEvent], _abc.AsyncIterator[_agent_pb2.AgentStreamEvent]
+    ]: ...
     @_abc_1.abstractmethod
     def ConfirmToolCall(
         self,
         request: _agent_pb2.ConfirmToolCallRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_abc.Iterator[_agent_pb2.AgentStreamEvent], _abc.AsyncIterator[_agent_pb2.AgentStreamEvent]]: ...
-
+    ) -> _typing.Union[
+        _abc.Iterator[_agent_pb2.AgentStreamEvent], _abc.AsyncIterator[_agent_pb2.AgentStreamEvent]
+    ]: ...
     @_abc_1.abstractmethod
     def CommitArtifact(
         self,
         request: _agent_pb2.CommitArtifactRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_agent_pb2.CommitArtifactResponse, _abc.Awaitable[_agent_pb2.CommitArtifactResponse]]:
+    ) -> _typing.Union[
+        _agent_pb2.CommitArtifactResponse, _abc.Awaitable[_agent_pb2.CommitArtifactResponse]
+    ]:
         """Artifacts"""
 
     @_abc_1.abstractmethod
@@ -144,14 +194,20 @@ class AgentServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _agent_pb2.GetArtifactRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_agent_pb2.GetArtifactResponse, _abc.Awaitable[_agent_pb2.GetArtifactResponse]]: ...
-
+    ) -> _typing.Union[
+        _agent_pb2.GetArtifactResponse, _abc.Awaitable[_agent_pb2.GetArtifactResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def GetSuggestedPrompts(
         self,
         request: _agent_pb2.GetSuggestedPromptsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_agent_pb2.GetSuggestedPromptsResponse, _abc.Awaitable[_agent_pb2.GetSuggestedPromptsResponse]]:
+    ) -> _typing.Union[
+        _agent_pb2.GetSuggestedPromptsResponse,
+        _abc.Awaitable[_agent_pb2.GetSuggestedPromptsResponse],
+    ]:
         """Context-aware suggestions"""
 
-def add_AgentServiceServicer_to_server(servicer: AgentServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...
+def add_AgentServiceServicer_to_server(
+    servicer: AgentServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]
+) -> None: ...

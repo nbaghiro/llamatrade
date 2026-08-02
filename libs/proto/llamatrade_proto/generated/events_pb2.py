@@ -4,44 +4,53 @@
 # source: events.proto
 # Protobuf Python Version: 6.30.2
 """Generated protocol buffer code."""
+
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import runtime_version as _runtime_version
 from google.protobuf import symbol_database as _symbol_database
 from google.protobuf.internal import builder as _builder
+
 _runtime_version.ValidateProtobufRuntimeVersion(
-    _runtime_version.Domain.PUBLIC,
-    6,
-    30,
-    2,
-    '',
-    'events.proto'
+    _runtime_version.Domain.PUBLIC, 6, 30, 2, "", "events.proto"
 )
 # @@protoc_insertion_point(imports)
 
 _sym_db = _symbol_database.Default()
 
 
-
-
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0c\x65vents.proto\x12\nllamatrade\"\xc9\x02\n\rEventEnvelope\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12)\n\x04type\x18\x02 \x01(\x0e\x32\x15.llamatrade.EventTypeR\x04type\x12\x1b\n\ttenant_id\x18\x03 \x01(\tR\x08tenantId\x12\x17\n\x07user_id\x18\x04 \x01(\tR\x06userId\x12+\n\x12\x63reated_at_unix_ms\x18\x05 \x01(\x03R\x0f\x63reatedAtUnixMs\x12\x18\n\x07payload\x18\x06 \x01(\x0cR\x07payload\x12\x43\n\x08metadata\x18\x07 \x03(\x0b\x32\'.llamatrade.EventEnvelope.MetadataEntryR\x08metadata\x1a;\n\rMetadataEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01\"\xef\x02\n\nLedgerFill\x12\x1b\n\ttenant_id\x18\x01 \x01(\tR\x08tenantId\x12\x1d\n\naccount_id\x18\x02 \x01(\tR\taccountId\x12\x1b\n\tsleeve_id\x18\x03 \x01(\tR\x08sleeveId\x12&\n\x0f\x63lient_order_id\x18\x04 \x01(\tR\rclientOrderId\x12\x19\n\x08order_id\x18\x05 \x01(\tR\x07orderId\x12\x16\n\x06symbol\x18\x06 \x01(\tR\x06symbol\x12\x12\n\x04side\x18\x07 \x01(\tR\x04side\x12\x10\n\x03qty\x18\x08 \x01(\tR\x03qty\x12\x14\n\x05price\x18\t \x01(\tR\x05price\x12\x12\n\x04\x66\x65\x65s\x18\n \x01(\tR\x04\x66\x65\x65s\x12\x1d\n\ncost_basis\x18\x0b \x01(\tR\tcostBasis\x12!\n\x0crealized_pnl\x18\x0c \x01(\tR\x0brealizedPnl\x12\x1b\n\tfilled_at\x18\r \x01(\tR\x08\x66illedAt\"\x96\x02\n\x11LedgerReservation\x12\x1b\n\ttenant_id\x18\x01 \x01(\tR\x08tenantId\x12\x1d\n\naccount_id\x18\x02 \x01(\tR\taccountId\x12\x1b\n\tsleeve_id\x18\x03 \x01(\tR\x08sleeveId\x12&\n\x0f\x63lient_order_id\x18\x04 \x01(\tR\rclientOrderId\x12\x1d\n\nevent_type\x18\x05 \x01(\tR\teventType\x12\x1a\n\x08reserved\x18\x06 \x01(\tR\x08reserved\x12\x16\n\x06symbol\x18\x07 \x01(\tR\x06symbol\x12\x12\n\x04side\x18\x08 \x01(\tR\x04side\x12\x19\n\x08order_id\x18\t \x01(\tR\x07orderId*\x97\x03\n\tEventType\x12\x1a\n\x16\x45VENT_TYPE_UNSPECIFIED\x10\x00\x12\x1e\n\x1a\x45VENT_TYPE_ORDER_SUBMITTED\x10\x01\x12\x1b\n\x17\x45VENT_TYPE_ORDER_FILLED\x10\x02\x12\x1e\n\x1a\x45VENT_TYPE_ORDER_CANCELLED\x10\x03\x12\x1d\n\x19\x45VENT_TYPE_ORDER_REJECTED\x10\x04\x12\x1c\n\x18\x45VENT_TYPE_ORDER_UPDATED\x10\x05\x12\x1e\n\x1a\x45VENT_TYPE_POSITION_OPENED\x10\n\x12\x1e\n\x1a\x45VENT_TYPE_POSITION_CLOSED\x10\x0b\x12\x1f\n\x1b\x45VENT_TYPE_POSITION_UPDATED\x10\x0c\x12\x1a\n\x16\x45VENT_TYPE_LEDGER_FILL\x10\x14\x12!\n\x1d\x45VENT_TYPE_LEDGER_RESERVATION\x10\x15\x12 \n\x1c\x45VENT_TYPE_BACKTEST_PROGRESS\x10\x1e\x12\x12\n\x0e\x45VENT_TYPE_BAR\x10(B\x87\x01\n\x0e\x63om.llamatradeB\x0b\x45ventsProtoP\x01Z github.com/llamatrade/api/gen/go\xa2\x02\x03LXX\xaa\x02\nLlamatrade\xca\x02\nLlamatrade\xe2\x02\x16Llamatrade\\GPBMetadata\xea\x02\nLlamatradeb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
+    b'\n\x0c\x65vents.proto\x12\nllamatrade"\xc9\x02\n\rEventEnvelope\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12)\n\x04type\x18\x02 \x01(\x0e\x32\x15.llamatrade.EventTypeR\x04type\x12\x1b\n\ttenant_id\x18\x03 \x01(\tR\x08tenantId\x12\x17\n\x07user_id\x18\x04 \x01(\tR\x06userId\x12+\n\x12\x63reated_at_unix_ms\x18\x05 \x01(\x03R\x0f\x63reatedAtUnixMs\x12\x18\n\x07payload\x18\x06 \x01(\x0cR\x07payload\x12\x43\n\x08metadata\x18\x07 \x03(\x0b\x32\'.llamatrade.EventEnvelope.MetadataEntryR\x08metadata\x1a;\n\rMetadataEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01"\x91\x04\n\x11NotificationEvent\x12<\n\x08\x63\x61tegory\x18\x01 \x01(\x0e\x32 .llamatrade.NotificationCategoryR\x08\x63\x61tegory\x12<\n\x08severity\x18\x02 \x01(\x0e\x32 .llamatrade.NotificationSeverityR\x08severity\x12!\n\x0c\x65xecution_id\x18\x03 \x01(\tR\x0b\x65xecutionId\x12\x1f\n\x0bstrategy_id\x18\x04 \x01(\tR\nstrategyId\x12\x1d\n\nsession_id\x18\x05 \x01(\tR\tsessionId\x12\x1d\n\naccount_id\x18\x06 \x01(\tR\taccountId\x12\x1b\n\tsleeve_id\x18\x07 \x01(\tR\x08sleeveId\x12\x1f\n\x0b\x62\x61\x63ktest_id\x18\x08 \x01(\tR\nbacktestId\x12\x16\n\x06symbol\x18\t \x01(\tR\x06symbol\x12\x16\n\x06\x61mount\x18\n \x01(\tR\x06\x61mount\x12\x16\n\x06reason\x18\x0b \x01(\tR\x06reason\x12>\n\x05\x65xtra\x18\x0c \x03(\x0b\x32(.llamatrade.NotificationEvent.ExtraEntryR\x05\x65xtra\x1a\x38\n\nExtraEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01"\xef\x02\n\nLedgerFill\x12\x1b\n\ttenant_id\x18\x01 \x01(\tR\x08tenantId\x12\x1d\n\naccount_id\x18\x02 \x01(\tR\taccountId\x12\x1b\n\tsleeve_id\x18\x03 \x01(\tR\x08sleeveId\x12&\n\x0f\x63lient_order_id\x18\x04 \x01(\tR\rclientOrderId\x12\x19\n\x08order_id\x18\x05 \x01(\tR\x07orderId\x12\x16\n\x06symbol\x18\x06 \x01(\tR\x06symbol\x12\x12\n\x04side\x18\x07 \x01(\tR\x04side\x12\x10\n\x03qty\x18\x08 \x01(\tR\x03qty\x12\x14\n\x05price\x18\t \x01(\tR\x05price\x12\x12\n\x04\x66\x65\x65s\x18\n \x01(\tR\x04\x66\x65\x65s\x12\x1d\n\ncost_basis\x18\x0b \x01(\tR\tcostBasis\x12!\n\x0crealized_pnl\x18\x0c \x01(\tR\x0brealizedPnl\x12\x1b\n\tfilled_at\x18\r \x01(\tR\x08\x66illedAt"\x96\x02\n\x11LedgerReservation\x12\x1b\n\ttenant_id\x18\x01 \x01(\tR\x08tenantId\x12\x1d\n\naccount_id\x18\x02 \x01(\tR\taccountId\x12\x1b\n\tsleeve_id\x18\x03 \x01(\tR\x08sleeveId\x12&\n\x0f\x63lient_order_id\x18\x04 \x01(\tR\rclientOrderId\x12\x1d\n\nevent_type\x18\x05 \x01(\tR\teventType\x12\x1a\n\x08reserved\x18\x06 \x01(\tR\x08reserved\x12\x16\n\x06symbol\x18\x07 \x01(\tR\x06symbol\x12\x12\n\x04side\x18\x08 \x01(\tR\x04side\x12\x19\n\x08order_id\x18\t \x01(\tR\x07orderId*\xb4\x03\n\tEventType\x12\x1a\n\x16\x45VENT_TYPE_UNSPECIFIED\x10\x00\x12\x1e\n\x1a\x45VENT_TYPE_ORDER_SUBMITTED\x10\x01\x12\x1b\n\x17\x45VENT_TYPE_ORDER_FILLED\x10\x02\x12\x1e\n\x1a\x45VENT_TYPE_ORDER_CANCELLED\x10\x03\x12\x1d\n\x19\x45VENT_TYPE_ORDER_REJECTED\x10\x04\x12\x1c\n\x18\x45VENT_TYPE_ORDER_UPDATED\x10\x05\x12\x1e\n\x1a\x45VENT_TYPE_POSITION_OPENED\x10\n\x12\x1e\n\x1a\x45VENT_TYPE_POSITION_CLOSED\x10\x0b\x12\x1f\n\x1b\x45VENT_TYPE_POSITION_UPDATED\x10\x0c\x12\x1a\n\x16\x45VENT_TYPE_LEDGER_FILL\x10\x14\x12!\n\x1d\x45VENT_TYPE_LEDGER_RESERVATION\x10\x15\x12 \n\x1c\x45VENT_TYPE_BACKTEST_PROGRESS\x10\x1e\x12\x12\n\x0e\x45VENT_TYPE_BAR\x10(\x12\x1b\n\x17\x45VENT_TYPE_NOTIFICATION\x10\x32*\xec\x0f\n\x14NotificationCategory\x12%\n!NOTIFICATION_CATEGORY_UNSPECIFIED\x10\x00\x12\'\n#NOTIFICATION_CATEGORY_SLEEVE_FROZEN\x10\x01\x12*\n&NOTIFICATION_CATEGORY_FILL_QUARANTINED\x10\x02\x12\x30\n,NOTIFICATION_CATEGORY_EXTERNAL_TRADE_ADOPTED\x10\x03\x12\x33\n/NOTIFICATION_CATEGORY_CORPORATE_ACTION_PROPOSED\x10\x04\x12\x32\n.NOTIFICATION_CATEGORY_CORPORATE_ACTION_APPLIED\x10\x05\x12&\n"NOTIFICATION_CATEGORY_ORDER_FILLED\x10\n\x12(\n$NOTIFICATION_CATEGORY_ORDER_REJECTED\x10\x0b\x12)\n%NOTIFICATION_CATEGORY_POSITION_OPENED\x10\x0c\x12)\n%NOTIFICATION_CATEGORY_POSITION_CLOSED\x10\r\x12(\n$NOTIFICATION_CATEGORY_POSITION_DRIFT\x10\x0e\x12%\n!NOTIFICATION_CATEGORY_RISK_BREACH\x10\x0f\x12,\n(NOTIFICATION_CATEGORY_EVALUATION_STALLED\x10\x10\x12-\n)NOTIFICATION_CATEGORY_SYMBOL_NOT_TRADABLE\x10\x11\x12)\n%NOTIFICATION_CATEGORY_CONNECTION_LOST\x10\x12\x12(\n$NOTIFICATION_CATEGORY_STRATEGY_ERROR\x10\x13\x12)\n%NOTIFICATION_CATEGORY_SESSION_STARTED\x10\x14\x12)\n%NOTIFICATION_CATEGORY_SESSION_STOPPED\x10\x15\x12\'\n#NOTIFICATION_CATEGORY_SESSION_ERROR\x10\x16\x12\x33\n/NOTIFICATION_CATEGORY_CIRCUIT_BREAKER_TRIGGERED\x10\x17\x12/\n+NOTIFICATION_CATEGORY_CIRCUIT_BREAKER_RESET\x10\x18\x12\'\n#NOTIFICATION_CATEGORY_STOP_LOSS_HIT\x10\x19\x12)\n%NOTIFICATION_CATEGORY_TAKE_PROFIT_HIT\x10\x1a\x12.\n*NOTIFICATION_CATEGORY_RECONCILIATION_DRIFT\x10\x1b\x12+\n\'NOTIFICATION_CATEGORY_EXECUTION_STARTED\x10(\x12+\n\'NOTIFICATION_CATEGORY_EXECUTION_STOPPED\x10)\x12(\n$NOTIFICATION_CATEGORY_FUNDING_FAILED\x10*\x12\x31\n-NOTIFICATION_CATEGORY_SLEEVE_RELEASE_DEFERRED\x10+\x12-\n)NOTIFICATION_CATEGORY_EXECUTION_CANCELLED\x10,\x12,\n(NOTIFICATION_CATEGORY_PLAN_LIMIT_REACHED\x10-\x12,\n(NOTIFICATION_CATEGORY_BACKTEST_COMPLETED\x10\x32\x12)\n%NOTIFICATION_CATEGORY_BACKTEST_FAILED\x10\x33\x12+\n\'NOTIFICATION_CATEGORY_PAYMENT_SUCCEEDED\x10<\x12(\n$NOTIFICATION_CATEGORY_PAYMENT_FAILED\x10=\x12&\n"NOTIFICATION_CATEGORY_TRIAL_ENDING\x10>\x12.\n*NOTIFICATION_CATEGORY_SUBSCRIPTION_UPDATED\x10?\x12/\n+NOTIFICATION_CATEGORY_SUBSCRIPTION_CANCELED\x10@\x12!\n\x1dNOTIFICATION_CATEGORY_WELCOME\x10\x46\x12*\n&NOTIFICATION_CATEGORY_PASSWORD_CHANGED\x10G\x12(\n$NOTIFICATION_CATEGORY_ACCOUNT_LOCKED\x10H\x12,\n(NOTIFICATION_CATEGORY_EMAIL_VERIFICATION\x10I\x12(\n$NOTIFICATION_CATEGORY_PASSWORD_RESET\x10J\x12.\n*NOTIFICATION_CATEGORY_CONFIRMATION_PENDING\x10P\x12/\n+NOTIFICATION_CATEGORY_PRICE_ALERT_TRIGGERED\x10Z\x12*\n&NOTIFICATION_CATEGORY_WEBHOOK_DISABLED\x10[*\xcb\x01\n\x14NotificationSeverity\x12%\n!NOTIFICATION_SEVERITY_UNSPECIFIED\x10\x00\x12\x1e\n\x1aNOTIFICATION_SEVERITY_INFO\x10\x01\x12$\n NOTIFICATION_SEVERITY_ACTIONABLE\x10\x02\x12"\n\x1eNOTIFICATION_SEVERITY_CRITICAL\x10\x03\x12"\n\x1eNOTIFICATION_SEVERITY_SECURITY\x10\x04\x42\x87\x01\n\x0e\x63om.llamatradeB\x0b\x45ventsProtoP\x01Z github.com/llamatrade/api/gen/go\xa2\x02\x03LXX\xaa\x02\nLlamatrade\xca\x02\nLlamatrade\xe2\x02\x16Llamatrade\\GPBMetadata\xea\x02\nLlamatradeb\x06proto3'
+)
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
-_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'events_pb2', _globals)
+_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "events_pb2", _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
-  _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'\n\016com.llamatradeB\013EventsProtoP\001Z github.com/llamatrade/api/gen/go\242\002\003LXX\252\002\nLlamatrade\312\002\nLlamatrade\342\002\026Llamatrade\\GPBMetadata\352\002\nLlamatrade'
-  _globals['_EVENTENVELOPE_METADATAENTRY']._loaded_options = None
-  _globals['_EVENTENVELOPE_METADATAENTRY']._serialized_options = b'8\001'
-  _globals['_EVENTTYPE']._serialized_start=1012
-  _globals['_EVENTTYPE']._serialized_end=1419
-  _globals['_EVENTENVELOPE']._serialized_start=29
-  _globals['_EVENTENVELOPE']._serialized_end=358
-  _globals['_EVENTENVELOPE_METADATAENTRY']._serialized_start=299
-  _globals['_EVENTENVELOPE_METADATAENTRY']._serialized_end=358
-  _globals['_LEDGERFILL']._serialized_start=361
-  _globals['_LEDGERFILL']._serialized_end=728
-  _globals['_LEDGERRESERVATION']._serialized_start=731
-  _globals['_LEDGERRESERVATION']._serialized_end=1009
+    _globals["DESCRIPTOR"]._loaded_options = None
+    _globals[
+        "DESCRIPTOR"
+    ]._serialized_options = b"\n\016com.llamatradeB\013EventsProtoP\001Z github.com/llamatrade/api/gen/go\242\002\003LXX\252\002\nLlamatrade\312\002\nLlamatrade\342\002\026Llamatrade\\GPBMetadata\352\002\nLlamatrade"
+    _globals["_EVENTENVELOPE_METADATAENTRY"]._loaded_options = None
+    _globals["_EVENTENVELOPE_METADATAENTRY"]._serialized_options = b"8\001"
+    _globals["_NOTIFICATIONEVENT_EXTRAENTRY"]._loaded_options = None
+    _globals["_NOTIFICATIONEVENT_EXTRAENTRY"]._serialized_options = b"8\001"
+    _globals["_EVENTTYPE"]._serialized_start = 1544
+    _globals["_EVENTTYPE"]._serialized_end = 1980
+    _globals["_NOTIFICATIONCATEGORY"]._serialized_start = 1983
+    _globals["_NOTIFICATIONCATEGORY"]._serialized_end = 4011
+    _globals["_NOTIFICATIONSEVERITY"]._serialized_start = 4014
+    _globals["_NOTIFICATIONSEVERITY"]._serialized_end = 4217
+    _globals["_EVENTENVELOPE"]._serialized_start = 29
+    _globals["_EVENTENVELOPE"]._serialized_end = 358
+    _globals["_EVENTENVELOPE_METADATAENTRY"]._serialized_start = 299
+    _globals["_EVENTENVELOPE_METADATAENTRY"]._serialized_end = 358
+    _globals["_NOTIFICATIONEVENT"]._serialized_start = 361
+    _globals["_NOTIFICATIONEVENT"]._serialized_end = 890
+    _globals["_NOTIFICATIONEVENT_EXTRAENTRY"]._serialized_start = 834
+    _globals["_NOTIFICATIONEVENT_EXTRAENTRY"]._serialized_end = 890
+    _globals["_LEDGERFILL"]._serialized_start = 893
+    _globals["_LEDGERFILL"]._serialized_end = 1260
+    _globals["_LEDGERRESERVATION"]._serialized_start = 1263
+    _globals["_LEDGERRESERVATION"]._serialized_end = 1541
 # @@protoc_insertion_point(module_scope)

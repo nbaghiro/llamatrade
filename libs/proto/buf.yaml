@@ -4,12 +4,20 @@ modules:
     name: buf.build/llamatrade/api
 lint:
   use:
-    - DEFAULT
+    - STANDARD
   except:
     - PACKAGE_VERSION_SUFFIX
+    # Shipped layout and naming predate the lint gate; renaming messages or
+    # moving the proto root is generated-code breaking, so these are accepted.
+    - PACKAGE_DIRECTORY_MATCH
+    - RPC_REQUEST_RESPONSE_UNIQUE
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
   rpc_allow_same_request_response: false
   rpc_allow_google_protobuf_empty_requests: true
   rpc_allow_google_protobuf_empty_responses: true
 breaking:
   use:
-    - FILE
+    # WIRE_JSON: all consumers are in-repo and regenerate together, so the
+    # contract is wire + JSON-name compatibility; reserved deletions are legal.
+    - WIRE_JSON

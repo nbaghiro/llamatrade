@@ -10,6 +10,7 @@ from google.protobuf.internal import containers as containers
 from google.protobuf.internal import enum_type_wrapper as enum_type_wrapper
 import builtins as builtins
 import common_pb2 as common_pb2
+import events_pb2 as events_pb2
 import sys
 import typing as typing
 
@@ -24,7 +25,9 @@ class _NotificationType:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _NotificationTypeEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_NotificationType.ValueType], builtins.type):
+class _NotificationTypeEnumTypeWrapper(
+    enum_type_wrapper._EnumTypeWrapper[_NotificationType.ValueType], builtins.type
+):
     DESCRIPTOR: descriptor.EnumDescriptor
     NOTIFICATION_TYPE_UNSPECIFIED: _NotificationType.ValueType  # 0
     NOTIFICATION_TYPE_INFO: _NotificationType.ValueType  # 1
@@ -58,7 +61,9 @@ class _ChannelType:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _ChannelTypeEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_ChannelType.ValueType], builtins.type):
+class _ChannelTypeEnumTypeWrapper(
+    enum_type_wrapper._EnumTypeWrapper[_ChannelType.ValueType], builtins.type
+):
     DESCRIPTOR: descriptor.EnumDescriptor
     CHANNEL_TYPE_UNSPECIFIED: _ChannelType.ValueType  # 0
     CHANNEL_TYPE_EMAIL: _ChannelType.ValueType  # 1
@@ -85,7 +90,9 @@ class _AlertConditionType:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _AlertConditionTypeEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_AlertConditionType.ValueType], builtins.type):
+class _AlertConditionTypeEnumTypeWrapper(
+    enum_type_wrapper._EnumTypeWrapper[_AlertConditionType.ValueType], builtins.type
+):
     DESCRIPTOR: descriptor.EnumDescriptor
     ALERT_CONDITION_TYPE_UNSPECIFIED: _AlertConditionType.ValueType  # 0
     ALERT_CONDITION_TYPE_PRICE_ABOVE: _AlertConditionType.ValueType  # 1
@@ -118,7 +125,9 @@ class _AlertStatus:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _AlertStatusEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_AlertStatus.ValueType], builtins.type):
+class _AlertStatusEnumTypeWrapper(
+    enum_type_wrapper._EnumTypeWrapper[_AlertStatus.ValueType], builtins.type
+):
     DESCRIPTOR: descriptor.EnumDescriptor
     ALERT_STATUS_UNSPECIFIED: _AlertStatus.ValueType  # 0
     ALERT_STATUS_ACTIVE: _AlertStatus.ValueType  # 1
@@ -137,7 +146,9 @@ class _NotificationStatus:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _NotificationStatusEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_NotificationStatus.ValueType], builtins.type):
+class _NotificationStatusEnumTypeWrapper(
+    enum_type_wrapper._EnumTypeWrapper[_NotificationStatus.ValueType], builtins.type
+):
     DESCRIPTOR: descriptor.EnumDescriptor
     NOTIFICATION_STATUS_UNSPECIFIED: _NotificationStatus.ValueType  # 0
     NOTIFICATION_STATUS_PENDING: _NotificationStatus.ValueType  # 1
@@ -158,7 +169,9 @@ class _NotificationPriority:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _NotificationPriorityEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_NotificationPriority.ValueType], builtins.type):
+class _NotificationPriorityEnumTypeWrapper(
+    enum_type_wrapper._EnumTypeWrapper[_NotificationPriority.ValueType], builtins.type
+):
     DESCRIPTOR: descriptor.EnumDescriptor
     NOTIFICATION_PRIORITY_UNSPECIFIED: _NotificationPriority.ValueType  # 0
     NOTIFICATION_PRIORITY_LOW: _NotificationPriority.ValueType  # 1
@@ -242,9 +255,32 @@ class Notification(message.Message):
         created_at: common_pb2.Timestamp | None = ...,
         read_at: common_pb2.Timestamp | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at", "read_at", b"read_at"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal[
+        "created_at", b"created_at", "read_at", b"read_at"
+    ]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at", "id", b"id", "is_read", b"is_read", "message", b"message", "metadata", b"metadata", "read_at", b"read_at", "tenant_id", b"tenant_id", "title", b"title", "type", b"type", "user_id", b"user_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "created_at",
+        b"created_at",
+        "id",
+        b"id",
+        "is_read",
+        b"is_read",
+        "message",
+        b"message",
+        "metadata",
+        b"metadata",
+        "read_at",
+        b"read_at",
+        "tenant_id",
+        b"tenant_id",
+        "title",
+        b"title",
+        "type",
+        b"type",
+        "user_id",
+        b"user_id",
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -307,9 +343,45 @@ class Alert(message.Message):
         created_at: common_pb2.Timestamp | None = ...,
         updated_at: common_pb2.Timestamp | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["condition", b"condition", "created_at", b"created_at", "last_triggered_at", b"last_triggered_at", "updated_at", b"updated_at"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal[
+        "condition",
+        b"condition",
+        "created_at",
+        b"created_at",
+        "last_triggered_at",
+        b"last_triggered_at",
+        "updated_at",
+        b"updated_at",
+    ]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["channels", b"channels", "condition", b"condition", "cooldown_minutes", b"cooldown_minutes", "created_at", b"created_at", "description", b"description", "id", b"id", "is_active", b"is_active", "last_triggered_at", b"last_triggered_at", "name", b"name", "tenant_id", b"tenant_id", "times_triggered", b"times_triggered", "updated_at", b"updated_at", "user_id", b"user_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "channels",
+        b"channels",
+        "condition",
+        b"condition",
+        "cooldown_minutes",
+        b"cooldown_minutes",
+        "created_at",
+        b"created_at",
+        "description",
+        b"description",
+        "id",
+        b"id",
+        "is_active",
+        b"is_active",
+        "last_triggered_at",
+        b"last_triggered_at",
+        "name",
+        b"name",
+        "tenant_id",
+        b"tenant_id",
+        "times_triggered",
+        b"times_triggered",
+        "updated_at",
+        b"updated_at",
+        "user_id",
+        b"user_id",
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -339,7 +411,16 @@ class AlertCondition(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["threshold", b"threshold"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["strategy_id", b"strategy_id", "symbol", b"symbol", "threshold", b"threshold", "type", b"type"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "strategy_id",
+        b"strategy_id",
+        "symbol",
+        b"symbol",
+        "threshold",
+        b"threshold",
+        "type",
+        b"type",
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -401,9 +482,30 @@ class Channel(message.Message):
         created_at: common_pb2.Timestamp | None = ...,
         updated_at: common_pb2.Timestamp | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at", "updated_at", b"updated_at"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal[
+        "created_at", b"created_at", "updated_at", b"updated_at"
+    ]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["config", b"config", "created_at", b"created_at", "id", b"id", "is_enabled", b"is_enabled", "is_verified", b"is_verified", "tenant_id", b"tenant_id", "type", b"type", "updated_at", b"updated_at", "user_id", b"user_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "config",
+        b"config",
+        "created_at",
+        b"created_at",
+        "id",
+        b"id",
+        "is_enabled",
+        b"is_enabled",
+        "is_verified",
+        b"is_verified",
+        "tenant_id",
+        b"tenant_id",
+        "type",
+        b"type",
+        "updated_at",
+        b"updated_at",
+        "user_id",
+        b"user_id",
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -436,9 +538,20 @@ class ListNotificationsRequest(message.Message):
         types: abc.Iterable[NotificationType.ValueType] | None = ...,
         pagination: common_pb2.PaginationRequest | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context", "pagination", b"pagination"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal[
+        "context", b"context", "pagination", b"pagination"
+    ]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "pagination", b"pagination", "types", b"types", "unread_only", b"unread_only"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "context",
+        b"context",
+        "pagination",
+        b"pagination",
+        "types",
+        b"types",
+        "unread_only",
+        b"unread_only",
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -462,7 +575,14 @@ class ListNotificationsResponse(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["pagination", b"pagination"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["notifications", b"notifications", "pagination", b"pagination", "unread_count", b"unread_count"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "notifications",
+        b"notifications",
+        "pagination",
+        b"pagination",
+        "unread_count",
+        b"unread_count",
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -488,7 +608,9 @@ class MarkAsReadRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "mark_all", b"mark_all", "notification_id", b"notification_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "context", b"context", "mark_all", b"mark_all", "notification_id", b"notification_id"
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -524,7 +646,9 @@ class ListAlertsRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["active_only", b"active_only", "context", b"context"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "active_only", b"active_only", "context", b"context"
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -575,7 +699,20 @@ class CreateAlertRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["condition", b"condition", "context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["channels", b"channels", "condition", b"condition", "context", b"context", "cooldown_minutes", b"cooldown_minutes", "description", b"description", "name", b"name"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "channels",
+        b"channels",
+        "condition",
+        b"condition",
+        "context",
+        b"context",
+        "cooldown_minutes",
+        b"cooldown_minutes",
+        "description",
+        b"description",
+        "name",
+        b"name",
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -653,7 +790,9 @@ class ToggleAlertRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["alert_id", b"alert_id", "context", b"context", "is_active", b"is_active"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "alert_id", b"alert_id", "context", b"context", "is_active", b"is_active"
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -750,7 +889,9 @@ class UpdateChannelRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal["config", b"config", "context", b"context", "is_enabled", b"is_enabled", "type", b"type"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "config", b"config", "context", b"context", "is_enabled", b"is_enabled", "type", b"type"
+    ]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -807,4 +948,421 @@ class TestChannelResponse(message.Message):
         message: builtins.str = ...,
     ) -> None: ...
     _ClearFieldArgType: _TypeAlias = typing.Literal["message", b"message", "success", b"success"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class Webhook(message.Message):
+    """Outbound webhook endpoint. `secret` is never returned; it is shown once in
+    CreateWebhookResponse and stored server-side for signing.
+    """
+
+    DESCRIPTOR: descriptor.Descriptor
+
+    ID_FIELD_NUMBER: builtins.int
+    TENANT_ID_FIELD_NUMBER: builtins.int
+    NAME_FIELD_NUMBER: builtins.int
+    URL_FIELD_NUMBER: builtins.int
+    EVENTS_FIELD_NUMBER: builtins.int
+    IS_ACTIVE_FIELD_NUMBER: builtins.int
+    FAILURE_COUNT_FIELD_NUMBER: builtins.int
+    LAST_STATUS_CODE_FIELD_NUMBER: builtins.int
+    LAST_TRIGGERED_AT_FIELD_NUMBER: builtins.int
+    CREATED_AT_FIELD_NUMBER: builtins.int
+    UPDATED_AT_FIELD_NUMBER: builtins.int
+    id: builtins.str
+    tenant_id: builtins.str
+    name: builtins.str
+    url: builtins.str
+    is_active: builtins.bool
+    failure_count: builtins.int
+    last_status_code: builtins.int
+    @builtins.property
+    def events(
+        self,
+    ) -> containers.RepeatedScalarFieldContainer[events_pb2.NotificationCategory.ValueType]:
+        """empty = all categories"""
+
+    @builtins.property
+    def last_triggered_at(self) -> common_pb2.Timestamp: ...
+    @builtins.property
+    def created_at(self) -> common_pb2.Timestamp: ...
+    @builtins.property
+    def updated_at(self) -> common_pb2.Timestamp: ...
+    def __init__(
+        self,
+        *,
+        id: builtins.str = ...,
+        tenant_id: builtins.str = ...,
+        name: builtins.str = ...,
+        url: builtins.str = ...,
+        events: abc.Iterable[events_pb2.NotificationCategory.ValueType] | None = ...,
+        is_active: builtins.bool = ...,
+        failure_count: builtins.int = ...,
+        last_status_code: builtins.int = ...,
+        last_triggered_at: common_pb2.Timestamp | None = ...,
+        created_at: common_pb2.Timestamp | None = ...,
+        updated_at: common_pb2.Timestamp | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal[
+        "created_at",
+        b"created_at",
+        "last_triggered_at",
+        b"last_triggered_at",
+        "updated_at",
+        b"updated_at",
+    ]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "created_at",
+        b"created_at",
+        "events",
+        b"events",
+        "failure_count",
+        b"failure_count",
+        "id",
+        b"id",
+        "is_active",
+        b"is_active",
+        "last_status_code",
+        b"last_status_code",
+        "last_triggered_at",
+        b"last_triggered_at",
+        "name",
+        b"name",
+        "tenant_id",
+        b"tenant_id",
+        "updated_at",
+        b"updated_at",
+        "url",
+        b"url",
+    ]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class ListWebhooksRequest(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    CONTEXT_FIELD_NUMBER: builtins.int
+    @builtins.property
+    def context(self) -> common_pb2.TenantContext: ...
+    def __init__(
+        self,
+        *,
+        context: common_pb2.TenantContext | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class ListWebhooksResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    WEBHOOKS_FIELD_NUMBER: builtins.int
+    @builtins.property
+    def webhooks(self) -> containers.RepeatedCompositeFieldContainer[Webhook]: ...
+    def __init__(
+        self,
+        *,
+        webhooks: abc.Iterable[Webhook] | None = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["webhooks", b"webhooks"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class CreateWebhookRequest(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    CONTEXT_FIELD_NUMBER: builtins.int
+    NAME_FIELD_NUMBER: builtins.int
+    URL_FIELD_NUMBER: builtins.int
+    EVENTS_FIELD_NUMBER: builtins.int
+    name: builtins.str
+    url: builtins.str
+    @builtins.property
+    def context(self) -> common_pb2.TenantContext: ...
+    @builtins.property
+    def events(
+        self,
+    ) -> containers.RepeatedScalarFieldContainer[events_pb2.NotificationCategory.ValueType]: ...
+    def __init__(
+        self,
+        *,
+        context: common_pb2.TenantContext | None = ...,
+        name: builtins.str = ...,
+        url: builtins.str = ...,
+        events: abc.Iterable[events_pb2.NotificationCategory.ValueType] | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "context", b"context", "events", b"events", "name", b"name", "url", b"url"
+    ]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class CreateWebhookResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    WEBHOOK_FIELD_NUMBER: builtins.int
+    SECRET_FIELD_NUMBER: builtins.int
+    secret: builtins.str
+    """shown exactly once"""
+    @builtins.property
+    def webhook(self) -> Webhook: ...
+    def __init__(
+        self,
+        *,
+        webhook: Webhook | None = ...,
+        secret: builtins.str = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["webhook", b"webhook"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["secret", b"secret", "webhook", b"webhook"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class UpdateWebhookRequest(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    CONTEXT_FIELD_NUMBER: builtins.int
+    WEBHOOK_ID_FIELD_NUMBER: builtins.int
+    NAME_FIELD_NUMBER: builtins.int
+    URL_FIELD_NUMBER: builtins.int
+    EVENTS_FIELD_NUMBER: builtins.int
+    IS_ACTIVE_FIELD_NUMBER: builtins.int
+    webhook_id: builtins.str
+    name: builtins.str
+    url: builtins.str
+    is_active: builtins.bool
+    @builtins.property
+    def context(self) -> common_pb2.TenantContext: ...
+    @builtins.property
+    def events(
+        self,
+    ) -> containers.RepeatedScalarFieldContainer[events_pb2.NotificationCategory.ValueType]: ...
+    def __init__(
+        self,
+        *,
+        context: common_pb2.TenantContext | None = ...,
+        webhook_id: builtins.str = ...,
+        name: builtins.str = ...,
+        url: builtins.str = ...,
+        events: abc.Iterable[events_pb2.NotificationCategory.ValueType] | None = ...,
+        is_active: builtins.bool = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "context",
+        b"context",
+        "events",
+        b"events",
+        "is_active",
+        b"is_active",
+        "name",
+        b"name",
+        "url",
+        b"url",
+        "webhook_id",
+        b"webhook_id",
+    ]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class UpdateWebhookResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    WEBHOOK_FIELD_NUMBER: builtins.int
+    @builtins.property
+    def webhook(self) -> Webhook: ...
+    def __init__(
+        self,
+        *,
+        webhook: Webhook | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["webhook", b"webhook"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["webhook", b"webhook"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class DeleteWebhookRequest(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    CONTEXT_FIELD_NUMBER: builtins.int
+    WEBHOOK_ID_FIELD_NUMBER: builtins.int
+    webhook_id: builtins.str
+    @builtins.property
+    def context(self) -> common_pb2.TenantContext: ...
+    def __init__(
+        self,
+        *,
+        context: common_pb2.TenantContext | None = ...,
+        webhook_id: builtins.str = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "context", b"context", "webhook_id", b"webhook_id"
+    ]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class DeleteWebhookResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    SUCCESS_FIELD_NUMBER: builtins.int
+    success: builtins.bool
+    def __init__(
+        self,
+        *,
+        success: builtins.bool = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["success", b"success"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class TestWebhookRequest(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    CONTEXT_FIELD_NUMBER: builtins.int
+    WEBHOOK_ID_FIELD_NUMBER: builtins.int
+    webhook_id: builtins.str
+    @builtins.property
+    def context(self) -> common_pb2.TenantContext: ...
+    def __init__(
+        self,
+        *,
+        context: common_pb2.TenantContext | None = ...,
+        webhook_id: builtins.str = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "context", b"context", "webhook_id", b"webhook_id"
+    ]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class TestWebhookResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    SUCCESS_FIELD_NUMBER: builtins.int
+    STATUS_CODE_FIELD_NUMBER: builtins.int
+    MESSAGE_FIELD_NUMBER: builtins.int
+    success: builtins.bool
+    status_code: builtins.int
+    message: builtins.str
+    def __init__(
+        self,
+        *,
+        success: builtins.bool = ...,
+        status_code: builtins.int = ...,
+        message: builtins.str = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "message", b"message", "status_code", b"status_code", "success", b"success"
+    ]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class ChannelPreference(message.Message):
+    """Per-channel notification preferences: which categories a channel receives.
+    Empty categories = the code-level defaults for that channel. Critical and
+    security categories are pinned on server-side regardless of this matrix.
+    """
+
+    DESCRIPTOR: descriptor.Descriptor
+
+    CHANNEL_FIELD_NUMBER: builtins.int
+    ENABLED_FIELD_NUMBER: builtins.int
+    CATEGORIES_FIELD_NUMBER: builtins.int
+    channel: ChannelType.ValueType
+    enabled: builtins.bool
+    @builtins.property
+    def categories(
+        self,
+    ) -> containers.RepeatedScalarFieldContainer[events_pb2.NotificationCategory.ValueType]: ...
+    def __init__(
+        self,
+        *,
+        channel: ChannelType.ValueType = ...,
+        enabled: builtins.bool = ...,
+        categories: abc.Iterable[events_pb2.NotificationCategory.ValueType] | None = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "categories", b"categories", "channel", b"channel", "enabled", b"enabled"
+    ]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class GetPreferencesRequest(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    CONTEXT_FIELD_NUMBER: builtins.int
+    @builtins.property
+    def context(self) -> common_pb2.TenantContext: ...
+    def __init__(
+        self,
+        *,
+        context: common_pb2.TenantContext | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class GetPreferencesResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    PREFERENCES_FIELD_NUMBER: builtins.int
+    @builtins.property
+    def preferences(self) -> containers.RepeatedCompositeFieldContainer[ChannelPreference]: ...
+    def __init__(
+        self,
+        *,
+        preferences: abc.Iterable[ChannelPreference] | None = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["preferences", b"preferences"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class UpdatePreferencesRequest(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    CONTEXT_FIELD_NUMBER: builtins.int
+    PREFERENCES_FIELD_NUMBER: builtins.int
+    @builtins.property
+    def context(self) -> common_pb2.TenantContext: ...
+    @builtins.property
+    def preferences(self) -> containers.RepeatedCompositeFieldContainer[ChannelPreference]: ...
+    def __init__(
+        self,
+        *,
+        context: common_pb2.TenantContext | None = ...,
+        preferences: abc.Iterable[ChannelPreference] | None = ...,
+    ) -> None: ...
+    _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
+    def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "context", b"context", "preferences", b"preferences"
+    ]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class UpdatePreferencesResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    PREFERENCES_FIELD_NUMBER: builtins.int
+    @builtins.property
+    def preferences(self) -> containers.RepeatedCompositeFieldContainer[ChannelPreference]: ...
+    def __init__(
+        self,
+        *,
+        preferences: abc.Iterable[ChannelPreference] | None = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["preferences", b"preferences"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...

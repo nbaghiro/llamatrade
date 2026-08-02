@@ -3,6 +3,7 @@ syntax = "proto3";
 package llamatrade;
 
 import "common.proto";
+import "events.proto";
 
 option java_multiple_files = true;
 option java_package = "com.llamatrade.api";
@@ -248,6 +249,101 @@ message TestChannelResponse {
   string message = 2;
 }
 
+// Outbound webhook endpoint. `secret` is never returned; it is shown once in
+// CreateWebhookResponse and stored server-side for signing.
+message Webhook {
+  string id = 1;
+  string tenant_id = 2;
+  string name = 3;
+  string url = 4;
+  repeated NotificationCategory events = 5;  // empty = all categories
+  bool is_active = 6;
+  int32 failure_count = 7;
+  int32 last_status_code = 8;
+  Timestamp last_triggered_at = 9;
+  Timestamp created_at = 10;
+  Timestamp updated_at = 11;
+}
+
+message ListWebhooksRequest {
+  TenantContext context = 1;
+}
+
+message ListWebhooksResponse {
+  repeated Webhook webhooks = 1;
+}
+
+message CreateWebhookRequest {
+  TenantContext context = 1;
+  string name = 2;
+  string url = 3;
+  repeated NotificationCategory events = 4;
+}
+
+message CreateWebhookResponse {
+  Webhook webhook = 1;
+  string secret = 2;  // shown exactly once
+}
+
+message UpdateWebhookRequest {
+  TenantContext context = 1;
+  string webhook_id = 2;
+  string name = 3;
+  string url = 4;
+  repeated NotificationCategory events = 5;
+  bool is_active = 6;
+}
+
+message UpdateWebhookResponse {
+  Webhook webhook = 1;
+}
+
+message DeleteWebhookRequest {
+  TenantContext context = 1;
+  string webhook_id = 2;
+}
+
+message DeleteWebhookResponse {
+  bool success = 1;
+}
+
+message TestWebhookRequest {
+  TenantContext context = 1;
+  string webhook_id = 2;
+}
+
+message TestWebhookResponse {
+  bool success = 1;
+  int32 status_code = 2;
+  string message = 3;
+}
+
+// Per-channel notification preferences: which categories a channel receives.
+// Empty categories = the code-level defaults for that channel. Critical and
+// security categories are pinned on server-side regardless of this matrix.
+message ChannelPreference {
+  ChannelType channel = 1;
+  bool enabled = 2;
+  repeated NotificationCategory categories = 3;
+}
+
+message GetPreferencesRequest {
+  TenantContext context = 1;
+}
+
+message GetPreferencesResponse {
+  repeated ChannelPreference preferences = 1;
+}
+
+message UpdatePreferencesRequest {
+  TenantContext context = 1;
+  repeated ChannelPreference preferences = 2;
+}
+
+message UpdatePreferencesResponse {
+  repeated ChannelPreference preferences = 1;
+}
+
 // =============================================================================
 // SERVICE
 // =============================================================================
@@ -267,4 +363,15 @@ service NotificationService {
   rpc ListChannels(ListChannelsRequest) returns (ListChannelsResponse);
   rpc UpdateChannel(UpdateChannelRequest) returns (UpdateChannelResponse);
   rpc TestChannel(TestChannelRequest) returns (TestChannelResponse);
+
+  // Webhooks
+  rpc ListWebhooks(ListWebhooksRequest) returns (ListWebhooksResponse);
+  rpc CreateWebhook(CreateWebhookRequest) returns (CreateWebhookResponse);
+  rpc UpdateWebhook(UpdateWebhookRequest) returns (UpdateWebhookResponse);
+  rpc DeleteWebhook(DeleteWebhookRequest) returns (DeleteWebhookResponse);
+  rpc TestWebhook(TestWebhookRequest) returns (TestWebhookResponse);
+
+  // Preferences
+  rpc GetPreferences(GetPreferencesRequest) returns (GetPreferencesResponse);
+  rpc UpdatePreferences(UpdatePreferencesRequest) returns (UpdatePreferencesResponse);
 }

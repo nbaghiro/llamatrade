@@ -19,7 +19,6 @@ else:
 _T = _typing.TypeVar("_T")
 
 class _MaybeAsyncIterator(_abc.AsyncIterator[_T], _abc.Iterator[_T], metaclass=_abc_1.ABCMeta): ...
-
 class _ServicerContext(_grpc.ServicerContext, _aio.ServicerContext):  # type: ignore[misc, type-arg]
     ...
 
@@ -36,31 +35,67 @@ class StrategyServiceStub:
     def __new__(cls, channel: _grpc.Channel) -> _Self: ...
     @_typing.overload
     def __new__(cls, channel: _aio.Channel) -> StrategyServiceAsyncStub: ...
-    GetStrategy: _grpc.UnaryUnaryMultiCallable[_strategy_pb2.GetStrategyRequest, _strategy_pb2.GetStrategyResponse]
+    GetStrategy: _grpc.UnaryUnaryMultiCallable[
+        _strategy_pb2.GetStrategyRequest, _strategy_pb2.GetStrategyResponse
+    ]
     """CRUD operations"""
-    ListStrategies: _grpc.UnaryUnaryMultiCallable[_strategy_pb2.ListStrategiesRequest, _strategy_pb2.ListStrategiesResponse]
-    CreateStrategy: _grpc.UnaryUnaryMultiCallable[_strategy_pb2.CreateStrategyRequest, _strategy_pb2.CreateStrategyResponse]
-    UpdateStrategy: _grpc.UnaryUnaryMultiCallable[_strategy_pb2.UpdateStrategyRequest, _strategy_pb2.UpdateStrategyResponse]
-    DeleteStrategy: _grpc.UnaryUnaryMultiCallable[_strategy_pb2.DeleteStrategyRequest, _strategy_pb2.DeleteStrategyResponse]
-    CloneStrategy: _grpc.UnaryUnaryMultiCallable[_strategy_pb2.CloneStrategyRequest, _strategy_pb2.CloneStrategyResponse]
+    ListStrategies: _grpc.UnaryUnaryMultiCallable[
+        _strategy_pb2.ListStrategiesRequest, _strategy_pb2.ListStrategiesResponse
+    ]
+    CreateStrategy: _grpc.UnaryUnaryMultiCallable[
+        _strategy_pb2.CreateStrategyRequest, _strategy_pb2.CreateStrategyResponse
+    ]
+    UpdateStrategy: _grpc.UnaryUnaryMultiCallable[
+        _strategy_pb2.UpdateStrategyRequest, _strategy_pb2.UpdateStrategyResponse
+    ]
+    DeleteStrategy: _grpc.UnaryUnaryMultiCallable[
+        _strategy_pb2.DeleteStrategyRequest, _strategy_pb2.DeleteStrategyResponse
+    ]
+    CloneStrategy: _grpc.UnaryUnaryMultiCallable[
+        _strategy_pb2.CloneStrategyRequest, _strategy_pb2.CloneStrategyResponse
+    ]
     """Clone strategy"""
-    CompileStrategy: _grpc.UnaryUnaryMultiCallable[_strategy_pb2.CompileStrategyRequest, _strategy_pb2.CompileStrategyResponse]
+    CompileStrategy: _grpc.UnaryUnaryMultiCallable[
+        _strategy_pb2.CompileStrategyRequest, _strategy_pb2.CompileStrategyResponse
+    ]
     """DSL operations"""
-    ValidateStrategy: _grpc.UnaryUnaryMultiCallable[_strategy_pb2.ValidateStrategyRequest, _strategy_pb2.ValidateStrategyResponse]
-    ListStrategyVersions: _grpc.UnaryUnaryMultiCallable[_strategy_pb2.ListStrategyVersionsRequest, _strategy_pb2.ListStrategyVersionsResponse]
+    ValidateStrategy: _grpc.UnaryUnaryMultiCallable[
+        _strategy_pb2.ValidateStrategyRequest, _strategy_pb2.ValidateStrategyResponse
+    ]
+    ListStrategyVersions: _grpc.UnaryUnaryMultiCallable[
+        _strategy_pb2.ListStrategyVersionsRequest, _strategy_pb2.ListStrategyVersionsResponse
+    ]
     """Version management"""
-    UpdateStrategyStatus: _grpc.UnaryUnaryMultiCallable[_strategy_pb2.UpdateStrategyStatusRequest, _strategy_pb2.UpdateStrategyStatusResponse]
+    UpdateStrategyStatus: _grpc.UnaryUnaryMultiCallable[
+        _strategy_pb2.UpdateStrategyStatusRequest, _strategy_pb2.UpdateStrategyStatusResponse
+    ]
     """Status management"""
-    ListTemplates: _grpc.UnaryUnaryMultiCallable[_strategy_pb2.ListTemplatesRequest, _strategy_pb2.ListTemplatesResponse]
+    ListTemplates: _grpc.UnaryUnaryMultiCallable[
+        _strategy_pb2.ListTemplatesRequest, _strategy_pb2.ListTemplatesResponse
+    ]
     """Template operations"""
-    GetTemplate: _grpc.UnaryUnaryMultiCallable[_strategy_pb2.GetTemplateRequest, _strategy_pb2.GetTemplateResponse]
-    CreateExecution: _grpc.UnaryUnaryMultiCallable[_strategy_pb2.CreateExecutionRequest, _strategy_pb2.CreateExecutionResponse]
+    GetTemplate: _grpc.UnaryUnaryMultiCallable[
+        _strategy_pb2.GetTemplateRequest, _strategy_pb2.GetTemplateResponse
+    ]
+    CreateExecution: _grpc.UnaryUnaryMultiCallable[
+        _strategy_pb2.CreateExecutionRequest, _strategy_pb2.CreateExecutionResponse
+    ]
     """Execution management"""
-    GetExecution: _grpc.UnaryUnaryMultiCallable[_strategy_pb2.GetExecutionRequest, _strategy_pb2.GetExecutionResponse]
-    ListExecutions: _grpc.UnaryUnaryMultiCallable[_strategy_pb2.ListExecutionsRequest, _strategy_pb2.ListExecutionsResponse]
-    StartExecution: _grpc.UnaryUnaryMultiCallable[_strategy_pb2.StartExecutionRequest, _strategy_pb2.StartExecutionResponse]
-    PauseExecution: _grpc.UnaryUnaryMultiCallable[_strategy_pb2.PauseExecutionRequest, _strategy_pb2.PauseExecutionResponse]
-    StopExecution: _grpc.UnaryUnaryMultiCallable[_strategy_pb2.StopExecutionRequest, _strategy_pb2.StopExecutionResponse]
+    GetExecution: _grpc.UnaryUnaryMultiCallable[
+        _strategy_pb2.GetExecutionRequest, _strategy_pb2.GetExecutionResponse
+    ]
+    ListExecutions: _grpc.UnaryUnaryMultiCallable[
+        _strategy_pb2.ListExecutionsRequest, _strategy_pb2.ListExecutionsResponse
+    ]
+    StartExecution: _grpc.UnaryUnaryMultiCallable[
+        _strategy_pb2.StartExecutionRequest, _strategy_pb2.StartExecutionResponse
+    ]
+    PauseExecution: _grpc.UnaryUnaryMultiCallable[
+        _strategy_pb2.PauseExecutionRequest, _strategy_pb2.PauseExecutionResponse
+    ]
+    StopExecution: _grpc.UnaryUnaryMultiCallable[
+        _strategy_pb2.StopExecutionRequest, _strategy_pb2.StopExecutionResponse
+    ]
 
 @_typing.type_check_only
 class StrategyServiceAsyncStub(StrategyServiceStub):
@@ -70,31 +105,67 @@ class StrategyServiceAsyncStub(StrategyServiceStub):
     """
 
     def __init__(self, channel: _aio.Channel) -> None: ...
-    GetStrategy: _aio.UnaryUnaryMultiCallable[_strategy_pb2.GetStrategyRequest, _strategy_pb2.GetStrategyResponse]  # type: ignore[assignment]
+    GetStrategy: _aio.UnaryUnaryMultiCallable[
+        _strategy_pb2.GetStrategyRequest, _strategy_pb2.GetStrategyResponse
+    ]  # type: ignore[assignment]
     """CRUD operations"""
-    ListStrategies: _aio.UnaryUnaryMultiCallable[_strategy_pb2.ListStrategiesRequest, _strategy_pb2.ListStrategiesResponse]  # type: ignore[assignment]
-    CreateStrategy: _aio.UnaryUnaryMultiCallable[_strategy_pb2.CreateStrategyRequest, _strategy_pb2.CreateStrategyResponse]  # type: ignore[assignment]
-    UpdateStrategy: _aio.UnaryUnaryMultiCallable[_strategy_pb2.UpdateStrategyRequest, _strategy_pb2.UpdateStrategyResponse]  # type: ignore[assignment]
-    DeleteStrategy: _aio.UnaryUnaryMultiCallable[_strategy_pb2.DeleteStrategyRequest, _strategy_pb2.DeleteStrategyResponse]  # type: ignore[assignment]
-    CloneStrategy: _aio.UnaryUnaryMultiCallable[_strategy_pb2.CloneStrategyRequest, _strategy_pb2.CloneStrategyResponse]  # type: ignore[assignment]
+    ListStrategies: _aio.UnaryUnaryMultiCallable[
+        _strategy_pb2.ListStrategiesRequest, _strategy_pb2.ListStrategiesResponse
+    ]  # type: ignore[assignment]
+    CreateStrategy: _aio.UnaryUnaryMultiCallable[
+        _strategy_pb2.CreateStrategyRequest, _strategy_pb2.CreateStrategyResponse
+    ]  # type: ignore[assignment]
+    UpdateStrategy: _aio.UnaryUnaryMultiCallable[
+        _strategy_pb2.UpdateStrategyRequest, _strategy_pb2.UpdateStrategyResponse
+    ]  # type: ignore[assignment]
+    DeleteStrategy: _aio.UnaryUnaryMultiCallable[
+        _strategy_pb2.DeleteStrategyRequest, _strategy_pb2.DeleteStrategyResponse
+    ]  # type: ignore[assignment]
+    CloneStrategy: _aio.UnaryUnaryMultiCallable[
+        _strategy_pb2.CloneStrategyRequest, _strategy_pb2.CloneStrategyResponse
+    ]  # type: ignore[assignment]
     """Clone strategy"""
-    CompileStrategy: _aio.UnaryUnaryMultiCallable[_strategy_pb2.CompileStrategyRequest, _strategy_pb2.CompileStrategyResponse]  # type: ignore[assignment]
+    CompileStrategy: _aio.UnaryUnaryMultiCallable[
+        _strategy_pb2.CompileStrategyRequest, _strategy_pb2.CompileStrategyResponse
+    ]  # type: ignore[assignment]
     """DSL operations"""
-    ValidateStrategy: _aio.UnaryUnaryMultiCallable[_strategy_pb2.ValidateStrategyRequest, _strategy_pb2.ValidateStrategyResponse]  # type: ignore[assignment]
-    ListStrategyVersions: _aio.UnaryUnaryMultiCallable[_strategy_pb2.ListStrategyVersionsRequest, _strategy_pb2.ListStrategyVersionsResponse]  # type: ignore[assignment]
+    ValidateStrategy: _aio.UnaryUnaryMultiCallable[
+        _strategy_pb2.ValidateStrategyRequest, _strategy_pb2.ValidateStrategyResponse
+    ]  # type: ignore[assignment]
+    ListStrategyVersions: _aio.UnaryUnaryMultiCallable[
+        _strategy_pb2.ListStrategyVersionsRequest, _strategy_pb2.ListStrategyVersionsResponse
+    ]  # type: ignore[assignment]
     """Version management"""
-    UpdateStrategyStatus: _aio.UnaryUnaryMultiCallable[_strategy_pb2.UpdateStrategyStatusRequest, _strategy_pb2.UpdateStrategyStatusResponse]  # type: ignore[assignment]
+    UpdateStrategyStatus: _aio.UnaryUnaryMultiCallable[
+        _strategy_pb2.UpdateStrategyStatusRequest, _strategy_pb2.UpdateStrategyStatusResponse
+    ]  # type: ignore[assignment]
     """Status management"""
-    ListTemplates: _aio.UnaryUnaryMultiCallable[_strategy_pb2.ListTemplatesRequest, _strategy_pb2.ListTemplatesResponse]  # type: ignore[assignment]
+    ListTemplates: _aio.UnaryUnaryMultiCallable[
+        _strategy_pb2.ListTemplatesRequest, _strategy_pb2.ListTemplatesResponse
+    ]  # type: ignore[assignment]
     """Template operations"""
-    GetTemplate: _aio.UnaryUnaryMultiCallable[_strategy_pb2.GetTemplateRequest, _strategy_pb2.GetTemplateResponse]  # type: ignore[assignment]
-    CreateExecution: _aio.UnaryUnaryMultiCallable[_strategy_pb2.CreateExecutionRequest, _strategy_pb2.CreateExecutionResponse]  # type: ignore[assignment]
+    GetTemplate: _aio.UnaryUnaryMultiCallable[
+        _strategy_pb2.GetTemplateRequest, _strategy_pb2.GetTemplateResponse
+    ]  # type: ignore[assignment]
+    CreateExecution: _aio.UnaryUnaryMultiCallable[
+        _strategy_pb2.CreateExecutionRequest, _strategy_pb2.CreateExecutionResponse
+    ]  # type: ignore[assignment]
     """Execution management"""
-    GetExecution: _aio.UnaryUnaryMultiCallable[_strategy_pb2.GetExecutionRequest, _strategy_pb2.GetExecutionResponse]  # type: ignore[assignment]
-    ListExecutions: _aio.UnaryUnaryMultiCallable[_strategy_pb2.ListExecutionsRequest, _strategy_pb2.ListExecutionsResponse]  # type: ignore[assignment]
-    StartExecution: _aio.UnaryUnaryMultiCallable[_strategy_pb2.StartExecutionRequest, _strategy_pb2.StartExecutionResponse]  # type: ignore[assignment]
-    PauseExecution: _aio.UnaryUnaryMultiCallable[_strategy_pb2.PauseExecutionRequest, _strategy_pb2.PauseExecutionResponse]  # type: ignore[assignment]
-    StopExecution: _aio.UnaryUnaryMultiCallable[_strategy_pb2.StopExecutionRequest, _strategy_pb2.StopExecutionResponse]  # type: ignore[assignment]
+    GetExecution: _aio.UnaryUnaryMultiCallable[
+        _strategy_pb2.GetExecutionRequest, _strategy_pb2.GetExecutionResponse
+    ]  # type: ignore[assignment]
+    ListExecutions: _aio.UnaryUnaryMultiCallable[
+        _strategy_pb2.ListExecutionsRequest, _strategy_pb2.ListExecutionsResponse
+    ]  # type: ignore[assignment]
+    StartExecution: _aio.UnaryUnaryMultiCallable[
+        _strategy_pb2.StartExecutionRequest, _strategy_pb2.StartExecutionResponse
+    ]  # type: ignore[assignment]
+    PauseExecution: _aio.UnaryUnaryMultiCallable[
+        _strategy_pb2.PauseExecutionRequest, _strategy_pb2.PauseExecutionResponse
+    ]  # type: ignore[assignment]
+    StopExecution: _aio.UnaryUnaryMultiCallable[
+        _strategy_pb2.StopExecutionRequest, _strategy_pb2.StopExecutionResponse
+    ]  # type: ignore[assignment]
 
 class StrategyServiceServicer(metaclass=_abc_1.ABCMeta):
     """=============================================================================
@@ -107,7 +178,9 @@ class StrategyServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _strategy_pb2.GetStrategyRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.GetStrategyResponse, _abc.Awaitable[_strategy_pb2.GetStrategyResponse]]:
+    ) -> _typing.Union[
+        _strategy_pb2.GetStrategyResponse, _abc.Awaitable[_strategy_pb2.GetStrategyResponse]
+    ]:
         """CRUD operations"""
 
     @_abc_1.abstractmethod
@@ -115,35 +188,41 @@ class StrategyServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _strategy_pb2.ListStrategiesRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.ListStrategiesResponse, _abc.Awaitable[_strategy_pb2.ListStrategiesResponse]]: ...
-
+    ) -> _typing.Union[
+        _strategy_pb2.ListStrategiesResponse, _abc.Awaitable[_strategy_pb2.ListStrategiesResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def CreateStrategy(
         self,
         request: _strategy_pb2.CreateStrategyRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.CreateStrategyResponse, _abc.Awaitable[_strategy_pb2.CreateStrategyResponse]]: ...
-
+    ) -> _typing.Union[
+        _strategy_pb2.CreateStrategyResponse, _abc.Awaitable[_strategy_pb2.CreateStrategyResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def UpdateStrategy(
         self,
         request: _strategy_pb2.UpdateStrategyRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.UpdateStrategyResponse, _abc.Awaitable[_strategy_pb2.UpdateStrategyResponse]]: ...
-
+    ) -> _typing.Union[
+        _strategy_pb2.UpdateStrategyResponse, _abc.Awaitable[_strategy_pb2.UpdateStrategyResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def DeleteStrategy(
         self,
         request: _strategy_pb2.DeleteStrategyRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.DeleteStrategyResponse, _abc.Awaitable[_strategy_pb2.DeleteStrategyResponse]]: ...
-
+    ) -> _typing.Union[
+        _strategy_pb2.DeleteStrategyResponse, _abc.Awaitable[_strategy_pb2.DeleteStrategyResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def CloneStrategy(
         self,
         request: _strategy_pb2.CloneStrategyRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.CloneStrategyResponse, _abc.Awaitable[_strategy_pb2.CloneStrategyResponse]]:
+    ) -> _typing.Union[
+        _strategy_pb2.CloneStrategyResponse, _abc.Awaitable[_strategy_pb2.CloneStrategyResponse]
+    ]:
         """Clone strategy"""
 
     @_abc_1.abstractmethod
@@ -151,7 +230,9 @@ class StrategyServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _strategy_pb2.CompileStrategyRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.CompileStrategyResponse, _abc.Awaitable[_strategy_pb2.CompileStrategyResponse]]:
+    ) -> _typing.Union[
+        _strategy_pb2.CompileStrategyResponse, _abc.Awaitable[_strategy_pb2.CompileStrategyResponse]
+    ]:
         """DSL operations"""
 
     @_abc_1.abstractmethod
@@ -159,14 +240,19 @@ class StrategyServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _strategy_pb2.ValidateStrategyRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.ValidateStrategyResponse, _abc.Awaitable[_strategy_pb2.ValidateStrategyResponse]]: ...
-
+    ) -> _typing.Union[
+        _strategy_pb2.ValidateStrategyResponse,
+        _abc.Awaitable[_strategy_pb2.ValidateStrategyResponse],
+    ]: ...
     @_abc_1.abstractmethod
     def ListStrategyVersions(
         self,
         request: _strategy_pb2.ListStrategyVersionsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.ListStrategyVersionsResponse, _abc.Awaitable[_strategy_pb2.ListStrategyVersionsResponse]]:
+    ) -> _typing.Union[
+        _strategy_pb2.ListStrategyVersionsResponse,
+        _abc.Awaitable[_strategy_pb2.ListStrategyVersionsResponse],
+    ]:
         """Version management"""
 
     @_abc_1.abstractmethod
@@ -174,7 +260,10 @@ class StrategyServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _strategy_pb2.UpdateStrategyStatusRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.UpdateStrategyStatusResponse, _abc.Awaitable[_strategy_pb2.UpdateStrategyStatusResponse]]:
+    ) -> _typing.Union[
+        _strategy_pb2.UpdateStrategyStatusResponse,
+        _abc.Awaitable[_strategy_pb2.UpdateStrategyStatusResponse],
+    ]:
         """Status management"""
 
     @_abc_1.abstractmethod
@@ -182,7 +271,9 @@ class StrategyServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _strategy_pb2.ListTemplatesRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.ListTemplatesResponse, _abc.Awaitable[_strategy_pb2.ListTemplatesResponse]]:
+    ) -> _typing.Union[
+        _strategy_pb2.ListTemplatesResponse, _abc.Awaitable[_strategy_pb2.ListTemplatesResponse]
+    ]:
         """Template operations"""
 
     @_abc_1.abstractmethod
@@ -190,14 +281,17 @@ class StrategyServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _strategy_pb2.GetTemplateRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.GetTemplateResponse, _abc.Awaitable[_strategy_pb2.GetTemplateResponse]]: ...
-
+    ) -> _typing.Union[
+        _strategy_pb2.GetTemplateResponse, _abc.Awaitable[_strategy_pb2.GetTemplateResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def CreateExecution(
         self,
         request: _strategy_pb2.CreateExecutionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.CreateExecutionResponse, _abc.Awaitable[_strategy_pb2.CreateExecutionResponse]]:
+    ) -> _typing.Union[
+        _strategy_pb2.CreateExecutionResponse, _abc.Awaitable[_strategy_pb2.CreateExecutionResponse]
+    ]:
         """Execution management"""
 
     @_abc_1.abstractmethod
@@ -205,34 +299,42 @@ class StrategyServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _strategy_pb2.GetExecutionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.GetExecutionResponse, _abc.Awaitable[_strategy_pb2.GetExecutionResponse]]: ...
-
+    ) -> _typing.Union[
+        _strategy_pb2.GetExecutionResponse, _abc.Awaitable[_strategy_pb2.GetExecutionResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def ListExecutions(
         self,
         request: _strategy_pb2.ListExecutionsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.ListExecutionsResponse, _abc.Awaitable[_strategy_pb2.ListExecutionsResponse]]: ...
-
+    ) -> _typing.Union[
+        _strategy_pb2.ListExecutionsResponse, _abc.Awaitable[_strategy_pb2.ListExecutionsResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def StartExecution(
         self,
         request: _strategy_pb2.StartExecutionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.StartExecutionResponse, _abc.Awaitable[_strategy_pb2.StartExecutionResponse]]: ...
-
+    ) -> _typing.Union[
+        _strategy_pb2.StartExecutionResponse, _abc.Awaitable[_strategy_pb2.StartExecutionResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def PauseExecution(
         self,
         request: _strategy_pb2.PauseExecutionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.PauseExecutionResponse, _abc.Awaitable[_strategy_pb2.PauseExecutionResponse]]: ...
-
+    ) -> _typing.Union[
+        _strategy_pb2.PauseExecutionResponse, _abc.Awaitable[_strategy_pb2.PauseExecutionResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def StopExecution(
         self,
         request: _strategy_pb2.StopExecutionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_strategy_pb2.StopExecutionResponse, _abc.Awaitable[_strategy_pb2.StopExecutionResponse]]: ...
+    ) -> _typing.Union[
+        _strategy_pb2.StopExecutionResponse, _abc.Awaitable[_strategy_pb2.StopExecutionResponse]
+    ]: ...
 
-def add_StrategyServiceServicer_to_server(servicer: StrategyServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...
+def add_StrategyServiceServicer_to_server(
+    servicer: StrategyServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]
+) -> None: ...

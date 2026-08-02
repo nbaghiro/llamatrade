@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -26,6 +26,12 @@ if TYPE_CHECKING:
     from llamatrade_proto.generated import market_data_pb2
 
 logger = logging.getLogger(__name__)
+
+# Snapshot/quote lookups sit on the trading risk path, so they get a short deadline.
+# Historical-bar batch reads can span a wide date range, so they get a longer one.
+# Streaming RPCs run for the life of the subscription and pass no deadline.
+DEFAULT_READ_TIMEOUT_MS = 5000
+DEFAULT_BULK_READ_TIMEOUT_MS = 30000
 
 
 def _normalize_target(target: str) -> str:
@@ -120,9 +126,18 @@ class MarketDataClient:
                 print(f"{bar.symbol}: {bar.close}")
     """
 
-    def __init__(self, target: str = "market-data:8840", *, service_name: str = "internal") -> None:
+    def __init__(
+        self,
+        target: str = "market-data:8840",
+        *,
+        service_name: str = "internal",
+        read_timeout_ms: int | None = DEFAULT_READ_TIMEOUT_MS,
+        bulk_read_timeout_ms: int | None = DEFAULT_BULK_READ_TIMEOUT_MS,
+    ) -> None:
         self.target = _normalize_target(target)
         self._service_name = service_name
+        self._read_timeout_ms = read_timeout_ms
+        self._bulk_read_timeout_ms = bulk_read_timeout_ms
         self._client: MarketDataServiceClient | None = None
 
     def _get_client(self) -> MarketDataServiceClient:
@@ -166,7 +181,9 @@ class MarketDataClient:
             adjust_for_splits=adjust_for_splits,
             pagination=common_pb2.PaginationRequest(page=1, page_size=page_size),
         )
-        response = await self._get_client().get_historical_bars(request, headers=self._headers())
+        response = await self._get_client().get_historical_bars(
+            request, headers=self._headers(), timeout_ms=self._bulk_read_timeout_ms
+        )
         return [self._proto_to_bar(bar) for bar in response.bars]
 
     async def get_multi_bars(
@@ -192,7 +209,9 @@ class MarketDataClient:
             timeframe=_timeframe_to_proto(timeframe),
             limit=limit,
         )
-        response = await self._get_client().get_multi_bars(request, headers=self._headers())
+        response = await self._get_client().get_multi_bars(
+            request, headers=self._headers(), timeout_ms=self._bulk_read_timeout_ms
+        )
         return {
             symbol: [self._proto_to_bar(bar) for bar in bar_list.bars]
             for symbol, bar_list in response.bars.items()
@@ -266,7 +285,9 @@ class MarketDataClient:
         from llamatrade_proto.generated import market_data_pb2
 
         request = market_data_pb2.GetSnapshotRequest(symbol=symbol)
-        response = await self._get_client().get_snapshot(request, headers=self._headers())
+        response = await self._get_client().get_snapshot(
+            request, headers=self._headers(), timeout_ms=self._read_timeout_ms
+        )
         return self._proto_to_snapshot(response)
 
     async def get_snapshots(self, symbols: list[str]) -> dict[str, Snapshot]:
@@ -274,7 +295,9 @@ class MarketDataClient:
         from llamatrade_proto.generated import market_data_pb2
 
         request = market_data_pb2.GetSnapshotsRequest(symbols=symbols)
-        response = await self._get_client().get_snapshots(request, headers=self._headers())
+        response = await self._get_client().get_snapshots(
+            request, headers=self._headers(), timeout_ms=self._read_timeout_ms
+        )
         return {
             symbol: self._proto_to_snapshot(snapshot)
             for symbol, snapshot in response.snapshots.items()
@@ -335,7 +358,7 @@ class MarketDataClient:
         """Convert protobuf Bar to dataclass."""
         return Bar(
             symbol=proto_bar.symbol,
-            timestamp=datetime.fromtimestamp(proto_bar.timestamp.seconds),
+            timestamp=datetime.fromtimestamp(proto_bar.timestamp.seconds, tz=UTC),
             open=Decimal(proto_bar.open.value) if proto_bar.HasField("open") else Decimal(0),
             high=Decimal(proto_bar.high.value) if proto_bar.HasField("high") else Decimal(0),
             low=Decimal(proto_bar.low.value) if proto_bar.HasField("low") else Decimal(0),
@@ -349,7 +372,7 @@ class MarketDataClient:
         """Convert protobuf Quote to dataclass."""
         return Quote(
             symbol=proto_quote.symbol,
-            timestamp=datetime.fromtimestamp(proto_quote.timestamp.seconds),
+            timestamp=datetime.fromtimestamp(proto_quote.timestamp.seconds, tz=UTC),
             bid_price=Decimal(proto_quote.bid_price.value),
             bid_size=proto_quote.bid_size,
             ask_price=Decimal(proto_quote.ask_price.value),
@@ -360,7 +383,7 @@ class MarketDataClient:
         """Convert protobuf Trade to dataclass."""
         return Trade(
             symbol=proto_trade.symbol,
-            timestamp=datetime.fromtimestamp(proto_trade.timestamp.seconds),
+            timestamp=datetime.fromtimestamp(proto_trade.timestamp.seconds, tz=UTC),
             price=Decimal(proto_trade.price.value),
             size=proto_trade.size,
             exchange=proto_trade.exchange if proto_trade.exchange else None,

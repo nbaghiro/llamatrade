@@ -16,36 +16,95 @@ from . import notification_pb2 as notification__pb2
 
 
 class NotificationService(Protocol):
-    async def list_notifications(self, request: notification__pb2.ListNotificationsRequest, ctx: RequestContext) -> notification__pb2.ListNotificationsResponse:
+    async def list_notifications(
+        self, request: notification__pb2.ListNotificationsRequest, ctx: RequestContext
+    ) -> notification__pb2.ListNotificationsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def mark_as_read(self, request: notification__pb2.MarkAsReadRequest, ctx: RequestContext) -> notification__pb2.MarkAsReadResponse:
+    async def mark_as_read(
+        self, request: notification__pb2.MarkAsReadRequest, ctx: RequestContext
+    ) -> notification__pb2.MarkAsReadResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_alerts(self, request: notification__pb2.ListAlertsRequest, ctx: RequestContext) -> notification__pb2.ListAlertsResponse:
+    async def list_alerts(
+        self, request: notification__pb2.ListAlertsRequest, ctx: RequestContext
+    ) -> notification__pb2.ListAlertsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def create_alert(self, request: notification__pb2.CreateAlertRequest, ctx: RequestContext) -> notification__pb2.CreateAlertResponse:
+    async def create_alert(
+        self, request: notification__pb2.CreateAlertRequest, ctx: RequestContext
+    ) -> notification__pb2.CreateAlertResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def delete_alert(self, request: notification__pb2.DeleteAlertRequest, ctx: RequestContext) -> notification__pb2.DeleteAlertResponse:
+    async def delete_alert(
+        self, request: notification__pb2.DeleteAlertRequest, ctx: RequestContext
+    ) -> notification__pb2.DeleteAlertResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def toggle_alert(self, request: notification__pb2.ToggleAlertRequest, ctx: RequestContext) -> notification__pb2.ToggleAlertResponse:
+    async def toggle_alert(
+        self, request: notification__pb2.ToggleAlertRequest, ctx: RequestContext
+    ) -> notification__pb2.ToggleAlertResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_channels(self, request: notification__pb2.ListChannelsRequest, ctx: RequestContext) -> notification__pb2.ListChannelsResponse:
+    async def list_channels(
+        self, request: notification__pb2.ListChannelsRequest, ctx: RequestContext
+    ) -> notification__pb2.ListChannelsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def update_channel(self, request: notification__pb2.UpdateChannelRequest, ctx: RequestContext) -> notification__pb2.UpdateChannelResponse:
+    async def update_channel(
+        self, request: notification__pb2.UpdateChannelRequest, ctx: RequestContext
+    ) -> notification__pb2.UpdateChannelResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def test_channel(self, request: notification__pb2.TestChannelRequest, ctx: RequestContext) -> notification__pb2.TestChannelResponse:
+    async def test_channel(
+        self, request: notification__pb2.TestChannelRequest, ctx: RequestContext
+    ) -> notification__pb2.TestChannelResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    async def list_webhooks(
+        self, request: notification__pb2.ListWebhooksRequest, ctx: RequestContext
+    ) -> notification__pb2.ListWebhooksResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    async def create_webhook(
+        self, request: notification__pb2.CreateWebhookRequest, ctx: RequestContext
+    ) -> notification__pb2.CreateWebhookResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    async def update_webhook(
+        self, request: notification__pb2.UpdateWebhookRequest, ctx: RequestContext
+    ) -> notification__pb2.UpdateWebhookResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    async def delete_webhook(
+        self, request: notification__pb2.DeleteWebhookRequest, ctx: RequestContext
+    ) -> notification__pb2.DeleteWebhookResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    async def test_webhook(
+        self, request: notification__pb2.TestWebhookRequest, ctx: RequestContext
+    ) -> notification__pb2.TestWebhookResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    async def get_preferences(
+        self, request: notification__pb2.GetPreferencesRequest, ctx: RequestContext
+    ) -> notification__pb2.GetPreferencesResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    async def update_preferences(
+        self, request: notification__pb2.UpdatePreferencesRequest, ctx: RequestContext
+    ) -> notification__pb2.UpdatePreferencesResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class NotificationServiceASGIApplication(ConnectASGIApplication[NotificationService]):
-    def __init__(self, service: NotificationService | AsyncGenerator[NotificationService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None) -> None:
+    def __init__(
+        self,
+        service: NotificationService | AsyncGenerator[NotificationService],
+        *,
+        interceptors: Iterable[Interceptor] = (),
+        read_max_bytes: int | None = None,
+    ) -> None:
         super().__init__(
             service=service,
             endpoints=lambda svc: {
@@ -138,6 +197,76 @@ class NotificationServiceASGIApplication(ConnectASGIApplication[NotificationServ
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=svc.test_channel,
+                ),
+                "/llamatrade.NotificationService/ListWebhooks": Endpoint.unary(
+                    method=MethodInfo(
+                        name="ListWebhooks",
+                        service_name="llamatrade.NotificationService",
+                        input=notification__pb2.ListWebhooksRequest,
+                        output=notification__pb2.ListWebhooksResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.list_webhooks,
+                ),
+                "/llamatrade.NotificationService/CreateWebhook": Endpoint.unary(
+                    method=MethodInfo(
+                        name="CreateWebhook",
+                        service_name="llamatrade.NotificationService",
+                        input=notification__pb2.CreateWebhookRequest,
+                        output=notification__pb2.CreateWebhookResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.create_webhook,
+                ),
+                "/llamatrade.NotificationService/UpdateWebhook": Endpoint.unary(
+                    method=MethodInfo(
+                        name="UpdateWebhook",
+                        service_name="llamatrade.NotificationService",
+                        input=notification__pb2.UpdateWebhookRequest,
+                        output=notification__pb2.UpdateWebhookResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.update_webhook,
+                ),
+                "/llamatrade.NotificationService/DeleteWebhook": Endpoint.unary(
+                    method=MethodInfo(
+                        name="DeleteWebhook",
+                        service_name="llamatrade.NotificationService",
+                        input=notification__pb2.DeleteWebhookRequest,
+                        output=notification__pb2.DeleteWebhookResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.delete_webhook,
+                ),
+                "/llamatrade.NotificationService/TestWebhook": Endpoint.unary(
+                    method=MethodInfo(
+                        name="TestWebhook",
+                        service_name="llamatrade.NotificationService",
+                        input=notification__pb2.TestWebhookRequest,
+                        output=notification__pb2.TestWebhookResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.test_webhook,
+                ),
+                "/llamatrade.NotificationService/GetPreferences": Endpoint.unary(
+                    method=MethodInfo(
+                        name="GetPreferences",
+                        service_name="llamatrade.NotificationService",
+                        input=notification__pb2.GetPreferencesRequest,
+                        output=notification__pb2.GetPreferencesResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.get_preferences,
+                ),
+                "/llamatrade.NotificationService/UpdatePreferences": Endpoint.unary(
+                    method=MethodInfo(
+                        name="UpdatePreferences",
+                        service_name="llamatrade.NotificationService",
+                        input=notification__pb2.UpdatePreferencesRequest,
+                        output=notification__pb2.UpdatePreferencesResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.update_preferences,
                 ),
             },
             interceptors=interceptors,
@@ -331,30 +460,236 @@ class NotificationServiceClient(ConnectClient):
             timeout_ms=timeout_ms,
         )
 
+    async def list_webhooks(
+        self,
+        request: notification__pb2.ListWebhooksRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> notification__pb2.ListWebhooksResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="ListWebhooks",
+                service_name="llamatrade.NotificationService",
+                input=notification__pb2.ListWebhooksRequest,
+                output=notification__pb2.ListWebhooksResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    async def create_webhook(
+        self,
+        request: notification__pb2.CreateWebhookRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> notification__pb2.CreateWebhookResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="CreateWebhook",
+                service_name="llamatrade.NotificationService",
+                input=notification__pb2.CreateWebhookRequest,
+                output=notification__pb2.CreateWebhookResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    async def update_webhook(
+        self,
+        request: notification__pb2.UpdateWebhookRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> notification__pb2.UpdateWebhookResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="UpdateWebhook",
+                service_name="llamatrade.NotificationService",
+                input=notification__pb2.UpdateWebhookRequest,
+                output=notification__pb2.UpdateWebhookResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    async def delete_webhook(
+        self,
+        request: notification__pb2.DeleteWebhookRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> notification__pb2.DeleteWebhookResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="DeleteWebhook",
+                service_name="llamatrade.NotificationService",
+                input=notification__pb2.DeleteWebhookRequest,
+                output=notification__pb2.DeleteWebhookResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    async def test_webhook(
+        self,
+        request: notification__pb2.TestWebhookRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> notification__pb2.TestWebhookResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="TestWebhook",
+                service_name="llamatrade.NotificationService",
+                input=notification__pb2.TestWebhookRequest,
+                output=notification__pb2.TestWebhookResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    async def get_preferences(
+        self,
+        request: notification__pb2.GetPreferencesRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> notification__pb2.GetPreferencesResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="GetPreferences",
+                service_name="llamatrade.NotificationService",
+                input=notification__pb2.GetPreferencesRequest,
+                output=notification__pb2.GetPreferencesResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    async def update_preferences(
+        self,
+        request: notification__pb2.UpdatePreferencesRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> notification__pb2.UpdatePreferencesResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="UpdatePreferences",
+                service_name="llamatrade.NotificationService",
+                input=notification__pb2.UpdatePreferencesRequest,
+                output=notification__pb2.UpdatePreferencesResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
 
 class NotificationServiceSync(Protocol):
-    def list_notifications(self, request: notification__pb2.ListNotificationsRequest, ctx: RequestContext) -> notification__pb2.ListNotificationsResponse:
+    def list_notifications(
+        self, request: notification__pb2.ListNotificationsRequest, ctx: RequestContext
+    ) -> notification__pb2.ListNotificationsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def mark_as_read(self, request: notification__pb2.MarkAsReadRequest, ctx: RequestContext) -> notification__pb2.MarkAsReadResponse:
+
+    def mark_as_read(
+        self, request: notification__pb2.MarkAsReadRequest, ctx: RequestContext
+    ) -> notification__pb2.MarkAsReadResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def list_alerts(self, request: notification__pb2.ListAlertsRequest, ctx: RequestContext) -> notification__pb2.ListAlertsResponse:
+
+    def list_alerts(
+        self, request: notification__pb2.ListAlertsRequest, ctx: RequestContext
+    ) -> notification__pb2.ListAlertsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def create_alert(self, request: notification__pb2.CreateAlertRequest, ctx: RequestContext) -> notification__pb2.CreateAlertResponse:
+
+    def create_alert(
+        self, request: notification__pb2.CreateAlertRequest, ctx: RequestContext
+    ) -> notification__pb2.CreateAlertResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def delete_alert(self, request: notification__pb2.DeleteAlertRequest, ctx: RequestContext) -> notification__pb2.DeleteAlertResponse:
+
+    def delete_alert(
+        self, request: notification__pb2.DeleteAlertRequest, ctx: RequestContext
+    ) -> notification__pb2.DeleteAlertResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def toggle_alert(self, request: notification__pb2.ToggleAlertRequest, ctx: RequestContext) -> notification__pb2.ToggleAlertResponse:
+
+    def toggle_alert(
+        self, request: notification__pb2.ToggleAlertRequest, ctx: RequestContext
+    ) -> notification__pb2.ToggleAlertResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def list_channels(self, request: notification__pb2.ListChannelsRequest, ctx: RequestContext) -> notification__pb2.ListChannelsResponse:
+
+    def list_channels(
+        self, request: notification__pb2.ListChannelsRequest, ctx: RequestContext
+    ) -> notification__pb2.ListChannelsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def update_channel(self, request: notification__pb2.UpdateChannelRequest, ctx: RequestContext) -> notification__pb2.UpdateChannelResponse:
+
+    def update_channel(
+        self, request: notification__pb2.UpdateChannelRequest, ctx: RequestContext
+    ) -> notification__pb2.UpdateChannelResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def test_channel(self, request: notification__pb2.TestChannelRequest, ctx: RequestContext) -> notification__pb2.TestChannelResponse:
+
+    def test_channel(
+        self, request: notification__pb2.TestChannelRequest, ctx: RequestContext
+    ) -> notification__pb2.TestChannelResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    def list_webhooks(
+        self, request: notification__pb2.ListWebhooksRequest, ctx: RequestContext
+    ) -> notification__pb2.ListWebhooksResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    def create_webhook(
+        self, request: notification__pb2.CreateWebhookRequest, ctx: RequestContext
+    ) -> notification__pb2.CreateWebhookResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    def update_webhook(
+        self, request: notification__pb2.UpdateWebhookRequest, ctx: RequestContext
+    ) -> notification__pb2.UpdateWebhookResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    def delete_webhook(
+        self, request: notification__pb2.DeleteWebhookRequest, ctx: RequestContext
+    ) -> notification__pb2.DeleteWebhookResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    def test_webhook(
+        self, request: notification__pb2.TestWebhookRequest, ctx: RequestContext
+    ) -> notification__pb2.TestWebhookResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    def get_preferences(
+        self, request: notification__pb2.GetPreferencesRequest, ctx: RequestContext
+    ) -> notification__pb2.GetPreferencesResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
+    def update_preferences(
+        self, request: notification__pb2.UpdatePreferencesRequest, ctx: RequestContext
+    ) -> notification__pb2.UpdatePreferencesResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class NotificationServiceWSGIApplication(ConnectWSGIApplication):
-    def __init__(self, service: NotificationServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None) -> None:
+    def __init__(
+        self,
+        service: NotificationServiceSync,
+        interceptors: Iterable[InterceptorSync] = (),
+        read_max_bytes: int | None = None,
+    ) -> None:
         super().__init__(
             endpoints={
                 "/llamatrade.NotificationService/ListNotifications": EndpointSync.unary(
@@ -446,6 +781,76 @@ class NotificationServiceWSGIApplication(ConnectWSGIApplication):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=service.test_channel,
+                ),
+                "/llamatrade.NotificationService/ListWebhooks": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="ListWebhooks",
+                        service_name="llamatrade.NotificationService",
+                        input=notification__pb2.ListWebhooksRequest,
+                        output=notification__pb2.ListWebhooksResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.list_webhooks,
+                ),
+                "/llamatrade.NotificationService/CreateWebhook": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="CreateWebhook",
+                        service_name="llamatrade.NotificationService",
+                        input=notification__pb2.CreateWebhookRequest,
+                        output=notification__pb2.CreateWebhookResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.create_webhook,
+                ),
+                "/llamatrade.NotificationService/UpdateWebhook": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="UpdateWebhook",
+                        service_name="llamatrade.NotificationService",
+                        input=notification__pb2.UpdateWebhookRequest,
+                        output=notification__pb2.UpdateWebhookResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.update_webhook,
+                ),
+                "/llamatrade.NotificationService/DeleteWebhook": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="DeleteWebhook",
+                        service_name="llamatrade.NotificationService",
+                        input=notification__pb2.DeleteWebhookRequest,
+                        output=notification__pb2.DeleteWebhookResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.delete_webhook,
+                ),
+                "/llamatrade.NotificationService/TestWebhook": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="TestWebhook",
+                        service_name="llamatrade.NotificationService",
+                        input=notification__pb2.TestWebhookRequest,
+                        output=notification__pb2.TestWebhookResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.test_webhook,
+                ),
+                "/llamatrade.NotificationService/GetPreferences": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="GetPreferences",
+                        service_name="llamatrade.NotificationService",
+                        input=notification__pb2.GetPreferencesRequest,
+                        output=notification__pb2.GetPreferencesResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.get_preferences,
+                ),
+                "/llamatrade.NotificationService/UpdatePreferences": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="UpdatePreferences",
+                        service_name="llamatrade.NotificationService",
+                        input=notification__pb2.UpdatePreferencesRequest,
+                        output=notification__pb2.UpdatePreferencesResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.update_preferences,
                 ),
             },
             interceptors=interceptors,
@@ -633,6 +1038,146 @@ class NotificationServiceClientSync(ConnectClientSync):
                 service_name="llamatrade.NotificationService",
                 input=notification__pb2.TestChannelRequest,
                 output=notification__pb2.TestChannelResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def list_webhooks(
+        self,
+        request: notification__pb2.ListWebhooksRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> notification__pb2.ListWebhooksResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="ListWebhooks",
+                service_name="llamatrade.NotificationService",
+                input=notification__pb2.ListWebhooksRequest,
+                output=notification__pb2.ListWebhooksResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def create_webhook(
+        self,
+        request: notification__pb2.CreateWebhookRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> notification__pb2.CreateWebhookResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="CreateWebhook",
+                service_name="llamatrade.NotificationService",
+                input=notification__pb2.CreateWebhookRequest,
+                output=notification__pb2.CreateWebhookResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def update_webhook(
+        self,
+        request: notification__pb2.UpdateWebhookRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> notification__pb2.UpdateWebhookResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="UpdateWebhook",
+                service_name="llamatrade.NotificationService",
+                input=notification__pb2.UpdateWebhookRequest,
+                output=notification__pb2.UpdateWebhookResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def delete_webhook(
+        self,
+        request: notification__pb2.DeleteWebhookRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> notification__pb2.DeleteWebhookResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="DeleteWebhook",
+                service_name="llamatrade.NotificationService",
+                input=notification__pb2.DeleteWebhookRequest,
+                output=notification__pb2.DeleteWebhookResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def test_webhook(
+        self,
+        request: notification__pb2.TestWebhookRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> notification__pb2.TestWebhookResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="TestWebhook",
+                service_name="llamatrade.NotificationService",
+                input=notification__pb2.TestWebhookRequest,
+                output=notification__pb2.TestWebhookResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def get_preferences(
+        self,
+        request: notification__pb2.GetPreferencesRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> notification__pb2.GetPreferencesResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="GetPreferences",
+                service_name="llamatrade.NotificationService",
+                input=notification__pb2.GetPreferencesRequest,
+                output=notification__pb2.GetPreferencesResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def update_preferences(
+        self,
+        request: notification__pb2.UpdatePreferencesRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> notification__pb2.UpdatePreferencesResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="UpdatePreferences",
+                service_name="llamatrade.NotificationService",
+                input=notification__pb2.UpdatePreferencesRequest,
+                output=notification__pb2.UpdatePreferencesResponse,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
             ),
             headers=headers,

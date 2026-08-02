@@ -17,6 +17,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Auth RPCs are fast reads (token/key validation, login); a few seconds is generous.
+DEFAULT_TIMEOUT_SECONDS = 5.0
+
 
 @dataclass
 class TenantContext:
@@ -119,6 +122,7 @@ class AuthClient(BaseGRPCClient):
         credentials: grpc.ChannelCredentials | None = None,
         interceptors: list[grpc.aio.ClientInterceptor] | None = None,
         options: list[tuple[str, str | int | bool]] | None = None,
+        timeout: float | None = DEFAULT_TIMEOUT_SECONDS,
     ) -> None:
         """Initialize the Auth client.
 
@@ -128,6 +132,7 @@ class AuthClient(BaseGRPCClient):
             credentials: Optional channel credentials
             interceptors: Optional client interceptors
             options: Optional channel options
+            timeout: Per-call deadline in seconds applied to every RPC; None disables it
         """
         super().__init__(
             target,
@@ -136,6 +141,7 @@ class AuthClient(BaseGRPCClient):
             interceptors=interceptors,
             options=options,
         )
+        self._timeout = timeout
         self._stub: auth_pb2_grpc.AuthServiceStub | None = None
 
     @property
@@ -169,7 +175,7 @@ class AuthClient(BaseGRPCClient):
         request = auth_pb2.ValidateTokenRequest(token=token)
 
         try:
-            response = await self.stub.ValidateToken(request)
+            response = await self.stub.ValidateToken(request, timeout=self._timeout)
 
             context = None
             if response.valid and response.HasField("context"):
@@ -220,7 +226,7 @@ class AuthClient(BaseGRPCClient):
         )
 
         try:
-            response = await self.stub.ValidateAPIKey(request)
+            response = await self.stub.ValidateAPIKey(request, timeout=self._timeout)
 
             context = None
             if response.valid and response.HasField("context"):
@@ -272,7 +278,7 @@ class AuthClient(BaseGRPCClient):
         )
 
         try:
-            response = await self.stub.CheckPermission(request)
+            response = await self.stub.CheckPermission(request, timeout=self._timeout)
             return response.allowed, response.reason if response.reason else None
         except Exception as e:
             logger.error("Permission check failed: %s", e)
@@ -311,7 +317,7 @@ class AuthClient(BaseGRPCClient):
             last_name=last_name,
         )
 
-        response = await self.stub.Register(request)
+        response = await self.stub.Register(request, timeout=self._timeout)
 
         user = User(
             id=response.user.id,
@@ -348,7 +354,7 @@ class AuthClient(BaseGRPCClient):
 
         request = auth_pb2.LoginRequest(email=email, password=password)
 
-        response = await self.stub.Login(request)
+        response = await self.stub.Login(request, timeout=self._timeout)
 
         user = User(
             id=response.user.id,
@@ -394,7 +400,7 @@ class AuthClient(BaseGRPCClient):
 
         request = auth_pb2.RefreshTokenRequest(refresh_token=refresh_token)
 
-        response = await self.stub.RefreshToken(request)
+        response = await self.stub.RefreshToken(request, timeout=self._timeout)
 
         return RefreshResult(
             access_token=response.access_token,
@@ -435,7 +441,7 @@ class AuthClient(BaseGRPCClient):
 
         # Pass token via metadata
         metadata = [("authorization", f"Bearer {token}")]
-        response = await self.stub.ChangePassword(request, metadata=metadata)
+        response = await self.stub.ChangePassword(request, metadata=metadata, timeout=self._timeout)
         return response.success
 
     async def get_current_user(self, token: str) -> User:
@@ -456,7 +462,7 @@ class AuthClient(BaseGRPCClient):
 
         # Pass token via metadata
         metadata = [("authorization", f"Bearer {token}")]
-        response = await self.stub.GetCurrentUser(request, metadata=metadata)
+        response = await self.stub.GetCurrentUser(request, metadata=metadata, timeout=self._timeout)
 
         return User(
             id=response.user.id,

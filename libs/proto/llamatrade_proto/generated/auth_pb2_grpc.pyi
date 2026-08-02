@@ -19,7 +19,6 @@ else:
 _T = _typing.TypeVar("_T")
 
 class _MaybeAsyncIterator(_abc.AsyncIterator[_T], _abc.Iterator[_T], metaclass=_abc_1.ABCMeta): ...
-
 class _ServicerContext(_grpc.ServicerContext, _aio.ServicerContext):  # type: ignore[misc, type-arg]
     ...
 
@@ -39,27 +38,64 @@ class AuthServiceStub:
     Login: _grpc.UnaryUnaryMultiCallable[_auth_pb2.LoginRequest, _auth_pb2.LoginResponse]
     """Public endpoints (no auth required)"""
     Register: _grpc.UnaryUnaryMultiCallable[_auth_pb2.RegisterRequest, _auth_pb2.RegisterResponse]
-    RefreshToken: _grpc.UnaryUnaryMultiCallable[_auth_pb2.RefreshTokenRequest, _auth_pb2.RefreshTokenResponse]
+    RefreshToken: _grpc.UnaryUnaryMultiCallable[
+        _auth_pb2.RefreshTokenRequest, _auth_pb2.RefreshTokenResponse
+    ]
     """Token operations"""
     Logout: _grpc.UnaryUnaryMultiCallable[_auth_pb2.LogoutRequest, _auth_pb2.LogoutResponse]
-    GetCurrentUser: _grpc.UnaryUnaryMultiCallable[_auth_pb2.GetCurrentUserRequest, _auth_pb2.GetCurrentUserResponse]
+    GetCurrentUser: _grpc.UnaryUnaryMultiCallable[
+        _auth_pb2.GetCurrentUserRequest, _auth_pb2.GetCurrentUserResponse
+    ]
     """Current user (requires auth)"""
-    ChangePassword: _grpc.UnaryUnaryMultiCallable[_auth_pb2.ChangePasswordRequest, _auth_pb2.ChangePasswordResponse]
+    ChangePassword: _grpc.UnaryUnaryMultiCallable[
+        _auth_pb2.ChangePasswordRequest, _auth_pb2.ChangePasswordResponse
+    ]
     """Password management (requires auth)"""
-    ValidateToken: _grpc.UnaryUnaryMultiCallable[_auth_pb2.ValidateTokenRequest, _auth_pb2.ValidateTokenResponse]
+    RequestPasswordReset: _grpc.UnaryUnaryMultiCallable[
+        _auth_pb2.RequestPasswordResetRequest, _auth_pb2.RequestPasswordResetResponse
+    ]
+    """Password reset + email verification (unauthenticated, token-driven)"""
+    ResetPassword: _grpc.UnaryUnaryMultiCallable[
+        _auth_pb2.ResetPasswordRequest, _auth_pb2.ResetPasswordResponse
+    ]
+    VerifyEmail: _grpc.UnaryUnaryMultiCallable[
+        _auth_pb2.VerifyEmailRequest, _auth_pb2.VerifyEmailResponse
+    ]
+    ResendVerification: _grpc.UnaryUnaryMultiCallable[
+        _auth_pb2.ResendVerificationRequest, _auth_pb2.ResendVerificationResponse
+    ]
+    ValidateToken: _grpc.UnaryUnaryMultiCallable[
+        _auth_pb2.ValidateTokenRequest, _auth_pb2.ValidateTokenResponse
+    ]
     """Token validation (high-frequency, called by all services)"""
-    ValidateAPIKey: _grpc.UnaryUnaryMultiCallable[_auth_pb2.ValidateAPIKeyRequest, _auth_pb2.ValidateAPIKeyResponse]
+    ValidateAPIKey: _grpc.UnaryUnaryMultiCallable[
+        _auth_pb2.ValidateAPIKeyRequest, _auth_pb2.ValidateAPIKeyResponse
+    ]
     GetUser: _grpc.UnaryUnaryMultiCallable[_auth_pb2.GetUserRequest, _auth_pb2.GetUserResponse]
     """User/tenant lookup"""
-    GetTenant: _grpc.UnaryUnaryMultiCallable[_auth_pb2.GetTenantRequest, _auth_pb2.GetTenantResponse]
-    CheckPermission: _grpc.UnaryUnaryMultiCallable[_auth_pb2.CheckPermissionRequest, _auth_pb2.CheckPermissionResponse]
+    GetTenant: _grpc.UnaryUnaryMultiCallable[
+        _auth_pb2.GetTenantRequest, _auth_pb2.GetTenantResponse
+    ]
+    CheckPermission: _grpc.UnaryUnaryMultiCallable[
+        _auth_pb2.CheckPermissionRequest, _auth_pb2.CheckPermissionResponse
+    ]
     """Authorization"""
-    CreateAlpacaCredentials: _grpc.UnaryUnaryMultiCallable[_auth_pb2.CreateAlpacaCredentialsRequest, _auth_pb2.CreateAlpacaCredentialsResponse]
+    CreateAlpacaCredentials: _grpc.UnaryUnaryMultiCallable[
+        _auth_pb2.CreateAlpacaCredentialsRequest, _auth_pb2.CreateAlpacaCredentialsResponse
+    ]
     """Alpaca credentials management (requires auth)"""
-    GetAlpacaCredentials: _grpc.UnaryUnaryMultiCallable[_auth_pb2.GetAlpacaCredentialsRequest, _auth_pb2.GetAlpacaCredentialsResponse]
-    ListAlpacaCredentials: _grpc.UnaryUnaryMultiCallable[_auth_pb2.ListAlpacaCredentialsRequest, _auth_pb2.ListAlpacaCredentialsResponse]
-    DeleteAlpacaCredentials: _grpc.UnaryUnaryMultiCallable[_auth_pb2.DeleteAlpacaCredentialsRequest, _auth_pb2.DeleteAlpacaCredentialsResponse]
-    ValidateAlpacaCredentials: _grpc.UnaryUnaryMultiCallable[_auth_pb2.ValidateAlpacaCredentialsRequest, _auth_pb2.ValidateAlpacaCredentialsResponse]
+    GetAlpacaCredentials: _grpc.UnaryUnaryMultiCallable[
+        _auth_pb2.GetAlpacaCredentialsRequest, _auth_pb2.GetAlpacaCredentialsResponse
+    ]
+    ListAlpacaCredentials: _grpc.UnaryUnaryMultiCallable[
+        _auth_pb2.ListAlpacaCredentialsRequest, _auth_pb2.ListAlpacaCredentialsResponse
+    ]
+    DeleteAlpacaCredentials: _grpc.UnaryUnaryMultiCallable[
+        _auth_pb2.DeleteAlpacaCredentialsRequest, _auth_pb2.DeleteAlpacaCredentialsResponse
+    ]
+    ValidateAlpacaCredentials: _grpc.UnaryUnaryMultiCallable[
+        _auth_pb2.ValidateAlpacaCredentialsRequest, _auth_pb2.ValidateAlpacaCredentialsResponse
+    ]
 
 @_typing.type_check_only
 class AuthServiceAsyncStub(AuthServiceStub):
@@ -72,27 +108,62 @@ class AuthServiceAsyncStub(AuthServiceStub):
     Login: _aio.UnaryUnaryMultiCallable[_auth_pb2.LoginRequest, _auth_pb2.LoginResponse]  # type: ignore[assignment]
     """Public endpoints (no auth required)"""
     Register: _aio.UnaryUnaryMultiCallable[_auth_pb2.RegisterRequest, _auth_pb2.RegisterResponse]  # type: ignore[assignment]
-    RefreshToken: _aio.UnaryUnaryMultiCallable[_auth_pb2.RefreshTokenRequest, _auth_pb2.RefreshTokenResponse]  # type: ignore[assignment]
+    RefreshToken: _aio.UnaryUnaryMultiCallable[
+        _auth_pb2.RefreshTokenRequest, _auth_pb2.RefreshTokenResponse
+    ]  # type: ignore[assignment]
     """Token operations"""
     Logout: _aio.UnaryUnaryMultiCallable[_auth_pb2.LogoutRequest, _auth_pb2.LogoutResponse]  # type: ignore[assignment]
-    GetCurrentUser: _aio.UnaryUnaryMultiCallable[_auth_pb2.GetCurrentUserRequest, _auth_pb2.GetCurrentUserResponse]  # type: ignore[assignment]
+    GetCurrentUser: _aio.UnaryUnaryMultiCallable[
+        _auth_pb2.GetCurrentUserRequest, _auth_pb2.GetCurrentUserResponse
+    ]  # type: ignore[assignment]
     """Current user (requires auth)"""
-    ChangePassword: _aio.UnaryUnaryMultiCallable[_auth_pb2.ChangePasswordRequest, _auth_pb2.ChangePasswordResponse]  # type: ignore[assignment]
+    ChangePassword: _aio.UnaryUnaryMultiCallable[
+        _auth_pb2.ChangePasswordRequest, _auth_pb2.ChangePasswordResponse
+    ]  # type: ignore[assignment]
     """Password management (requires auth)"""
-    ValidateToken: _aio.UnaryUnaryMultiCallable[_auth_pb2.ValidateTokenRequest, _auth_pb2.ValidateTokenResponse]  # type: ignore[assignment]
+    RequestPasswordReset: _aio.UnaryUnaryMultiCallable[
+        _auth_pb2.RequestPasswordResetRequest, _auth_pb2.RequestPasswordResetResponse
+    ]  # type: ignore[assignment]
+    """Password reset + email verification (unauthenticated, token-driven)"""
+    ResetPassword: _aio.UnaryUnaryMultiCallable[
+        _auth_pb2.ResetPasswordRequest, _auth_pb2.ResetPasswordResponse
+    ]  # type: ignore[assignment]
+    VerifyEmail: _aio.UnaryUnaryMultiCallable[
+        _auth_pb2.VerifyEmailRequest, _auth_pb2.VerifyEmailResponse
+    ]  # type: ignore[assignment]
+    ResendVerification: _aio.UnaryUnaryMultiCallable[
+        _auth_pb2.ResendVerificationRequest, _auth_pb2.ResendVerificationResponse
+    ]  # type: ignore[assignment]
+    ValidateToken: _aio.UnaryUnaryMultiCallable[
+        _auth_pb2.ValidateTokenRequest, _auth_pb2.ValidateTokenResponse
+    ]  # type: ignore[assignment]
     """Token validation (high-frequency, called by all services)"""
-    ValidateAPIKey: _aio.UnaryUnaryMultiCallable[_auth_pb2.ValidateAPIKeyRequest, _auth_pb2.ValidateAPIKeyResponse]  # type: ignore[assignment]
+    ValidateAPIKey: _aio.UnaryUnaryMultiCallable[
+        _auth_pb2.ValidateAPIKeyRequest, _auth_pb2.ValidateAPIKeyResponse
+    ]  # type: ignore[assignment]
     GetUser: _aio.UnaryUnaryMultiCallable[_auth_pb2.GetUserRequest, _auth_pb2.GetUserResponse]  # type: ignore[assignment]
     """User/tenant lookup"""
     GetTenant: _aio.UnaryUnaryMultiCallable[_auth_pb2.GetTenantRequest, _auth_pb2.GetTenantResponse]  # type: ignore[assignment]
-    CheckPermission: _aio.UnaryUnaryMultiCallable[_auth_pb2.CheckPermissionRequest, _auth_pb2.CheckPermissionResponse]  # type: ignore[assignment]
+    CheckPermission: _aio.UnaryUnaryMultiCallable[
+        _auth_pb2.CheckPermissionRequest, _auth_pb2.CheckPermissionResponse
+    ]  # type: ignore[assignment]
     """Authorization"""
-    CreateAlpacaCredentials: _aio.UnaryUnaryMultiCallable[_auth_pb2.CreateAlpacaCredentialsRequest, _auth_pb2.CreateAlpacaCredentialsResponse]  # type: ignore[assignment]
+    CreateAlpacaCredentials: _aio.UnaryUnaryMultiCallable[
+        _auth_pb2.CreateAlpacaCredentialsRequest, _auth_pb2.CreateAlpacaCredentialsResponse
+    ]  # type: ignore[assignment]
     """Alpaca credentials management (requires auth)"""
-    GetAlpacaCredentials: _aio.UnaryUnaryMultiCallable[_auth_pb2.GetAlpacaCredentialsRequest, _auth_pb2.GetAlpacaCredentialsResponse]  # type: ignore[assignment]
-    ListAlpacaCredentials: _aio.UnaryUnaryMultiCallable[_auth_pb2.ListAlpacaCredentialsRequest, _auth_pb2.ListAlpacaCredentialsResponse]  # type: ignore[assignment]
-    DeleteAlpacaCredentials: _aio.UnaryUnaryMultiCallable[_auth_pb2.DeleteAlpacaCredentialsRequest, _auth_pb2.DeleteAlpacaCredentialsResponse]  # type: ignore[assignment]
-    ValidateAlpacaCredentials: _aio.UnaryUnaryMultiCallable[_auth_pb2.ValidateAlpacaCredentialsRequest, _auth_pb2.ValidateAlpacaCredentialsResponse]  # type: ignore[assignment]
+    GetAlpacaCredentials: _aio.UnaryUnaryMultiCallable[
+        _auth_pb2.GetAlpacaCredentialsRequest, _auth_pb2.GetAlpacaCredentialsResponse
+    ]  # type: ignore[assignment]
+    ListAlpacaCredentials: _aio.UnaryUnaryMultiCallable[
+        _auth_pb2.ListAlpacaCredentialsRequest, _auth_pb2.ListAlpacaCredentialsResponse
+    ]  # type: ignore[assignment]
+    DeleteAlpacaCredentials: _aio.UnaryUnaryMultiCallable[
+        _auth_pb2.DeleteAlpacaCredentialsRequest, _auth_pb2.DeleteAlpacaCredentialsResponse
+    ]  # type: ignore[assignment]
+    ValidateAlpacaCredentials: _aio.UnaryUnaryMultiCallable[
+        _auth_pb2.ValidateAlpacaCredentialsRequest, _auth_pb2.ValidateAlpacaCredentialsResponse
+    ]  # type: ignore[assignment]
 
 class AuthServiceServicer(metaclass=_abc_1.ABCMeta):
     """=============================================================================
@@ -114,13 +185,14 @@ class AuthServiceServicer(metaclass=_abc_1.ABCMeta):
         request: _auth_pb2.RegisterRequest,
         context: _ServicerContext,
     ) -> _typing.Union[_auth_pb2.RegisterResponse, _abc.Awaitable[_auth_pb2.RegisterResponse]]: ...
-
     @_abc_1.abstractmethod
     def RefreshToken(
         self,
         request: _auth_pb2.RefreshTokenRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.RefreshTokenResponse, _abc.Awaitable[_auth_pb2.RefreshTokenResponse]]:
+    ) -> _typing.Union[
+        _auth_pb2.RefreshTokenResponse, _abc.Awaitable[_auth_pb2.RefreshTokenResponse]
+    ]:
         """Token operations"""
 
     @_abc_1.abstractmethod
@@ -129,13 +201,14 @@ class AuthServiceServicer(metaclass=_abc_1.ABCMeta):
         request: _auth_pb2.LogoutRequest,
         context: _ServicerContext,
     ) -> _typing.Union[_auth_pb2.LogoutResponse, _abc.Awaitable[_auth_pb2.LogoutResponse]]: ...
-
     @_abc_1.abstractmethod
     def GetCurrentUser(
         self,
         request: _auth_pb2.GetCurrentUserRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.GetCurrentUserResponse, _abc.Awaitable[_auth_pb2.GetCurrentUserResponse]]:
+    ) -> _typing.Union[
+        _auth_pb2.GetCurrentUserResponse, _abc.Awaitable[_auth_pb2.GetCurrentUserResponse]
+    ]:
         """Current user (requires auth)"""
 
     @_abc_1.abstractmethod
@@ -143,15 +216,54 @@ class AuthServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _auth_pb2.ChangePasswordRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.ChangePasswordResponse, _abc.Awaitable[_auth_pb2.ChangePasswordResponse]]:
+    ) -> _typing.Union[
+        _auth_pb2.ChangePasswordResponse, _abc.Awaitable[_auth_pb2.ChangePasswordResponse]
+    ]:
         """Password management (requires auth)"""
 
+    @_abc_1.abstractmethod
+    def RequestPasswordReset(
+        self,
+        request: _auth_pb2.RequestPasswordResetRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[
+        _auth_pb2.RequestPasswordResetResponse,
+        _abc.Awaitable[_auth_pb2.RequestPasswordResetResponse],
+    ]:
+        """Password reset + email verification (unauthenticated, token-driven)"""
+
+    @_abc_1.abstractmethod
+    def ResetPassword(
+        self,
+        request: _auth_pb2.ResetPasswordRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[
+        _auth_pb2.ResetPasswordResponse, _abc.Awaitable[_auth_pb2.ResetPasswordResponse]
+    ]: ...
+    @_abc_1.abstractmethod
+    def VerifyEmail(
+        self,
+        request: _auth_pb2.VerifyEmailRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[
+        _auth_pb2.VerifyEmailResponse, _abc.Awaitable[_auth_pb2.VerifyEmailResponse]
+    ]: ...
+    @_abc_1.abstractmethod
+    def ResendVerification(
+        self,
+        request: _auth_pb2.ResendVerificationRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[
+        _auth_pb2.ResendVerificationResponse, _abc.Awaitable[_auth_pb2.ResendVerificationResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def ValidateToken(
         self,
         request: _auth_pb2.ValidateTokenRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.ValidateTokenResponse, _abc.Awaitable[_auth_pb2.ValidateTokenResponse]]:
+    ) -> _typing.Union[
+        _auth_pb2.ValidateTokenResponse, _abc.Awaitable[_auth_pb2.ValidateTokenResponse]
+    ]:
         """Token validation (high-frequency, called by all services)"""
 
     @_abc_1.abstractmethod
@@ -159,8 +271,9 @@ class AuthServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _auth_pb2.ValidateAPIKeyRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.ValidateAPIKeyResponse, _abc.Awaitable[_auth_pb2.ValidateAPIKeyResponse]]: ...
-
+    ) -> _typing.Union[
+        _auth_pb2.ValidateAPIKeyResponse, _abc.Awaitable[_auth_pb2.ValidateAPIKeyResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def GetUser(
         self,
@@ -174,14 +287,17 @@ class AuthServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _auth_pb2.GetTenantRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.GetTenantResponse, _abc.Awaitable[_auth_pb2.GetTenantResponse]]: ...
-
+    ) -> _typing.Union[
+        _auth_pb2.GetTenantResponse, _abc.Awaitable[_auth_pb2.GetTenantResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def CheckPermission(
         self,
         request: _auth_pb2.CheckPermissionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.CheckPermissionResponse, _abc.Awaitable[_auth_pb2.CheckPermissionResponse]]:
+    ) -> _typing.Union[
+        _auth_pb2.CheckPermissionResponse, _abc.Awaitable[_auth_pb2.CheckPermissionResponse]
+    ]:
         """Authorization"""
 
     @_abc_1.abstractmethod
@@ -189,7 +305,10 @@ class AuthServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _auth_pb2.CreateAlpacaCredentialsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.CreateAlpacaCredentialsResponse, _abc.Awaitable[_auth_pb2.CreateAlpacaCredentialsResponse]]:
+    ) -> _typing.Union[
+        _auth_pb2.CreateAlpacaCredentialsResponse,
+        _abc.Awaitable[_auth_pb2.CreateAlpacaCredentialsResponse],
+    ]:
         """Alpaca credentials management (requires auth)"""
 
     @_abc_1.abstractmethod
@@ -197,27 +316,38 @@ class AuthServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _auth_pb2.GetAlpacaCredentialsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.GetAlpacaCredentialsResponse, _abc.Awaitable[_auth_pb2.GetAlpacaCredentialsResponse]]: ...
-
+    ) -> _typing.Union[
+        _auth_pb2.GetAlpacaCredentialsResponse,
+        _abc.Awaitable[_auth_pb2.GetAlpacaCredentialsResponse],
+    ]: ...
     @_abc_1.abstractmethod
     def ListAlpacaCredentials(
         self,
         request: _auth_pb2.ListAlpacaCredentialsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.ListAlpacaCredentialsResponse, _abc.Awaitable[_auth_pb2.ListAlpacaCredentialsResponse]]: ...
-
+    ) -> _typing.Union[
+        _auth_pb2.ListAlpacaCredentialsResponse,
+        _abc.Awaitable[_auth_pb2.ListAlpacaCredentialsResponse],
+    ]: ...
     @_abc_1.abstractmethod
     def DeleteAlpacaCredentials(
         self,
         request: _auth_pb2.DeleteAlpacaCredentialsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.DeleteAlpacaCredentialsResponse, _abc.Awaitable[_auth_pb2.DeleteAlpacaCredentialsResponse]]: ...
-
+    ) -> _typing.Union[
+        _auth_pb2.DeleteAlpacaCredentialsResponse,
+        _abc.Awaitable[_auth_pb2.DeleteAlpacaCredentialsResponse],
+    ]: ...
     @_abc_1.abstractmethod
     def ValidateAlpacaCredentials(
         self,
         request: _auth_pb2.ValidateAlpacaCredentialsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_auth_pb2.ValidateAlpacaCredentialsResponse, _abc.Awaitable[_auth_pb2.ValidateAlpacaCredentialsResponse]]: ...
+    ) -> _typing.Union[
+        _auth_pb2.ValidateAlpacaCredentialsResponse,
+        _abc.Awaitable[_auth_pb2.ValidateAlpacaCredentialsResponse],
+    ]: ...
 
-def add_AuthServiceServicer_to_server(servicer: AuthServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...
+def add_AuthServiceServicer_to_server(
+    servicer: AuthServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]
+) -> None: ...

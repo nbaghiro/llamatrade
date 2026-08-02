@@ -4,18 +4,15 @@
 # source: strategy.proto
 # Protobuf Python Version: 6.30.2
 """Generated protocol buffer code."""
+
 from google.protobuf import descriptor as _descriptor
 from google.protobuf import descriptor_pool as _descriptor_pool
 from google.protobuf import runtime_version as _runtime_version
 from google.protobuf import symbol_database as _symbol_database
 from google.protobuf.internal import builder as _builder
+
 _runtime_version.ValidateProtobufRuntimeVersion(
-    _runtime_version.Domain.PUBLIC,
-    6,
-    30,
-    2,
-    '',
-    'strategy.proto'
+    _runtime_version.Domain.PUBLIC, 6, 30, 2, "", "strategy.proto"
 )
 # @@protoc_insertion_point(imports)
 
@@ -25,128 +22,130 @@ _sym_db = _symbol_database.Default()
 from . import common_pb2 as common__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0estrategy.proto\x12\nllamatrade\x1a\x0c\x63ommon.proto\"\xe3\x05\n\x08Strategy\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n\ttenant_id\x18\x02 \x01(\tR\x08tenantId\x12\x12\n\x04name\x18\x03 \x01(\tR\x04name\x12 \n\x0b\x64\x65scription\x18\x04 \x01(\tR\x0b\x64\x65scription\x12\x32\n\x06status\x18\x05 \x01(\x0e\x32\x1a.llamatrade.StrategyStatusR\x06status\x12\x18\n\x07version\x18\x06 \x01(\x05R\x07version\x12\x19\n\x08\x64sl_code\x18\x07 \x01(\tR\x07\x64slCode\x12\x1f\n\x0btemplate_id\x18\t \x01(\tR\ntemplateId\x12Q\n\x0ftemplate_params\x18\n \x03(\x0b\x32(.llamatrade.Strategy.TemplateParamsEntryR\x0etemplateParams\x12\x18\n\x07symbols\x18\x0b \x03(\tR\x07symbols\x12\x1c\n\ttimeframe\x18\x0c \x01(\tR\ttimeframe\x12\x1d\n\ncreated_by\x18\x0e \x01(\tR\tcreatedBy\x12\x34\n\ncreated_at\x18\x0f \x01(\x0b\x32\x15.llamatrade.TimestampR\tcreatedAt\x12\x34\n\nupdated_at\x18\x10 \x01(\x0b\x32\x15.llamatrade.TimestampR\tupdatedAt\x12\x34\n\x0b\x62\x65st_sharpe\x18\x11 \x01(\x0b\x32\x13.llamatrade.DecimalR\nbestSharpe\x12\x34\n\x0b\x62\x65st_return\x18\x12 \x01(\x0b\x32\x13.llamatrade.DecimalR\nbestReturn\x1a\x41\n\x13TemplateParamsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01J\x04\x08\x08\x10\tJ\x04\x08\r\x10\x0eR\rcompiled_jsonR\nparameters\"\x8a\x02\n\x0fStrategyVersion\x12\x1f\n\x0bstrategy_id\x18\x01 \x01(\tR\nstrategyId\x12\x18\n\x07version\x18\x02 \x01(\x05R\x07version\x12\x19\n\x08\x64sl_code\x18\x03 \x01(\tR\x07\x64slCode\x12%\n\x0e\x63hange_summary\x18\x06 \x01(\tR\rchangeSummary\x12\x1d\n\ncreated_by\x18\x07 \x01(\tR\tcreatedBy\x12\x34\n\ncreated_at\x18\x08 \x01(\x0b\x32\x15.llamatrade.TimestampR\tcreatedAtJ\x04\x08\x04\x10\x05J\x04\x08\x05\x10\x06R\rcompiled_jsonR\nparameters\"\xc4\x01\n\x11\x43ompilationResult\x12\x18\n\x07success\x18\x01 \x01(\x08R\x07success\x12#\n\rcompiled_json\x18\x02 \x01(\tR\x0c\x63ompiledJson\x12\x34\n\x06\x65rrors\x18\x03 \x03(\x0b\x32\x1c.llamatrade.CompilationErrorR\x06\x65rrors\x12:\n\x08warnings\x18\x04 \x03(\x0b\x32\x1e.llamatrade.CompilationWarningR\x08warnings\"l\n\x10\x43ompilationError\x12\x12\n\x04line\x18\x01 \x01(\x05R\x04line\x12\x16\n\x06\x63olumn\x18\x02 \x01(\x05R\x06\x63olumn\x12\x18\n\x07message\x18\x03 \x01(\tR\x07message\x12\x12\n\x04\x63ode\x18\x04 \x01(\tR\x04\x63ode\"n\n\x12\x43ompilationWarning\x12\x12\n\x04line\x18\x01 \x01(\x05R\x04line\x12\x16\n\x06\x63olumn\x18\x02 \x01(\x05R\x06\x63olumn\x12\x18\n\x07message\x18\x03 \x01(\tR\x07message\x12\x12\n\x04\x63ode\x18\x04 \x01(\tR\x04\x63ode\"\xf6\x01\n\x10ValidationResult\x12\x14\n\x05valid\x18\x01 \x01(\x08R\x05valid\x12\x34\n\x06\x65rrors\x18\x02 \x03(\x0b\x32\x1c.llamatrade.CompilationErrorR\x06\x65rrors\x12:\n\x08warnings\x18\x03 \x03(\x0b\x32\x1e.llamatrade.CompilationWarningR\x08warnings\x12)\n\x10\x64\x65tected_symbols\x18\x04 \x03(\tR\x0f\x64\x65tectedSymbols\x12/\n\x13\x64\x65tected_indicators\x18\x05 \x03(\tR\x12\x64\x65tectedIndicators\"\xc2\x02\n\x10StrategyTemplate\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n\x04name\x18\x02 \x01(\tR\x04name\x12 \n\x0b\x64\x65scription\x18\x03 \x01(\tR\x0b\x64\x65scription\x12\x38\n\x08\x63\x61tegory\x18\x04 \x01(\x0e\x32\x1c.llamatrade.TemplateCategoryR\x08\x63\x61tegory\x12\x37\n\x0b\x61sset_class\x18\x05 \x01(\x0e\x32\x16.llamatrade.AssetClassR\nassetClass\x12!\n\x0c\x63onfig_sexpr\x18\x06 \x01(\tR\x0b\x63onfigSexpr\x12\x12\n\x04tags\x18\x07 \x03(\tR\x04tags\x12>\n\ndifficulty\x18\x08 \x01(\x0e\x32\x1e.llamatrade.TemplateDifficultyR\ndifficulty\"\xd8\x06\n\x11StrategyExecution\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n\x0bstrategy_id\x18\x02 \x01(\tR\nstrategyId\x12\x1b\n\ttenant_id\x18\x03 \x01(\tR\x08tenantId\x12\x18\n\x07version\x18\x04 \x01(\x05R\x07version\x12-\n\x04mode\x18\x05 \x01(\x0e\x32\x19.llamatrade.ExecutionModeR\x04mode\x12\x33\n\x06status\x18\x06 \x01(\x0e\x32\x1b.llamatrade.ExecutionStatusR\x06status\x12\x18\n\x07symbols\x18\x07 \x03(\tR\x07symbols\x12\x1c\n\ttimeframe\x18\x08 \x01(\tR\ttimeframe\x12Z\n\x0f\x63onfig_override\x18\t \x03(\x0b\x32\x31.llamatrade.StrategyExecution.ConfigOverrideEntryR\x0e\x63onfigOverride\x12\x34\n\nstarted_at\x18\n \x01(\x0b\x32\x15.llamatrade.TimestampR\tstartedAt\x12\x34\n\nstopped_at\x18\x0b \x01(\x0b\x32\x15.llamatrade.TimestampR\tstoppedAt\x12#\n\rerror_message\x18\x0c \x01(\tR\x0c\x65rrorMessage\x12\x34\n\ncreated_at\x18\r \x01(\x0b\x32\x15.llamatrade.TimestampR\tcreatedAt\x12\x34\n\nupdated_at\x18\x0e \x01(\x0b\x32\x15.llamatrade.TimestampR\tupdatedAt\x12@\n\x11\x61llocated_capital\x18\x0f \x01(\x0b\x32\x13.llamatrade.DecimalR\x10\x61llocatedCapital\x12%\n\x0e\x63redentials_id\x18\x10 \x01(\tR\rcredentialsId\x12\x1b\n\tsleeve_id\x18\x11 \x01(\tR\x08sleeveId\x12\x1d\n\naccount_id\x18\x12 \x01(\tR\taccountId\x1a\x41\n\x13\x43onfigOverrideEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01\"\x84\x01\n\x12GetStrategyRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1f\n\x0bstrategy_id\x18\x02 \x01(\tR\nstrategyId\x12\x18\n\x07version\x18\x03 \x01(\x05R\x07version\"G\n\x13GetStrategyResponse\x12\x30\n\x08strategy\x18\x01 \x01(\x0b\x32\x14.llamatrade.StrategyR\x08strategy\"\x85\x02\n\x15ListStrategiesRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x36\n\x08statuses\x18\x02 \x03(\x0e\x32\x1a.llamatrade.StrategyStatusR\x08statuses\x12\x16\n\x06search\x18\x03 \x01(\tR\x06search\x12=\n\npagination\x18\x04 \x01(\x0b\x32\x1d.llamatrade.PaginationRequestR\npagination\x12(\n\x04sort\x18\x05 \x01(\x0b\x32\x14.llamatrade.SortSpecR\x04sort\"\x8e\x01\n\x16ListStrategiesResponse\x12\x34\n\nstrategies\x18\x01 \x03(\x0b\x32\x14.llamatrade.StrategyR\nstrategies\x12>\n\npagination\x18\x02 \x01(\x0b\x32\x1e.llamatrade.PaginationResponseR\npagination\"\xab\x03\n\x15\x43reateStrategyRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x12\n\x04name\x18\x02 \x01(\tR\x04name\x12 \n\x0b\x64\x65scription\x18\x03 \x01(\tR\x0b\x64\x65scription\x12\x19\n\x08\x64sl_code\x18\x04 \x01(\tR\x07\x64slCode\x12\x1f\n\x0btemplate_id\x18\x05 \x01(\tR\ntemplateId\x12^\n\x0ftemplate_params\x18\x06 \x03(\x0b\x32\x35.llamatrade.CreateStrategyRequest.TemplateParamsEntryR\x0etemplateParams\x12\x18\n\x07symbols\x18\x07 \x03(\tR\x07symbols\x12\x1c\n\ttimeframe\x18\x08 \x01(\tR\ttimeframe\x1a\x41\n\x13TemplateParamsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01J\x04\x08\t\x10\nR\nparameters\"J\n\x16\x43reateStrategyResponse\x12\x30\n\x08strategy\x18\x01 \x01(\x0b\x32\x14.llamatrade.StrategyR\x08strategy\"\xaf\x02\n\x15UpdateStrategyRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1f\n\x0bstrategy_id\x18\x02 \x01(\tR\nstrategyId\x12\x12\n\x04name\x18\x03 \x01(\tR\x04name\x12 \n\x0b\x64\x65scription\x18\x04 \x01(\tR\x0b\x64\x65scription\x12\x19\n\x08\x64sl_code\x18\x05 \x01(\tR\x07\x64slCode\x12\x18\n\x07symbols\x18\x06 \x03(\tR\x07symbols\x12\x1c\n\ttimeframe\x18\x07 \x01(\tR\ttimeframe\x12%\n\x0e\x63hange_summary\x18\t \x01(\tR\rchangeSummaryJ\x04\x08\x08\x10\tR\nparameters\"J\n\x16UpdateStrategyResponse\x12\x30\n\x08strategy\x18\x01 \x01(\x0b\x32\x14.llamatrade.StrategyR\x08strategy\"m\n\x15\x44\x65leteStrategyRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1f\n\x0bstrategy_id\x18\x02 \x01(\tR\nstrategyId\"2\n\x16\x44\x65leteStrategyResponse\x12\x18\n\x07success\x18\x01 \x01(\x08R\x07success\"\x8d\x01\n\x16\x43ompileStrategyRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x19\n\x08\x64sl_code\x18\x02 \x01(\tR\x07\x64slCode\x12#\n\rvalidate_only\x18\x03 \x01(\x08R\x0cvalidateOnly\"P\n\x17\x43ompileStrategyResponse\x12\x35\n\x06result\x18\x01 \x01(\x0b\x32\x1d.llamatrade.CompilationResultR\x06result\"\x89\x01\n\x17ValidateStrategyRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1f\n\x0bstrategy_id\x18\x02 \x01(\tR\nstrategyId\x12\x18\n\x07version\x18\x03 \x01(\x05R\x07version\"P\n\x18ValidateStrategyResponse\x12\x34\n\x06result\x18\x01 \x01(\x0b\x32\x1c.llamatrade.ValidationResultR\x06result\"\xb2\x01\n\x1bListStrategyVersionsRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1f\n\x0bstrategy_id\x18\x02 \x01(\tR\nstrategyId\x12=\n\npagination\x18\x03 \x01(\x0b\x32\x1d.llamatrade.PaginationRequestR\npagination\"\x97\x01\n\x1cListStrategyVersionsResponse\x12\x37\n\x08versions\x18\x01 \x03(\x0b\x32\x1b.llamatrade.StrategyVersionR\x08versions\x12>\n\npagination\x18\x02 \x01(\x0b\x32\x1e.llamatrade.PaginationResponseR\npagination\"\xa7\x01\n\x1bUpdateStrategyStatusRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1f\n\x0bstrategy_id\x18\x02 \x01(\tR\nstrategyId\x12\x32\n\x06status\x18\x03 \x01(\x0e\x32\x1a.llamatrade.StrategyStatusR\x06status\"P\n\x1cUpdateStrategyStatusResponse\x12\x30\n\x08strategy\x18\x01 \x01(\x0b\x32\x14.llamatrade.StrategyR\x08strategy\"\xa1\x01\n\x14\x43loneStrategyRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1f\n\x0bstrategy_id\x18\x02 \x01(\tR\nstrategyId\x12\x19\n\x08new_name\x18\x03 \x01(\tR\x07newName\x12\x18\n\x07version\x18\x04 \x01(\x05R\x07version\"I\n\x15\x43loneStrategyResponse\x12\x30\n\x08strategy\x18\x01 \x01(\x0b\x32\x14.llamatrade.StrategyR\x08strategy\"\xc4\x03\n\x16\x43reateExecutionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1f\n\x0bstrategy_id\x18\x02 \x01(\tR\nstrategyId\x12\x18\n\x07version\x18\x03 \x01(\x05R\x07version\x12-\n\x04mode\x18\x04 \x01(\x0e\x32\x19.llamatrade.ExecutionModeR\x04mode\x12_\n\x0f\x63onfig_override\x18\x05 \x03(\x0b\x32\x36.llamatrade.CreateExecutionRequest.ConfigOverrideEntryR\x0e\x63onfigOverride\x12@\n\x11\x61llocated_capital\x18\x06 \x01(\x0b\x32\x13.llamatrade.DecimalR\x10\x61llocatedCapital\x12%\n\x0e\x63redentials_id\x18\x07 \x01(\tR\rcredentialsId\x1a\x41\n\x13\x43onfigOverrideEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01\"V\n\x17\x43reateExecutionResponse\x12;\n\texecution\x18\x01 \x01(\x0b\x32\x1d.llamatrade.StrategyExecutionR\texecution\"m\n\x13GetExecutionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12!\n\x0c\x65xecution_id\x18\x02 \x01(\tR\x0b\x65xecutionId\"S\n\x14GetExecutionResponse\x12;\n\texecution\x18\x01 \x01(\x0b\x32\x1d.llamatrade.StrategyExecutionR\texecution\"\x96\x02\n\x15ListExecutionsRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1f\n\x0bstrategy_id\x18\x02 \x01(\tR\nstrategyId\x12\x37\n\x08statuses\x18\x03 \x03(\x0e\x32\x1b.llamatrade.ExecutionStatusR\x08statuses\x12/\n\x05modes\x18\x04 \x03(\x0e\x32\x19.llamatrade.ExecutionModeR\x05modes\x12=\n\npagination\x18\x05 \x01(\x0b\x32\x1d.llamatrade.PaginationRequestR\npagination\"\x97\x01\n\x16ListExecutionsResponse\x12=\n\nexecutions\x18\x01 \x03(\x0b\x32\x1d.llamatrade.StrategyExecutionR\nexecutions\x12>\n\npagination\x18\x02 \x01(\x0b\x32\x1e.llamatrade.PaginationResponseR\npagination\"o\n\x15StartExecutionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12!\n\x0c\x65xecution_id\x18\x02 \x01(\tR\x0b\x65xecutionId\"U\n\x16StartExecutionResponse\x12;\n\texecution\x18\x01 \x01(\x0b\x32\x1d.llamatrade.StrategyExecutionR\texecution\"o\n\x15PauseExecutionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12!\n\x0c\x65xecution_id\x18\x02 \x01(\tR\x0b\x65xecutionId\"U\n\x16PauseExecutionResponse\x12;\n\texecution\x18\x01 \x01(\x0b\x32\x1d.llamatrade.StrategyExecutionR\texecution\"\x86\x01\n\x14StopExecutionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12!\n\x0c\x65xecution_id\x18\x02 \x01(\tR\x0b\x65xecutionId\x12\x16\n\x06reason\x18\x03 \x01(\tR\x06reason\"T\n\x15StopExecutionResponse\x12;\n\texecution\x18\x01 \x01(\x0b\x32\x1d.llamatrade.StrategyExecutionR\texecution\"\xc9\x01\n\x14ListTemplatesRequest\x12\x38\n\x08\x63\x61tegory\x18\x01 \x01(\x0e\x32\x1c.llamatrade.TemplateCategoryR\x08\x63\x61tegory\x12\x37\n\x0b\x61sset_class\x18\x02 \x01(\x0e\x32\x16.llamatrade.AssetClassR\nassetClass\x12>\n\ndifficulty\x18\x03 \x01(\x0e\x32\x1e.llamatrade.TemplateDifficultyR\ndifficulty\"S\n\x15ListTemplatesResponse\x12:\n\ttemplates\x18\x01 \x03(\x0b\x32\x1c.llamatrade.StrategyTemplateR\ttemplates\"5\n\x12GetTemplateRequest\x12\x1f\n\x0btemplate_id\x18\x01 \x01(\tR\ntemplateId\"O\n\x13GetTemplateResponse\x12\x38\n\x08template\x18\x01 \x01(\x0b\x32\x1c.llamatrade.StrategyTemplateR\x08template*\xa2\x01\n\x0eStrategyStatus\x12\x1f\n\x1bSTRATEGY_STATUS_UNSPECIFIED\x10\x00\x12\x19\n\x15STRATEGY_STATUS_DRAFT\x10\x01\x12\x1a\n\x16STRATEGY_STATUS_ACTIVE\x10\x02\x12\x1a\n\x16STRATEGY_STATUS_PAUSED\x10\x03\x12\x1c\n\x18STRATEGY_STATUS_ARCHIVED\x10\x04*\x9c\x02\n\x10TemplateCategory\x12!\n\x1dTEMPLATE_CATEGORY_UNSPECIFIED\x10\x00\x12\"\n\x1eTEMPLATE_CATEGORY_BUY_AND_HOLD\x10\x01\x12\x1e\n\x1aTEMPLATE_CATEGORY_TACTICAL\x10\x02\x12\x1c\n\x18TEMPLATE_CATEGORY_FACTOR\x10\x03\x12\x1c\n\x18TEMPLATE_CATEGORY_INCOME\x10\x04\x12\x1b\n\x17TEMPLATE_CATEGORY_TREND\x10\x05\x12$\n TEMPLATE_CATEGORY_MEAN_REVERSION\x10\x06\x12\"\n\x1eTEMPLATE_CATEGORY_ALTERNATIVES\x10\x07*\xc8\x01\n\nAssetClass\x12\x1b\n\x17\x41SSET_CLASS_UNSPECIFIED\x10\x00\x12\x16\n\x12\x41SSET_CLASS_EQUITY\x10\x01\x12\x1c\n\x18\x41SSET_CLASS_FIXED_INCOME\x10\x02\x12\x1b\n\x17\x41SSET_CLASS_MULTI_ASSET\x10\x03\x12\x16\n\x12\x41SSET_CLASS_CRYPTO\x10\x04\x12\x19\n\x15\x41SSET_CLASS_COMMODITY\x10\x05\x12\x17\n\x13\x41SSET_CLASS_OPTIONS\x10\x06*\xcc\x03\n\rIndicatorType\x12\x1e\n\x1aINDICATOR_TYPE_UNSPECIFIED\x10\x00\x12\x16\n\x12INDICATOR_TYPE_SMA\x10\x01\x12\x16\n\x12INDICATOR_TYPE_EMA\x10\x02\x12\x17\n\x13INDICATOR_TYPE_MACD\x10\x03\x12\x16\n\x12INDICATOR_TYPE_ADX\x10\x04\x12\x16\n\x12INDICATOR_TYPE_RSI\x10\x05\x12\x1d\n\x19INDICATOR_TYPE_STOCHASTIC\x10\x06\x12\x16\n\x12INDICATOR_TYPE_CCI\x10\x07\x12\x1d\n\x19INDICATOR_TYPE_WILLIAMS_R\x10\x08\x12\"\n\x1eINDICATOR_TYPE_BOLLINGER_BANDS\x10\t\x12\x16\n\x12INDICATOR_TYPE_ATR\x10\n\x12\"\n\x1eINDICATOR_TYPE_KELTNER_CHANNEL\x10\x0b\x12\x16\n\x12INDICATOR_TYPE_OBV\x10\x0c\x12\x16\n\x12INDICATOR_TYPE_MFI\x10\r\x12\x17\n\x13INDICATOR_TYPE_VWAP\x10\x0e\x12#\n\x1fINDICATOR_TYPE_DONCHIAN_CHANNEL\x10\x0f*\xa3\x01\n\x12TemplateDifficulty\x12#\n\x1fTEMPLATE_DIFFICULTY_UNSPECIFIED\x10\x00\x12 \n\x1cTEMPLATE_DIFFICULTY_BEGINNER\x10\x01\x12$\n TEMPLATE_DIFFICULTY_INTERMEDIATE\x10\x02\x12 \n\x1cTEMPLATE_DIFFICULTY_ADVANCED\x10\x03\x32\xe2\x0c\n\x0fStrategyService\x12N\n\x0bGetStrategy\x12\x1e.llamatrade.GetStrategyRequest\x1a\x1f.llamatrade.GetStrategyResponse\x12W\n\x0eListStrategies\x12!.llamatrade.ListStrategiesRequest\x1a\".llamatrade.ListStrategiesResponse\x12W\n\x0e\x43reateStrategy\x12!.llamatrade.CreateStrategyRequest\x1a\".llamatrade.CreateStrategyResponse\x12W\n\x0eUpdateStrategy\x12!.llamatrade.UpdateStrategyRequest\x1a\".llamatrade.UpdateStrategyResponse\x12W\n\x0e\x44\x65leteStrategy\x12!.llamatrade.DeleteStrategyRequest\x1a\".llamatrade.DeleteStrategyResponse\x12T\n\rCloneStrategy\x12 .llamatrade.CloneStrategyRequest\x1a!.llamatrade.CloneStrategyResponse\x12Z\n\x0f\x43ompileStrategy\x12\".llamatrade.CompileStrategyRequest\x1a#.llamatrade.CompileStrategyResponse\x12]\n\x10ValidateStrategy\x12#.llamatrade.ValidateStrategyRequest\x1a$.llamatrade.ValidateStrategyResponse\x12i\n\x14ListStrategyVersions\x12\'.llamatrade.ListStrategyVersionsRequest\x1a(.llamatrade.ListStrategyVersionsResponse\x12i\n\x14UpdateStrategyStatus\x12\'.llamatrade.UpdateStrategyStatusRequest\x1a(.llamatrade.UpdateStrategyStatusResponse\x12T\n\rListTemplates\x12 .llamatrade.ListTemplatesRequest\x1a!.llamatrade.ListTemplatesResponse\x12N\n\x0bGetTemplate\x12\x1e.llamatrade.GetTemplateRequest\x1a\x1f.llamatrade.GetTemplateResponse\x12Z\n\x0f\x43reateExecution\x12\".llamatrade.CreateExecutionRequest\x1a#.llamatrade.CreateExecutionResponse\x12Q\n\x0cGetExecution\x12\x1f.llamatrade.GetExecutionRequest\x1a .llamatrade.GetExecutionResponse\x12W\n\x0eListExecutions\x12!.llamatrade.ListExecutionsRequest\x1a\".llamatrade.ListExecutionsResponse\x12W\n\x0eStartExecution\x12!.llamatrade.StartExecutionRequest\x1a\".llamatrade.StartExecutionResponse\x12W\n\x0ePauseExecution\x12!.llamatrade.PauseExecutionRequest\x1a\".llamatrade.PauseExecutionResponse\x12T\n\rStopExecution\x12 .llamatrade.StopExecutionRequest\x1a!.llamatrade.StopExecutionResponseB\x89\x01\n\x0e\x63om.llamatradeB\rStrategyProtoP\x01Z github.com/llamatrade/api/gen/go\xa2\x02\x03LXX\xaa\x02\nLlamatrade\xca\x02\nLlamatrade\xe2\x02\x16Llamatrade\\GPBMetadata\xea\x02\nLlamatradeb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
+    b'\n\x0estrategy.proto\x12\nllamatrade\x1a\x0c\x63ommon.proto"\xf4\x05\n\x08Strategy\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n\ttenant_id\x18\x02 \x01(\tR\x08tenantId\x12\x12\n\x04name\x18\x03 \x01(\tR\x04name\x12 \n\x0b\x64\x65scription\x18\x04 \x01(\tR\x0b\x64\x65scription\x12\x32\n\x06status\x18\x05 \x01(\x0e\x32\x1a.llamatrade.StrategyStatusR\x06status\x12\x18\n\x07version\x18\x06 \x01(\x05R\x07version\x12\x19\n\x08\x64sl_code\x18\x07 \x01(\tR\x07\x64slCode\x12\x1f\n\x0btemplate_id\x18\t \x01(\tR\ntemplateId\x12Q\n\x0ftemplate_params\x18\n \x03(\x0b\x32(.llamatrade.Strategy.TemplateParamsEntryR\x0etemplateParams\x12\x18\n\x07symbols\x18\x0b \x03(\tR\x07symbols\x12\x1c\n\trebalance\x18\x13 \x01(\tR\trebalance\x12\x1d\n\ncreated_by\x18\x0e \x01(\tR\tcreatedBy\x12\x34\n\ncreated_at\x18\x0f \x01(\x0b\x32\x15.llamatrade.TimestampR\tcreatedAt\x12\x34\n\nupdated_at\x18\x10 \x01(\x0b\x32\x15.llamatrade.TimestampR\tupdatedAt\x12\x34\n\x0b\x62\x65st_sharpe\x18\x11 \x01(\x0b\x32\x13.llamatrade.DecimalR\nbestSharpe\x12\x34\n\x0b\x62\x65st_return\x18\x12 \x01(\x0b\x32\x13.llamatrade.DecimalR\nbestReturn\x1a\x41\n\x13TemplateParamsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01J\x04\x08\x08\x10\tJ\x04\x08\x0c\x10\rJ\x04\x08\r\x10\x0eR\rcompiled_jsonR\nparametersR\ttimeframe"\x8a\x02\n\x0fStrategyVersion\x12\x1f\n\x0bstrategy_id\x18\x01 \x01(\tR\nstrategyId\x12\x18\n\x07version\x18\x02 \x01(\x05R\x07version\x12\x19\n\x08\x64sl_code\x18\x03 \x01(\tR\x07\x64slCode\x12%\n\x0e\x63hange_summary\x18\x06 \x01(\tR\rchangeSummary\x12\x1d\n\ncreated_by\x18\x07 \x01(\tR\tcreatedBy\x12\x34\n\ncreated_at\x18\x08 \x01(\x0b\x32\x15.llamatrade.TimestampR\tcreatedAtJ\x04\x08\x04\x10\x05J\x04\x08\x05\x10\x06R\rcompiled_jsonR\nparameters"\xc4\x01\n\x11\x43ompilationResult\x12\x18\n\x07success\x18\x01 \x01(\x08R\x07success\x12#\n\rcompiled_json\x18\x02 \x01(\tR\x0c\x63ompiledJson\x12\x34\n\x06\x65rrors\x18\x03 \x03(\x0b\x32\x1c.llamatrade.CompilationErrorR\x06\x65rrors\x12:\n\x08warnings\x18\x04 \x03(\x0b\x32\x1e.llamatrade.CompilationWarningR\x08warnings"l\n\x10\x43ompilationError\x12\x12\n\x04line\x18\x01 \x01(\x05R\x04line\x12\x16\n\x06\x63olumn\x18\x02 \x01(\x05R\x06\x63olumn\x12\x18\n\x07message\x18\x03 \x01(\tR\x07message\x12\x12\n\x04\x63ode\x18\x04 \x01(\tR\x04\x63ode"n\n\x12\x43ompilationWarning\x12\x12\n\x04line\x18\x01 \x01(\x05R\x04line\x12\x16\n\x06\x63olumn\x18\x02 \x01(\x05R\x06\x63olumn\x12\x18\n\x07message\x18\x03 \x01(\tR\x07message\x12\x12\n\x04\x63ode\x18\x04 \x01(\tR\x04\x63ode"\xf6\x01\n\x10ValidationResult\x12\x14\n\x05valid\x18\x01 \x01(\x08R\x05valid\x12\x34\n\x06\x65rrors\x18\x02 \x03(\x0b\x32\x1c.llamatrade.CompilationErrorR\x06\x65rrors\x12:\n\x08warnings\x18\x03 \x03(\x0b\x32\x1e.llamatrade.CompilationWarningR\x08warnings\x12)\n\x10\x64\x65tected_symbols\x18\x04 \x03(\tR\x0f\x64\x65tectedSymbols\x12/\n\x13\x64\x65tected_indicators\x18\x05 \x03(\tR\x12\x64\x65tectedIndicators"\xc2\x02\n\x10StrategyTemplate\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n\x04name\x18\x02 \x01(\tR\x04name\x12 \n\x0b\x64\x65scription\x18\x03 \x01(\tR\x0b\x64\x65scription\x12\x38\n\x08\x63\x61tegory\x18\x04 \x01(\x0e\x32\x1c.llamatrade.TemplateCategoryR\x08\x63\x61tegory\x12\x37\n\x0b\x61sset_class\x18\x05 \x01(\x0e\x32\x16.llamatrade.AssetClassR\nassetClass\x12!\n\x0c\x63onfig_sexpr\x18\x06 \x01(\tR\x0b\x63onfigSexpr\x12\x12\n\x04tags\x18\x07 \x03(\tR\x04tags\x12>\n\ndifficulty\x18\x08 \x01(\x0e\x32\x1e.llamatrade.TemplateDifficultyR\ndifficulty"\xcb\x06\n\x11StrategyExecution\x12\x0e\n\x02id\x18\x01 \x01(\tR\x02id\x12\x1f\n\x0bstrategy_id\x18\x02 \x01(\tR\nstrategyId\x12\x1b\n\ttenant_id\x18\x03 \x01(\tR\x08tenantId\x12\x18\n\x07version\x18\x04 \x01(\x05R\x07version\x12-\n\x04mode\x18\x05 \x01(\x0e\x32\x19.llamatrade.ExecutionModeR\x04mode\x12\x33\n\x06status\x18\x06 \x01(\x0e\x32\x1b.llamatrade.ExecutionStatusR\x06status\x12\x18\n\x07symbols\x18\x07 \x03(\tR\x07symbols\x12Z\n\x0f\x63onfig_override\x18\t \x03(\x0b\x32\x31.llamatrade.StrategyExecution.ConfigOverrideEntryR\x0e\x63onfigOverride\x12\x34\n\nstarted_at\x18\n \x01(\x0b\x32\x15.llamatrade.TimestampR\tstartedAt\x12\x34\n\nstopped_at\x18\x0b \x01(\x0b\x32\x15.llamatrade.TimestampR\tstoppedAt\x12#\n\rerror_message\x18\x0c \x01(\tR\x0c\x65rrorMessage\x12\x34\n\ncreated_at\x18\r \x01(\x0b\x32\x15.llamatrade.TimestampR\tcreatedAt\x12\x34\n\nupdated_at\x18\x0e \x01(\x0b\x32\x15.llamatrade.TimestampR\tupdatedAt\x12@\n\x11\x61llocated_capital\x18\x0f \x01(\x0b\x32\x13.llamatrade.DecimalR\x10\x61llocatedCapital\x12%\n\x0e\x63redentials_id\x18\x10 \x01(\tR\rcredentialsId\x12\x1b\n\tsleeve_id\x18\x11 \x01(\tR\x08sleeveId\x12\x1d\n\naccount_id\x18\x12 \x01(\tR\taccountId\x1a\x41\n\x13\x43onfigOverrideEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01J\x04\x08\x08\x10\tR\ttimeframe"\x84\x01\n\x12GetStrategyRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1f\n\x0bstrategy_id\x18\x02 \x01(\tR\nstrategyId\x12\x18\n\x07version\x18\x03 \x01(\x05R\x07version"G\n\x13GetStrategyResponse\x12\x30\n\x08strategy\x18\x01 \x01(\x0b\x32\x14.llamatrade.StrategyR\x08strategy"\x85\x02\n\x15ListStrategiesRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x36\n\x08statuses\x18\x02 \x03(\x0e\x32\x1a.llamatrade.StrategyStatusR\x08statuses\x12\x16\n\x06search\x18\x03 \x01(\tR\x06search\x12=\n\npagination\x18\x04 \x01(\x0b\x32\x1d.llamatrade.PaginationRequestR\npagination\x12(\n\x04sort\x18\x05 \x01(\x0b\x32\x14.llamatrade.SortSpecR\x04sort"\x8e\x01\n\x16ListStrategiesResponse\x12\x34\n\nstrategies\x18\x01 \x03(\x0b\x32\x14.llamatrade.StrategyR\nstrategies\x12>\n\npagination\x18\x02 \x01(\x0b\x32\x1e.llamatrade.PaginationResponseR\npagination"\x9e\x03\n\x15\x43reateStrategyRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x12\n\x04name\x18\x02 \x01(\tR\x04name\x12 \n\x0b\x64\x65scription\x18\x03 \x01(\tR\x0b\x64\x65scription\x12\x19\n\x08\x64sl_code\x18\x04 \x01(\tR\x07\x64slCode\x12\x1f\n\x0btemplate_id\x18\x05 \x01(\tR\ntemplateId\x12^\n\x0ftemplate_params\x18\x06 \x03(\x0b\x32\x35.llamatrade.CreateStrategyRequest.TemplateParamsEntryR\x0etemplateParams\x12\x18\n\x07symbols\x18\x07 \x03(\tR\x07symbols\x1a\x41\n\x13TemplateParamsEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01J\x04\x08\x08\x10\tJ\x04\x08\t\x10\nR\nparametersR\ttimeframe"J\n\x16\x43reateStrategyResponse\x12\x30\n\x08strategy\x18\x01 \x01(\x0b\x32\x14.llamatrade.StrategyR\x08strategy"\xa2\x02\n\x15UpdateStrategyRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1f\n\x0bstrategy_id\x18\x02 \x01(\tR\nstrategyId\x12\x12\n\x04name\x18\x03 \x01(\tR\x04name\x12 \n\x0b\x64\x65scription\x18\x04 \x01(\tR\x0b\x64\x65scription\x12\x19\n\x08\x64sl_code\x18\x05 \x01(\tR\x07\x64slCode\x12\x18\n\x07symbols\x18\x06 \x03(\tR\x07symbols\x12%\n\x0e\x63hange_summary\x18\t \x01(\tR\rchangeSummaryJ\x04\x08\x07\x10\x08J\x04\x08\x08\x10\tR\nparametersR\ttimeframe"J\n\x16UpdateStrategyResponse\x12\x30\n\x08strategy\x18\x01 \x01(\x0b\x32\x14.llamatrade.StrategyR\x08strategy"m\n\x15\x44\x65leteStrategyRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1f\n\x0bstrategy_id\x18\x02 \x01(\tR\nstrategyId"2\n\x16\x44\x65leteStrategyResponse\x12\x18\n\x07success\x18\x01 \x01(\x08R\x07success"\x8d\x01\n\x16\x43ompileStrategyRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x19\n\x08\x64sl_code\x18\x02 \x01(\tR\x07\x64slCode\x12#\n\rvalidate_only\x18\x03 \x01(\x08R\x0cvalidateOnly"P\n\x17\x43ompileStrategyResponse\x12\x35\n\x06result\x18\x01 \x01(\x0b\x32\x1d.llamatrade.CompilationResultR\x06result"\x89\x01\n\x17ValidateStrategyRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1f\n\x0bstrategy_id\x18\x02 \x01(\tR\nstrategyId\x12\x18\n\x07version\x18\x03 \x01(\x05R\x07version"P\n\x18ValidateStrategyResponse\x12\x34\n\x06result\x18\x01 \x01(\x0b\x32\x1c.llamatrade.ValidationResultR\x06result"\xb2\x01\n\x1bListStrategyVersionsRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1f\n\x0bstrategy_id\x18\x02 \x01(\tR\nstrategyId\x12=\n\npagination\x18\x03 \x01(\x0b\x32\x1d.llamatrade.PaginationRequestR\npagination"\x97\x01\n\x1cListStrategyVersionsResponse\x12\x37\n\x08versions\x18\x01 \x03(\x0b\x32\x1b.llamatrade.StrategyVersionR\x08versions\x12>\n\npagination\x18\x02 \x01(\x0b\x32\x1e.llamatrade.PaginationResponseR\npagination"\xa7\x01\n\x1bUpdateStrategyStatusRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1f\n\x0bstrategy_id\x18\x02 \x01(\tR\nstrategyId\x12\x32\n\x06status\x18\x03 \x01(\x0e\x32\x1a.llamatrade.StrategyStatusR\x06status"P\n\x1cUpdateStrategyStatusResponse\x12\x30\n\x08strategy\x18\x01 \x01(\x0b\x32\x14.llamatrade.StrategyR\x08strategy"\xa1\x01\n\x14\x43loneStrategyRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1f\n\x0bstrategy_id\x18\x02 \x01(\tR\nstrategyId\x12\x19\n\x08new_name\x18\x03 \x01(\tR\x07newName\x12\x18\n\x07version\x18\x04 \x01(\x05R\x07version"I\n\x15\x43loneStrategyResponse\x12\x30\n\x08strategy\x18\x01 \x01(\x0b\x32\x14.llamatrade.StrategyR\x08strategy"\xc4\x03\n\x16\x43reateExecutionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1f\n\x0bstrategy_id\x18\x02 \x01(\tR\nstrategyId\x12\x18\n\x07version\x18\x03 \x01(\x05R\x07version\x12-\n\x04mode\x18\x04 \x01(\x0e\x32\x19.llamatrade.ExecutionModeR\x04mode\x12_\n\x0f\x63onfig_override\x18\x05 \x03(\x0b\x32\x36.llamatrade.CreateExecutionRequest.ConfigOverrideEntryR\x0e\x63onfigOverride\x12@\n\x11\x61llocated_capital\x18\x06 \x01(\x0b\x32\x13.llamatrade.DecimalR\x10\x61llocatedCapital\x12%\n\x0e\x63redentials_id\x18\x07 \x01(\tR\rcredentialsId\x1a\x41\n\x13\x43onfigOverrideEntry\x12\x10\n\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value:\x02\x38\x01"V\n\x17\x43reateExecutionResponse\x12;\n\texecution\x18\x01 \x01(\x0b\x32\x1d.llamatrade.StrategyExecutionR\texecution"m\n\x13GetExecutionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12!\n\x0c\x65xecution_id\x18\x02 \x01(\tR\x0b\x65xecutionId"S\n\x14GetExecutionResponse\x12;\n\texecution\x18\x01 \x01(\x0b\x32\x1d.llamatrade.StrategyExecutionR\texecution"\x96\x02\n\x15ListExecutionsRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12\x1f\n\x0bstrategy_id\x18\x02 \x01(\tR\nstrategyId\x12\x37\n\x08statuses\x18\x03 \x03(\x0e\x32\x1b.llamatrade.ExecutionStatusR\x08statuses\x12/\n\x05modes\x18\x04 \x03(\x0e\x32\x19.llamatrade.ExecutionModeR\x05modes\x12=\n\npagination\x18\x05 \x01(\x0b\x32\x1d.llamatrade.PaginationRequestR\npagination"\x97\x01\n\x16ListExecutionsResponse\x12=\n\nexecutions\x18\x01 \x03(\x0b\x32\x1d.llamatrade.StrategyExecutionR\nexecutions\x12>\n\npagination\x18\x02 \x01(\x0b\x32\x1e.llamatrade.PaginationResponseR\npagination"o\n\x15StartExecutionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12!\n\x0c\x65xecution_id\x18\x02 \x01(\tR\x0b\x65xecutionId"U\n\x16StartExecutionResponse\x12;\n\texecution\x18\x01 \x01(\x0b\x32\x1d.llamatrade.StrategyExecutionR\texecution"o\n\x15PauseExecutionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12!\n\x0c\x65xecution_id\x18\x02 \x01(\tR\x0b\x65xecutionId"U\n\x16PauseExecutionResponse\x12;\n\texecution\x18\x01 \x01(\x0b\x32\x1d.llamatrade.StrategyExecutionR\texecution"\x86\x01\n\x14StopExecutionRequest\x12\x33\n\x07\x63ontext\x18\x01 \x01(\x0b\x32\x19.llamatrade.TenantContextR\x07\x63ontext\x12!\n\x0c\x65xecution_id\x18\x02 \x01(\tR\x0b\x65xecutionId\x12\x16\n\x06reason\x18\x03 \x01(\tR\x06reason"T\n\x15StopExecutionResponse\x12;\n\texecution\x18\x01 \x01(\x0b\x32\x1d.llamatrade.StrategyExecutionR\texecution"\xc9\x01\n\x14ListTemplatesRequest\x12\x38\n\x08\x63\x61tegory\x18\x01 \x01(\x0e\x32\x1c.llamatrade.TemplateCategoryR\x08\x63\x61tegory\x12\x37\n\x0b\x61sset_class\x18\x02 \x01(\x0e\x32\x16.llamatrade.AssetClassR\nassetClass\x12>\n\ndifficulty\x18\x03 \x01(\x0e\x32\x1e.llamatrade.TemplateDifficultyR\ndifficulty"S\n\x15ListTemplatesResponse\x12:\n\ttemplates\x18\x01 \x03(\x0b\x32\x1c.llamatrade.StrategyTemplateR\ttemplates"5\n\x12GetTemplateRequest\x12\x1f\n\x0btemplate_id\x18\x01 \x01(\tR\ntemplateId"O\n\x13GetTemplateResponse\x12\x38\n\x08template\x18\x01 \x01(\x0b\x32\x1c.llamatrade.StrategyTemplateR\x08template*\xa2\x01\n\x0eStrategyStatus\x12\x1f\n\x1bSTRATEGY_STATUS_UNSPECIFIED\x10\x00\x12\x19\n\x15STRATEGY_STATUS_DRAFT\x10\x01\x12\x1a\n\x16STRATEGY_STATUS_ACTIVE\x10\x02\x12\x1a\n\x16STRATEGY_STATUS_PAUSED\x10\x03\x12\x1c\n\x18STRATEGY_STATUS_ARCHIVED\x10\x04*\x9c\x02\n\x10TemplateCategory\x12!\n\x1dTEMPLATE_CATEGORY_UNSPECIFIED\x10\x00\x12"\n\x1eTEMPLATE_CATEGORY_BUY_AND_HOLD\x10\x01\x12\x1e\n\x1aTEMPLATE_CATEGORY_TACTICAL\x10\x02\x12\x1c\n\x18TEMPLATE_CATEGORY_FACTOR\x10\x03\x12\x1c\n\x18TEMPLATE_CATEGORY_INCOME\x10\x04\x12\x1b\n\x17TEMPLATE_CATEGORY_TREND\x10\x05\x12$\n TEMPLATE_CATEGORY_MEAN_REVERSION\x10\x06\x12"\n\x1eTEMPLATE_CATEGORY_ALTERNATIVES\x10\x07*\xc8\x01\n\nAssetClass\x12\x1b\n\x17\x41SSET_CLASS_UNSPECIFIED\x10\x00\x12\x16\n\x12\x41SSET_CLASS_EQUITY\x10\x01\x12\x1c\n\x18\x41SSET_CLASS_FIXED_INCOME\x10\x02\x12\x1b\n\x17\x41SSET_CLASS_MULTI_ASSET\x10\x03\x12\x16\n\x12\x41SSET_CLASS_CRYPTO\x10\x04\x12\x19\n\x15\x41SSET_CLASS_COMMODITY\x10\x05\x12\x17\n\x13\x41SSET_CLASS_OPTIONS\x10\x06*\xa3\x01\n\x12TemplateDifficulty\x12#\n\x1fTEMPLATE_DIFFICULTY_UNSPECIFIED\x10\x00\x12 \n\x1cTEMPLATE_DIFFICULTY_BEGINNER\x10\x01\x12$\n TEMPLATE_DIFFICULTY_INTERMEDIATE\x10\x02\x12 \n\x1cTEMPLATE_DIFFICULTY_ADVANCED\x10\x03\x32\xe2\x0c\n\x0fStrategyService\x12N\n\x0bGetStrategy\x12\x1e.llamatrade.GetStrategyRequest\x1a\x1f.llamatrade.GetStrategyResponse\x12W\n\x0eListStrategies\x12!.llamatrade.ListStrategiesRequest\x1a".llamatrade.ListStrategiesResponse\x12W\n\x0e\x43reateStrategy\x12!.llamatrade.CreateStrategyRequest\x1a".llamatrade.CreateStrategyResponse\x12W\n\x0eUpdateStrategy\x12!.llamatrade.UpdateStrategyRequest\x1a".llamatrade.UpdateStrategyResponse\x12W\n\x0e\x44\x65leteStrategy\x12!.llamatrade.DeleteStrategyRequest\x1a".llamatrade.DeleteStrategyResponse\x12T\n\rCloneStrategy\x12 .llamatrade.CloneStrategyRequest\x1a!.llamatrade.CloneStrategyResponse\x12Z\n\x0f\x43ompileStrategy\x12".llamatrade.CompileStrategyRequest\x1a#.llamatrade.CompileStrategyResponse\x12]\n\x10ValidateStrategy\x12#.llamatrade.ValidateStrategyRequest\x1a$.llamatrade.ValidateStrategyResponse\x12i\n\x14ListStrategyVersions\x12\'.llamatrade.ListStrategyVersionsRequest\x1a(.llamatrade.ListStrategyVersionsResponse\x12i\n\x14UpdateStrategyStatus\x12\'.llamatrade.UpdateStrategyStatusRequest\x1a(.llamatrade.UpdateStrategyStatusResponse\x12T\n\rListTemplates\x12 .llamatrade.ListTemplatesRequest\x1a!.llamatrade.ListTemplatesResponse\x12N\n\x0bGetTemplate\x12\x1e.llamatrade.GetTemplateRequest\x1a\x1f.llamatrade.GetTemplateResponse\x12Z\n\x0f\x43reateExecution\x12".llamatrade.CreateExecutionRequest\x1a#.llamatrade.CreateExecutionResponse\x12Q\n\x0cGetExecution\x12\x1f.llamatrade.GetExecutionRequest\x1a .llamatrade.GetExecutionResponse\x12W\n\x0eListExecutions\x12!.llamatrade.ListExecutionsRequest\x1a".llamatrade.ListExecutionsResponse\x12W\n\x0eStartExecution\x12!.llamatrade.StartExecutionRequest\x1a".llamatrade.StartExecutionResponse\x12W\n\x0ePauseExecution\x12!.llamatrade.PauseExecutionRequest\x1a".llamatrade.PauseExecutionResponse\x12T\n\rStopExecution\x12 .llamatrade.StopExecutionRequest\x1a!.llamatrade.StopExecutionResponseB\x89\x01\n\x0e\x63om.llamatradeB\rStrategyProtoP\x01Z github.com/llamatrade/api/gen/go\xa2\x02\x03LXX\xaa\x02\nLlamatrade\xca\x02\nLlamatrade\xe2\x02\x16Llamatrade\\GPBMetadata\xea\x02\nLlamatradeb\x06proto3'
+)
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
-_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'strategy_pb2', _globals)
+_builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, "strategy_pb2", _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
-  _globals['DESCRIPTOR']._loaded_options = None
-  _globals['DESCRIPTOR']._serialized_options = b'\n\016com.llamatradeB\rStrategyProtoP\001Z github.com/llamatrade/api/gen/go\242\002\003LXX\252\002\nLlamatrade\312\002\nLlamatrade\342\002\026Llamatrade\\GPBMetadata\352\002\nLlamatrade'
-  _globals['_STRATEGY_TEMPLATEPARAMSENTRY']._loaded_options = None
-  _globals['_STRATEGY_TEMPLATEPARAMSENTRY']._serialized_options = b'8\001'
-  _globals['_STRATEGYEXECUTION_CONFIGOVERRIDEENTRY']._loaded_options = None
-  _globals['_STRATEGYEXECUTION_CONFIGOVERRIDEENTRY']._serialized_options = b'8\001'
-  _globals['_CREATESTRATEGYREQUEST_TEMPLATEPARAMSENTRY']._loaded_options = None
-  _globals['_CREATESTRATEGYREQUEST_TEMPLATEPARAMSENTRY']._serialized_options = b'8\001'
-  _globals['_CREATEEXECUTIONREQUEST_CONFIGOVERRIDEENTRY']._loaded_options = None
-  _globals['_CREATEEXECUTIONREQUEST_CONFIGOVERRIDEENTRY']._serialized_options = b'8\001'
-  _globals['_STRATEGYSTATUS']._serialized_start=8074
-  _globals['_STRATEGYSTATUS']._serialized_end=8236
-  _globals['_TEMPLATECATEGORY']._serialized_start=8239
-  _globals['_TEMPLATECATEGORY']._serialized_end=8523
-  _globals['_ASSETCLASS']._serialized_start=8526
-  _globals['_ASSETCLASS']._serialized_end=8726
-  _globals['_INDICATORTYPE']._serialized_start=8729
-  _globals['_INDICATORTYPE']._serialized_end=9189
-  _globals['_TEMPLATEDIFFICULTY']._serialized_start=9192
-  _globals['_TEMPLATEDIFFICULTY']._serialized_end=9355
-  _globals['_STRATEGY']._serialized_start=45
-  _globals['_STRATEGY']._serialized_end=784
-  _globals['_STRATEGY_TEMPLATEPARAMSENTRY']._serialized_start=680
-  _globals['_STRATEGY_TEMPLATEPARAMSENTRY']._serialized_end=745
-  _globals['_STRATEGYVERSION']._serialized_start=787
-  _globals['_STRATEGYVERSION']._serialized_end=1053
-  _globals['_COMPILATIONRESULT']._serialized_start=1056
-  _globals['_COMPILATIONRESULT']._serialized_end=1252
-  _globals['_COMPILATIONERROR']._serialized_start=1254
-  _globals['_COMPILATIONERROR']._serialized_end=1362
-  _globals['_COMPILATIONWARNING']._serialized_start=1364
-  _globals['_COMPILATIONWARNING']._serialized_end=1474
-  _globals['_VALIDATIONRESULT']._serialized_start=1477
-  _globals['_VALIDATIONRESULT']._serialized_end=1723
-  _globals['_STRATEGYTEMPLATE']._serialized_start=1726
-  _globals['_STRATEGYTEMPLATE']._serialized_end=2048
-  _globals['_STRATEGYEXECUTION']._serialized_start=2051
-  _globals['_STRATEGYEXECUTION']._serialized_end=2907
-  _globals['_STRATEGYEXECUTION_CONFIGOVERRIDEENTRY']._serialized_start=2842
-  _globals['_STRATEGYEXECUTION_CONFIGOVERRIDEENTRY']._serialized_end=2907
-  _globals['_GETSTRATEGYREQUEST']._serialized_start=2910
-  _globals['_GETSTRATEGYREQUEST']._serialized_end=3042
-  _globals['_GETSTRATEGYRESPONSE']._serialized_start=3044
-  _globals['_GETSTRATEGYRESPONSE']._serialized_end=3115
-  _globals['_LISTSTRATEGIESREQUEST']._serialized_start=3118
-  _globals['_LISTSTRATEGIESREQUEST']._serialized_end=3379
-  _globals['_LISTSTRATEGIESRESPONSE']._serialized_start=3382
-  _globals['_LISTSTRATEGIESRESPONSE']._serialized_end=3524
-  _globals['_CREATESTRATEGYREQUEST']._serialized_start=3527
-  _globals['_CREATESTRATEGYREQUEST']._serialized_end=3954
-  _globals['_CREATESTRATEGYREQUEST_TEMPLATEPARAMSENTRY']._serialized_start=680
-  _globals['_CREATESTRATEGYREQUEST_TEMPLATEPARAMSENTRY']._serialized_end=745
-  _globals['_CREATESTRATEGYRESPONSE']._serialized_start=3956
-  _globals['_CREATESTRATEGYRESPONSE']._serialized_end=4030
-  _globals['_UPDATESTRATEGYREQUEST']._serialized_start=4033
-  _globals['_UPDATESTRATEGYREQUEST']._serialized_end=4336
-  _globals['_UPDATESTRATEGYRESPONSE']._serialized_start=4338
-  _globals['_UPDATESTRATEGYRESPONSE']._serialized_end=4412
-  _globals['_DELETESTRATEGYREQUEST']._serialized_start=4414
-  _globals['_DELETESTRATEGYREQUEST']._serialized_end=4523
-  _globals['_DELETESTRATEGYRESPONSE']._serialized_start=4525
-  _globals['_DELETESTRATEGYRESPONSE']._serialized_end=4575
-  _globals['_COMPILESTRATEGYREQUEST']._serialized_start=4578
-  _globals['_COMPILESTRATEGYREQUEST']._serialized_end=4719
-  _globals['_COMPILESTRATEGYRESPONSE']._serialized_start=4721
-  _globals['_COMPILESTRATEGYRESPONSE']._serialized_end=4801
-  _globals['_VALIDATESTRATEGYREQUEST']._serialized_start=4804
-  _globals['_VALIDATESTRATEGYREQUEST']._serialized_end=4941
-  _globals['_VALIDATESTRATEGYRESPONSE']._serialized_start=4943
-  _globals['_VALIDATESTRATEGYRESPONSE']._serialized_end=5023
-  _globals['_LISTSTRATEGYVERSIONSREQUEST']._serialized_start=5026
-  _globals['_LISTSTRATEGYVERSIONSREQUEST']._serialized_end=5204
-  _globals['_LISTSTRATEGYVERSIONSRESPONSE']._serialized_start=5207
-  _globals['_LISTSTRATEGYVERSIONSRESPONSE']._serialized_end=5358
-  _globals['_UPDATESTRATEGYSTATUSREQUEST']._serialized_start=5361
-  _globals['_UPDATESTRATEGYSTATUSREQUEST']._serialized_end=5528
-  _globals['_UPDATESTRATEGYSTATUSRESPONSE']._serialized_start=5530
-  _globals['_UPDATESTRATEGYSTATUSRESPONSE']._serialized_end=5610
-  _globals['_CLONESTRATEGYREQUEST']._serialized_start=5613
-  _globals['_CLONESTRATEGYREQUEST']._serialized_end=5774
-  _globals['_CLONESTRATEGYRESPONSE']._serialized_start=5776
-  _globals['_CLONESTRATEGYRESPONSE']._serialized_end=5849
-  _globals['_CREATEEXECUTIONREQUEST']._serialized_start=5852
-  _globals['_CREATEEXECUTIONREQUEST']._serialized_end=6304
-  _globals['_CREATEEXECUTIONREQUEST_CONFIGOVERRIDEENTRY']._serialized_start=2842
-  _globals['_CREATEEXECUTIONREQUEST_CONFIGOVERRIDEENTRY']._serialized_end=2907
-  _globals['_CREATEEXECUTIONRESPONSE']._serialized_start=6306
-  _globals['_CREATEEXECUTIONRESPONSE']._serialized_end=6392
-  _globals['_GETEXECUTIONREQUEST']._serialized_start=6394
-  _globals['_GETEXECUTIONREQUEST']._serialized_end=6503
-  _globals['_GETEXECUTIONRESPONSE']._serialized_start=6505
-  _globals['_GETEXECUTIONRESPONSE']._serialized_end=6588
-  _globals['_LISTEXECUTIONSREQUEST']._serialized_start=6591
-  _globals['_LISTEXECUTIONSREQUEST']._serialized_end=6869
-  _globals['_LISTEXECUTIONSRESPONSE']._serialized_start=6872
-  _globals['_LISTEXECUTIONSRESPONSE']._serialized_end=7023
-  _globals['_STARTEXECUTIONREQUEST']._serialized_start=7025
-  _globals['_STARTEXECUTIONREQUEST']._serialized_end=7136
-  _globals['_STARTEXECUTIONRESPONSE']._serialized_start=7138
-  _globals['_STARTEXECUTIONRESPONSE']._serialized_end=7223
-  _globals['_PAUSEEXECUTIONREQUEST']._serialized_start=7225
-  _globals['_PAUSEEXECUTIONREQUEST']._serialized_end=7336
-  _globals['_PAUSEEXECUTIONRESPONSE']._serialized_start=7338
-  _globals['_PAUSEEXECUTIONRESPONSE']._serialized_end=7423
-  _globals['_STOPEXECUTIONREQUEST']._serialized_start=7426
-  _globals['_STOPEXECUTIONREQUEST']._serialized_end=7560
-  _globals['_STOPEXECUTIONRESPONSE']._serialized_start=7562
-  _globals['_STOPEXECUTIONRESPONSE']._serialized_end=7646
-  _globals['_LISTTEMPLATESREQUEST']._serialized_start=7649
-  _globals['_LISTTEMPLATESREQUEST']._serialized_end=7850
-  _globals['_LISTTEMPLATESRESPONSE']._serialized_start=7852
-  _globals['_LISTTEMPLATESRESPONSE']._serialized_end=7935
-  _globals['_GETTEMPLATEREQUEST']._serialized_start=7937
-  _globals['_GETTEMPLATEREQUEST']._serialized_end=7990
-  _globals['_GETTEMPLATERESPONSE']._serialized_start=7992
-  _globals['_GETTEMPLATERESPONSE']._serialized_end=8071
-  _globals['_STRATEGYSERVICE']._serialized_start=9358
-  _globals['_STRATEGYSERVICE']._serialized_end=10992
+    _globals["DESCRIPTOR"]._loaded_options = None
+    _globals[
+        "DESCRIPTOR"
+    ]._serialized_options = b"\n\016com.llamatradeB\rStrategyProtoP\001Z github.com/llamatrade/api/gen/go\242\002\003LXX\252\002\nLlamatrade\312\002\nLlamatrade\342\002\026Llamatrade\\GPBMetadata\352\002\nLlamatrade"
+    _globals["_STRATEGY_TEMPLATEPARAMSENTRY"]._loaded_options = None
+    _globals["_STRATEGY_TEMPLATEPARAMSENTRY"]._serialized_options = b"8\001"
+    _globals["_STRATEGYEXECUTION_CONFIGOVERRIDEENTRY"]._loaded_options = None
+    _globals["_STRATEGYEXECUTION_CONFIGOVERRIDEENTRY"]._serialized_options = b"8\001"
+    _globals["_CREATESTRATEGYREQUEST_TEMPLATEPARAMSENTRY"]._loaded_options = None
+    _globals["_CREATESTRATEGYREQUEST_TEMPLATEPARAMSENTRY"]._serialized_options = b"8\001"
+    _globals["_CREATEEXECUTIONREQUEST_CONFIGOVERRIDEENTRY"]._loaded_options = None
+    _globals["_CREATEEXECUTIONREQUEST_CONFIGOVERRIDEENTRY"]._serialized_options = b"8\001"
+    _globals["_STRATEGYSTATUS"]._serialized_start = 8052
+    _globals["_STRATEGYSTATUS"]._serialized_end = 8214
+    _globals["_TEMPLATECATEGORY"]._serialized_start = 8217
+    _globals["_TEMPLATECATEGORY"]._serialized_end = 8501
+    _globals["_ASSETCLASS"]._serialized_start = 8504
+    _globals["_ASSETCLASS"]._serialized_end = 8704
+    _globals["_TEMPLATEDIFFICULTY"]._serialized_start = 8707
+    _globals["_TEMPLATEDIFFICULTY"]._serialized_end = 8870
+    _globals["_STRATEGY"]._serialized_start = 45
+    _globals["_STRATEGY"]._serialized_end = 801
+    _globals["_STRATEGY_TEMPLATEPARAMSENTRY"]._serialized_start = 680
+    _globals["_STRATEGY_TEMPLATEPARAMSENTRY"]._serialized_end = 745
+    _globals["_STRATEGYVERSION"]._serialized_start = 804
+    _globals["_STRATEGYVERSION"]._serialized_end = 1070
+    _globals["_COMPILATIONRESULT"]._serialized_start = 1073
+    _globals["_COMPILATIONRESULT"]._serialized_end = 1269
+    _globals["_COMPILATIONERROR"]._serialized_start = 1271
+    _globals["_COMPILATIONERROR"]._serialized_end = 1379
+    _globals["_COMPILATIONWARNING"]._serialized_start = 1381
+    _globals["_COMPILATIONWARNING"]._serialized_end = 1491
+    _globals["_VALIDATIONRESULT"]._serialized_start = 1494
+    _globals["_VALIDATIONRESULT"]._serialized_end = 1740
+    _globals["_STRATEGYTEMPLATE"]._serialized_start = 1743
+    _globals["_STRATEGYTEMPLATE"]._serialized_end = 2065
+    _globals["_STRATEGYEXECUTION"]._serialized_start = 2068
+    _globals["_STRATEGYEXECUTION"]._serialized_end = 2911
+    _globals["_STRATEGYEXECUTION_CONFIGOVERRIDEENTRY"]._serialized_start = 2829
+    _globals["_STRATEGYEXECUTION_CONFIGOVERRIDEENTRY"]._serialized_end = 2894
+    _globals["_GETSTRATEGYREQUEST"]._serialized_start = 2914
+    _globals["_GETSTRATEGYREQUEST"]._serialized_end = 3046
+    _globals["_GETSTRATEGYRESPONSE"]._serialized_start = 3048
+    _globals["_GETSTRATEGYRESPONSE"]._serialized_end = 3119
+    _globals["_LISTSTRATEGIESREQUEST"]._serialized_start = 3122
+    _globals["_LISTSTRATEGIESREQUEST"]._serialized_end = 3383
+    _globals["_LISTSTRATEGIESRESPONSE"]._serialized_start = 3386
+    _globals["_LISTSTRATEGIESRESPONSE"]._serialized_end = 3528
+    _globals["_CREATESTRATEGYREQUEST"]._serialized_start = 3531
+    _globals["_CREATESTRATEGYREQUEST"]._serialized_end = 3945
+    _globals["_CREATESTRATEGYREQUEST_TEMPLATEPARAMSENTRY"]._serialized_start = 680
+    _globals["_CREATESTRATEGYREQUEST_TEMPLATEPARAMSENTRY"]._serialized_end = 745
+    _globals["_CREATESTRATEGYRESPONSE"]._serialized_start = 3947
+    _globals["_CREATESTRATEGYRESPONSE"]._serialized_end = 4021
+    _globals["_UPDATESTRATEGYREQUEST"]._serialized_start = 4024
+    _globals["_UPDATESTRATEGYREQUEST"]._serialized_end = 4314
+    _globals["_UPDATESTRATEGYRESPONSE"]._serialized_start = 4316
+    _globals["_UPDATESTRATEGYRESPONSE"]._serialized_end = 4390
+    _globals["_DELETESTRATEGYREQUEST"]._serialized_start = 4392
+    _globals["_DELETESTRATEGYREQUEST"]._serialized_end = 4501
+    _globals["_DELETESTRATEGYRESPONSE"]._serialized_start = 4503
+    _globals["_DELETESTRATEGYRESPONSE"]._serialized_end = 4553
+    _globals["_COMPILESTRATEGYREQUEST"]._serialized_start = 4556
+    _globals["_COMPILESTRATEGYREQUEST"]._serialized_end = 4697
+    _globals["_COMPILESTRATEGYRESPONSE"]._serialized_start = 4699
+    _globals["_COMPILESTRATEGYRESPONSE"]._serialized_end = 4779
+    _globals["_VALIDATESTRATEGYREQUEST"]._serialized_start = 4782
+    _globals["_VALIDATESTRATEGYREQUEST"]._serialized_end = 4919
+    _globals["_VALIDATESTRATEGYRESPONSE"]._serialized_start = 4921
+    _globals["_VALIDATESTRATEGYRESPONSE"]._serialized_end = 5001
+    _globals["_LISTSTRATEGYVERSIONSREQUEST"]._serialized_start = 5004
+    _globals["_LISTSTRATEGYVERSIONSREQUEST"]._serialized_end = 5182
+    _globals["_LISTSTRATEGYVERSIONSRESPONSE"]._serialized_start = 5185
+    _globals["_LISTSTRATEGYVERSIONSRESPONSE"]._serialized_end = 5336
+    _globals["_UPDATESTRATEGYSTATUSREQUEST"]._serialized_start = 5339
+    _globals["_UPDATESTRATEGYSTATUSREQUEST"]._serialized_end = 5506
+    _globals["_UPDATESTRATEGYSTATUSRESPONSE"]._serialized_start = 5508
+    _globals["_UPDATESTRATEGYSTATUSRESPONSE"]._serialized_end = 5588
+    _globals["_CLONESTRATEGYREQUEST"]._serialized_start = 5591
+    _globals["_CLONESTRATEGYREQUEST"]._serialized_end = 5752
+    _globals["_CLONESTRATEGYRESPONSE"]._serialized_start = 5754
+    _globals["_CLONESTRATEGYRESPONSE"]._serialized_end = 5827
+    _globals["_CREATEEXECUTIONREQUEST"]._serialized_start = 5830
+    _globals["_CREATEEXECUTIONREQUEST"]._serialized_end = 6282
+    _globals["_CREATEEXECUTIONREQUEST_CONFIGOVERRIDEENTRY"]._serialized_start = 2829
+    _globals["_CREATEEXECUTIONREQUEST_CONFIGOVERRIDEENTRY"]._serialized_end = 2894
+    _globals["_CREATEEXECUTIONRESPONSE"]._serialized_start = 6284
+    _globals["_CREATEEXECUTIONRESPONSE"]._serialized_end = 6370
+    _globals["_GETEXECUTIONREQUEST"]._serialized_start = 6372
+    _globals["_GETEXECUTIONREQUEST"]._serialized_end = 6481
+    _globals["_GETEXECUTIONRESPONSE"]._serialized_start = 6483
+    _globals["_GETEXECUTIONRESPONSE"]._serialized_end = 6566
+    _globals["_LISTEXECUTIONSREQUEST"]._serialized_start = 6569
+    _globals["_LISTEXECUTIONSREQUEST"]._serialized_end = 6847
+    _globals["_LISTEXECUTIONSRESPONSE"]._serialized_start = 6850
+    _globals["_LISTEXECUTIONSRESPONSE"]._serialized_end = 7001
+    _globals["_STARTEXECUTIONREQUEST"]._serialized_start = 7003
+    _globals["_STARTEXECUTIONREQUEST"]._serialized_end = 7114
+    _globals["_STARTEXECUTIONRESPONSE"]._serialized_start = 7116
+    _globals["_STARTEXECUTIONRESPONSE"]._serialized_end = 7201
+    _globals["_PAUSEEXECUTIONREQUEST"]._serialized_start = 7203
+    _globals["_PAUSEEXECUTIONREQUEST"]._serialized_end = 7314
+    _globals["_PAUSEEXECUTIONRESPONSE"]._serialized_start = 7316
+    _globals["_PAUSEEXECUTIONRESPONSE"]._serialized_end = 7401
+    _globals["_STOPEXECUTIONREQUEST"]._serialized_start = 7404
+    _globals["_STOPEXECUTIONREQUEST"]._serialized_end = 7538
+    _globals["_STOPEXECUTIONRESPONSE"]._serialized_start = 7540
+    _globals["_STOPEXECUTIONRESPONSE"]._serialized_end = 7624
+    _globals["_LISTTEMPLATESREQUEST"]._serialized_start = 7627
+    _globals["_LISTTEMPLATESREQUEST"]._serialized_end = 7828
+    _globals["_LISTTEMPLATESRESPONSE"]._serialized_start = 7830
+    _globals["_LISTTEMPLATESRESPONSE"]._serialized_end = 7913
+    _globals["_GETTEMPLATEREQUEST"]._serialized_start = 7915
+    _globals["_GETTEMPLATEREQUEST"]._serialized_end = 7968
+    _globals["_GETTEMPLATERESPONSE"]._serialized_start = 7970
+    _globals["_GETTEMPLATERESPONSE"]._serialized_end = 8049
+    _globals["_STRATEGYSERVICE"]._serialized_start = 8873
+    _globals["_STRATEGYSERVICE"]._serialized_end = 10507
 # @@protoc_insertion_point(module_scope)

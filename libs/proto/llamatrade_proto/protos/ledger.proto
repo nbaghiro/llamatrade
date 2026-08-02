@@ -188,6 +188,10 @@ message AllocateCapitalRequest {
   // execution, then funds it — one atomic round trip.
   string strategy_execution_id = 5;
   string sleeve_name = 6;
+
+  // Client idempotency key; the portfolio derives a deterministic event_id from it
+  // so a retried allocation is booked once.
+  string request_id = 7;
 }
 
 message AllocateCapitalResponse {
@@ -200,6 +204,9 @@ message TransferCapitalRequest {
   string from_sleeve_id = 3;
   string to_sleeve_id = 4;
   Decimal amount = 5;
+
+  // Client idempotency key; the portfolio derives a deterministic event_id from it.
+  string request_id = 6;
 }
 
 message TransferCapitalResponse {
@@ -233,6 +240,9 @@ message DepositFundsRequest {
   TenantContext context = 1;
   string account_id = 2;
   Decimal amount = 3;
+
+  // Client idempotency key; the portfolio derives a deterministic event_id from it.
+  string request_id = 4;
 }
 
 message DepositFundsResponse {
@@ -243,6 +253,9 @@ message WithdrawFundsRequest {
   TenantContext context = 1;
   string account_id = 2;
   Decimal amount = 3;
+
+  // Client idempotency key; the portfolio derives a deterministic event_id from it.
+  string request_id = 4;
 }
 
 message WithdrawFundsResponse {

@@ -1,22 +1,18 @@
-"""End-to-end trace propagation + metrics for the gRPC telemetry interceptors.
+"""Trace propagation + metrics for the client-side gRPC telemetry interceptor.
 
-A real in-process ``grpc.aio`` server with a generic byte-echo handler proves a
-trace crosses the client→server boundary (no generated protobufs needed).
+A real in-process ``grpc.aio`` server with a generic byte-echo handler proves the
+client injects W3C trace context onto the wire and records the request metric.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
 
 import grpc
 import grpc.aio
 import pytest
-from opentelemetry import trace
 
-from llamatrade_proto.interceptors.telemetry import (
-    TelemetryClientInterceptor,
-    TelemetryServerInterceptor,
-)
+from llamatrade_proto.interceptors.telemetry import TelemetryClientInterceptor
 from llamatrade_telemetry import get_metrics, init_telemetry, registry, tracing
 from llamatrade_telemetry.config import TelemetrySettings
 
@@ -36,10 +32,14 @@ def _identity(value: bytes) -> bytes:
     return value
 
 
-async def _serve(service: str, method: str, handler_fn):
+async def _serve(
+    service: str,
+    method: str,
+    handler_fn: Callable[[bytes, grpc.aio.ServicerContext], Awaitable[bytes]],
+) -> tuple[grpc.aio.Server, int]:
     handler = grpc.unary_unary_rpc_method_handler(handler_fn)
     generic = grpc.method_handlers_generic_handler(service, {method: handler})
-    server = grpc.aio.server(interceptors=[TelemetryServerInterceptor()])
+    server = grpc.aio.server()
     server.add_generic_rpc_handlers((generic,))
     port = server.add_insecure_port("127.0.0.1:0")
     await server.start()
@@ -47,11 +47,12 @@ async def _serve(service: str, method: str, handler_fn):
 
 
 @pytest.mark.asyncio
-async def test_trace_propagates_client_to_server() -> None:
-    captured: dict[str, int] = {}
+async def test_client_injects_trace_context_onto_wire() -> None:
+    captured: dict[str, str] = {}
 
     async def echo(request: bytes, context: grpc.aio.ServicerContext) -> bytes:
-        captured["trace_id"] = trace.get_current_span().get_span_context().trace_id
+        for key, value in context.invocation_metadata() or ():
+            captured[str(key)] = str(value)
         return request
 
     server, port = await _serve("test.Svc", "Echo", echo)
@@ -59,8 +60,7 @@ async def test_trace_propagates_client_to_server() -> None:
         channel = grpc.aio.insecure_channel(
             f"127.0.0.1:{port}", interceptors=[TelemetryClientInterceptor()]
         )
-        with tracing.span("client.root") as client_span:
-            client_trace_id = client_span.get_span_context().trace_id
+        with tracing.span("client.root"):
             call = channel.unary_unary(
                 "/test.Svc/Echo", request_serializer=_identity, response_deserializer=_identity
             )
@@ -70,11 +70,11 @@ async def test_trace_propagates_client_to_server() -> None:
         await server.stop(None)
 
     assert response == b"hello"
-    assert captured["trace_id"] == client_trace_id
+    assert "traceparent" in captured
 
 
 @pytest.mark.asyncio
-async def test_grpc_metrics_recorded() -> None:
+async def test_grpc_client_metric_recorded() -> None:
     async def ping(request: bytes, context: grpc.aio.ServicerContext) -> bytes:
         return request
 

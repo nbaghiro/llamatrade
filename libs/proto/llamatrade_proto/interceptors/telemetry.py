@@ -12,14 +12,11 @@ Unary-unary is wrapped (the dominant peer shape); streaming handlers pass throug
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-
 import grpc
 import grpc.aio
-from opentelemetry import context as _otel_context
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
-from llamatrade_telemetry import extract_context, get_tracer, inject_context
+from llamatrade_telemetry import get_tracer, inject_context
 from llamatrade_telemetry.instrumentation.grpc import record_grpc_request
 
 
@@ -51,47 +48,3 @@ class TelemetryClientInterceptor(grpc.aio.UnaryUnaryClientInterceptor):
             if code is not grpc.StatusCode.OK:
                 span.set_status(Status(StatusCode.ERROR))
             return call
-
-
-class TelemetryServerInterceptor(grpc.aio.ServerInterceptor):
-    """Extract trace context + record metrics on incoming unary gRPC calls."""
-
-    async def intercept_service(
-        self,
-        continuation: Callable[[grpc.HandlerCallDetails], Awaitable[grpc.RpcMethodHandler | None]],
-        handler_call_details: grpc.HandlerCallDetails,
-    ) -> grpc.RpcMethodHandler | None:
-        handler = await continuation(handler_call_details)
-        behavior = getattr(handler, "unary_unary", None)
-        if handler is None or behavior is None:
-            return handler  # streaming / unknown handler — pass through
-
-        method = _method_str(handler_call_details.method)
-        carrier = {
-            _method_str(k): _method_str(v)
-            for k, v in (handler_call_details.invocation_metadata or [])
-        }
-        parent = extract_context(carrier)
-
-        async def traced(request, context):
-            token = _otel_context.attach(parent)
-            tracer = get_tracer("llamatrade.grpc.server")
-            try:
-                with tracer.start_as_current_span(f"GRPC {method}", kind=SpanKind.SERVER) as span:
-                    try:
-                        response = await behavior(request, context)
-                        record_grpc_request(method, "OK")
-                        return response
-                    except Exception as exc:
-                        span.record_exception(exc)
-                        span.set_status(Status(StatusCode.ERROR, str(exc)))
-                        record_grpc_request(method, "ERROR")
-                        raise
-            finally:
-                _otel_context.detach(token)
-
-        return grpc.unary_unary_rpc_method_handler(
-            traced,
-            request_deserializer=handler.request_deserializer,
-            response_serializer=handler.response_serializer,
-        )

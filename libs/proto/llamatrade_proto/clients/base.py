@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from types import TracebackType
 
@@ -109,10 +110,10 @@ class BaseGRPCClient:
             timeout: Maximum time to wait in seconds
 
         Returns:
-            True if the channel is ready, False if timeout
+            True if the channel is ready, False if it timed out or errored
         """
         try:
-            await self.channel.channel_ready()
+            await asyncio.wait_for(self.channel.channel_ready(), timeout=timeout)
             return True
-        except grpc.aio.AioRpcError:
+        except TimeoutError, grpc.aio.AioRpcError:
             return False

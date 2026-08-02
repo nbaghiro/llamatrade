@@ -18,10 +18,10 @@ format:
 	buf format -w
 	@echo "Done!"
 
-# Check for breaking changes
+# Check for breaking changes (same local base as the root `make proto-breaking`)
 breaking:
 	@echo "Checking for breaking changes..."
-	buf breaking --against 'https://github.com/nbaghiro/llamatrade.git#branch=main,subdir=libs/proto'
+	buf breaking --against '../../.git#branch=main,subdir=libs/proto'
 
 # Clean generated files
 clean:

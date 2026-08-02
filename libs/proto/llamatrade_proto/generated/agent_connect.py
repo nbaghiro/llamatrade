@@ -16,39 +16,65 @@ from . import agent_pb2 as agent__pb2
 
 
 class AgentService(Protocol):
-    async def create_session(self, request: agent__pb2.CreateSessionRequest, ctx: RequestContext) -> agent__pb2.CreateSessionResponse:
+    async def create_session(
+        self, request: agent__pb2.CreateSessionRequest, ctx: RequestContext
+    ) -> agent__pb2.CreateSessionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_session(self, request: agent__pb2.GetSessionRequest, ctx: RequestContext) -> agent__pb2.GetSessionResponse:
+    async def get_session(
+        self, request: agent__pb2.GetSessionRequest, ctx: RequestContext
+    ) -> agent__pb2.GetSessionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_sessions(self, request: agent__pb2.ListSessionsRequest, ctx: RequestContext) -> agent__pb2.ListSessionsResponse:
+    async def list_sessions(
+        self, request: agent__pb2.ListSessionsRequest, ctx: RequestContext
+    ) -> agent__pb2.ListSessionsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def delete_session(self, request: agent__pb2.DeleteSessionRequest, ctx: RequestContext) -> agent__pb2.DeleteSessionResponse:
+    async def delete_session(
+        self, request: agent__pb2.DeleteSessionRequest, ctx: RequestContext
+    ) -> agent__pb2.DeleteSessionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def send_message(self, request: agent__pb2.SendMessageRequest, ctx: RequestContext) -> agent__pb2.SendMessageResponse:
+    async def send_message(
+        self, request: agent__pb2.SendMessageRequest, ctx: RequestContext
+    ) -> agent__pb2.SendMessageResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    def stream_message(self, request: agent__pb2.SendMessageRequest, ctx: RequestContext) -> AsyncIterator[agent__pb2.AgentStreamEvent]:
+    def stream_message(
+        self, request: agent__pb2.SendMessageRequest, ctx: RequestContext
+    ) -> AsyncIterator[agent__pb2.AgentStreamEvent]:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    def confirm_tool_call(self, request: agent__pb2.ConfirmToolCallRequest, ctx: RequestContext) -> AsyncIterator[agent__pb2.AgentStreamEvent]:
+    def confirm_tool_call(
+        self, request: agent__pb2.ConfirmToolCallRequest, ctx: RequestContext
+    ) -> AsyncIterator[agent__pb2.AgentStreamEvent]:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def commit_artifact(self, request: agent__pb2.CommitArtifactRequest, ctx: RequestContext) -> agent__pb2.CommitArtifactResponse:
+    async def commit_artifact(
+        self, request: agent__pb2.CommitArtifactRequest, ctx: RequestContext
+    ) -> agent__pb2.CommitArtifactResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_artifact(self, request: agent__pb2.GetArtifactRequest, ctx: RequestContext) -> agent__pb2.GetArtifactResponse:
+    async def get_artifact(
+        self, request: agent__pb2.GetArtifactRequest, ctx: RequestContext
+    ) -> agent__pb2.GetArtifactResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_suggested_prompts(self, request: agent__pb2.GetSuggestedPromptsRequest, ctx: RequestContext) -> agent__pb2.GetSuggestedPromptsResponse:
+    async def get_suggested_prompts(
+        self, request: agent__pb2.GetSuggestedPromptsRequest, ctx: RequestContext
+    ) -> agent__pb2.GetSuggestedPromptsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class AgentServiceASGIApplication(ConnectASGIApplication[AgentService]):
-    def __init__(self, service: AgentService | AsyncGenerator[AgentService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None) -> None:
+    def __init__(
+        self,
+        service: AgentService | AsyncGenerator[AgentService],
+        *,
+        interceptors: Iterable[Interceptor] = (),
+        read_max_bytes: int | None = None,
+    ) -> None:
         super().__init__(
             service=service,
             endpoints=lambda svc: {
@@ -366,30 +392,64 @@ class AgentServiceClient(ConnectClient):
 
 
 class AgentServiceSync(Protocol):
-    def create_session(self, request: agent__pb2.CreateSessionRequest, ctx: RequestContext) -> agent__pb2.CreateSessionResponse:
+    def create_session(
+        self, request: agent__pb2.CreateSessionRequest, ctx: RequestContext
+    ) -> agent__pb2.CreateSessionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def get_session(self, request: agent__pb2.GetSessionRequest, ctx: RequestContext) -> agent__pb2.GetSessionResponse:
+
+    def get_session(
+        self, request: agent__pb2.GetSessionRequest, ctx: RequestContext
+    ) -> agent__pb2.GetSessionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def list_sessions(self, request: agent__pb2.ListSessionsRequest, ctx: RequestContext) -> agent__pb2.ListSessionsResponse:
+
+    def list_sessions(
+        self, request: agent__pb2.ListSessionsRequest, ctx: RequestContext
+    ) -> agent__pb2.ListSessionsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def delete_session(self, request: agent__pb2.DeleteSessionRequest, ctx: RequestContext) -> agent__pb2.DeleteSessionResponse:
+
+    def delete_session(
+        self, request: agent__pb2.DeleteSessionRequest, ctx: RequestContext
+    ) -> agent__pb2.DeleteSessionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def send_message(self, request: agent__pb2.SendMessageRequest, ctx: RequestContext) -> agent__pb2.SendMessageResponse:
+
+    def send_message(
+        self, request: agent__pb2.SendMessageRequest, ctx: RequestContext
+    ) -> agent__pb2.SendMessageResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def stream_message(self, request: agent__pb2.SendMessageRequest, ctx: RequestContext) -> Iterator[agent__pb2.AgentStreamEvent]:
+
+    def stream_message(
+        self, request: agent__pb2.SendMessageRequest, ctx: RequestContext
+    ) -> Iterator[agent__pb2.AgentStreamEvent]:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def confirm_tool_call(self, request: agent__pb2.ConfirmToolCallRequest, ctx: RequestContext) -> Iterator[agent__pb2.AgentStreamEvent]:
+
+    def confirm_tool_call(
+        self, request: agent__pb2.ConfirmToolCallRequest, ctx: RequestContext
+    ) -> Iterator[agent__pb2.AgentStreamEvent]:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def commit_artifact(self, request: agent__pb2.CommitArtifactRequest, ctx: RequestContext) -> agent__pb2.CommitArtifactResponse:
+
+    def commit_artifact(
+        self, request: agent__pb2.CommitArtifactRequest, ctx: RequestContext
+    ) -> agent__pb2.CommitArtifactResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def get_artifact(self, request: agent__pb2.GetArtifactRequest, ctx: RequestContext) -> agent__pb2.GetArtifactResponse:
+
+    def get_artifact(
+        self, request: agent__pb2.GetArtifactRequest, ctx: RequestContext
+    ) -> agent__pb2.GetArtifactResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def get_suggested_prompts(self, request: agent__pb2.GetSuggestedPromptsRequest, ctx: RequestContext) -> agent__pb2.GetSuggestedPromptsResponse:
+
+    def get_suggested_prompts(
+        self, request: agent__pb2.GetSuggestedPromptsRequest, ctx: RequestContext
+    ) -> agent__pb2.GetSuggestedPromptsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class AgentServiceWSGIApplication(ConnectWSGIApplication):
-    def __init__(self, service: AgentServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None) -> None:
+    def __init__(
+        self,
+        service: AgentServiceSync,
+        interceptors: Iterable[InterceptorSync] = (),
+        read_max_bytes: int | None = None,
+    ) -> None:
         super().__init__(
             endpoints={
                 "/llamatrade.AgentService/CreateSession": EndpointSync.unary(

@@ -200,6 +200,45 @@ message ChangePasswordResponse {
   string message = 2;
 }
 
+// Password reset + email verification (unauthenticated; single-use tokens).
+// Responses are uniform regardless of account existence (no enumeration).
+message RequestPasswordResetRequest {
+  string email = 1;
+}
+
+message RequestPasswordResetResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message ResetPasswordRequest {
+  string token = 1;
+  string new_password = 2;
+}
+
+message ResetPasswordResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message VerifyEmailRequest {
+  string token = 1;
+}
+
+message VerifyEmailResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message ResendVerificationRequest {
+  string email = 1;
+}
+
+message ResendVerificationResponse {
+  bool success = 1;
+  string message = 2;
+}
+
 // =============================================================================
 // ALPACA CREDENTIALS
 // =============================================================================
@@ -279,6 +318,12 @@ service AuthService {
 
   // Password management (requires auth)
   rpc ChangePassword(ChangePasswordRequest) returns (ChangePasswordResponse);
+
+  // Password reset + email verification (unauthenticated, token-driven)
+  rpc RequestPasswordReset(RequestPasswordResetRequest) returns (RequestPasswordResetResponse);
+  rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse);
+  rpc VerifyEmail(VerifyEmailRequest) returns (VerifyEmailResponse);
+  rpc ResendVerification(ResendVerificationRequest) returns (ResendVerificationResponse);
 
   // Token validation (high-frequency, called by all services)
   rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);

@@ -19,7 +19,6 @@ else:
 _T = _typing.TypeVar("_T")
 
 class _MaybeAsyncIterator(_abc.AsyncIterator[_T], _abc.Iterator[_T], metaclass=_abc_1.ABCMeta): ...
-
 class _ServicerContext(_grpc.ServicerContext, _aio.ServicerContext):  # type: ignore[misc, type-arg]
     ...
 
@@ -31,46 +30,86 @@ class LedgerServiceStub:
     def __new__(cls, channel: _grpc.Channel) -> _Self: ...
     @_typing.overload
     def __new__(cls, channel: _aio.Channel) -> LedgerServiceAsyncStub: ...
-    GetOrCreateAccount: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.GetOrCreateAccountRequest, _ledger_pb2.GetOrCreateAccountResponse]
+    GetOrCreateAccount: _grpc.UnaryUnaryMultiCallable[
+        _ledger_pb2.GetOrCreateAccountRequest, _ledger_pb2.GetOrCreateAccountResponse
+    ]
     """Identity bootstrap (credentials_id → Account + base sleeves)"""
-    AllocateCapital: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.AllocateCapitalRequest, _ledger_pb2.AllocateCapitalResponse]
+    AllocateCapital: _grpc.UnaryUnaryMultiCallable[
+        _ledger_pb2.AllocateCapitalRequest, _ledger_pb2.AllocateCapitalResponse
+    ]
     """Fund disbursement"""
-    TransferCapital: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.TransferCapitalRequest, _ledger_pb2.TransferCapitalResponse]
-    DepositFunds: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.DepositFundsRequest, _ledger_pb2.DepositFundsResponse]
-    WithdrawFunds: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.WithdrawFundsRequest, _ledger_pb2.WithdrawFundsResponse]
-    CloseSleeve: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.CloseSleeveRequest, _ledger_pb2.CloseSleeveResponse]
+    TransferCapital: _grpc.UnaryUnaryMultiCallable[
+        _ledger_pb2.TransferCapitalRequest, _ledger_pb2.TransferCapitalResponse
+    ]
+    DepositFunds: _grpc.UnaryUnaryMultiCallable[
+        _ledger_pb2.DepositFundsRequest, _ledger_pb2.DepositFundsResponse
+    ]
+    WithdrawFunds: _grpc.UnaryUnaryMultiCallable[
+        _ledger_pb2.WithdrawFundsRequest, _ledger_pb2.WithdrawFundsResponse
+    ]
+    CloseSleeve: _grpc.UnaryUnaryMultiCallable[
+        _ledger_pb2.CloseSleeveRequest, _ledger_pb2.CloseSleeveResponse
+    ]
     """Sleeve lifecycle"""
-    ApplyCorporateAction: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.ApplyCorporateActionRequest, _ledger_pb2.ApplyCorporateActionResponse]
+    ApplyCorporateAction: _grpc.UnaryUnaryMultiCallable[
+        _ledger_pb2.ApplyCorporateActionRequest, _ledger_pb2.ApplyCorporateActionResponse
+    ]
     """Corporate actions (operator/feed-triggered): fan a split/rename/dividend
     out to every sleeve holding the symbol so per-sleeve provenance stays
     correct. Idempotent on the planner dedup keys.
     """
-    ListSleeves: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.ListSleevesRequest, _ledger_pb2.ListSleevesResponse]
+    ListSleeves: _grpc.UnaryUnaryMultiCallable[
+        _ledger_pb2.ListSleevesRequest, _ledger_pb2.ListSleevesResponse
+    ]
     """Queries"""
-    GetSleeve: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.GetSleeveRequest, _ledger_pb2.GetSleeveResponse]
-    GetHoldingHistory: _grpc.UnaryUnaryMultiCallable[_ledger_pb2.GetHoldingHistoryRequest, _ledger_pb2.GetHoldingHistoryResponse]
+    GetSleeve: _grpc.UnaryUnaryMultiCallable[
+        _ledger_pb2.GetSleeveRequest, _ledger_pb2.GetSleeveResponse
+    ]
+    GetHoldingHistory: _grpc.UnaryUnaryMultiCallable[
+        _ledger_pb2.GetHoldingHistoryRequest, _ledger_pb2.GetHoldingHistoryResponse
+    ]
 
 @_typing.type_check_only
 class LedgerServiceAsyncStub(LedgerServiceStub):
     def __init__(self, channel: _aio.Channel) -> None: ...
-    GetOrCreateAccount: _aio.UnaryUnaryMultiCallable[_ledger_pb2.GetOrCreateAccountRequest, _ledger_pb2.GetOrCreateAccountResponse]  # type: ignore[assignment]
+    GetOrCreateAccount: _aio.UnaryUnaryMultiCallable[
+        _ledger_pb2.GetOrCreateAccountRequest, _ledger_pb2.GetOrCreateAccountResponse
+    ]  # type: ignore[assignment]
     """Identity bootstrap (credentials_id → Account + base sleeves)"""
-    AllocateCapital: _aio.UnaryUnaryMultiCallable[_ledger_pb2.AllocateCapitalRequest, _ledger_pb2.AllocateCapitalResponse]  # type: ignore[assignment]
+    AllocateCapital: _aio.UnaryUnaryMultiCallable[
+        _ledger_pb2.AllocateCapitalRequest, _ledger_pb2.AllocateCapitalResponse
+    ]  # type: ignore[assignment]
     """Fund disbursement"""
-    TransferCapital: _aio.UnaryUnaryMultiCallable[_ledger_pb2.TransferCapitalRequest, _ledger_pb2.TransferCapitalResponse]  # type: ignore[assignment]
-    DepositFunds: _aio.UnaryUnaryMultiCallable[_ledger_pb2.DepositFundsRequest, _ledger_pb2.DepositFundsResponse]  # type: ignore[assignment]
-    WithdrawFunds: _aio.UnaryUnaryMultiCallable[_ledger_pb2.WithdrawFundsRequest, _ledger_pb2.WithdrawFundsResponse]  # type: ignore[assignment]
-    CloseSleeve: _aio.UnaryUnaryMultiCallable[_ledger_pb2.CloseSleeveRequest, _ledger_pb2.CloseSleeveResponse]  # type: ignore[assignment]
+    TransferCapital: _aio.UnaryUnaryMultiCallable[
+        _ledger_pb2.TransferCapitalRequest, _ledger_pb2.TransferCapitalResponse
+    ]  # type: ignore[assignment]
+    DepositFunds: _aio.UnaryUnaryMultiCallable[
+        _ledger_pb2.DepositFundsRequest, _ledger_pb2.DepositFundsResponse
+    ]  # type: ignore[assignment]
+    WithdrawFunds: _aio.UnaryUnaryMultiCallable[
+        _ledger_pb2.WithdrawFundsRequest, _ledger_pb2.WithdrawFundsResponse
+    ]  # type: ignore[assignment]
+    CloseSleeve: _aio.UnaryUnaryMultiCallable[
+        _ledger_pb2.CloseSleeveRequest, _ledger_pb2.CloseSleeveResponse
+    ]  # type: ignore[assignment]
     """Sleeve lifecycle"""
-    ApplyCorporateAction: _aio.UnaryUnaryMultiCallable[_ledger_pb2.ApplyCorporateActionRequest, _ledger_pb2.ApplyCorporateActionResponse]  # type: ignore[assignment]
+    ApplyCorporateAction: _aio.UnaryUnaryMultiCallable[
+        _ledger_pb2.ApplyCorporateActionRequest, _ledger_pb2.ApplyCorporateActionResponse
+    ]  # type: ignore[assignment]
     """Corporate actions (operator/feed-triggered): fan a split/rename/dividend
     out to every sleeve holding the symbol so per-sleeve provenance stays
     correct. Idempotent on the planner dedup keys.
     """
-    ListSleeves: _aio.UnaryUnaryMultiCallable[_ledger_pb2.ListSleevesRequest, _ledger_pb2.ListSleevesResponse]  # type: ignore[assignment]
+    ListSleeves: _aio.UnaryUnaryMultiCallable[
+        _ledger_pb2.ListSleevesRequest, _ledger_pb2.ListSleevesResponse
+    ]  # type: ignore[assignment]
     """Queries"""
-    GetSleeve: _aio.UnaryUnaryMultiCallable[_ledger_pb2.GetSleeveRequest, _ledger_pb2.GetSleeveResponse]  # type: ignore[assignment]
-    GetHoldingHistory: _aio.UnaryUnaryMultiCallable[_ledger_pb2.GetHoldingHistoryRequest, _ledger_pb2.GetHoldingHistoryResponse]  # type: ignore[assignment]
+    GetSleeve: _aio.UnaryUnaryMultiCallable[
+        _ledger_pb2.GetSleeveRequest, _ledger_pb2.GetSleeveResponse
+    ]  # type: ignore[assignment]
+    GetHoldingHistory: _aio.UnaryUnaryMultiCallable[
+        _ledger_pb2.GetHoldingHistoryRequest, _ledger_pb2.GetHoldingHistoryResponse
+    ]  # type: ignore[assignment]
 
 class LedgerServiceServicer(metaclass=_abc_1.ABCMeta):
     @_abc_1.abstractmethod
@@ -78,7 +117,10 @@ class LedgerServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _ledger_pb2.GetOrCreateAccountRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_ledger_pb2.GetOrCreateAccountResponse, _abc.Awaitable[_ledger_pb2.GetOrCreateAccountResponse]]:
+    ) -> _typing.Union[
+        _ledger_pb2.GetOrCreateAccountResponse,
+        _abc.Awaitable[_ledger_pb2.GetOrCreateAccountResponse],
+    ]:
         """Identity bootstrap (credentials_id → Account + base sleeves)"""
 
     @_abc_1.abstractmethod
@@ -86,7 +128,9 @@ class LedgerServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _ledger_pb2.AllocateCapitalRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_ledger_pb2.AllocateCapitalResponse, _abc.Awaitable[_ledger_pb2.AllocateCapitalResponse]]:
+    ) -> _typing.Union[
+        _ledger_pb2.AllocateCapitalResponse, _abc.Awaitable[_ledger_pb2.AllocateCapitalResponse]
+    ]:
         """Fund disbursement"""
 
     @_abc_1.abstractmethod
@@ -94,28 +138,33 @@ class LedgerServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _ledger_pb2.TransferCapitalRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_ledger_pb2.TransferCapitalResponse, _abc.Awaitable[_ledger_pb2.TransferCapitalResponse]]: ...
-
+    ) -> _typing.Union[
+        _ledger_pb2.TransferCapitalResponse, _abc.Awaitable[_ledger_pb2.TransferCapitalResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def DepositFunds(
         self,
         request: _ledger_pb2.DepositFundsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_ledger_pb2.DepositFundsResponse, _abc.Awaitable[_ledger_pb2.DepositFundsResponse]]: ...
-
+    ) -> _typing.Union[
+        _ledger_pb2.DepositFundsResponse, _abc.Awaitable[_ledger_pb2.DepositFundsResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def WithdrawFunds(
         self,
         request: _ledger_pb2.WithdrawFundsRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_ledger_pb2.WithdrawFundsResponse, _abc.Awaitable[_ledger_pb2.WithdrawFundsResponse]]: ...
-
+    ) -> _typing.Union[
+        _ledger_pb2.WithdrawFundsResponse, _abc.Awaitable[_ledger_pb2.WithdrawFundsResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def CloseSleeve(
         self,
         request: _ledger_pb2.CloseSleeveRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_ledger_pb2.CloseSleeveResponse, _abc.Awaitable[_ledger_pb2.CloseSleeveResponse]]:
+    ) -> _typing.Union[
+        _ledger_pb2.CloseSleeveResponse, _abc.Awaitable[_ledger_pb2.CloseSleeveResponse]
+    ]:
         """Sleeve lifecycle"""
 
     @_abc_1.abstractmethod
@@ -123,7 +172,10 @@ class LedgerServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _ledger_pb2.ApplyCorporateActionRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_ledger_pb2.ApplyCorporateActionResponse, _abc.Awaitable[_ledger_pb2.ApplyCorporateActionResponse]]:
+    ) -> _typing.Union[
+        _ledger_pb2.ApplyCorporateActionResponse,
+        _abc.Awaitable[_ledger_pb2.ApplyCorporateActionResponse],
+    ]:
         """Corporate actions (operator/feed-triggered): fan a split/rename/dividend
         out to every sleeve holding the symbol so per-sleeve provenance stays
         correct. Idempotent on the planner dedup keys.
@@ -134,7 +186,9 @@ class LedgerServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _ledger_pb2.ListSleevesRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_ledger_pb2.ListSleevesResponse, _abc.Awaitable[_ledger_pb2.ListSleevesResponse]]:
+    ) -> _typing.Union[
+        _ledger_pb2.ListSleevesResponse, _abc.Awaitable[_ledger_pb2.ListSleevesResponse]
+    ]:
         """Queries"""
 
     @_abc_1.abstractmethod
@@ -142,13 +196,18 @@ class LedgerServiceServicer(metaclass=_abc_1.ABCMeta):
         self,
         request: _ledger_pb2.GetSleeveRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_ledger_pb2.GetSleeveResponse, _abc.Awaitable[_ledger_pb2.GetSleeveResponse]]: ...
-
+    ) -> _typing.Union[
+        _ledger_pb2.GetSleeveResponse, _abc.Awaitable[_ledger_pb2.GetSleeveResponse]
+    ]: ...
     @_abc_1.abstractmethod
     def GetHoldingHistory(
         self,
         request: _ledger_pb2.GetHoldingHistoryRequest,
         context: _ServicerContext,
-    ) -> _typing.Union[_ledger_pb2.GetHoldingHistoryResponse, _abc.Awaitable[_ledger_pb2.GetHoldingHistoryResponse]]: ...
+    ) -> _typing.Union[
+        _ledger_pb2.GetHoldingHistoryResponse, _abc.Awaitable[_ledger_pb2.GetHoldingHistoryResponse]
+    ]: ...
 
-def add_LedgerServiceServicer_to_server(servicer: LedgerServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...
+def add_LedgerServiceServicer_to_server(
+    servicer: LedgerServiceServicer, server: _typing.Union[_grpc.Server, _aio.Server]
+) -> None: ...

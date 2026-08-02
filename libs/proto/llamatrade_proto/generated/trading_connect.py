@@ -16,54 +16,90 @@ from . import trading_pb2 as trading__pb2
 
 
 class TradingService(Protocol):
-    async def start_session(self, request: trading__pb2.StartTradingSessionRequest, ctx: RequestContext) -> trading__pb2.StartTradingSessionResponse:
+    async def start_session(
+        self, request: trading__pb2.StartTradingSessionRequest, ctx: RequestContext
+    ) -> trading__pb2.StartTradingSessionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def stop_session(self, request: trading__pb2.StopTradingSessionRequest, ctx: RequestContext) -> trading__pb2.StopTradingSessionResponse:
+    async def stop_session(
+        self, request: trading__pb2.StopTradingSessionRequest, ctx: RequestContext
+    ) -> trading__pb2.StopTradingSessionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def pause_session(self, request: trading__pb2.PauseTradingSessionRequest, ctx: RequestContext) -> trading__pb2.PauseTradingSessionResponse:
+    async def pause_session(
+        self, request: trading__pb2.PauseTradingSessionRequest, ctx: RequestContext
+    ) -> trading__pb2.PauseTradingSessionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def resume_session(self, request: trading__pb2.ResumeTradingSessionRequest, ctx: RequestContext) -> trading__pb2.ResumeTradingSessionResponse:
+    async def resume_session(
+        self, request: trading__pb2.ResumeTradingSessionRequest, ctx: RequestContext
+    ) -> trading__pb2.ResumeTradingSessionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_session(self, request: trading__pb2.GetTradingSessionRequest, ctx: RequestContext) -> trading__pb2.GetTradingSessionResponse:
+    async def get_session(
+        self, request: trading__pb2.GetTradingSessionRequest, ctx: RequestContext
+    ) -> trading__pb2.GetTradingSessionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_sessions(self, request: trading__pb2.ListTradingSessionsRequest, ctx: RequestContext) -> trading__pb2.ListTradingSessionsResponse:
+    async def list_sessions(
+        self, request: trading__pb2.ListTradingSessionsRequest, ctx: RequestContext
+    ) -> trading__pb2.ListTradingSessionsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def submit_order(self, request: trading__pb2.SubmitOrderRequest, ctx: RequestContext) -> trading__pb2.SubmitOrderResponse:
+    async def submit_order(
+        self, request: trading__pb2.SubmitOrderRequest, ctx: RequestContext
+    ) -> trading__pb2.SubmitOrderResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def cancel_order(self, request: trading__pb2.CancelOrderRequest, ctx: RequestContext) -> trading__pb2.CancelOrderResponse:
+    async def cancel_order(
+        self, request: trading__pb2.CancelOrderRequest, ctx: RequestContext
+    ) -> trading__pb2.CancelOrderResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_order(self, request: trading__pb2.GetOrderRequest, ctx: RequestContext) -> trading__pb2.GetOrderResponse:
+    async def get_order(
+        self, request: trading__pb2.GetOrderRequest, ctx: RequestContext
+    ) -> trading__pb2.GetOrderResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_orders(self, request: trading__pb2.ListOrdersRequest, ctx: RequestContext) -> trading__pb2.ListOrdersResponse:
+    async def list_orders(
+        self, request: trading__pb2.ListOrdersRequest, ctx: RequestContext
+    ) -> trading__pb2.ListOrdersResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_position(self, request: trading__pb2.GetPositionRequest, ctx: RequestContext) -> trading__pb2.GetPositionResponse:
+    async def get_position(
+        self, request: trading__pb2.GetPositionRequest, ctx: RequestContext
+    ) -> trading__pb2.GetPositionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_positions(self, request: trading__pb2.ListPositionsRequest, ctx: RequestContext) -> trading__pb2.ListPositionsResponse:
+    async def list_positions(
+        self, request: trading__pb2.ListPositionsRequest, ctx: RequestContext
+    ) -> trading__pb2.ListPositionsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def close_position(self, request: trading__pb2.ClosePositionRequest, ctx: RequestContext) -> trading__pb2.ClosePositionResponse:
+    async def close_position(
+        self, request: trading__pb2.ClosePositionRequest, ctx: RequestContext
+    ) -> trading__pb2.ClosePositionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    def stream_order_updates(self, request: trading__pb2.StreamOrderUpdatesRequest, ctx: RequestContext) -> AsyncIterator[trading__pb2.OrderUpdate]:
+    def stream_order_updates(
+        self, request: trading__pb2.StreamOrderUpdatesRequest, ctx: RequestContext
+    ) -> AsyncIterator[trading__pb2.OrderUpdate]:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    def stream_position_updates(self, request: trading__pb2.StreamPositionUpdatesRequest, ctx: RequestContext) -> AsyncIterator[trading__pb2.PositionUpdate]:
+    def stream_position_updates(
+        self, request: trading__pb2.StreamPositionUpdatesRequest, ctx: RequestContext
+    ) -> AsyncIterator[trading__pb2.PositionUpdate]:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class TradingServiceASGIApplication(ConnectASGIApplication[TradingService]):
-    def __init__(self, service: TradingService | AsyncGenerator[TradingService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None) -> None:
+    def __init__(
+        self,
+        service: TradingService | AsyncGenerator[TradingService],
+        *,
+        interceptors: Iterable[Interceptor] = (),
+        read_max_bytes: int | None = None,
+    ) -> None:
         super().__init__(
             service=service,
             endpoints=lambda svc: {
@@ -531,40 +567,89 @@ class TradingServiceClient(ConnectClient):
 
 
 class TradingServiceSync(Protocol):
-    def start_session(self, request: trading__pb2.StartTradingSessionRequest, ctx: RequestContext) -> trading__pb2.StartTradingSessionResponse:
+    def start_session(
+        self, request: trading__pb2.StartTradingSessionRequest, ctx: RequestContext
+    ) -> trading__pb2.StartTradingSessionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def stop_session(self, request: trading__pb2.StopTradingSessionRequest, ctx: RequestContext) -> trading__pb2.StopTradingSessionResponse:
+
+    def stop_session(
+        self, request: trading__pb2.StopTradingSessionRequest, ctx: RequestContext
+    ) -> trading__pb2.StopTradingSessionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def pause_session(self, request: trading__pb2.PauseTradingSessionRequest, ctx: RequestContext) -> trading__pb2.PauseTradingSessionResponse:
+
+    def pause_session(
+        self, request: trading__pb2.PauseTradingSessionRequest, ctx: RequestContext
+    ) -> trading__pb2.PauseTradingSessionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def resume_session(self, request: trading__pb2.ResumeTradingSessionRequest, ctx: RequestContext) -> trading__pb2.ResumeTradingSessionResponse:
+
+    def resume_session(
+        self, request: trading__pb2.ResumeTradingSessionRequest, ctx: RequestContext
+    ) -> trading__pb2.ResumeTradingSessionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def get_session(self, request: trading__pb2.GetTradingSessionRequest, ctx: RequestContext) -> trading__pb2.GetTradingSessionResponse:
+
+    def get_session(
+        self, request: trading__pb2.GetTradingSessionRequest, ctx: RequestContext
+    ) -> trading__pb2.GetTradingSessionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def list_sessions(self, request: trading__pb2.ListTradingSessionsRequest, ctx: RequestContext) -> trading__pb2.ListTradingSessionsResponse:
+
+    def list_sessions(
+        self, request: trading__pb2.ListTradingSessionsRequest, ctx: RequestContext
+    ) -> trading__pb2.ListTradingSessionsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def submit_order(self, request: trading__pb2.SubmitOrderRequest, ctx: RequestContext) -> trading__pb2.SubmitOrderResponse:
+
+    def submit_order(
+        self, request: trading__pb2.SubmitOrderRequest, ctx: RequestContext
+    ) -> trading__pb2.SubmitOrderResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def cancel_order(self, request: trading__pb2.CancelOrderRequest, ctx: RequestContext) -> trading__pb2.CancelOrderResponse:
+
+    def cancel_order(
+        self, request: trading__pb2.CancelOrderRequest, ctx: RequestContext
+    ) -> trading__pb2.CancelOrderResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def get_order(self, request: trading__pb2.GetOrderRequest, ctx: RequestContext) -> trading__pb2.GetOrderResponse:
+
+    def get_order(
+        self, request: trading__pb2.GetOrderRequest, ctx: RequestContext
+    ) -> trading__pb2.GetOrderResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def list_orders(self, request: trading__pb2.ListOrdersRequest, ctx: RequestContext) -> trading__pb2.ListOrdersResponse:
+
+    def list_orders(
+        self, request: trading__pb2.ListOrdersRequest, ctx: RequestContext
+    ) -> trading__pb2.ListOrdersResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def get_position(self, request: trading__pb2.GetPositionRequest, ctx: RequestContext) -> trading__pb2.GetPositionResponse:
+
+    def get_position(
+        self, request: trading__pb2.GetPositionRequest, ctx: RequestContext
+    ) -> trading__pb2.GetPositionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def list_positions(self, request: trading__pb2.ListPositionsRequest, ctx: RequestContext) -> trading__pb2.ListPositionsResponse:
+
+    def list_positions(
+        self, request: trading__pb2.ListPositionsRequest, ctx: RequestContext
+    ) -> trading__pb2.ListPositionsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def close_position(self, request: trading__pb2.ClosePositionRequest, ctx: RequestContext) -> trading__pb2.ClosePositionResponse:
+
+    def close_position(
+        self, request: trading__pb2.ClosePositionRequest, ctx: RequestContext
+    ) -> trading__pb2.ClosePositionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def stream_order_updates(self, request: trading__pb2.StreamOrderUpdatesRequest, ctx: RequestContext) -> Iterator[trading__pb2.OrderUpdate]:
+
+    def stream_order_updates(
+        self, request: trading__pb2.StreamOrderUpdatesRequest, ctx: RequestContext
+    ) -> Iterator[trading__pb2.OrderUpdate]:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def stream_position_updates(self, request: trading__pb2.StreamPositionUpdatesRequest, ctx: RequestContext) -> Iterator[trading__pb2.PositionUpdate]:
+
+    def stream_position_updates(
+        self, request: trading__pb2.StreamPositionUpdatesRequest, ctx: RequestContext
+    ) -> Iterator[trading__pb2.PositionUpdate]:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class TradingServiceWSGIApplication(ConnectWSGIApplication):
-    def __init__(self, service: TradingServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None) -> None:
+    def __init__(
+        self,
+        service: TradingServiceSync,
+        interceptors: Iterable[InterceptorSync] = (),
+        read_max_bytes: int | None = None,
+    ) -> None:
         super().__init__(
             endpoints={
                 "/llamatrade.TradingService/StartSession": EndpointSync.unary(

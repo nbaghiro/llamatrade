@@ -27,6 +27,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Read RPCs get a short deadline so a wedged portfolio pod can't hang a caller's
+# order path. Fund mutations (allocate/transfer/deposit/withdraw) and close_sleeve
+# are left unbounded until they carry idempotency keys, so a retry can't double-book.
+DEFAULT_READ_TIMEOUT_MS = 5000
+
 
 def _normalize_target(target: str) -> str:
     """Connect needs an absolute URL; accept bare ``host:port`` too."""
@@ -158,9 +163,16 @@ class LedgerClient:
         )
     """
 
-    def __init__(self, target: str = "portfolio:8860", *, service_name: str = "internal") -> None:
+    def __init__(
+        self,
+        target: str = "portfolio:8860",
+        *,
+        service_name: str = "internal",
+        read_timeout_ms: int | None = DEFAULT_READ_TIMEOUT_MS,
+    ) -> None:
         self.target = _normalize_target(target)
         self._service_name = service_name
+        self._read_timeout_ms = read_timeout_ms
         self._client: LedgerServiceClient | None = None
 
     def _get_client(self) -> LedgerServiceClient:
@@ -193,7 +205,9 @@ class LedgerClient:
             context=common_pb2.TenantContext(tenant_id=tenant_id, user_id=user_id),
             credentials_id=credentials_id,
         )
-        response = await self._get_client().get_or_create_account(request, headers=self._headers())
+        response = await self._get_client().get_or_create_account(
+            request, headers=self._headers(), timeout_ms=self._read_timeout_ms
+        )
         return AccountBootstrapResult(
             account=self._to_account(response.account),
             base_sleeves=[self._to_sleeve(s) for s in response.base_sleeves],
@@ -318,7 +332,9 @@ class LedgerClient:
             context=common_pb2.TenantContext(tenant_id=tenant_id, user_id=user_id),
             account_id=account_id,
         )
-        response = await self._get_client().list_sleeves(request, headers=self._headers())
+        response = await self._get_client().list_sleeves(
+            request, headers=self._headers(), timeout_ms=self._read_timeout_ms
+        )
         return [self._to_sleeve(s) for s in response.sleeves]
 
     async def get_sleeve(self, tenant_id: str, user_id: str, sleeve_id: str) -> SleeveDetail:
@@ -329,7 +345,9 @@ class LedgerClient:
             context=common_pb2.TenantContext(tenant_id=tenant_id, user_id=user_id),
             sleeve_id=sleeve_id,
         )
-        response = await self._get_client().get_sleeve(request, headers=self._headers())
+        response = await self._get_client().get_sleeve(
+            request, headers=self._headers(), timeout_ms=self._read_timeout_ms
+        )
         return SleeveDetail(
             sleeve=self._to_sleeve(response.sleeve),
             lots=[self._to_lot(lot) for lot in response.lots],
@@ -346,7 +364,9 @@ class LedgerClient:
             account_id=account_id,
             symbol=symbol,
         )
-        response = await self._get_client().get_holding_history(request, headers=self._headers())
+        response = await self._get_client().get_holding_history(
+            request, headers=self._headers(), timeout_ms=self._read_timeout_ms
+        )
         return [
             HoldingHistoryEntryInfo(
                 sleeve_id=entry.sleeve_id,

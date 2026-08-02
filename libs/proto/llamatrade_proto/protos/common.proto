@@ -95,3 +95,10 @@ enum ExecutionStatus {
   EXECUTION_STATUS_STOPPED = 4;   // Manually stopped
   EXECUTION_STATUS_ERROR = 5;     // Stopped due to error
 }
+
+// How target weights become orders. Shared by live and backtest sizing.
+enum SizingMode {
+  SIZING_MODE_UNSPECIFIED = 0;  // Unset: caller falls back to the engine default
+  SIZING_MODE_BINARY = 1;       // All-or-nothing: open/close, do not resize
+  SIZING_MODE_DRIFT = 2;        // Trade the delta to target, skipping inside the drift band
+}

@@ -44,25 +44,6 @@ enum AssetClass {
 }
 
 // Technical indicator types
-enum IndicatorType {
-  INDICATOR_TYPE_UNSPECIFIED = 0;
-  INDICATOR_TYPE_SMA = 1;
-  INDICATOR_TYPE_EMA = 2;
-  INDICATOR_TYPE_MACD = 3;
-  INDICATOR_TYPE_ADX = 4;
-  INDICATOR_TYPE_RSI = 5;
-  INDICATOR_TYPE_STOCHASTIC = 6;
-  INDICATOR_TYPE_CCI = 7;
-  INDICATOR_TYPE_WILLIAMS_R = 8;
-  INDICATOR_TYPE_BOLLINGER_BANDS = 9;
-  INDICATOR_TYPE_ATR = 10;
-  INDICATOR_TYPE_KELTNER_CHANNEL = 11;
-  INDICATOR_TYPE_OBV = 12;
-  INDICATOR_TYPE_MFI = 13;
-  INDICATOR_TYPE_VWAP = 14;
-  INDICATOR_TYPE_DONCHIAN_CHANNEL = 15;
-}
-
 // Template difficulty level
 enum TemplateDifficulty {
   TEMPLATE_DIFFICULTY_UNSPECIFIED = 0;
@@ -79,8 +60,8 @@ enum TemplateDifficulty {
 message Strategy {
   // dsl_code is the single source of truth; the JSON IR and visual tree are derived on demand
   // (client-side fromDSLString, or the CompileStrategy RPC), never stored/returned on the strategy.
-  reserved 8, 13;
-  reserved "compiled_json", "parameters";
+  reserved 8, 12, 13;
+  reserved "compiled_json", "parameters", "timeframe";
   string id = 1;
   string tenant_id = 2;
   string name = 3;
@@ -97,7 +78,8 @@ message Strategy {
 
   // Configuration
   repeated string symbols = 11;
-  string timeframe = 12;
+  // rebalance frequency (daily/weekly/monthly/quarterly/annually), a projection of the DSL
+  string rebalance = 19;
 
   // Metadata
   string created_by = 14;
@@ -168,6 +150,8 @@ message StrategyTemplate {
 
 // Strategy execution (paper or live trading session)
 message StrategyExecution {
+  reserved 8;
+  reserved "timeframe";
   string id = 1;
   string strategy_id = 2;
   string tenant_id = 3;
@@ -177,7 +161,6 @@ message StrategyExecution {
 
   // Runtime configuration overrides
   repeated string symbols = 7;
-  string timeframe = 8;
   map<string, string> config_override = 9;
 
   // Execution metadata
@@ -227,8 +210,8 @@ message ListStrategiesResponse {
 
 // Create strategy
 message CreateStrategyRequest {
-  reserved 9;
-  reserved "parameters";
+  reserved 8, 9;
+  reserved "parameters", "timeframe";
   TenantContext context = 1;
   string name = 2;
   string description = 3;
@@ -236,7 +219,6 @@ message CreateStrategyRequest {
   string template_id = 5;  // For template-based creation
   map<string, string> template_params = 6;
   repeated string symbols = 7;
-  string timeframe = 8;
 }
 
 message CreateStrategyResponse {
@@ -245,15 +227,14 @@ message CreateStrategyResponse {
 
 // Update strategy
 message UpdateStrategyRequest {
-  reserved 8;
-  reserved "parameters";
+  reserved 7, 8;
+  reserved "parameters", "timeframe";
   TenantContext context = 1;
   string strategy_id = 2;
   string name = 3;
   string description = 4;
   string dsl_code = 5;
   repeated string symbols = 6;
-  string timeframe = 7;
   string change_summary = 9;  // For version history
 }
 

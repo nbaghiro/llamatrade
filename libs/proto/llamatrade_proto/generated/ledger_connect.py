@@ -16,39 +16,65 @@ from . import ledger_pb2 as ledger__pb2
 
 
 class LedgerService(Protocol):
-    async def get_or_create_account(self, request: ledger__pb2.GetOrCreateAccountRequest, ctx: RequestContext) -> ledger__pb2.GetOrCreateAccountResponse:
+    async def get_or_create_account(
+        self, request: ledger__pb2.GetOrCreateAccountRequest, ctx: RequestContext
+    ) -> ledger__pb2.GetOrCreateAccountResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def allocate_capital(self, request: ledger__pb2.AllocateCapitalRequest, ctx: RequestContext) -> ledger__pb2.AllocateCapitalResponse:
+    async def allocate_capital(
+        self, request: ledger__pb2.AllocateCapitalRequest, ctx: RequestContext
+    ) -> ledger__pb2.AllocateCapitalResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def transfer_capital(self, request: ledger__pb2.TransferCapitalRequest, ctx: RequestContext) -> ledger__pb2.TransferCapitalResponse:
+    async def transfer_capital(
+        self, request: ledger__pb2.TransferCapitalRequest, ctx: RequestContext
+    ) -> ledger__pb2.TransferCapitalResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def deposit_funds(self, request: ledger__pb2.DepositFundsRequest, ctx: RequestContext) -> ledger__pb2.DepositFundsResponse:
+    async def deposit_funds(
+        self, request: ledger__pb2.DepositFundsRequest, ctx: RequestContext
+    ) -> ledger__pb2.DepositFundsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def withdraw_funds(self, request: ledger__pb2.WithdrawFundsRequest, ctx: RequestContext) -> ledger__pb2.WithdrawFundsResponse:
+    async def withdraw_funds(
+        self, request: ledger__pb2.WithdrawFundsRequest, ctx: RequestContext
+    ) -> ledger__pb2.WithdrawFundsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def close_sleeve(self, request: ledger__pb2.CloseSleeveRequest, ctx: RequestContext) -> ledger__pb2.CloseSleeveResponse:
+    async def close_sleeve(
+        self, request: ledger__pb2.CloseSleeveRequest, ctx: RequestContext
+    ) -> ledger__pb2.CloseSleeveResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def apply_corporate_action(self, request: ledger__pb2.ApplyCorporateActionRequest, ctx: RequestContext) -> ledger__pb2.ApplyCorporateActionResponse:
+    async def apply_corporate_action(
+        self, request: ledger__pb2.ApplyCorporateActionRequest, ctx: RequestContext
+    ) -> ledger__pb2.ApplyCorporateActionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_sleeves(self, request: ledger__pb2.ListSleevesRequest, ctx: RequestContext) -> ledger__pb2.ListSleevesResponse:
+    async def list_sleeves(
+        self, request: ledger__pb2.ListSleevesRequest, ctx: RequestContext
+    ) -> ledger__pb2.ListSleevesResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_sleeve(self, request: ledger__pb2.GetSleeveRequest, ctx: RequestContext) -> ledger__pb2.GetSleeveResponse:
+    async def get_sleeve(
+        self, request: ledger__pb2.GetSleeveRequest, ctx: RequestContext
+    ) -> ledger__pb2.GetSleeveResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_holding_history(self, request: ledger__pb2.GetHoldingHistoryRequest, ctx: RequestContext) -> ledger__pb2.GetHoldingHistoryResponse:
+    async def get_holding_history(
+        self, request: ledger__pb2.GetHoldingHistoryRequest, ctx: RequestContext
+    ) -> ledger__pb2.GetHoldingHistoryResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class LedgerServiceASGIApplication(ConnectASGIApplication[LedgerService]):
-    def __init__(self, service: LedgerService | AsyncGenerator[LedgerService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None) -> None:
+    def __init__(
+        self,
+        service: LedgerService | AsyncGenerator[LedgerService],
+        *,
+        interceptors: Iterable[Interceptor] = (),
+        read_max_bytes: int | None = None,
+    ) -> None:
         super().__init__(
             service=service,
             endpoints=lambda svc: {
@@ -366,30 +392,64 @@ class LedgerServiceClient(ConnectClient):
 
 
 class LedgerServiceSync(Protocol):
-    def get_or_create_account(self, request: ledger__pb2.GetOrCreateAccountRequest, ctx: RequestContext) -> ledger__pb2.GetOrCreateAccountResponse:
+    def get_or_create_account(
+        self, request: ledger__pb2.GetOrCreateAccountRequest, ctx: RequestContext
+    ) -> ledger__pb2.GetOrCreateAccountResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def allocate_capital(self, request: ledger__pb2.AllocateCapitalRequest, ctx: RequestContext) -> ledger__pb2.AllocateCapitalResponse:
+
+    def allocate_capital(
+        self, request: ledger__pb2.AllocateCapitalRequest, ctx: RequestContext
+    ) -> ledger__pb2.AllocateCapitalResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def transfer_capital(self, request: ledger__pb2.TransferCapitalRequest, ctx: RequestContext) -> ledger__pb2.TransferCapitalResponse:
+
+    def transfer_capital(
+        self, request: ledger__pb2.TransferCapitalRequest, ctx: RequestContext
+    ) -> ledger__pb2.TransferCapitalResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def deposit_funds(self, request: ledger__pb2.DepositFundsRequest, ctx: RequestContext) -> ledger__pb2.DepositFundsResponse:
+
+    def deposit_funds(
+        self, request: ledger__pb2.DepositFundsRequest, ctx: RequestContext
+    ) -> ledger__pb2.DepositFundsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def withdraw_funds(self, request: ledger__pb2.WithdrawFundsRequest, ctx: RequestContext) -> ledger__pb2.WithdrawFundsResponse:
+
+    def withdraw_funds(
+        self, request: ledger__pb2.WithdrawFundsRequest, ctx: RequestContext
+    ) -> ledger__pb2.WithdrawFundsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def close_sleeve(self, request: ledger__pb2.CloseSleeveRequest, ctx: RequestContext) -> ledger__pb2.CloseSleeveResponse:
+
+    def close_sleeve(
+        self, request: ledger__pb2.CloseSleeveRequest, ctx: RequestContext
+    ) -> ledger__pb2.CloseSleeveResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def apply_corporate_action(self, request: ledger__pb2.ApplyCorporateActionRequest, ctx: RequestContext) -> ledger__pb2.ApplyCorporateActionResponse:
+
+    def apply_corporate_action(
+        self, request: ledger__pb2.ApplyCorporateActionRequest, ctx: RequestContext
+    ) -> ledger__pb2.ApplyCorporateActionResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def list_sleeves(self, request: ledger__pb2.ListSleevesRequest, ctx: RequestContext) -> ledger__pb2.ListSleevesResponse:
+
+    def list_sleeves(
+        self, request: ledger__pb2.ListSleevesRequest, ctx: RequestContext
+    ) -> ledger__pb2.ListSleevesResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def get_sleeve(self, request: ledger__pb2.GetSleeveRequest, ctx: RequestContext) -> ledger__pb2.GetSleeveResponse:
+
+    def get_sleeve(
+        self, request: ledger__pb2.GetSleeveRequest, ctx: RequestContext
+    ) -> ledger__pb2.GetSleeveResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-    def get_holding_history(self, request: ledger__pb2.GetHoldingHistoryRequest, ctx: RequestContext) -> ledger__pb2.GetHoldingHistoryResponse:
+
+    def get_holding_history(
+        self, request: ledger__pb2.GetHoldingHistoryRequest, ctx: RequestContext
+    ) -> ledger__pb2.GetHoldingHistoryResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class LedgerServiceWSGIApplication(ConnectWSGIApplication):
-    def __init__(self, service: LedgerServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None) -> None:
+    def __init__(
+        self,
+        service: LedgerServiceSync,
+        interceptors: Iterable[InterceptorSync] = (),
+        read_max_bytes: int | None = None,
+    ) -> None:
         super().__init__(
             endpoints={
                 "/llamatrade.LedgerService/GetOrCreateAccount": EndpointSync.unary(
