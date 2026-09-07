@@ -6,41 +6,7 @@ import time
 from uuid import uuid4
 
 from llamatrade_common.revocation import RevocationStore, consume_once
-
-
-class FakeRedis:
-    """Dict-backed async Redis stand-in (with TTL capture and optional errors)."""
-
-    def __init__(self, *, error: bool = False) -> None:
-        self.store: dict[str, object] = {}
-        self.ttls: dict[str, int] = {}
-        self.error = error
-
-    def _maybe_fail(self) -> None:
-        if self.error:
-            raise ConnectionError("redis down")
-
-    async def setex(self, key: str, ttl: int, value: object) -> None:
-        self._maybe_fail()
-        self.store[key] = value
-        self.ttls[key] = ttl
-
-    async def set(self, key: str, value: object, nx: bool = False, ex: int | None = None) -> bool:
-        self._maybe_fail()
-        if nx and key in self.store:
-            return False
-        self.store[key] = value
-        if ex is not None:
-            self.ttls[key] = ex
-        return True
-
-    async def exists(self, key: str) -> int:
-        self._maybe_fail()
-        return int(key in self.store)
-
-    async def get(self, key: str) -> object | None:
-        self._maybe_fail()
-        return self.store.get(key)
+from llamatrade_common.testing import FakeRedis
 
 
 def _claims(

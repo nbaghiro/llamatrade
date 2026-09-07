@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from llamatrade_common.ratelimit import RateLimiter
+from llamatrade_common.testing import FakeRedis
 
 
 class FakeClock:
@@ -14,26 +15,6 @@ class FakeClock:
 
     def advance(self, seconds: float) -> None:
         self.now += seconds
-
-
-class FakeRedis:
-    """Dict-backed async Redis stand-in for INCR/EXPIRE (with optional errors)."""
-
-    def __init__(self, *, error: bool = False) -> None:
-        self.counts: dict[str, int] = {}
-        self.ttls: dict[str, int] = {}
-        self.error = error
-
-    async def incr(self, key: str) -> int:
-        if self.error:
-            raise ConnectionError("redis down")
-        self.counts[key] = self.counts.get(key, 0) + 1
-        return self.counts[key]
-
-    async def expire(self, key: str, ttl: int) -> None:
-        if self.error:
-            raise ConnectionError("redis down")
-        self.ttls[key] = ttl
 
 
 class TestCheckAndCount:
