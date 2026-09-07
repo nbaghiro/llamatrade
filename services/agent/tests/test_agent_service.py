@@ -908,13 +908,6 @@ class TestArtifactCreationFlow:
             data={"valid": False, "errors": ["Syntax error"]},
         )
 
-        artifact_created = False
-
-        async def mock_maybe_create(*args: Any, **kwargs: Any) -> Any:
-            nonlocal artifact_created
-            artifact_created = True
-            return None
-
         with (
             patch.object(agent_service._executor, "execute", return_value=mock_validation_result),
             patch.object(
@@ -922,10 +915,11 @@ class TestArtifactCreationFlow:
                 "format_tool_result_for_llm",
                 return_value='{"valid": false}',
             ),
-            patch.object(agent_service, "_maybe_create_artifact", side_effect=mock_maybe_create),
         ):
             events = []
             async for event in agent_service.stream_message(session_id, "Create bad strategy"):
                 events.append(event)
 
-        # _maybe_create_artifact returns None when the validation result is invalid.
+        # The real guard runs: invalid DSL yields no artifact, so no ARTIFACT_CREATED event.
+        assert not [e for e in events if e.get("type") == STREAM_EVENT_TYPE_ARTIFACT_CREATED]
+        assert [e for e in events if e.get("type") == STREAM_EVENT_TYPE_COMPLETE]

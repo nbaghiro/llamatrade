@@ -249,154 +249,6 @@ def make_artifact_data(
 
 
 # =============================================================================
-# Mock Service Fixtures
-# =============================================================================
-
-
-class MockConversationService:
-    """Mock conversation service for testing."""
-
-    def __init__(self) -> None:
-        self.sessions: dict[str, dict[str, Any]] = {}
-        self.messages: dict[str, list[dict[str, Any]]] = {}
-        self.artifacts: dict[str, list[dict[str, Any]]] = {}
-
-    async def create_session(
-        self,
-        tenant_id: UUID,
-        user_id: UUID,
-        title: str | None = None,
-    ) -> Any:
-        """Create a mock session."""
-        session_id = uuid4()
-        data = make_session_data(
-            session_id=session_id,
-            tenant_id=tenant_id,
-            user_id=user_id,
-            title=title,
-        )
-        self.sessions[str(session_id)] = data
-        self.messages[str(session_id)] = []
-        self.artifacts[str(session_id)] = []
-
-        # Return a mock object with the data as attributes
-        class MockSession:
-            pass
-
-        session = MockSession()
-        for key, value in data.items():
-            setattr(session, key, value)
-        return session
-
-    async def get_session(
-        self,
-        tenant_id: UUID,
-        session_id: UUID,
-    ) -> Any | None:
-        """Get a mock session."""
-        data = self.sessions.get(str(session_id))
-        if not data or data.get("tenant_id") != str(tenant_id):
-            return None
-
-        class MockSession:
-            pass
-
-        session = MockSession()
-        for key, value in data.items():
-            setattr(session, key, value)
-        return session
-
-    async def add_message(
-        self,
-        session_id: UUID,
-        tenant_id: UUID,
-        role: int,
-        content: str,
-        tool_calls: list[dict[str, Any]] | None = None,
-    ) -> Any:
-        """Add a mock message."""
-        message_id = uuid4()
-        data = make_message_data(
-            message_id=message_id,
-            session_id=session_id,
-            tenant_id=tenant_id,
-            role=role,
-            content=content,
-            tool_calls=tool_calls,
-        )
-
-        if str(session_id) in self.messages:
-            self.messages[str(session_id)].append(data)
-
-        class MockMessage:
-            pass
-
-        message = MockMessage()
-        for key, value in data.items():
-            setattr(message, key, value)
-        return message
-
-
-@pytest.fixture
-def mock_conversation_service() -> MockConversationService:
-    """Create a mock conversation service."""
-    return MockConversationService()
-
-
-# =============================================================================
-# DSL Fixtures
-# =============================================================================
-
-
-@pytest.fixture
-def sample_dsl_60_40() -> str:
-    """Return sample 60/40 portfolio DSL."""
-    return """(strategy "Classic 60/40"
-  :rebalance quarterly
-  :benchmark SPY
-  (weight :method specified
-    (group "Equities" :weight 60
-      (weight :method equal
-        (asset VTI)
-        (asset VEA)))
-    (group "Bonds" :weight 40
-      (weight :method equal
-        (asset BND)
-        (asset BNDX)))))"""
-
-
-@pytest.fixture
-def sample_dsl_momentum() -> str:
-    """Return sample momentum strategy DSL."""
-    return """(strategy "Momentum Rotation"
-  :rebalance monthly
-  :benchmark SPY
-  (filter :by momentum :select (top 3) :lookback 90
-    (weight :method equal
-      (asset XLK)
-      (asset XLF)
-      (asset XLV)
-      (asset XLE)
-      (asset XLI))))"""
-
-
-@pytest.fixture
-def sample_dsl_tactical() -> str:
-    """Return sample tactical strategy DSL."""
-    return """(strategy "Tactical 60/40"
-  :rebalance daily
-  :benchmark SPY
-  (if (> (sma SPY 50) (sma SPY 200))
-    (weight :method specified
-      (asset VTI :weight 60)
-      (asset BND :weight 40))
-    (else
-      (weight :method specified
-        (asset VTI :weight 20)
-        (asset BND :weight 80)))))"""
-
-
-# =============================================================================
 # Proto Mock Factories
 # =============================================================================
 
@@ -511,24 +363,15 @@ def make_send_message_request(
 
 
 @pytest.fixture
-def mock_memory_db(mock_db_session: AsyncMock) -> AsyncMock:
-    """Create a database session mock with memory-specific query helpers.
-
-    This fixture extends mock_db_session with common memory query patterns.
-    """
-    return mock_db_session
-
-
-@pytest.fixture
 def memory_service(
-    mock_memory_db: AsyncMock,
+    mock_db_session: AsyncMock,
     tenant_id: UUID,
     user_id: UUID,
 ) -> Any:
     """Create a MemoryService with mocked database."""
     from src.services.memory_service import MemoryService
 
-    return MemoryService(mock_memory_db, tenant_id, user_id)
+    return MemoryService(mock_db_session, tenant_id, user_id)
 
 
 @pytest.fixture
@@ -557,44 +400,6 @@ def tool_context(
         user_id=user_id,
         session_id=session_id,
     )
-
-
-# =============================================================================
-# Memory Test Data Fixtures
-# =============================================================================
-
-
-@pytest.fixture
-def sample_user_messages() -> list[str]:
-    """Sample user messages containing extractable facts."""
-    return [
-        "My risk tolerance is moderate, I can handle up to 15% drawdown.",
-        "I'm a long-term investor saving for retirement in 20 years.",
-        "I like tech stocks but want to avoid energy sector.",
-        "I prefer to rebalance quarterly.",
-        "I'll go with the 60/40 allocation you suggested.",
-    ]
-
-
-@pytest.fixture
-def sample_conversation_history() -> list[dict[str, str]]:
-    """Sample conversation history for LLM extraction tests."""
-    return [
-        {"role": "user", "content": "Hi, I want to create an investment strategy."},
-        {"role": "assistant", "content": "I'd be happy to help! What are your investment goals?"},
-        {
-            "role": "user",
-            "content": "I'm saving for retirement, about 20 years away. I'm moderately aggressive with risk.",
-        },
-        {
-            "role": "assistant",
-            "content": "Great! For a 20-year horizon with moderate-aggressive risk, I'd suggest a growth-oriented approach. Any sectors you prefer?",
-        },
-        {
-            "role": "user",
-            "content": "I like tech and healthcare. I want to avoid oil and gas companies.",
-        },
-    ]
 
 
 @pytest.fixture(autouse=True)

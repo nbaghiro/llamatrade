@@ -11,6 +11,8 @@ import pytest
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 
+from llamatrade_common.auth import TenantContext as AuthTenantContext
+from llamatrade_common.auth import reset_context, set_context
 from llamatrade_proto.generated import agent_pb2, common_pb2
 from llamatrade_proto.generated.agent_pb2 import (
     AGENT_SESSION_STATUS_ACTIVE,
@@ -214,6 +216,75 @@ class TestGetSession:
             await servicer.get_session(request, mock_request_context)
 
         assert exc_info.value.code == Code.INVALID_ARGUMENT
+
+    @pytest.mark.asyncio
+    async def test_get_session_wire_tenant_mismatching_token_is_rejected(
+        self,
+        mock_request_context: MagicMock,
+        tenant_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        """With the middleware-populated auth context set (resolve_identity's
+        user branch), a wire tenant that differs from the token is refused
+        before any database work."""
+        servicer = AgentServicer()
+        token = set_context(AuthTenantContext(tenant_id=tenant_id, user_id=user_id))
+        try:
+            request = agent_pb2.GetSessionRequest(
+                context=common_pb2.TenantContext(tenant_id=str(uuid4()), user_id=str(user_id)),
+                session_id=str(uuid4()),
+            )
+            with pytest.raises(ConnectError) as exc_info:
+                await servicer.get_session(request, mock_request_context)
+        finally:
+            reset_context(token)
+
+        assert exc_info.value.code == Code.PERMISSION_DENIED
+        assert "does not match" in exc_info.value.message
+
+
+# =============================================================================
+# Delete Session Tests
+# =============================================================================
+
+
+class TestDeleteSession:
+    """RPC-layer guards for delete_session (real-SQL paths live in
+    test_conversation_isolation_sql.py)."""
+
+    @pytest.mark.asyncio
+    async def test_delete_session_invalid_uuid(
+        self,
+        mock_request_context: MagicMock,
+        tenant_id: UUID,
+        user_id: UUID,
+    ) -> None:
+        servicer = AgentServicer()
+        request = agent_pb2.DeleteSessionRequest(
+            context=common_pb2.TenantContext(tenant_id=str(tenant_id), user_id=str(user_id)),
+            session_id="not-a-uuid",
+        )
+
+        with pytest.raises(ConnectError) as exc_info:
+            await servicer.delete_session(request, mock_request_context)
+
+        assert exc_info.value.code == Code.INVALID_ARGUMENT
+
+    @pytest.mark.asyncio
+    async def test_delete_session_invalid_context(
+        self,
+        mock_request_context: MagicMock,
+    ) -> None:
+        servicer = AgentServicer()
+        request = agent_pb2.DeleteSessionRequest(
+            context=common_pb2.TenantContext(tenant_id="", user_id=""),
+            session_id=str(uuid4()),
+        )
+
+        with pytest.raises(ConnectError) as exc_info:
+            await servicer.delete_session(request, mock_request_context)
+
+        assert exc_info.value.code == Code.UNAUTHENTICATED
 
 
 # =============================================================================
