@@ -1,298 +1,165 @@
-"""Tests for gRPC market data client usage in trading service."""
+"""Trading's market-data wrapper: symbol normalization, degradation, bar mapping.
 
-from datetime import datetime
+Drives the real ``src.clients.market_data.MarketDataClient`` with the underlying
+proto client stubbed at its own seam, so the wrapper's own logic runs: upcasing,
+the fail-soft paths that keep a market-data outage from breaking pricing, the
+drop-unpriceable filter, and the bar dict projection.
+"""
+
+from __future__ import annotations
+
+import os
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from llamatrade_proto.clients.market_data import Bar, MarketDataClient, Quote, Trade
+from src.clients.market_data import MarketDataClient, get_market_data_client
 
 
-class TestMarketDataClientMethods:
-    """Tests for MarketDataClient method behavior."""
+def _client(**stub: object) -> tuple[MarketDataClient, AsyncMock]:
+    """A wrapper whose underlying proto client is a stub with the given behavior."""
+    client = MarketDataClient(target="market-data:8840")
+    proto = AsyncMock()
+    for name, value in stub.items():
+        setattr(proto, name, value)
+    client._client = proto
+    return client, proto
 
-    @pytest.fixture
-    def mock_client(self):
-        """Create a fully mocked MarketDataClient."""
-        with patch.object(MarketDataClient, "__init__", lambda self, *args, **kwargs: None):
-            client = MarketDataClient()
-            cast(Any, client)._channel = MagicMock()
-            cast(Any, client)._stub = MagicMock()
-            # Mock the actual methods to avoid protobuf imports
-            client.get_historical_bars = AsyncMock()
-            client.stream_bars = MagicMock()
-            client.stream_quotes = MagicMock()
-            client.stream_trades = MagicMock()
-            return client
 
-    async def test_get_historical_bars_returns_bar_list(self, mock_client):
-        """Test get_historical_bars returns list of Bar objects."""
-        # Setup mock to return Bar objects
-        mock_bars = [
-            Bar(
-                symbol="AAPL",
-                timestamp=datetime(2024, 1, 2, 9, 30),
-                open=Decimal("185.00"),
-                high=Decimal("186.50"),
-                low=Decimal("184.00"),
-                close=Decimal("185.50"),
-                volume=50000000,
-                trade_count=100000,
-                vwap=Decimal("185.25"),
-            )
+class TestTargetResolution:
+    def test_defaults_to_the_env_target(self) -> None:
+        with patch.dict(os.environ, {"MARKET_DATA_GRPC_TARGET": "md:9999"}):
+            assert MarketDataClient().target == "md:9999"
+
+    def test_explicit_target_wins(self) -> None:
+        assert MarketDataClient(target="other:1").target == "other:1"
+
+    def test_client_is_created_once(self) -> None:
+        client = MarketDataClient(target="md:1")
+        assert client._client is None
+        assert client._get_client() is client._get_client()
+
+    async def test_close_releases_the_underlying_client(self) -> None:
+        client, proto = _client()
+        await client.close()
+        proto.close.assert_awaited_once()
+        assert client._client is None
+
+    async def test_close_is_a_noop_without_a_client(self) -> None:
+        await MarketDataClient(target="md:1").close()
+
+
+class TestGetLatestPrice:
+    async def test_upcases_the_symbol_and_returns_a_float(self) -> None:
+        client, proto = _client(get_latest_price=AsyncMock(return_value=Decimal("101.25")))
+
+        assert await client.get_latest_price("aapl") == 101.25
+        proto.get_latest_price.assert_awaited_once_with("AAPL")
+
+    async def test_upstream_failure_degrades_to_none(self) -> None:
+        client, _ = _client(get_latest_price=AsyncMock(side_effect=RuntimeError("md down")))
+
+        assert await client.get_latest_price("AAPL") is None
+
+
+class TestGetPrices:
+    async def test_empty_input_short_circuits_without_a_call(self) -> None:
+        client, proto = _client(get_latest_prices=AsyncMock())
+
+        assert await client.get_prices([]) == {}
+        proto.get_latest_prices.assert_not_awaited()
+
+    async def test_upcases_symbols_and_maps_to_floats(self) -> None:
+        client, proto = _client(
+            get_latest_prices=AsyncMock(return_value={"AAPL": Decimal("10"), "TLT": Decimal("20")})
+        )
+
+        assert await client.get_prices(["aapl", "tlt"]) == {"AAPL": 10.0, "TLT": 20.0}
+        proto.get_latest_prices.assert_awaited_once_with(["AAPL", "TLT"])
+
+    @pytest.mark.parametrize("unpriceable", [Decimal("0"), None])
+    async def test_unpriceable_symbols_are_omitted_not_zeroed(self, unpriceable: object) -> None:
+        """A caller must skip marking rather than mark a position to $0."""
+        client, _ = _client(
+            get_latest_prices=AsyncMock(return_value={"AAPL": Decimal("5"), "TLT": unpriceable})
+        )
+
+        assert await client.get_prices(["AAPL", "TLT"]) == {"AAPL": 5.0}
+
+    async def test_upstream_failure_degrades_to_an_empty_map(self) -> None:
+        client, _ = _client(get_latest_prices=AsyncMock(side_effect=RuntimeError("md down")))
+
+        assert await client.get_prices(["AAPL"]) == {}
+
+
+class TestGetSnapshot:
+    async def test_upcases_and_passes_through(self) -> None:
+        snapshot = SimpleNamespace(symbol="AAPL")
+        client, proto = _client(get_snapshot=AsyncMock(return_value=snapshot))
+
+        assert await client.get_snapshot("aapl") is snapshot
+        proto.get_snapshot.assert_awaited_once_with("AAPL")
+
+    async def test_upstream_failure_degrades_to_none(self) -> None:
+        client, _ = _client(get_snapshot=AsyncMock(side_effect=RuntimeError("md down")))
+
+        assert await client.get_snapshot("AAPL") is None
+
+
+class TestGetBars:
+    @staticmethod
+    def _bar() -> SimpleNamespace:
+        return SimpleNamespace(
+            timestamp=datetime(2026, 1, 2, tzinfo=UTC),
+            open=Decimal("1"),
+            high=Decimal("2"),
+            low=Decimal("0.5"),
+            close=Decimal("1.5"),
+            volume=100,
+        )
+
+    async def test_projects_bars_into_plain_dicts(self) -> None:
+        client, proto = _client(get_historical_bars=AsyncMock(return_value=[self._bar()]))
+
+        bars = await client.get_bars("aapl", timeframe="1D", limit=10)
+
+        assert bars == [
+            {
+                "timestamp": "2026-01-02T00:00:00+00:00",
+                "open": 1.0,
+                "high": 2.0,
+                "low": 0.5,
+                "close": 1.5,
+                "volume": 100,
+            }
         ]
-        mock_client.get_historical_bars.return_value = mock_bars
+        assert proto.get_historical_bars.await_args.kwargs["symbol"] == "AAPL"
 
-        bars = await mock_client.get_historical_bars(
-            symbol="AAPL",
-            start=datetime(2024, 1, 1),
-            end=datetime(2024, 1, 31),
-            timeframe="1D",
-        )
+    async def test_daily_window_pads_past_the_bar_count(self) -> None:
+        """Daily bars count trading days, so the calendar window must be wider."""
+        client, proto = _client(get_historical_bars=AsyncMock(return_value=[]))
 
-        assert len(bars) == 1
-        assert bars[0].symbol == "AAPL"
-        assert bars[0].close == Decimal("185.50")
-        assert bars[0].volume == 50000000
-        mock_client.get_historical_bars.assert_called_once()
+        await client.get_bars("AAPL", timeframe="1D", limit=100)
 
-    async def test_get_historical_bars_empty_response(self, mock_client):
-        """Test get_historical_bars with no data returned."""
-        mock_client.get_historical_bars.return_value = []
+        kwargs = proto.get_historical_bars.await_args.kwargs
+        assert (kwargs["end"] - kwargs["start"]).days > 100
 
-        bars = await mock_client.get_historical_bars(
-            symbol="INVALID",
-            start=datetime(2024, 1, 1),
-            end=datetime(2024, 1, 31),
-        )
+    async def test_intraday_window_tracks_the_requested_units(self) -> None:
+        client, proto = _client(get_historical_bars=AsyncMock(return_value=[]))
 
-        assert bars == []
+        await client.get_bars("AAPL", timeframe="1Min", limit=30)
 
-    async def test_get_historical_bars_multiple_timeframes(self, mock_client):
-        """Test different timeframe parameters are accepted."""
-        mock_client.get_historical_bars.return_value = []
+        kwargs = proto.get_historical_bars.await_args.kwargs
+        assert (kwargs["end"] - kwargs["start"]).total_seconds() == pytest.approx(30 * 60, abs=5)
 
-        timeframes = ["1MIN", "5MIN", "15MIN", "1HOUR", "1DAY", "1D", "1WEEK"]
-        for timeframe in timeframes:
-            await mock_client.get_historical_bars(
-                symbol="AAPL",
-                start=datetime(2024, 1, 1),
-                end=datetime(2024, 1, 31),
-                timeframe=timeframe,
-            )
+    async def test_upstream_failure_degrades_to_an_empty_list(self) -> None:
+        client, _ = _client(get_historical_bars=AsyncMock(side_effect=RuntimeError("md down")))
 
-        assert mock_client.get_historical_bars.call_count == 7
-
-    async def test_get_historical_bars_with_options(self, mock_client):
-        """Test get_historical_bars with additional options."""
-        mock_client.get_historical_bars.return_value = []
-
-        await mock_client.get_historical_bars(
-            symbol="AAPL",
-            start=datetime(2024, 1, 1),
-            end=datetime(2024, 1, 31),
-            timeframe="1D",
-            adjust_for_splits=False,
-            page_size=500,
-        )
-
-        call_kwargs = mock_client.get_historical_bars.call_args[1]
-        assert call_kwargs.get("adjust_for_splits") is False
-        assert call_kwargs.get("page_size") == 500
-
-    async def test_stream_bars(self, mock_client):
-        """Test streaming bars."""
-        mock_bars = [
-            Bar(
-                symbol="AAPL",
-                timestamp=datetime(2024, 1, 2, 9, 30),
-                open=Decimal("185.00"),
-                high=Decimal("186.00"),
-                low=Decimal("184.50"),
-                close=Decimal("185.50"),
-                volume=1000,
-            ),
-            Bar(
-                symbol="GOOGL",
-                timestamp=datetime(2024, 1, 2, 9, 30),
-                open=Decimal("140.00"),
-                high=Decimal("141.00"),
-                low=Decimal("139.50"),
-                close=Decimal("140.50"),
-                volume=500,
-            ),
-        ]
-
-        async def mock_stream(*args, **kwargs):
-            for bar in mock_bars:
-                yield bar
-
-        mock_client.stream_bars = mock_stream
-
-        bars = []
-        async for bar in mock_client.stream_bars(["AAPL", "GOOGL"]):
-            bars.append(bar)
-
-        assert len(bars) == 2
-        assert bars[0].symbol == "AAPL"
-        assert bars[1].symbol == "GOOGL"
-
-    async def test_stream_quotes(self, mock_client):
-        """Test streaming quotes."""
-        mock_quotes = [
-            Quote(
-                symbol="AAPL",
-                timestamp=datetime(2024, 1, 2, 9, 30),
-                bid_price=Decimal("185.40"),
-                bid_size=100,
-                ask_price=Decimal("185.50"),
-                ask_size=200,
-            )
-        ]
-
-        async def mock_stream(*args, **kwargs):
-            for quote in mock_quotes:
-                yield quote
-
-        mock_client.stream_quotes = mock_stream
-
-        quotes = []
-        async for quote in mock_client.stream_quotes(["AAPL"]):
-            quotes.append(quote)
-
-        assert len(quotes) == 1
-        assert quotes[0].symbol == "AAPL"
-        assert quotes[0].bid_price == Decimal("185.40")
-        assert quotes[0].ask_price == Decimal("185.50")
-
-    async def test_stream_trades(self, mock_client):
-        """Test streaming trades."""
-        mock_trades = [
-            Trade(
-                symbol="AAPL",
-                timestamp=datetime(2024, 1, 2, 9, 30),
-                price=Decimal("185.50"),
-                size=100,
-                exchange="NASDAQ",
-            )
-        ]
-
-        async def mock_stream(*args, **kwargs):
-            for trade in mock_trades:
-                yield trade
-
-        mock_client.stream_trades = mock_stream
-
-        trades = []
-        async for trade in mock_client.stream_trades(["AAPL"]):
-            trades.append(trade)
-
-        assert len(trades) == 1
-        assert trades[0].symbol == "AAPL"
-        assert trades[0].price == Decimal("185.50")
-        assert trades[0].exchange == "NASDAQ"
+        assert await client.get_bars("AAPL") == []
 
 
-class TestMarketDataClientInit:
-    """Tests for MarketDataClient initialization."""
-
-    def test_init_default_target(self):
-        """Default target is normalized to an absolute Connect URL."""
-        client = MarketDataClient()
-        assert client.target == "http://market-data:8840"
-
-    def test_init_custom_target(self):
-        """Custom target is normalized to an absolute Connect URL."""
-        client = MarketDataClient(target="custom-host:9999")
-        assert client.target == "http://custom-host:9999"
-
-
-class TestBarDataclass:
-    """Tests for Bar dataclass."""
-
-    def test_bar_creation(self):
-        """Test Bar dataclass creation."""
-        bar = Bar(
-            symbol="AAPL",
-            timestamp=datetime(2024, 1, 2, 9, 30),
-            open=Decimal("185.00"),
-            high=Decimal("186.50"),
-            low=Decimal("184.00"),
-            close=Decimal("185.50"),
-            volume=50000000,
-            trade_count=100000,
-            vwap=Decimal("185.25"),
-        )
-
-        assert bar.symbol == "AAPL"
-        assert bar.close == Decimal("185.50")
-        assert bar.volume == 50000000
-        assert bar.vwap == Decimal("185.25")
-
-    def test_bar_optional_fields(self):
-        """Test Bar with optional fields as None."""
-        bar = Bar(
-            symbol="AAPL",
-            timestamp=datetime(2024, 1, 2, 9, 30),
-            open=Decimal("185.00"),
-            high=Decimal("186.50"),
-            low=Decimal("184.00"),
-            close=Decimal("185.50"),
-            volume=50000000,
-        )
-
-        assert bar.trade_count is None
-        assert bar.vwap is None
-
-
-class TestQuoteDataclass:
-    """Tests for Quote dataclass."""
-
-    def test_quote_creation(self):
-        """Test Quote dataclass creation."""
-        quote = Quote(
-            symbol="AAPL",
-            timestamp=datetime(2024, 1, 2, 9, 30),
-            bid_price=Decimal("185.40"),
-            bid_size=100,
-            ask_price=Decimal("185.50"),
-            ask_size=200,
-        )
-
-        assert quote.symbol == "AAPL"
-        assert quote.bid_price == Decimal("185.40")
-        assert quote.ask_price == Decimal("185.50")
-        assert quote.bid_size == 100
-        assert quote.ask_size == 200
-
-
-class TestTradeDataclass:
-    """Tests for Trade dataclass."""
-
-    def test_trade_creation(self):
-        """Test Trade dataclass creation."""
-        trade = Trade(
-            symbol="AAPL",
-            timestamp=datetime(2024, 1, 2, 9, 30),
-            price=Decimal("185.50"),
-            size=100,
-            exchange="NASDAQ",
-        )
-
-        assert trade.symbol == "AAPL"
-        assert trade.price == Decimal("185.50")
-        assert trade.size == 100
-        assert trade.exchange == "NASDAQ"
-
-    def test_trade_optional_exchange(self):
-        """Test Trade with optional exchange as None."""
-        trade = Trade(
-            symbol="AAPL",
-            timestamp=datetime(2024, 1, 2, 9, 30),
-            price=Decimal("185.50"),
-            size=100,
-        )
-
-        assert trade.exchange is None
+def test_module_singleton_is_reused() -> None:
+    assert get_market_data_client() is get_market_data_client()

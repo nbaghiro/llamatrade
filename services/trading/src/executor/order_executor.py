@@ -33,7 +33,7 @@ from llamatrade_proto.generated.trading_pb2 import (
     TIME_IN_FORCE_GTC,
 )
 
-from src.executor.base import OrderSubmissionMixin
+from src.executor.base import OrderSubmissionMixin, reject_unsupported_order_type
 from src.ledger_events import (
     build_ledger_fill_payload_from_order,
     build_ledger_lifecycle_payload,
@@ -148,7 +148,13 @@ class OrderExecutor(OrderSubmissionMixin):
         (the live runner, which also prefilled the price cache), so it is used
         as-is rather than running a second full check with its own market-data
         RPC. Without it (the manual order path) the check runs here.
+
+        Raises:
+            ValueError: For trailing-stop orders — the Alpaca dispatch path
+                cannot carry the trail, so they are refused before any row is
+                recorded rather than silently placed as market orders.
         """
+        reject_unsupported_order_type(order)
         start_time = time.perf_counter()
 
         # Client order id is deterministic when keyed off a signal (live runner) so retries collapse onto the same broker order.
@@ -243,6 +249,23 @@ class OrderExecutor(OrderSubmissionMixin):
             await self.db.refresh(db_order)
 
             self._record_submission_success(order=order, start_time=start_time)
+
+            logger.info(
+                "Order submitted to broker: %s %s %s",
+                order_side_to_str(order.side),
+                order.qty,
+                db_order.symbol,
+                extra={
+                    "client_order_id": client_order_id,
+                    "order_id": str(db_order.id),
+                    "alpaca_order_id": result.alpaca_order_id,
+                    "symbol": db_order.symbol,
+                    "side": order_side_to_str(order.side),
+                    "qty": str(order.qty),
+                    "sleeve_id": str(order.sleeve_id) if order.sleeve_id else None,
+                    "session_id": str(session_id),
+                },
+            )
 
             # Publish order submitted event
             if self.publisher:
@@ -447,9 +470,9 @@ class OrderExecutor(OrderSubmissionMixin):
                 await self.alpaca.cancel_order(order.alpaca_order_id)
             except OrderNotFoundError:
                 # Order doesn't exist at Alpaca - may have already been filled/cancelled
-                logger.warning(f"Order {order.alpaca_order_id} not found at Alpaca during cancel")
+                logger.warning("Order %s not found at Alpaca during cancel", order.alpaca_order_id)
             except AlpacaError as e:
-                logger.error(f"Failed to cancel order {order.alpaca_order_id}: {e}")
+                logger.error("Failed to cancel order %s: %s", order.alpaca_order_id, e)
                 return False
 
         order.status = ORDER_STATUS_CANCELLED
@@ -525,7 +548,9 @@ class OrderExecutor(OrderSubmissionMixin):
                 )
                 await self.publisher.publish_ledger_fill(release)
         except Exception as e:
-            logger.error(f"Failed to publish ledger events for order {order.client_order_id}: {e}")
+            logger.error(
+                "Failed to publish ledger events for order %s: %s", order.client_order_id, e
+            )
 
     async def _backfill_order_attribution(self, order: Order) -> tuple[UUID, UUID] | None:
         """Resolve + persist Manual-sleeve attribution for an unattributed order.
@@ -549,15 +574,15 @@ class OrderExecutor(OrderSubmissionMixin):
             )
         except Exception:
             logger.warning(
-                f"Attribution resolution failed for terminal order {order.client_order_id}; "
-                "skipping ledger emission (reconciliation will surface it)",
+                "Attribution resolution failed for terminal order %s; skipping ledger emission (reconciliation will surface it)",
+                order.client_order_id,
                 exc_info=True,
             )
             return None
         if sleeve_id is None or account_id is None:
             logger.warning(
-                f"No resolvable sleeve for terminal order {order.client_order_id}; "
-                "skipping ledger emission (reconciliation will surface it)"
+                "No resolvable sleeve for terminal order %s; skipping ledger emission (reconciliation will surface it)",
+                order.client_order_id,
             )
             return None
         order.sleeve_id = sleeve_id
@@ -571,7 +596,7 @@ class OrderExecutor(OrderSubmissionMixin):
         """Re-emit ledger events for already-terminal, sleeve-attributed orders.
 
         A safety net for the narrow window where an order reached a terminal
-        state but its ledger publish failed (e.g. Redis briefly down): a later
+        state but its ledger publish failed (e.g. the broker briefly down): a later
         REST sync won't re-fire it because the DB status no longer changes.
         Re-publishing is idempotent at the ledger (dedup on event_id), so this
         never double-counts. ``since`` bounds the scan on ``updated_at`` (when the
@@ -651,7 +676,9 @@ class OrderExecutor(OrderSubmissionMixin):
         try:
             await self.publisher.publish_ledger_fill(payload)
         except Exception as e:
-            logger.error(f"Failed to publish ledger {kind} for {db_order.client_order_id}: {e}")
+            logger.error(
+                "Failed to publish ledger %s for %s: %s", kind, db_order.client_order_id, e
+            )
 
     async def sync_order_status(
         self,
@@ -937,7 +964,7 @@ class OrderExecutor(OrderSubmissionMixin):
             import logging
 
             logging.getLogger(__name__).error(
-                f"Bracket orders failed for {parent_order.symbol}: {e}"
+                "Bracket orders failed for %s: %s", parent_order.symbol, e
             )
             if self.alerts:
                 await self.alerts.on_strategy_error(
@@ -1047,10 +1074,10 @@ class OrderExecutor(OrderSubmissionMixin):
         for order_id in alpaca_order_ids:
             try:
                 await self.alpaca.cancel_order(order_id)
-                logger.info(f"Rolled back bracket order: {order_id}")
+                logger.info("Rolled back bracket order: %s", order_id)
             except Exception as e:
                 # Log but don't raise - we're already in error handling
-                logger.error(f"Failed to rollback bracket order {order_id}: {e}")
+                logger.error("Failed to rollback bracket order %s: %s", order_id, e)
 
     async def _handle_order_fill(
         self,
@@ -1137,16 +1164,17 @@ class OrderExecutor(OrderSubmissionMixin):
             # Check if sibling already filled (both bracket orders hit simultaneously)
             if sibling.status == ORDER_STATUS_FILLED:
                 logger.warning(
-                    f"OCO conflict: both bracket orders filled for parent "
-                    f"{filled_bracket.parent_order_id}. This order: {filled_bracket.id}, "
-                    f"sibling: {sibling.id}. Both fills are valid."
+                    "OCO conflict: both bracket orders filled for parent %s. This order: %s, sibling: %s. Both fills are valid.",
+                    filled_bracket.parent_order_id,
+                    filled_bracket.id,
+                    sibling.id,
                 )
                 record_bracket_oco_conflict("both_filled")
                 continue
 
             # Check if sibling already cancelled (idempotent handling)
             if sibling.status == ORDER_STATUS_CANCELLED:
-                logger.debug(f"Sibling bracket {sibling.id} already cancelled, skipping")
+                logger.debug("Sibling bracket %s already cancelled, skipping", sibling.id)
                 record_bracket_oco_conflict("cancelled_already")
                 continue
 
@@ -1158,8 +1186,9 @@ class OrderExecutor(OrderSubmissionMixin):
                 ORDER_STATUS_PARTIAL,
             ):
                 logger.debug(
-                    f"Sibling bracket {sibling.id} in non-cancellable state "
-                    f"{sibling.status}, skipping"
+                    "Sibling bracket %s in non-cancellable state %s, skipping",
+                    sibling.id,
+                    sibling.status,
                 )
                 continue
 
@@ -1170,15 +1199,15 @@ class OrderExecutor(OrderSubmissionMixin):
                 except OrderNotFoundError:
                     # Order no longer exists at Alpaca - sync status from broker
                     logger.info(
-                        f"Sibling bracket {sibling.alpaca_order_id} not found at "
-                        f"Alpaca during OCO cancel, syncing status"
+                        "Sibling bracket %s not found at Alpaca during OCO cancel, syncing status",
+                        sibling.alpaca_order_id,
                     )
                     # Let the sync_order_status handle updating the correct status
                     await self._sync_single_order_status(sibling)
                     continue
                 except AlpacaError as e:
                     logger.warning(
-                        f"Failed to cancel sibling bracket {sibling.alpaca_order_id}: {e}"
+                        "Failed to cancel sibling bracket %s: %s", sibling.alpaca_order_id, e
                     )
                     # Mark cancelled locally anyway; the periodic sync corrects it if needed.
 
@@ -1207,8 +1236,10 @@ class OrderExecutor(OrderSubmissionMixin):
                 new_status = self._map_alpaca_status(alpaca_order.status.value)
                 if new_status != order.status:
                     logger.info(
-                        f"Synced order {order.id} status from {order.status} "
-                        f"to {new_status} during OCO handling"
+                        "Synced order %s status from %s to %s during OCO handling",
+                        order.id,
+                        order.status,
+                        new_status,
                     )
                     order.status = new_status
                     if new_status == ORDER_STATUS_FILLED:
@@ -1218,7 +1249,7 @@ class OrderExecutor(OrderSubmissionMixin):
                         if alpaca_order.filled_at:
                             order.filled_at = alpaca_order.filled_at
         except Exception as e:
-            logger.warning(f"Failed to sync order {order.id} during OCO: {e}")
+            logger.warning("Failed to sync order %s during OCO: %s", order.id, e)
 
     async def cancel_bracket_orders(
         self,
@@ -1261,11 +1292,11 @@ class OrderExecutor(OrderSubmissionMixin):
                     await self.alpaca.cancel_order(bracket_order.alpaca_order_id)
                 except OrderNotFoundError:
                     logger.info(
-                        f"Bracket order {bracket_order.alpaca_order_id} not found at Alpaca"
+                        "Bracket order %s not found at Alpaca", bracket_order.alpaca_order_id
                     )
                 except AlpacaError as e:
                     logger.warning(
-                        f"Failed to cancel bracket order {bracket_order.alpaca_order_id}: {e}"
+                        "Failed to cancel bracket order %s: %s", bracket_order.alpaca_order_id, e
                     )
             bracket_order.status = ORDER_STATUS_CANCELLED
             bracket_order.canceled_at = now

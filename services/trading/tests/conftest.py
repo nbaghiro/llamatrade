@@ -7,8 +7,9 @@ from uuid import UUID
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from llamatrade_alpaca import Account, Order
+from llamatrade_alpaca import Account, Order, TradingClient
 from llamatrade_alpaca import OrderSide as AlpacaOrderSide
 from llamatrade_alpaca import OrderStatus as AlpacaOrderStatus
 from llamatrade_alpaca import OrderType as AlpacaOrderType
@@ -68,7 +69,7 @@ def credentials_id():
 @pytest.fixture
 def mock_db():
     """Create a mock async database session."""
-    db = AsyncMock()
+    db = AsyncMock(spec=AsyncSession)
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
     db.add = MagicMock()
@@ -78,8 +79,8 @@ def mock_db():
 
 @pytest.fixture
 def mock_alpaca_client():
-    """Create a mock Alpaca trading client."""
-    client = AsyncMock()
+    """Create a spec'd double of the real Alpaca trading client."""
+    client = AsyncMock(spec=TradingClient)
     client.get_account = AsyncMock(
         return_value=Account(
             id="test-account",
@@ -142,10 +143,11 @@ def mock_alpaca_client():
 
 @pytest.fixture
 def mock_risk_manager():
-    """Create a mock risk manager."""
+    """Create a spec'd double of the risk manager."""
     from src.models import RiskCheckResult
+    from src.risk.risk_manager import RiskManager
 
-    manager = AsyncMock()
+    manager = AsyncMock(spec=RiskManager)
     manager.check_order = AsyncMock(
         return_value=RiskCheckResult(
             passed=True,

@@ -45,6 +45,7 @@ from llamatrade_proto.generated.trading_pb2 import (
     ORDER_TYPE_MARKET,
     TIME_IN_FORCE_DAY,
 )
+from tests.sessions import quiet_session
 
 from src.executor.order_executor import OrderExecutor
 from src.risk.risk_manager import RiskManager
@@ -83,7 +84,7 @@ def _runner(publisher: TradingEventPublisher) -> StrategyRunner:
     )
     return StrategyRunner(
         config=config,
-        strategy_fn=MagicMock(return_value=None),
+        session=quiet_session(),
         bar_stream=MockBarStream(bars={"SPY": []}),
         trade_stream=MockTradeStream(),
         order_executor=cast(OrderExecutor, AsyncMock()),

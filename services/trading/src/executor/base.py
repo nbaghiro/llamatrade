@@ -20,6 +20,7 @@ from llamatrade_proto.generated.trading_pb2 import (
     ORDER_STATUS_PENDING,
     ORDER_STATUS_REJECTED,
     ORDER_STATUS_SUBMITTED,
+    ORDER_TYPE_TRAILING_STOP,
     OrderStatus,
 )
 
@@ -55,6 +56,23 @@ _ALPACA_STATUS_MAP: dict[str, OrderStatus.ValueType] = {
     "pending_cancel": ORDER_STATUS_PENDING,
     "pending_replace": ORDER_STATUS_PENDING,
 }
+
+
+TRAILING_STOP_UNSUPPORTED_MESSAGE = (
+    "trailing-stop orders are not supported: llamatrade_alpaca.submit_order carries no "
+    "trail parameter, so the order would dispatch as an unprotected market order"
+)
+
+
+def reject_unsupported_order_type(order: OrderCreate) -> None:
+    """Refuse order types the broker dispatch path cannot represent yet.
+
+    Raises:
+        ValueError: For trailing-stop orders (until llamatrade_alpaca gains
+            trail support).
+    """
+    if order.order_type == ORDER_TYPE_TRAILING_STOP:
+        raise ValueError(TRAILING_STOP_UNSUPPORTED_MESSAGE)
 
 
 @dataclass
@@ -190,8 +208,10 @@ class OrderSubmissionMixin:
             AlpacaSubmitResult with order response and parsed fields.
 
         Raises:
+            ValueError: If the order's type cannot be dispatched faithfully.
             Exception: If Alpaca submission fails.
         """
+        reject_unsupported_order_type(order)
         alpaca_order = await self.alpaca.submit_order(
             symbol=order.symbol,
             qty=order.qty,

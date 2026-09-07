@@ -32,6 +32,7 @@ from llamatrade_proto.generated.trading_pb2 import (
     ORDER_TYPE_MARKET,
     TIME_IN_FORCE_DAY,
 )
+from tests.sessions import quiet_session
 
 from src.executor.order_executor import OrderExecutor, generate_deterministic_order_id
 from src.models import OrderCreate, RiskCheckResult
@@ -373,7 +374,7 @@ class TestMultipleRunners:
             )
             runner = StrategyRunner(
                 config=config,
-                strategy_fn=simple_strategy,
+                session=quiet_session(),
                 bar_stream=bar_stream,
                 trade_stream=MockTradeStream(),
                 order_executor=mock_order_executor,

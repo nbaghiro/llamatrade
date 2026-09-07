@@ -25,6 +25,8 @@ from llamatrade_proto.generated.trading_pb2 import (
     TIME_IN_FORCE_DAY,
 )
 
+pytestmark = pytest.mark.integration
+
 
 async def _session_row(db: AsyncSession, tenant_id: UUID) -> TradingSession:
     session = TradingSession(

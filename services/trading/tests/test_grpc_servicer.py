@@ -793,9 +793,15 @@ class TestStreamOrderUpdates:
         mock_subscriber.tail_orders = empty_tail
         mock_subscriber.close = AsyncMock()
 
-        with patch(
-            "src.grpc.servicer.get_trading_event_subscriber",
-            return_value=mock_subscriber,
+        with (
+            patch(
+                "src.grpc.servicer.get_trading_event_subscriber",
+                return_value=mock_subscriber,
+            ),
+            # Ownership is enforced before the tail; it has its own tests.
+            patch.object(
+                type(trading_servicer), "_assert_session_owned", AsyncMock(return_value=None)
+            ),
         ):
             responses = []
             async for response in trading_servicer.stream_order_updates(request, grpc_context):
@@ -834,9 +840,15 @@ class TestStreamPositionUpdates:
         mock_subscriber.tail_positions = empty_tail
         mock_subscriber.close = AsyncMock()
 
-        with patch(
-            "src.grpc.servicer.get_trading_event_subscriber",
-            return_value=mock_subscriber,
+        with (
+            patch(
+                "src.grpc.servicer.get_trading_event_subscriber",
+                return_value=mock_subscriber,
+            ),
+            # Ownership is enforced before the tail; it has its own tests.
+            patch.object(
+                type(trading_servicer), "_assert_session_owned", AsyncMock(return_value=None)
+            ),
         ):
             responses = []
             async for response in trading_servicer.stream_position_updates(request, grpc_context):

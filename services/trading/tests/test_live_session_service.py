@@ -250,45 +250,6 @@ class TestLiveSessionServiceGetStrategySexpr:
         assert result is None
 
 
-class TestLiveSessionServicePauseResume:
-    """Tests for pause/resume with runners."""
-
-    async def test_pause_calls_runner_pause(
-        self,
-        live_session_service,
-        mock_runner_manager,
-        session_id,
-        tenant_id,
-    ):
-        """Test that pause calls runner.pause()."""
-        mock_runner = MagicMock()
-        mock_runner_manager.get_runner.return_value = mock_runner
-
-        # Mock the parent class method
-        live_session_service.pause_session = AsyncMock(return_value=None)
-
-        await live_session_service.pause_session(session_id, tenant_id)
-
-        # Note: we can't easily test the runner pause because the
-        # method calls the parent first
-
-    async def test_resume_calls_runner_resume(
-        self,
-        live_session_service,
-        mock_runner_manager,
-        session_id,
-        tenant_id,
-    ):
-        """Test that resume calls runner.resume()."""
-        mock_runner = MagicMock()
-        mock_runner_manager.get_runner.return_value = mock_runner
-
-        # Mock the parent class method
-        live_session_service.resume_session = AsyncMock(return_value=None)
-
-        await live_session_service.resume_session(session_id, tenant_id)
-
-
 class TestLiveSessionServiceTenantIsolation:
     """Runner-control RPCs verify tenant ownership BEFORE touching the runner
     registry, which is keyed by session_id alone (cross-tenant DoS guard)."""
@@ -640,10 +601,11 @@ class TestLiveSessionServiceStartSession:
         credentials_id,
     ):
         """Test that preflight failure prevents session creation."""
-        # Mock preflight checks to fail
         live_session_service._preflight_checks = AsyncMock(
             side_effect=ValueError("No active subscription found")
         )
+        start_runner = AsyncMock()
+        live_session_service._start_runner = start_runner
 
         with pytest.raises(ValueError, match="No active subscription found"):
             await live_session_service.start_session(
@@ -657,8 +619,7 @@ class TestLiveSessionServiceStartSession:
                 symbols=["AAPL"],
             )
 
-        # _start_runner should NOT have been called
-        assert not hasattr(live_session_service, "_start_runner_called")
+        start_runner.assert_not_awaited()
 
 
 class TestLiveSessionServiceStopSession:

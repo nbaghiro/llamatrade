@@ -53,7 +53,7 @@ from llamatrade_proto.generated.common_pb2 import (
     EXECUTION_STATUS_PAUSED,
     EXECUTION_STATUS_RUNNING,
 )
-from llamatrade_telemetry import counter
+from llamatrade_telemetry import LogContext, counter
 
 from src.runner.runner import RunnerManager
 
@@ -64,6 +64,15 @@ REHYDRATION_INTERVAL_SECONDS = int(os.getenv("TRADING_REHYDRATION_INTERVAL_SECON
 # RUNNING executions younger than this are skipped by adoption — the client may still be mid-deploy, about to call StartSession itself.
 ADOPT_EXECUTION_GRACE_SECONDS = int(os.getenv("TRADING_ADOPT_EXECUTION_GRACE_SECONDS", "120"))
 
+# Consecutive adoption failures after which an execution is abandoned. Some
+# executions can never be adopted (a lapsed subscription, revoked credentials);
+# retrying them every tick costs a full preflight each time and grows without
+# bound as they accumulate.
+ADOPT_MAX_ATTEMPTS = int(os.getenv("TRADING_ADOPT_MAX_ATTEMPTS", "5"))
+
+# execution id → consecutive failed adoption attempts on this pod.
+_adopt_failures: dict[UUID, int] = {}
+
 # Sessions this pod owns → the open connection holding that session's advisory lock; closing it (here or on pod death) releases the lock so another pod can claim the session.
 _leases: dict[UUID, AsyncConnection] = {}
 
@@ -71,6 +80,12 @@ SESSION_LEASES_LOST = counter(
     "llamatrade_trading_session_leases_lost_total",
     (),
     "Session ownership leases found dead on their own connection",
+)
+
+ADOPTIONS_ABANDONED = counter(
+    "llamatrade_trading_adoptions_abandoned_total",
+    (),
+    "Funded RUNNING executions abandoned after repeated failed adoptions",
 )
 
 
@@ -359,35 +374,56 @@ async def adopt_orphaned_executions() -> int:
     for spec in await _load_orphaned_executions():
         if spec.execution_id in _leases:
             continue  # adoption already in flight on this pod
-        try:
-            if not await _try_claim(spec.execution_id):
-                continue  # another pod is adopting it
-        except Exception:
-            logger.warning(
-                "Advisory-lock claim failed for execution %s", spec.execution_id, exc_info=True
-            )
-            continue
-        try:
-            session_id = await _adopt_one(spec)
-            adopted += 1
-            logger.info(
-                "Adopted orphaned RUNNING execution %s as session %s",
-                spec.execution_id,
-                session_id,
-            )
-            # Own the new session's lease so peers don't re-claim it next tick.
+        if _adopt_failures.get(spec.execution_id, 0) >= ADOPT_MAX_ATTEMPTS:
+            continue  # abandoned; see ADOPT_MAX_ATTEMPTS
+        with LogContext(
+            tenant_id=str(spec.tenant_id),
+            user_id=str(spec.user_id),
+            execution_id=str(spec.execution_id),
+        ):
             try:
-                await _try_claim(session_id)
+                if not await _try_claim(spec.execution_id):
+                    continue  # another pod is adopting it
             except Exception:
-                logger.warning("Could not lease adopted session %s", session_id, exc_info=True)
-        except Exception:
-            logger.warning(
-                "Adoption failed for execution %s; will retry next tick",
-                spec.execution_id,
-                exc_info=True,
-            )
-        finally:
-            await release_session_lease(spec.execution_id)
+                logger.warning(
+                    "Advisory-lock claim failed for execution %s", spec.execution_id, exc_info=True
+                )
+                continue
+            try:
+                session_id = await _adopt_one(spec)
+                adopted += 1
+                _adopt_failures.pop(spec.execution_id, None)
+                logger.info(
+                    "Adopted orphaned RUNNING execution %s as session %s",
+                    spec.execution_id,
+                    session_id,
+                )
+                # Own the new session's lease so peers don't re-claim it next tick.
+                try:
+                    await _try_claim(session_id)
+                except Exception:
+                    logger.warning("Could not lease adopted session %s", session_id, exc_info=True)
+            except Exception:
+                failures = _adopt_failures.get(spec.execution_id, 0) + 1
+                _adopt_failures[spec.execution_id] = failures
+                if failures >= ADOPT_MAX_ATTEMPTS:
+                    ADOPTIONS_ABANDONED.inc()
+                    logger.exception(
+                        "Abandoning execution %s after %d failed adoptions; "
+                        "it stays funded and RUNNING with no session and needs attention",
+                        spec.execution_id,
+                        failures,
+                    )
+                else:
+                    logger.warning(
+                        "Adoption failed for execution %s (attempt %d/%d); will retry next tick",
+                        spec.execution_id,
+                        failures,
+                        ADOPT_MAX_ATTEMPTS,
+                        exc_info=True,
+                    )
+            finally:
+                await release_session_lease(spec.execution_id)
     return adopted
 
 
@@ -407,7 +443,7 @@ async def sweep_dead_leases(runner_manager: RunnerManager) -> list[UUID]:
         await _invalidate_lease(session_id)
         lost.append(session_id)
         try:
-            await runner_manager.stop_runner(session_id)
+            await runner_manager.stop_runner(session_id, notify=False)
         except Exception:
             logger.exception("Failed to stop the runner for lost lease %s", session_id)
     return lost
@@ -428,7 +464,7 @@ async def rehydrate_pass(runner_manager: RunnerManager) -> int:
     for session_id in list(_leases.keys()):
         if session_id not in live_ids:
             if session_id in runner_manager.active_runners:
-                await runner_manager.stop_runner(session_id)
+                await runner_manager.stop_runner(session_id, notify=False)
             await release_session_lease(session_id)
 
     started = 0
@@ -443,7 +479,7 @@ async def rehydrate_pass(runner_manager: RunnerManager) -> int:
                 spec.session_id,
             )
             with contextlib.suppress(Exception):
-                await runner_manager.stop_runner(spec.session_id)
+                await runner_manager.stop_runner(spec.session_id, notify=False)
         try:
             if not await _try_claim(spec.session_id):
                 continue  # another pod owns it

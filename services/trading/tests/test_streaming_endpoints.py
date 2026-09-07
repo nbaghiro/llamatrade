@@ -18,9 +18,21 @@ from connectrpc.request import RequestContext
 
 from llamatrade_proto.generated import trading_pb2
 
+from src.grpc.servicer import TradingServicer
+
 
 def _ctx() -> RequestContext:
     return cast(RequestContext, MagicMock(spec=RequestContext))
+
+
+@pytest.fixture(autouse=True)
+def _owned_session(request: pytest.FixtureRequest) -> AsyncIterator[None]:
+    """Treat the requested session as owned; TestStreamOwnership exercises the real check."""
+    if request.node.get_closest_marker("real_ownership_check"):
+        yield
+        return
+    with patch.object(TradingServicer, "_assert_session_owned", AsyncMock(return_value=None)):
+        yield
 
 
 class TestStreamOrderUpdates:
@@ -236,3 +248,76 @@ class TestStreamPositionUpdates:
 
             assert len(responses) == 1
             mock_subscriber.close.assert_called_once()
+
+
+@pytest.mark.real_ownership_check
+class TestStreamOwnership:
+    """The streams are keyed by session_id only, so the servicer must verify the
+    caller owns the session before tailing; otherwise any authenticated principal
+    could read another tenant's live order and position flow."""
+
+    async def _run(self, method: str, session_id: str) -> list[object]:
+        request = MagicMock()
+        request.context.tenant_id = str(uuid4())
+        request.context.user_id = str(uuid4())
+        request.session_id = session_id
+        request.last_seen_id = ""
+        servicer = TradingServicer()
+        stream = getattr(servicer, method)(request, _ctx())
+        return [item async for item in stream]
+
+    @pytest.mark.parametrize("method", ["stream_order_updates", "stream_position_updates"])
+    async def test_unowned_session_is_not_found_and_never_tails(self, method: str) -> None:
+        """A session that is not the caller's yields NOT_FOUND before any tail."""
+        from connectrpc.code import Code
+        from connectrpc.errors import ConnectError
+
+        subscriber = MagicMock()
+        subscriber.tail_orders = MagicMock(side_effect=AssertionError("must not tail"))
+        subscriber.tail_positions = MagicMock(side_effect=AssertionError("must not tail"))
+
+        service = MagicMock()
+        service.get_session = AsyncMock(return_value=None)  # not this tenant's session
+
+        with (
+            patch("src.grpc.servicer.get_trading_event_subscriber", return_value=subscriber),
+            patch(
+                "src.services.live_session_service.create_live_session_service",
+                AsyncMock(return_value=service),
+            ),
+            pytest.raises(ConnectError) as excinfo,
+        ):
+            await self._run(method, str(uuid4()))
+
+        assert excinfo.value.code == Code.NOT_FOUND
+
+    @pytest.mark.parametrize("method", ["stream_order_updates", "stream_position_updates"])
+    async def test_ownership_is_checked_against_the_token_tenant(self, method: str) -> None:
+        """The lookup uses the tenant resolved from the token, not the wire value."""
+        service = MagicMock()
+        service.get_session = AsyncMock(return_value=MagicMock())
+        subscriber = MagicMock()
+
+        async def _empty(*_a: object, **_k: object):
+            return
+            yield  # pragma: no cover - typing only
+
+        subscriber.tail_orders = _empty
+        subscriber.tail_positions = _empty
+        subscriber.close = AsyncMock()
+        resolved_tenant = uuid4()
+
+        with (
+            patch("src.grpc.servicer.get_trading_event_subscriber", return_value=subscriber),
+            patch(
+                "src.services.live_session_service.create_live_session_service",
+                AsyncMock(return_value=service),
+            ),
+            patch(
+                "src.grpc.servicer.resolve_identity_connect",
+                return_value=(resolved_tenant, uuid4()),
+            ),
+        ):
+            await self._run(method, str(uuid4()))
+
+        assert service.get_session.await_args.kwargs["tenant_id"] == resolved_tenant

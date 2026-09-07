@@ -152,7 +152,8 @@ async def test_rehydrate_pass_evicts_dead_runner_then_reclaims():
         started = await rehydrate_pass(mgr)
 
     assert started == 1
-    mgr.stop_runner.assert_awaited_once_with(spec.session_id)  # dead runner evicted first
+    # Evicted first, and silently: the session is being re-adopted, not ending.
+    mgr.stop_runner.assert_awaited_once_with(spec.session_id, notify=False)
     rehydrate_one.assert_awaited_once_with(spec)
 
 
@@ -168,7 +169,7 @@ async def test_rehydrate_pass_drops_lease_for_no_longer_live_session():
     ):
         await rehydrate_pass(mgr)
 
-    mgr.stop_runner.assert_awaited_once_with(dead)
+    mgr.stop_runner.assert_awaited_once_with(dead, notify=False)
     assert dead not in recovery._leases
 
 
@@ -413,7 +414,7 @@ async def test_heartbeat_stops_the_runner_of_a_dead_lease_and_keeps_live_ones():
     assert lost == [dead]
     assert dead not in recovery._leases
     assert live in recovery._leases
-    mgr.stop_runner.assert_awaited_once_with(dead)
+    mgr.stop_runner.assert_awaited_once_with(dead, notify=False)
 
 
 async def test_rehydrate_pass_heartbeats_the_leases_first():
@@ -430,4 +431,76 @@ async def test_rehydrate_pass_heartbeats_the_leases_first():
         await rehydrate_pass(mgr)
 
     assert dead not in recovery._leases
-    mgr.stop_runner.assert_awaited_once_with(dead)
+    mgr.stop_runner.assert_awaited_once_with(dead, notify=False)
+
+
+async def test_adoption_is_abandoned_after_repeated_failures():
+    """An execution that can never be adopted must stop being retried.
+
+    A lapsed subscription or revoked credentials fails preflight every tick, and
+    each attempt costs a full preflight. Left unbounded these accumulate until
+    the sweep spends the whole interval failing.
+    """
+    spec = _exec_spec()
+    recovery._adopt_failures.clear()
+
+    with (
+        patch.object(recovery, "_load_orphaned_executions", AsyncMock(return_value=[spec])),
+        patch.object(recovery, "_try_claim", AsyncMock(return_value=True)),
+        patch.object(
+            recovery,
+            "_adopt_one",
+            AsyncMock(side_effect=ValueError("No active subscription found")),
+        ) as adopt,
+    ):
+        for _ in range(recovery.ADOPT_MAX_ATTEMPTS + 3):
+            assert await adopt_orphaned_executions() == 0
+
+    assert adopt.await_count == recovery.ADOPT_MAX_ATTEMPTS, (
+        "the sweep kept retrying past the give-up threshold"
+    )
+    recovery._adopt_failures.clear()
+
+
+async def test_a_successful_adoption_clears_earlier_failures():
+    """A transient outage must not count toward the give-up threshold forever."""
+    spec = _exec_spec()
+    recovery._adopt_failures.clear()
+
+    with (
+        patch.object(recovery, "_load_orphaned_executions", AsyncMock(return_value=[spec])),
+        patch.object(recovery, "_try_claim", AsyncMock(return_value=True)),
+        patch.object(recovery, "_adopt_one", AsyncMock(side_effect=RuntimeError("ledger blip"))),
+    ):
+        await adopt_orphaned_executions()
+    assert recovery._adopt_failures[spec.execution_id] == 1
+
+    with (
+        patch.object(recovery, "_load_orphaned_executions", AsyncMock(return_value=[spec])),
+        patch.object(recovery, "_try_claim", AsyncMock(return_value=True)),
+        patch.object(recovery, "_adopt_one", AsyncMock(return_value=uuid4())),
+    ):
+        assert await adopt_orphaned_executions() == 1
+
+    assert spec.execution_id not in recovery._adopt_failures
+    recovery._adopt_failures.clear()
+
+
+async def test_an_abandoned_execution_does_not_block_a_healthy_one():
+    """Give-up is per execution, not a circuit breaker over the whole sweep."""
+    stuck, healthy = _exec_spec(), _exec_spec()
+    recovery._adopt_failures.clear()
+    recovery._adopt_failures[stuck.execution_id] = recovery.ADOPT_MAX_ATTEMPTS
+
+    with (
+        patch.object(
+            recovery, "_load_orphaned_executions", AsyncMock(return_value=[stuck, healthy])
+        ),
+        patch.object(recovery, "_try_claim", AsyncMock(return_value=True)),
+        patch.object(recovery, "_adopt_one", AsyncMock(return_value=uuid4())) as adopt,
+    ):
+        adopted = await adopt_orphaned_executions()
+
+    assert adopted == 1
+    assert [c.args[0] for c in adopt.await_args_list] == [healthy]
+    recovery._adopt_failures.clear()

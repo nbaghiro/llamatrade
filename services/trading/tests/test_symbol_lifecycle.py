@@ -182,7 +182,6 @@ def _runner(*, symbols: list[str] | None = None, stall_seconds: int = 300) -> St
     risk_manager.check_order.return_value = MagicMock(passed=True, violations=[])
     runner = StrategyRunner(
         config=config,
-        strategy_fn=None,
         bar_stream=MockBarStream(bars={s: [] for s in (symbols or ["SPY", "TLT"])}),
         trade_stream=MockTradeStream(),
         order_executor=order_executor,
@@ -311,16 +310,6 @@ class TestEvaluationStall:
 
         assert runner._stall_alerted is False
         assert runner._stalled_symbols() == ["SPY", "TLT"]  # both current
-
-    async def test_legacy_per_symbol_runner_never_reports_a_stall(self):
-        """Without the merged-symbol session there is no all-symbols gate to watch."""
-        runner = _runner()
-        runner._session = None
-        runner._last_gate_open_at = datetime.now(UTC) - timedelta(seconds=600)
-
-        await runner._check_evaluation_stall(["TLT"])
-
-        runner.alerts.on_evaluation_stalled.assert_not_called()
 
 
 # --------------------------------------------------------------------------- #

@@ -88,7 +88,6 @@ def _runner(session: StrategySession, execution_id: UUID) -> StrategyRunner:
     risk_manager.check_order.return_value = MagicMock(passed=True, violations=[])
     return StrategyRunner(
         config=config,
-        strategy_fn=None,
         bar_stream=MockBarStream(bars={"SPY": [], "TLT": []}),
         trade_stream=MockTradeStream(),
         order_executor=order_executor,

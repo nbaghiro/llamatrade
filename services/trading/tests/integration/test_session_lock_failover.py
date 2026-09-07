@@ -17,11 +17,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import socket
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, NoReturn
 from uuid import UUID, uuid4
 
 import pytest
@@ -37,8 +38,20 @@ from sqlalchemy.pool import NullPool
 from src import recovery
 from src.recovery import _session_lock_key, release_session_lease, sweep_dead_leases
 
+pytestmark = pytest.mark.integration
+
 POSTGRES_IMAGE = "postgres:16-alpine"
 DBNAME = "session_failover"
+
+_REQUIRE_DOCKER = os.environ.get("CI_REQUIRE_DOCKER") == "1"
+
+
+def _skip_or_fail(reason: str) -> NoReturn:
+    """Skip locally; fail when CI_REQUIRE_DOCKER=1 demands the Docker-gated tests run."""
+    if _REQUIRE_DOCKER:
+        pytest.fail(f"CI_REQUIRE_DOCKER=1: {reason}", pytrace=False)
+    pytest.skip(reason)
+
 
 _ADVISORY_HOLDERS_SQL = """
 SELECT pid FROM pg_locks
@@ -81,12 +94,15 @@ def _start_container(postgres_mod: Any, dbname: str) -> Any:
             last = exc
             continue
         return container
-    pytest.skip(f"Postgres container unavailable: {last}")
+    _skip_or_fail(f"Postgres container unavailable: {last}")
 
 
 @pytest.fixture(scope="module")
 def failover_container() -> Iterator[Any]:
-    postgres_mod = pytest.importorskip("testcontainers.postgres")
+    if _REQUIRE_DOCKER:
+        import testcontainers.postgres as postgres_mod
+    else:
+        postgres_mod = pytest.importorskip("testcontainers.postgres")
     container = _start_container(postgres_mod, DBNAME)
     try:
         yield container
@@ -169,7 +185,7 @@ class _RecordingRunners:
     def __init__(self) -> None:
         self.stopped: list[UUID] = []
 
-    async def stop_runner(self, session_id: UUID) -> bool:
+    async def stop_runner(self, session_id: UUID, notify: bool = True) -> bool:
         self.stopped.append(session_id)
         return True
 

@@ -55,7 +55,6 @@ def _runner(session: StrategySession) -> tuple[StrategyRunner, AsyncMock]:
     risk_manager.check_order.return_value = MagicMock(passed=True, violations=[])
     runner = StrategyRunner(
         config=config,
-        strategy_fn=None,
         bar_stream=MockBarStream(bars={"SPY": [], "TLT": []}),
         trade_stream=MockTradeStream(),
         order_executor=order_executor,
@@ -65,7 +64,8 @@ def _runner(session: StrategySession) -> tuple[StrategyRunner, AsyncMock]:
     return runner, order_executor
 
 
-async def test_requires_a_session_or_strategy_fn():
+async def test_requires_a_session():
+    """A session is the runner's only evaluation source; construction refuses without one."""
     config = RunnerConfig(
         tenant_id=uuid4(),
         execution_id=uuid4(),
@@ -73,10 +73,9 @@ async def test_requires_a_session_or_strategy_fn():
         symbols=["SPY"],
         timeframe="1Min",
     )
-    with pytest.raises(ValueError, match="session or a strategy_fn"):
+    with pytest.raises(TypeError, match="session"):
         StrategyRunner(
             config=config,
-            strategy_fn=None,
             bar_stream=MockBarStream(bars={"SPY": []}),
             trade_stream=MockTradeStream(),
             order_executor=AsyncMock(),

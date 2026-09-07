@@ -23,6 +23,7 @@ from llamatrade_proto.generated.trading_pb2 import (
     ORDER_TYPE_LIMIT,
     ORDER_TYPE_MARKET,
 )
+from tests.sessions import quiet_session
 
 from src.clients.portfolio_client import PortfolioLedgerClient
 from src.executor.order_executor import OrderExecutor
@@ -114,7 +115,7 @@ def _runner(portfolio_client: PortfolioLedgerClient | None = None) -> StrategyRu
     )
     return StrategyRunner(
         config=config,
-        strategy_fn=MagicMock(return_value=None),
+        session=quiet_session(),
         bar_stream=MockBarStream(bars={"SPY": []}),
         trade_stream=MockTradeStream(),
         order_executor=AsyncMock(),

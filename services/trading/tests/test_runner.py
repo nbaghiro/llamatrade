@@ -2,8 +2,9 @@
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -18,6 +19,8 @@ from llamatrade_proto.generated.trading_pb2 import (
     ORDER_STATUS_SUBMITTED,
     ORDER_TYPE_MARKET,
 )
+from llamatrade_runtime import StrategySession
+from tests.session_util import CountingSession, hold_session
 
 from src.runner.runner import (
     RunnerConfig,
@@ -27,6 +30,8 @@ from src.runner.runner import (
     StrategyRunner,
     get_runner_manager,
 )
+
+EASTERN = ZoneInfo("America/New_York")
 
 
 def _broker_position(
@@ -50,6 +55,39 @@ def _broker_position(
         unrealized_pl=unrealized_pnl,
         unrealized_plpc=unrealized_pnl_percent,
         current_price=current_price,
+    )
+
+
+def _bar_at(ts: datetime, symbol: str = "AAPL", close: float = 150.0) -> BarData:
+    return BarData(
+        symbol=symbol,
+        timestamp=ts,
+        open=close,
+        high=close * 1.01,
+        low=close * 0.99,
+        close=close,
+        volume=10000,
+    )
+
+
+def _build_runner(
+    config: RunnerConfig,
+    session: StrategySession,
+    order_executor: AsyncMock,
+    risk_manager: AsyncMock,
+    bars: dict[str, list[BarData]] | None = None,
+    alpaca_client: AsyncMock | None = None,
+    alert_service: AsyncMock | None = None,
+) -> StrategyRunner:
+    return StrategyRunner(
+        config=config,
+        session=session,
+        bar_stream=MockBarStream(bars=bars if bars is not None else {"AAPL": []}),
+        trade_stream=MockTradeStream(),
+        order_executor=order_executor,
+        risk_manager=risk_manager,
+        alpaca_client=alpaca_client,
+        alert_service=alert_service,
     )
 
 
@@ -89,32 +127,19 @@ def mock_order_executor():
 
 
 @pytest.fixture
-def mock_strategy_fn():
-    """Create a mock strategy function."""
-    fn = MagicMock()
-    fn.return_value = None  # No signal by default
-    return fn
-
-
-@pytest.fixture
 def strategy_runner(
     runner_config,
-    mock_strategy_fn,
     mock_order_executor,
     mock_risk_manager,
     sample_bars,
 ):
-    """Create a strategy runner with mocks."""
-    mock_bar_stream = MockBarStream(bars={"AAPL": sample_bars})
-    mock_trade_stream = MockTradeStream()
-
-    return StrategyRunner(
-        config=runner_config,
-        strategy_fn=mock_strategy_fn,
-        bar_stream=mock_bar_stream,
-        trade_stream=mock_trade_stream,
-        order_executor=mock_order_executor,
-        risk_manager=mock_risk_manager,
+    """Create a session-backed strategy runner with mocked I/O."""
+    return _build_runner(
+        runner_config,
+        hold_session("AAPL"),
+        mock_order_executor,
+        mock_risk_manager,
+        bars={"AAPL": sample_bars},
     )
 
 
@@ -178,6 +203,20 @@ class TestRunnerConfig:
         assert config.symbols == ["AAPL", "GOOGL"]
         assert config.timeframe == "5min"
         assert config.warmup_bars == 50
+
+    def test_config_default_values(self, tenant_id, session_id, strategy_id):
+        """Test default values for trading hours config."""
+        config = RunnerConfig(
+            tenant_id=tenant_id,
+            execution_id=session_id,
+            strategy_id=strategy_id,
+            symbols=["AAPL"],
+            timeframe="1min",
+        )
+
+        assert config.enforce_trading_hours is True
+        assert config.allow_premarket is False
+        assert config.allow_afterhours is False
 
 
 class TestStrategyRunner:
@@ -300,9 +339,14 @@ class TestStrategyRunner:
 
         assert order.side == ORDER_SIDE_SELL  # Short = sell
 
+    def test_circuit_breaker_property(self, strategy_runner):
+        """Test circuit breaker property access."""
+        assert strategy_runner.circuit_breaker is not None
+        assert strategy_runner.circuit_breaker_triggered is False
+
 
 class TestRunnerManager:
-    """Tests for RunnerManager."""
+    """Tests for RunnerManager registry operations."""
 
     def test_manager_initialization(self):
         """Test manager initialization."""
@@ -318,12 +362,40 @@ class TestRunnerManager:
 
         assert runner is None
 
-    async def test_stop_all_empty(self):
-        """Test stopping all runners when none exist."""
+    async def test_stop_all_when_empty(self):
+        """Test stop_all handles empty runners gracefully."""
         manager = RunnerManager()
-
-        # Should not raise
         await manager.stop_all()
+        assert len(manager.active_runners) == 0
+
+    def test_get_runner_returns_existing_runner(
+        self,
+        runner_config,
+        mock_order_executor,
+        mock_risk_manager,
+        sample_bars,
+    ):
+        """Test get_runner returns existing runner."""
+        manager = RunnerManager()
+        runner = _build_runner(
+            runner_config,
+            hold_session("AAPL"),
+            mock_order_executor,
+            mock_risk_manager,
+            bars={"AAPL": sample_bars},
+        )
+        # Use internal _runners dict, not active_runners property
+        manager._runners[runner_config.execution_id] = runner
+
+        result = manager.get_runner(runner_config.execution_id)
+
+        assert result is runner
+
+    async def test_stop_runner_not_found(self):
+        """Test stopping non-existent runner returns False."""
+        manager = RunnerManager()
+        result = await manager.stop_runner(UUID("00000000-0000-0000-0000-000000000000"))
+        assert result is False
 
 
 class TestGetRunnerManager:
@@ -343,195 +415,6 @@ class TestGetRunnerManager:
         assert manager1 is manager2
 
 
-class TestRunnerManagerOperations:
-    """Tests for RunnerManager operations."""
-
-    async def test_stop_all_when_empty(self):
-        """Test stop_all handles empty runners gracefully."""
-        manager = RunnerManager()
-        await manager.stop_all()
-        assert len(manager.active_runners) == 0
-
-    def test_get_runner_returns_existing_runner(
-        self,
-        runner_config,
-        mock_strategy_fn,
-        mock_order_executor,
-        mock_risk_manager,
-        sample_bars,
-    ):
-        """Test get_runner returns existing runner."""
-        manager = RunnerManager()
-        mock_stream = MockBarStream(bars={"AAPL": sample_bars})
-
-        runner = StrategyRunner(
-            config=runner_config,
-            strategy_fn=mock_strategy_fn,
-            bar_stream=mock_stream,
-            trade_stream=MockTradeStream(),
-            order_executor=mock_order_executor,
-            risk_manager=mock_risk_manager,
-        )
-        # Use internal _runners dict, not active_runners property
-        manager._runners[runner_config.execution_id] = runner
-
-        result = manager.get_runner(runner_config.execution_id)
-
-        assert result is runner
-
-    async def test_stop_runner_not_found(self):
-        """Test stopping non-existent runner returns False."""
-        manager = RunnerManager()
-        result = await manager.stop_runner(UUID("00000000-0000-0000-0000-000000000000"))
-        assert result is False
-
-
-class TestStrategyRunnerAdvanced:
-    """Advanced tests for StrategyRunner."""
-
-    async def test_process_bar_ignores_untracked_symbols(
-        self,
-        runner_config,
-        mock_strategy_fn,
-        mock_order_executor,
-        mock_risk_manager,
-        sample_bars,
-    ):
-        """Test that bars for untracked symbols are ignored."""
-        mock_stream = MockBarStream(bars={"AAPL": sample_bars})
-        runner = StrategyRunner(
-            config=runner_config,
-            strategy_fn=mock_strategy_fn,
-            bar_stream=mock_stream,
-            trade_stream=MockTradeStream(),
-            order_executor=mock_order_executor,
-            risk_manager=mock_risk_manager,
-        )
-
-        # Create a bar for an untracked symbol
-        untracked_bar = sample_bars[0]
-        untracked_bar = BarData(
-            symbol="TSLA",  # Not in config.symbols
-            timestamp=untracked_bar.timestamp,
-            open=untracked_bar.open,
-            high=untracked_bar.high,
-            low=untracked_bar.low,
-            close=untracked_bar.close,
-            volume=untracked_bar.volume,
-        )
-
-        await runner._process_bar(untracked_bar)
-
-        # Strategy function should not be called
-        mock_strategy_fn.assert_not_called()
-
-    async def test_process_bar_warmup_period(
-        self,
-        runner_config,
-        mock_strategy_fn,
-        mock_order_executor,
-        mock_risk_manager,
-        sample_bars,
-    ):
-        """Test that strategy is not called during warmup period."""
-        mock_stream = MockBarStream(bars={"AAPL": sample_bars[:5]})
-        runner = StrategyRunner(
-            config=runner_config,
-            strategy_fn=mock_strategy_fn,
-            bar_stream=mock_stream,
-            trade_stream=MockTradeStream(),
-            order_executor=mock_order_executor,
-            risk_manager=mock_risk_manager,
-        )
-
-        # Process a bar during warmup
-        await runner._process_bar(sample_bars[0])
-
-        # Strategy should not be called during warmup
-        mock_strategy_fn.assert_not_called()
-
-    async def test_process_signal_rejected_by_risk(
-        self,
-        runner_config,
-        mock_strategy_fn,
-        mock_order_executor,
-        mock_risk_manager,
-        sample_bars,
-    ):
-        """Test signal rejection by risk manager."""
-        mock_stream = MockBarStream(bars={"AAPL": sample_bars})
-        runner = StrategyRunner(
-            config=runner_config,
-            strategy_fn=mock_strategy_fn,
-            bar_stream=mock_stream,
-            trade_stream=MockTradeStream(),
-            order_executor=mock_order_executor,
-            risk_manager=mock_risk_manager,
-        )
-
-        # Fill warmup history
-        runner._bar_history["AAPL"] = sample_bars[:15]
-
-        # Configure risk manager to reject
-        mock_risk_manager.check_order.return_value.passed = False
-        mock_risk_manager.check_order.return_value.violations = ["Position too large"]
-
-        signal = Signal(type="buy", symbol="AAPL", quantity=Decimal("10.0"), price=Decimal("150.0"))
-        await runner._process_signal(signal)
-
-        # Order should not be submitted
-        mock_order_executor.submit_order.assert_not_called()
-        assert runner._orders_rejected == 1
-
-    def test_circuit_breaker_property(
-        self,
-        runner_config,
-        mock_strategy_fn,
-        mock_order_executor,
-        mock_risk_manager,
-        sample_bars,
-    ):
-        """Test circuit breaker property access."""
-        mock_stream = MockBarStream(bars={"AAPL": sample_bars})
-        runner = StrategyRunner(
-            config=runner_config,
-            strategy_fn=mock_strategy_fn,
-            bar_stream=mock_stream,
-            trade_stream=MockTradeStream(),
-            order_executor=mock_order_executor,
-            risk_manager=mock_risk_manager,
-        )
-
-        assert runner.circuit_breaker is not None
-        assert runner.circuit_breaker_triggered is False
-
-    async def test_stop_runner(
-        self,
-        runner_config,
-        mock_strategy_fn,
-        mock_order_executor,
-        mock_risk_manager,
-        sample_bars,
-    ):
-        """Test stopping the runner."""
-        mock_stream = MockBarStream(bars={"AAPL": sample_bars})
-        mock_stream.disconnect = AsyncMock()
-
-        runner = StrategyRunner(
-            config=runner_config,
-            strategy_fn=mock_strategy_fn,
-            bar_stream=mock_stream,
-            trade_stream=MockTradeStream(),
-            order_executor=mock_order_executor,
-            risk_manager=mock_risk_manager,
-        )
-
-        await runner.stop(reason="Test stop")
-
-        assert runner._running is False
-        mock_stream.disconnect.assert_called_once()
-
-
 class TestPositionReconciliation:
     """Tests for position reconciliation with Alpaca."""
 
@@ -548,28 +431,24 @@ class TestPositionReconciliation:
     def reconciliation_runner(
         self,
         runner_config,
-        mock_strategy_fn,
         mock_order_executor,
         mock_risk_manager,
         mock_alpaca_client,
         sample_bars,
     ):
         """Create a runner with position reconciliation enabled."""
-        mock_stream = MockBarStream(bars={"AAPL": sample_bars})
-
         # Enable reconciliation in config
         runner_config.position_reconciliation_enabled = True
         runner_config.position_reconciliation_interval_seconds = 60
         runner_config.position_drift_auto_correct_threshold_pct = 5.0
         runner_config.position_drift_alert_threshold_pct = 10.0
 
-        return StrategyRunner(
-            config=runner_config,
-            strategy_fn=mock_strategy_fn,
-            bar_stream=mock_stream,
-            trade_stream=MockTradeStream(),
-            order_executor=mock_order_executor,
-            risk_manager=mock_risk_manager,
+        return _build_runner(
+            runner_config,
+            hold_session("AAPL"),
+            mock_order_executor,
+            mock_risk_manager,
+            bars={"AAPL": sample_bars},
             alpaca_client=mock_alpaca_client,
             alert_service=AsyncMock(),
         )
@@ -833,35 +712,30 @@ class TestPositionReconciliation:
         reconciliation_runner,
         mock_alpaca_client,
     ):
-        """Test graceful handling of Alpaca API errors."""
-        # Simulate API error
+        """A broker failure is contained and counted as a reconciliation error."""
         mock_alpaca_client.get_positions.side_effect = Exception("API timeout")
         reconciliation_runner.alpaca_client = mock_alpaca_client
 
-        # Should not raise
         await reconciliation_runner._sync_positions()
 
-        # Circuit breaker should record the error
-        # (Verified by not crashing and logging the error)
+        assert reconciliation_runner.reconciliation_error_count == 1
+        assert reconciliation_runner.last_reconciliation_time is None
 
     async def test_sync_positions_no_client(
         self,
         runner_config,
-        mock_strategy_fn,
         mock_order_executor,
         mock_risk_manager,
         sample_bars,
     ):
         """Test that sync_positions does nothing without alpaca_client."""
-        mock_stream = MockBarStream(bars={"AAPL": sample_bars})
-        runner = StrategyRunner(
-            config=runner_config,
-            strategy_fn=mock_strategy_fn,
-            bar_stream=mock_stream,
-            trade_stream=MockTradeStream(),
-            order_executor=mock_order_executor,
-            risk_manager=mock_risk_manager,
-            alpaca_client=None,  # No client
+        runner = _build_runner(
+            runner_config,
+            hold_session("AAPL"),
+            mock_order_executor,
+            mock_risk_manager,
+            bars={"AAPL": sample_bars},
+            alpaca_client=None,
         )
 
         # Should return early without error
@@ -907,268 +781,22 @@ class TestPositionReconciliation:
         reconciliation_runner.alerts.on_position_drift.assert_not_called()
 
 
-class TestTradingHoursIntegration:
-    """Tests for trading hours integration in StrategyRunner."""
+class TestSessionEvaluationGates:
+    """The production gates in ``_evaluate_session``: market hours + breaker.
 
-    @pytest.fixture
-    def trading_hours_config(self, tenant_id, session_id, strategy_id):
-        """Create a runner config with trading hours enforcement."""
-        return RunnerConfig(
-            tenant_id=tenant_id,
-            execution_id=session_id,
-            strategy_id=strategy_id,
-            symbols=["AAPL"],
-            timeframe="1min",
-            warmup_bars=5,  # Lower warmup for faster tests
-            enforce_trading_hours=True,
-            allow_premarket=False,
-            allow_afterhours=False,
-        )
+    Every runner evaluates through the merged-symbol session, so these tests
+    pin the skip behavior with a real ``CountingSession`` (no strategy doubles).
+    """
 
-    @pytest.fixture
-    def trading_hours_runner(
+    def _runner(
         self,
-        trading_hours_config,
-        mock_strategy_fn,
-        mock_order_executor,
-        mock_risk_manager,
-        sample_bars,
-    ):
-        """Create a runner with trading hours enforcement enabled."""
-        mock_stream = MockBarStream(bars={"AAPL": sample_bars})
-        return StrategyRunner(
-            config=trading_hours_config,
-            strategy_fn=mock_strategy_fn,
-            bar_stream=mock_stream,
-            trade_stream=MockTradeStream(),
-            order_executor=mock_order_executor,
-            risk_manager=mock_risk_manager,
-        )
-
-    def test_trading_hours_checker_created_when_enabled(
-        self,
-        trading_hours_runner,
-    ):
-        """Test that TradingHoursChecker is created when enabled in config."""
-        assert trading_hours_runner._trading_hours is not None
-
-    def test_trading_hours_checker_not_created_when_disabled(
-        self,
-        tenant_id,
-        session_id,
-        strategy_id,
-        mock_strategy_fn,
-        mock_order_executor,
-        mock_risk_manager,
-        sample_bars,
-    ):
-        """Test that TradingHoursChecker is not created when disabled."""
-        config = RunnerConfig(
-            tenant_id=tenant_id,
-            execution_id=session_id,
-            strategy_id=strategy_id,
-            symbols=["AAPL"],
-            timeframe="1min",
-            warmup_bars=5,
-            enforce_trading_hours=False,  # Disabled
-        )
-        mock_stream = MockBarStream(bars={"AAPL": sample_bars})
-        runner = StrategyRunner(
-            config=config,
-            strategy_fn=mock_strategy_fn,
-            bar_stream=mock_stream,
-            trade_stream=MockTradeStream(),
-            order_executor=mock_order_executor,
-            risk_manager=mock_risk_manager,
-        )
-
-        assert runner._trading_hours is None
-
-    async def test_process_bar_skips_outside_market_hours(
-        self,
-        trading_hours_runner,
-        mock_strategy_fn,
-        sample_bars,
-    ):
-        """Test that bars outside market hours are skipped."""
-        from zoneinfo import ZoneInfo
-
-        # Fill warmup history
-        trading_hours_runner._bar_history["AAPL"] = sample_bars[:10]
-
-        # Create a bar at 3:00 AM ET (outside market hours)
-        eastern_tz = ZoneInfo("America/New_York")
-        outside_hours_bar = BarData(
-            symbol="AAPL",
-            timestamp=datetime(2024, 1, 15, 3, 0, tzinfo=eastern_tz),  # Monday 3:00 AM
-            open=150.0,
-            high=152.0,
-            low=149.5,
-            close=151.5,
-            volume=10000,
-        )
-
-        await trading_hours_runner._process_bar(outside_hours_bar)
-
-        # Strategy function should NOT be called
-        mock_strategy_fn.assert_not_called()
-
-    async def test_process_bar_executes_during_market_hours(
-        self,
-        trading_hours_runner,
-        mock_strategy_fn,
-        sample_bars,
-    ):
-        """Test that bars during market hours are processed."""
-        from zoneinfo import ZoneInfo
-
-        # Fill warmup history
-        trading_hours_runner._bar_history["AAPL"] = sample_bars[:10]
-
-        # Create a bar at 10:30 AM ET (during regular market hours)
-        # Note: Jan 15, 2024 is MLK Day (holiday), so use Jan 16, 2024 (Tuesday)
-        eastern_tz = ZoneInfo("America/New_York")
-        market_hours_bar = BarData(
-            symbol="AAPL",
-            timestamp=datetime(2024, 1, 16, 10, 30, tzinfo=eastern_tz),  # Tuesday 10:30 AM
-            open=150.0,
-            high=152.0,
-            low=149.5,
-            close=151.5,
-            volume=10000,
-        )
-
-        await trading_hours_runner._process_bar(market_hours_bar)
-
-        # Strategy function should be called
-        mock_strategy_fn.assert_called_once()
-
-    async def test_premarket_skipped_when_disabled(
-        self,
-        trading_hours_runner,
-        mock_strategy_fn,
-        sample_bars,
-    ):
-        """Test that pre-market bars are skipped when allow_premarket=False."""
-        from zoneinfo import ZoneInfo
-
-        # Fill warmup history
-        trading_hours_runner._bar_history["AAPL"] = sample_bars[:10]
-
-        # Create a bar at 5:00 AM ET (pre-market, but disabled)
-        eastern_tz = ZoneInfo("America/New_York")
-        premarket_bar = BarData(
-            symbol="AAPL",
-            timestamp=datetime(2024, 1, 15, 5, 0, tzinfo=eastern_tz),  # Monday 5:00 AM
-            open=150.0,
-            high=152.0,
-            low=149.5,
-            close=151.5,
-            volume=10000,
-        )
-
-        await trading_hours_runner._process_bar(premarket_bar)
-
-        # Strategy function should NOT be called
-        mock_strategy_fn.assert_not_called()
-
-    async def test_premarket_processed_when_enabled(
-        self,
-        tenant_id,
-        session_id,
-        strategy_id,
-        mock_strategy_fn,
-        mock_order_executor,
-        mock_risk_manager,
-        sample_bars,
-    ):
-        """Test that pre-market bars are processed when allow_premarket=True."""
-        from zoneinfo import ZoneInfo
-
-        config = RunnerConfig(
-            tenant_id=tenant_id,
-            execution_id=session_id,
-            strategy_id=strategy_id,
-            symbols=["AAPL"],
-            timeframe="1min",
-            warmup_bars=5,
-            enforce_trading_hours=True,
-            allow_premarket=True,  # Enabled
-            allow_afterhours=False,
-        )
-        mock_stream = MockBarStream(bars={"AAPL": sample_bars})
-        runner = StrategyRunner(
-            config=config,
-            strategy_fn=mock_strategy_fn,
-            bar_stream=mock_stream,
-            trade_stream=MockTradeStream(),
-            order_executor=mock_order_executor,
-            risk_manager=mock_risk_manager,
-        )
-
-        # Fill warmup history
-        runner._bar_history["AAPL"] = sample_bars[:10]
-
-        # Create a bar at 5:00 AM ET (pre-market)
-        # Note: Jan 15, 2024 is MLK Day (holiday), so use Jan 16, 2024 (Tuesday)
-        eastern_tz = ZoneInfo("America/New_York")
-        premarket_bar = BarData(
-            symbol="AAPL",
-            timestamp=datetime(2024, 1, 16, 5, 0, tzinfo=eastern_tz),  # Tuesday 5:00 AM
-            open=150.0,
-            high=152.0,
-            low=149.5,
-            close=151.5,
-            volume=10000,
-        )
-
-        await runner._process_bar(premarket_bar)
-
-        # Strategy function should be called (pre-market enabled)
-        mock_strategy_fn.assert_called_once()
-
-    async def test_afterhours_skipped_when_disabled(
-        self,
-        trading_hours_runner,
-        mock_strategy_fn,
-        sample_bars,
-    ):
-        """Test that after-hours bars are skipped when allow_afterhours=False."""
-        from zoneinfo import ZoneInfo
-
-        # Fill warmup history
-        trading_hours_runner._bar_history["AAPL"] = sample_bars[:10]
-
-        # Create a bar at 5:00 PM ET (after-hours, but disabled)
-        eastern_tz = ZoneInfo("America/New_York")
-        afterhours_bar = BarData(
-            symbol="AAPL",
-            timestamp=datetime(2024, 1, 15, 17, 0, tzinfo=eastern_tz),  # Monday 5:00 PM
-            open=150.0,
-            high=152.0,
-            low=149.5,
-            close=151.5,
-            volume=10000,
-        )
-
-        await trading_hours_runner._process_bar(afterhours_bar)
-
-        # Strategy function should NOT be called
-        mock_strategy_fn.assert_not_called()
-
-    async def test_afterhours_processed_when_enabled(
-        self,
-        tenant_id,
-        session_id,
-        strategy_id,
-        mock_strategy_fn,
-        mock_order_executor,
-        mock_risk_manager,
-        sample_bars,
-    ):
-        """Test that after-hours bars are processed when allow_afterhours=True."""
-        from zoneinfo import ZoneInfo
-
+        mock_order_executor: AsyncMock,
+        mock_risk_manager: AsyncMock,
+        tenant_id: UUID,
+        session_id: UUID,
+        strategy_id: UUID,
+        **config_overrides: object,
+    ) -> tuple[StrategyRunner, CountingSession]:
         config = RunnerConfig(
             tenant_id=tenant_id,
             execution_id=session_id,
@@ -1178,78 +806,218 @@ class TestTradingHoursIntegration:
             warmup_bars=5,
             enforce_trading_hours=True,
             allow_premarket=False,
-            allow_afterhours=True,  # Enabled
+            allow_afterhours=False,
         )
-        mock_stream = MockBarStream(bars={"AAPL": sample_bars})
-        runner = StrategyRunner(
-            config=config,
-            strategy_fn=mock_strategy_fn,
-            bar_stream=mock_stream,
-            trade_stream=MockTradeStream(),
-            order_executor=mock_order_executor,
-            risk_manager=mock_risk_manager,
-        )
+        for key, value in config_overrides.items():
+            setattr(config, key, value)
+        session = CountingSession('(strategy "Hold" :rebalance daily (asset AAPL :weight 100))')
+        runner = _build_runner(config, session, mock_order_executor, mock_risk_manager)
+        return runner, session
 
-        # Fill warmup history
-        runner._bar_history["AAPL"] = sample_bars[:10]
-
-        # Create a bar at 5:00 PM ET (after-hours)
-        # Note: Jan 15, 2024 is MLK Day (holiday), so use Jan 16, 2024 (Tuesday)
-        eastern_tz = ZoneInfo("America/New_York")
-        afterhours_bar = BarData(
-            symbol="AAPL",
-            timestamp=datetime(2024, 1, 16, 17, 0, tzinfo=eastern_tz),  # Tuesday 5:00 PM
-            open=150.0,
-            high=152.0,
-            low=149.5,
-            close=151.5,
-            volume=10000,
-        )
-
-        await runner._process_bar(afterhours_bar)
-
-        # Strategy function should be called (after-hours enabled)
-        mock_strategy_fn.assert_called_once()
-
-    async def test_weekend_bars_skipped(
-        self,
-        trading_hours_runner,
-        mock_strategy_fn,
-        sample_bars,
+    async def test_bar_outside_market_hours_is_not_evaluated(
+        self, mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
     ):
-        """Test that weekend bars are skipped even during normal time."""
-        from zoneinfo import ZoneInfo
-
-        # Fill warmup history
-        trading_hours_runner._bar_history["AAPL"] = sample_bars[:10]
-
-        # Create a bar on Saturday at 10:30 AM ET (weekend)
-        eastern_tz = ZoneInfo("America/New_York")
-        weekend_bar = BarData(
-            symbol="AAPL",
-            timestamp=datetime(2024, 1, 13, 10, 30, tzinfo=eastern_tz),  # Saturday 10:30 AM
-            open=150.0,
-            high=152.0,
-            low=149.5,
-            close=151.5,
-            volume=10000,
+        runner, session = self._runner(
+            mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
         )
 
-        await trading_hours_runner._process_bar(weekend_bar)
+        # Monday 3:00 AM ET is outside every session.
+        await runner._process_bar(_bar_at(datetime(2024, 1, 15, 3, 0, tzinfo=EASTERN)))
 
-        # Strategy function should NOT be called
-        mock_strategy_fn.assert_not_called()
+        assert session.evaluate_calls == 0
+        mock_order_executor.submit_order.assert_not_awaited()
 
-    def test_config_default_values(self, tenant_id, session_id, strategy_id):
-        """Test default values for trading hours config."""
+    async def test_bar_during_market_hours_is_evaluated(
+        self, mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
+    ):
+        runner, session = self._runner(
+            mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
+        )
+
+        # Tuesday Jan 16 2024, 10:30 AM ET (Jan 15 is MLK day).
+        await runner._process_bar(_bar_at(datetime(2024, 1, 16, 10, 30, tzinfo=EASTERN)))
+
+        assert session.evaluate_calls == 1
+
+    async def test_premarket_bar_skipped_when_disabled(
+        self, mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
+    ):
+        runner, session = self._runner(
+            mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
+        )
+
+        await runner._process_bar(_bar_at(datetime(2024, 1, 16, 5, 0, tzinfo=EASTERN)))
+
+        assert session.evaluate_calls == 0
+
+    async def test_premarket_bar_evaluated_when_enabled(
+        self, mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
+    ):
+        runner, session = self._runner(
+            mock_order_executor,
+            mock_risk_manager,
+            tenant_id,
+            session_id,
+            strategy_id,
+            allow_premarket=True,
+        )
+
+        await runner._process_bar(_bar_at(datetime(2024, 1, 16, 5, 0, tzinfo=EASTERN)))
+
+        assert session.evaluate_calls == 1
+
+    async def test_afterhours_bar_skipped_when_disabled(
+        self, mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
+    ):
+        runner, session = self._runner(
+            mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
+        )
+
+        await runner._process_bar(_bar_at(datetime(2024, 1, 16, 17, 0, tzinfo=EASTERN)))
+
+        assert session.evaluate_calls == 0
+
+    async def test_afterhours_bar_evaluated_when_enabled(
+        self, mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
+    ):
+        runner, session = self._runner(
+            mock_order_executor,
+            mock_risk_manager,
+            tenant_id,
+            session_id,
+            strategy_id,
+            allow_afterhours=True,
+        )
+
+        await runner._process_bar(_bar_at(datetime(2024, 1, 16, 17, 0, tzinfo=EASTERN)))
+
+        assert session.evaluate_calls == 1
+
+    async def test_weekend_bar_is_not_evaluated(
+        self, mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
+    ):
+        runner, session = self._runner(
+            mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
+        )
+
+        # Saturday Jan 13 2024, 10:30 AM ET.
+        await runner._process_bar(_bar_at(datetime(2024, 1, 13, 10, 30, tzinfo=EASTERN)))
+
+        assert session.evaluate_calls == 0
+
+    async def test_triggered_breaker_skips_evaluation(
+        self, mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
+    ):
+        runner, session = self._runner(
+            mock_order_executor,
+            mock_risk_manager,
+            tenant_id,
+            session_id,
+            strategy_id,
+            enforce_trading_hours=False,
+        )
+        await runner._circuit_breaker.manual_trigger("halt")
+
+        await runner._process_bar(_bar_at(datetime(2024, 1, 16, 10, 30, tzinfo=EASTERN)))
+
+        assert session.evaluate_calls == 0
+        mock_order_executor.submit_order.assert_not_awaited()
+
+    async def test_untracked_symbol_is_ignored(
+        self, mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
+    ):
+        runner, session = self._runner(
+            mock_order_executor,
+            mock_risk_manager,
+            tenant_id,
+            session_id,
+            strategy_id,
+            enforce_trading_hours=False,
+        )
+
+        await runner._process_bar(
+            _bar_at(datetime(2024, 1, 16, 10, 30, tzinfo=EASTERN), symbol="TSLA")
+        )
+
+        assert session.evaluate_calls == 0
+        mock_order_executor.submit_order.assert_not_awaited()
+
+
+class TestLiveGate:
+    """The runtime-loop gate ``_live_gate``: pause / market-open / breaker."""
+
+    def _runner(
+        self,
+        mock_order_executor: AsyncMock,
+        mock_risk_manager: AsyncMock,
+        tenant_id: UUID,
+        session_id: UUID,
+        strategy_id: UUID,
+        *,
+        enforce_trading_hours: bool = True,
+    ) -> StrategyRunner:
         config = RunnerConfig(
             tenant_id=tenant_id,
             execution_id=session_id,
             strategy_id=strategy_id,
             symbols=["AAPL"],
             timeframe="1min",
+            warmup_bars=5,
+            enforce_trading_hours=enforce_trading_hours,
+        )
+        return _build_runner(config, hold_session("AAPL"), mock_order_executor, mock_risk_manager)
+
+    async def test_gate_open_during_market_hours(
+        self, mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
+    ):
+        runner = self._runner(
+            mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
         )
 
-        assert config.enforce_trading_hours is True
-        assert config.allow_premarket is False
-        assert config.allow_afterhours is False
+        assert runner._live_gate(datetime(2024, 1, 16, 10, 30, tzinfo=EASTERN)) is True
+
+    async def test_gate_shut_while_paused(
+        self, mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
+    ):
+        runner = self._runner(
+            mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
+        )
+        runner.pause()
+
+        assert runner._live_gate(datetime(2024, 1, 16, 10, 30, tzinfo=EASTERN)) is False
+
+        runner.resume()
+        assert runner._live_gate(datetime(2024, 1, 16, 10, 30, tzinfo=EASTERN)) is True
+
+    async def test_gate_shut_outside_market_hours(
+        self, mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
+    ):
+        runner = self._runner(
+            mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
+        )
+
+        assert runner._live_gate(datetime(2024, 1, 16, 3, 0, tzinfo=EASTERN)) is False
+
+    async def test_gate_ignores_market_hours_when_not_enforced(
+        self, mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
+    ):
+        runner = self._runner(
+            mock_order_executor,
+            mock_risk_manager,
+            tenant_id,
+            session_id,
+            strategy_id,
+            enforce_trading_hours=False,
+        )
+
+        assert runner._live_gate(datetime(2024, 1, 16, 3, 0, tzinfo=EASTERN)) is True
+
+    async def test_gate_shut_when_breaker_triggered(
+        self, mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
+    ):
+        runner = self._runner(
+            mock_order_executor, mock_risk_manager, tenant_id, session_id, strategy_id
+        )
+        await runner._circuit_breaker.manual_trigger("halt")
+
+        assert runner._live_gate(datetime(2024, 1, 16, 10, 30, tzinfo=EASTERN)) is False

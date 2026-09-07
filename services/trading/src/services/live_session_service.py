@@ -178,7 +178,7 @@ class LiveSessionService(SessionService):
                 account_id=account_id,
             )
         except Exception as e:
-            logger.error(f"Failed to start runner for session {response.id}: {e}")
+            logger.error("Failed to start runner for session %s: %s", response.id, e)
             # Free the lease so a healthy replica can retry this session.
             from src.recovery import release_session_lease
 
@@ -450,7 +450,7 @@ class LiveSessionService(SessionService):
             account_id=account_id,
         )
 
-        # Ledger fill emission needs the Redis publisher (only for funded sessions)
+        # Ledger fill emission needs the event-bus publisher (only for funded sessions)
         ledger_publisher = get_trading_event_publisher() if sleeve_id is not None else None
 
         # Sleeve state reads (equity, free cash) for sleeve-aware execution
@@ -459,7 +459,6 @@ class LiveSessionService(SessionService):
         # Start the runner with session-specific client
         await self.runner_manager.start_runner(
             config=runner_config,
-            strategy_fn=None,
             session=session,
             bar_stream=bar_stream,
             trade_stream=trade_stream,
@@ -475,13 +474,13 @@ class LiveSessionService(SessionService):
         # The runner owns the order executor (and its DB session) for the session's lifetime — don't close it when this RPC returns.
         self._executor_handed_off = True
 
-        logger.info(f"Started runner for session {session_id} (credentials: {credentials.name})")
+        logger.info("Started runner for session %s (credentials: %s)", session_id, credentials.name)
 
     async def _stop_runner(self, session_id: UUID) -> None:
         """Stop the runner for a session and release any rehydration lease."""
         if session_id in self.runner_manager.active_runners:
             await self.runner_manager.stop_runner(session_id)
-            logger.info(f"Stopped runner for session {session_id}")
+            logger.info("Stopped runner for session %s", session_id)
 
         # Free the per-session advisory lock if this pod rehydrated it (no-op otherwise), so a stopped session never keeps holding its ownership lease.
         from src.recovery import release_session_lease

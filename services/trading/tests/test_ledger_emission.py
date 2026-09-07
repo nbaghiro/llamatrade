@@ -7,7 +7,7 @@ filled portion on cancel/expiry — and never on partial fills.
 
 from datetime import UTC, datetime
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -15,6 +15,7 @@ import pytest
 from llamatrade_alpaca import MockBarStream, MockTradeStream
 from llamatrade_alpaca.models import FillData, TradeEvent, TradeEventType
 from llamatrade_events import FillEvents, LedgerFill, LedgerReservation
+from tests.sessions import quiet_session
 
 from src.ledger_events import build_ledger_fill_payload, build_ledger_lifecycle_payload
 from src.runner.runner import RunnerConfig, StrategyRunner
@@ -151,10 +152,9 @@ def _runner(
         sleeve_id=sleeve_id,
         account_id=account_id,
     )
-    strategy_fn = MagicMock(return_value=None)
     return StrategyRunner(
         config=config,
-        strategy_fn=strategy_fn,
+        session=quiet_session(),
         bar_stream=MockBarStream(bars={"SPY": []}),
         trade_stream=MockTradeStream(),
         order_executor=AsyncMock(),

@@ -29,12 +29,14 @@ SLEEVE_ID = UUID("33333333-3333-3333-3333-333333333333")
 
 
 class _FakePortfolioClient:
-    """PortfolioLedgerClient double: canned sleeve detail or a fetch error."""
+    """PortfolioLedgerClient double (full surface): canned sleeve detail or a fetch error."""
 
     def __init__(self, detail: SleeveDetail | None = None, error: Exception | None = None) -> None:
         self._detail = detail
         self._error = error
         self.calls = 0
+        self.invalidated: list[UUID] = []
+        self.closed = False
 
     async def get_sleeve(self, tenant_id: UUID, user_id: str, sleeve_id: UUID) -> SleeveDetail:
         self.calls += 1
@@ -42,6 +44,12 @@ class _FakePortfolioClient:
             raise self._error
         assert self._detail is not None
         return self._detail
+
+    def invalidate(self, sleeve_id: UUID) -> None:
+        self.invalidated.append(sleeve_id)
+
+    async def close(self) -> None:
+        self.closed = True
 
 
 def _lot(symbol: str = "SPY", qty: str = "100") -> LotInfo:

@@ -173,7 +173,7 @@ class TradingServicer:
         except ValueError as e:
             raise ConnectError(Code.FAILED_PRECONDITION, str(e))
         except Exception as e:
-            logger.error("start_session error: %s", e, exc_info=True)
+            logger.exception("start_session error: %s", e)
             raise ConnectError(Code.INTERNAL, "Failed to start session")
         finally:
             await _aclose(service)
@@ -204,7 +204,7 @@ class TradingServicer:
         except ValueError as e:
             raise ConnectError(Code.FAILED_PRECONDITION, str(e))
         except Exception as e:
-            logger.error("stop_session error: %s", e, exc_info=True)
+            logger.exception("stop_session error: %s", e)
             raise ConnectError(Code.INTERNAL, "Failed to stop session")
         finally:
             await _aclose(service)
@@ -235,7 +235,7 @@ class TradingServicer:
         except ValueError as e:
             raise ConnectError(Code.FAILED_PRECONDITION, str(e))
         except Exception as e:
-            logger.error("pause_session error: %s", e, exc_info=True)
+            logger.exception("pause_session error: %s", e)
             raise ConnectError(Code.INTERNAL, "Failed to pause session")
         finally:
             await _aclose(service)
@@ -266,7 +266,7 @@ class TradingServicer:
         except ValueError as e:
             raise ConnectError(Code.FAILED_PRECONDITION, str(e))
         except Exception as e:
-            logger.error("resume_session error: %s", e, exc_info=True)
+            logger.exception("resume_session error: %s", e)
             raise ConnectError(Code.INTERNAL, "Failed to resume session")
         finally:
             await _aclose(service)
@@ -295,7 +295,7 @@ class TradingServicer:
         except ConnectError:
             raise
         except Exception as e:
-            logger.error("get_session error: %s", e, exc_info=True)
+            logger.exception("get_session error: %s", e)
             raise ConnectError(Code.INTERNAL, "Failed to get session")
         finally:
             await _aclose(service)
@@ -339,7 +339,7 @@ class TradingServicer:
         except ValueError as e:
             raise ConnectError(Code.INVALID_ARGUMENT, str(e))
         except Exception as e:
-            logger.error("list_sessions error: %s", e, exc_info=True)
+            logger.exception("list_sessions error: %s", e)
             raise ConnectError(Code.INTERNAL, "Failed to list sessions")
         finally:
             await _aclose(service)
@@ -400,7 +400,7 @@ class TradingServicer:
         except ValueError as e:
             raise ConnectError(Code.INVALID_ARGUMENT, str(e))
         except Exception as e:
-            logger.error("submit_order error: %s", e, exc_info=True)
+            logger.exception("submit_order error: %s", e)
             raise ConnectError(Code.INTERNAL, "Failed to submit order")
         finally:
             await _aclose(executor)
@@ -440,7 +440,7 @@ class TradingServicer:
         except ConnectError:
             raise
         except Exception as e:
-            logger.error("cancel_order error: %s", e, exc_info=True)
+            logger.exception("cancel_order error: %s", e)
             raise ConnectError(Code.INTERNAL, "Failed to cancel order")
         finally:
             await _aclose(executor)
@@ -467,7 +467,7 @@ class TradingServicer:
         except ConnectError:
             raise
         except Exception as e:
-            logger.error("get_order error: %s", e, exc_info=True)
+            logger.exception("get_order error: %s", e)
             raise ConnectError(Code.INTERNAL, "Failed to get order")
         finally:
             await _aclose(executor)
@@ -512,7 +512,7 @@ class TradingServicer:
         except ValueError as e:
             raise ConnectError(Code.INVALID_ARGUMENT, str(e))
         except Exception as e:
-            logger.error("list_orders error: %s", e, exc_info=True)
+            logger.exception("list_orders error: %s", e)
             raise ConnectError(Code.INTERNAL, "Failed to list orders")
         finally:
             await _aclose(executor)
@@ -547,8 +547,10 @@ class TradingServicer:
             )
         except ConnectError:
             raise
+        except ValueError as e:
+            raise ConnectError(Code.INVALID_ARGUMENT, str(e))
         except Exception as e:
-            logger.error("get_position error: %s", e, exc_info=True)
+            logger.exception("get_position error: %s", e)
             raise ConnectError(Code.INTERNAL, "Failed to get position")
         finally:
             await _aclose(service)
@@ -578,8 +580,10 @@ class TradingServicer:
             return trading_pb2.ListPositionsResponse(positions=proto_positions)
         except ConnectError:
             raise
+        except ValueError as e:
+            raise ConnectError(Code.INVALID_ARGUMENT, str(e))
         except Exception as e:
-            logger.error("list_positions error: %s", e, exc_info=True)
+            logger.exception("list_positions error: %s", e)
             raise ConnectError(Code.INTERNAL, "Failed to list positions")
         finally:
             await _aclose(service)
@@ -644,21 +648,43 @@ class TradingServicer:
         except ValueError as e:
             raise ConnectError(Code.INVALID_ARGUMENT, str(e))
         except Exception as e:
-            logger.error("close_position error: %s", e, exc_info=True)
+            logger.exception("close_position error: %s", e)
             raise ConnectError(Code.INTERNAL, "Failed to close position")
         finally:
             await _aclose(executor)
             await _aclose(service)
+
+    async def _assert_session_owned(self, tenant_id: UUID, session_id: str) -> None:
+        """AUTHORIZATION: the order/position streams are keyed by session_id only
+        and carry no tenant scope of their own. This tenant-scoped lookup is the
+        gate — a caller from another tenant gets NOT_FOUND and never tails."""
+        from src.services.live_session_service import create_live_session_service
+
+        service = None
+        try:
+            service = await create_live_session_service(tenant_id)
+            session = await service.get_session(session_id=UUID(session_id), tenant_id=tenant_id)
+        except ConnectError:
+            raise
+        except ValueError as e:
+            raise ConnectError(Code.INVALID_ARGUMENT, "Invalid session_id") from e
+        except Exception as e:
+            logger.exception("session ownership check failed: %s", e)
+            raise ConnectError(Code.INTERNAL, "Failed to verify session") from e
+        finally:
+            await _aclose(service)
+        if session is None:
+            raise ConnectError(Code.NOT_FOUND, "Session not found")
 
     async def stream_order_updates(
         self,
         request: trading_pb2.StreamOrderUpdatesRequest,
         ctx: RequestContext[object, object],
     ) -> AsyncGenerator[trading_pb2.OrderUpdate]:
-        """Stream real-time order updates via Redis Streams (tail-read)."""
-        # Require a valid principal before streaming (raises ConnectError on failure).
-        resolve_identity_connect(request.context)
+        """Stream real-time order updates for a session the caller owns."""
+        tenant_id, _user_id = resolve_identity_connect(request.context)
         session_id = request.session_id
+        await self._assert_session_owned(tenant_id, session_id)
         logger.info("Starting order updates stream for session: %s", session_id)
 
         subscriber = get_trading_event_subscriber()
@@ -672,7 +698,7 @@ class TradingServicer:
         except asyncio.CancelledError:
             logger.info("Order updates stream cancelled for session: %s", session_id)
         except Exception as e:
-            logger.error("Order stream error for session %s: %s", session_id, e, exc_info=True)
+            logger.exception("Order stream error for session %s: %s", session_id, e)
             raise
         finally:
             await subscriber.close()
@@ -682,9 +708,10 @@ class TradingServicer:
         request: trading_pb2.StreamPositionUpdatesRequest,
         ctx: RequestContext[object, object],
     ) -> AsyncGenerator[trading_pb2.PositionUpdate]:
-        """Stream real-time position updates via Redis Streams (tail-read)."""
-        resolve_identity_connect(request.context)
+        """Stream real-time position updates for a session the caller owns."""
+        tenant_id, _user_id = resolve_identity_connect(request.context)
         session_id = request.session_id
+        await self._assert_session_owned(tenant_id, session_id)
         logger.info("Starting position updates stream for session: %s", session_id)
 
         subscriber = get_trading_event_subscriber()
@@ -698,7 +725,7 @@ class TradingServicer:
         except asyncio.CancelledError:
             logger.info("Position updates stream cancelled for session: %s", session_id)
         except Exception as e:
-            logger.error("Position stream error for session %s: %s", session_id, e, exc_info=True)
+            logger.exception("Position stream error for session %s: %s", session_id, e)
             raise
         finally:
             await subscriber.close()

@@ -537,3 +537,150 @@ class TestUpdateEquity:
 
         assert cb._current_equity == 102000.0
         assert cb._daily_pnl == 2000.0
+
+
+class _RecordingCallback:
+    """CircuitBreakerCallback double that records calls and optionally raises."""
+
+    def __init__(self, raise_on_trigger: bool = False, raise_on_reset: bool = False) -> None:
+        self.triggered: list[str] = []
+        self.resets = 0
+        self._raise_on_trigger = raise_on_trigger
+        self._raise_on_reset = raise_on_reset
+
+    async def on_circuit_breaker_triggered(self, tenant_id, session_id, reason, details) -> None:
+        self.triggered.append(reason)
+        if self._raise_on_trigger:
+            raise RuntimeError("trigger callback exploded")
+
+    async def on_circuit_breaker_reset(self, tenant_id, session_id) -> None:
+        self.resets += 1
+        if self._raise_on_reset:
+            raise RuntimeError("reset callback exploded")
+
+
+class TestCooldownAutoReset:
+    """OPEN → HALF_OPEN → CLOSED via the auto-reset cooldown timer."""
+
+    async def test_cooldown_transitions_open_to_half_open_then_closed(self):
+        callback = _RecordingCallback()
+        cb = CircuitBreaker(
+            config=CircuitBreakerConfig(cooldown_seconds=0, auto_reset=True),
+            tenant_id=uuid4(),
+            session_id=uuid4(),
+            callback=callback,
+        )
+
+        await cb.manual_trigger("halt")
+        assert cb.state == CircuitBreakerState.OPEN
+
+        async def _wait_closed() -> None:
+            while cb.state != CircuitBreakerState.CLOSED:
+                await asyncio.sleep(0.005)
+
+        await asyncio.wait_for(_wait_closed(), timeout=2.0)
+        assert cb.can_trade() is True
+        assert cb.get_status().triggered_reason is None
+        assert callback.triggered == ["manual"]
+        assert callback.resets == 1
+
+    async def test_manual_reset_cancels_a_pending_cooldown_timer(self):
+        cb = CircuitBreaker(
+            config=CircuitBreakerConfig(cooldown_seconds=3600, auto_reset=True),
+            tenant_id=uuid4(),
+            session_id=uuid4(),
+        )
+        await cb.manual_trigger("halt")
+        assert cb._cooldown_task is not None
+
+        assert await cb.reset(force=True) is True
+
+        assert cb.state == CircuitBreakerState.CLOSED
+        assert cb._cooldown_task is None
+
+    async def test_no_auto_reset_stays_open(self):
+        cb = CircuitBreaker(
+            config=CircuitBreakerConfig(cooldown_seconds=0, auto_reset=False),
+            tenant_id=uuid4(),
+            session_id=uuid4(),
+        )
+        await cb.manual_trigger("halt")
+
+        await asyncio.sleep(0.05)
+
+        assert cb.state == CircuitBreakerState.OPEN
+
+
+class TestCallbackExceptionSwallowing:
+    """A raising alert callback must never break the state machine."""
+
+    async def test_trigger_callback_exception_still_opens_the_breaker(self):
+        callback = _RecordingCallback(raise_on_trigger=True)
+        cb = CircuitBreaker(
+            config=CircuitBreakerConfig(),
+            tenant_id=uuid4(),
+            session_id=uuid4(),
+            callback=callback,
+        )
+
+        await cb.manual_trigger("halt")
+
+        assert cb.state == CircuitBreakerState.OPEN
+        assert callback.triggered == ["manual"]
+
+    async def test_reset_callback_exception_still_resets(self):
+        callback = _RecordingCallback(raise_on_reset=True)
+        cb = CircuitBreaker(
+            config=CircuitBreakerConfig(),
+            tenant_id=uuid4(),
+            session_id=uuid4(),
+            callback=callback,
+        )
+        await cb.manual_trigger("halt")
+
+        assert await cb.reset(force=True) is True
+
+        assert cb.state == CircuitBreakerState.CLOSED
+        assert callback.resets == 1
+
+
+class TestResetAndTriggerEdges:
+    async def test_reset_when_already_closed_returns_true(self):
+        cb = CircuitBreaker(config=CircuitBreakerConfig(), tenant_id=uuid4(), session_id=uuid4())
+
+        assert await cb.reset() is True
+        assert cb.state == CircuitBreakerState.CLOSED
+
+    async def test_second_trigger_while_open_keeps_the_original_reason(self):
+        cb = CircuitBreaker(config=CircuitBreakerConfig(), tenant_id=uuid4(), session_id=uuid4())
+        await cb.manual_trigger("first halt")
+        first_triggered_at = cb.get_status().triggered_at
+
+        await cb.record_order_error("later error")
+        await cb.manual_trigger("second halt")
+
+        status = cb.get_status()
+        assert status.triggered_reason == CircuitBreakerReason.MANUAL
+        assert status.triggered_at == first_triggered_at
+        assert status.triggered_details == {"reason": "first halt"}
+
+
+class TestCheckThresholdsDailyLoss:
+    async def test_check_thresholds_triggers_on_daily_loss(self):
+        cb = CircuitBreaker(
+            config=CircuitBreakerConfig(max_daily_loss_percent=Decimal("5.0")),
+            tenant_id=uuid4(),
+            session_id=uuid4(),
+            starting_equity=Decimal("100000"),
+        )
+        cb.update_equity(Decimal("94000"), daily_pnl=Decimal("-6000"))
+
+        assert await cb.check_thresholds() is True
+        assert cb.get_status().triggered_reason == CircuitBreakerReason.DAILY_LOSS_LIMIT
+
+    async def test_check_thresholds_short_circuits_when_already_open(self):
+        cb = CircuitBreaker(config=CircuitBreakerConfig(), tenant_id=uuid4(), session_id=uuid4())
+        await cb.manual_trigger("halt")
+
+        assert await cb.check_thresholds() is True
+        assert cb.get_status().triggered_reason == CircuitBreakerReason.MANUAL

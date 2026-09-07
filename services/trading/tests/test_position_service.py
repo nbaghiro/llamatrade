@@ -310,3 +310,58 @@ class TestPositionService:
         )
 
         assert positions == [mock_position]  # raw ORM row, not a re-typed DTO
+
+
+class TestShortSideUnrealizedPnl:
+    """Short positions gain when price falls: pnl = (entry - price) * qty."""
+
+    async def test_update_prices_short_position_pnl_inverts(self, mock_db):
+        short = MagicMock()
+        short.symbol = "AAPL"
+        short.side = POSITION_SIDE_SHORT
+        short.qty = Decimal("10")
+        short.avg_entry_price = Decimal("150.00")
+        short.cost_basis = Decimal("1500.00")
+
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [short]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalars
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        service = PositionService(db=mock_db)
+        updated = await service.update_prices(
+            tenant_id=TEST_TENANT_ID,
+            session_id=TEST_SESSION_ID,
+            prices={"AAPL": 140.0},
+        )
+
+        assert updated == 1
+        assert short.current_price == Decimal("140.0")
+        assert short.market_value == Decimal("1400.00")
+        assert short.unrealized_pl == Decimal("100.00")
+        assert short.unrealized_plpc == Decimal("100.00") / Decimal("1500.00")
+
+    async def test_update_prices_short_position_loss_when_price_rises(self, mock_db):
+        short = MagicMock()
+        short.symbol = "AAPL"
+        short.side = POSITION_SIDE_SHORT
+        short.qty = Decimal("10")
+        short.avg_entry_price = Decimal("150.00")
+        short.cost_basis = Decimal("1500.00")
+
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [short]
+        mock_result = MagicMock()
+        mock_result.scalars.return_value = mock_scalars
+        mock_db.execute = AsyncMock(return_value=mock_result)
+
+        service = PositionService(db=mock_db)
+        updated = await service.update_prices(
+            tenant_id=TEST_TENANT_ID,
+            session_id=TEST_SESSION_ID,
+            prices={"AAPL": 160.0},
+        )
+
+        assert updated == 1
+        assert short.unrealized_pl == Decimal("-100.00")

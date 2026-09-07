@@ -14,6 +14,7 @@ from llamatrade_alpaca import (
     TradeEvent,
     TradeEventType,
 )
+from tests.sessions import quiet_session
 
 from src.models import RiskCheckResult
 from src.runner.runner import RunnerConfig, RunnerPosition, Signal, StrategyRunner
@@ -90,7 +91,7 @@ def runner_with_trade_stream(
 
     return StrategyRunner(
         config=sample_config,
-        strategy_fn=simple_strategy,
+        session=quiet_session(),
         bar_stream=bar_stream,
         order_executor=mock_order_executor,
         risk_manager=mock_risk_manager,
