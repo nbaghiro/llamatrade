@@ -12,7 +12,10 @@ import jwt
 from connectrpc.code import Code
 from connectrpc.errors import ConnectError
 from connectrpc.request import RequestContext
+from sqlalchemy import event, text
+from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import Session, SessionTransaction
 
 # Type alias for generic request context (accepts any request/response types)
 type AnyContext = RequestContext[object, object]
@@ -21,6 +24,7 @@ from llamatrade_common import RateLimiter, RevocationStore, current_context
 from llamatrade_common.auth import user_token_verification_key
 from llamatrade_common.utils import verify_api_key
 from llamatrade_db import get_session_maker, set_rls_bypass
+from llamatrade_db.rls import BYPASS_GUC
 from llamatrade_events.catalog.notifications import NotificationEvent, shared_notification_events
 from llamatrade_proto.generated import auth_pb2, common_pb2, events_pb2
 from llamatrade_telemetry import metrics
@@ -56,6 +60,16 @@ _DUMMY_PASSWORD_HASH: bytes = bcrypt.hashpw(b"llamatrade-timing-pad", bcrypt.gen
 def _mask_key(api_key: str) -> str:
     """Masked key prefix for display; the full key and the secret are never returned."""
     return f"{api_key[:8]}…" if api_key else ""
+
+
+def _bind_rls_bypass(session: AsyncSession) -> None:
+    """Re-apply the transaction-local RLS bypass GUC at every transaction begin,
+    so multi-commit RPCs (e.g. register) keep system scope for the session's life."""
+
+    def _apply(sync_session: Session, transaction: SessionTransaction, conn: Connection) -> None:
+        conn.execute(text(f"SELECT set_config('{BYPASS_GUC}', 'on', true)"))
+
+    event.listen(session.sync_session, "after_begin", _apply)
 
 
 def _user_to_proto(user: User) -> auth_pb2.User:
@@ -156,6 +170,7 @@ class AuthServicer:
             self._session_maker = get_session_maker()
         assert self._session_maker is not None
         session: AsyncSession = self._session_maker()
+        _bind_rls_bypass(session)
         await set_rls_bypass(session, reason="auth identity authority: pre- and cross-tenant reads")
         return session
 
@@ -253,7 +268,7 @@ class AuthServicer:
             return response
 
         except Exception as e:
-            logger.error("validate_token error: %s", e, exc_info=True)
+            logger.exception("validate_token error: %s", e)
             return auth_pb2.ValidateTokenResponse(valid=False)
 
     async def validate_a_p_i_key(
@@ -316,7 +331,7 @@ class AuthServicer:
                 )
 
         except Exception as e:
-            logger.error("validate_a_p_i_key error: %s", e, exc_info=True)
+            logger.exception("validate_a_p_i_key error: %s", e)
             return auth_pb2.ValidateAPIKeyResponse(valid=False)
 
     async def refresh_token(
@@ -562,10 +577,8 @@ class AuthServicer:
 
         from llamatrade_db.models import User
 
-        # Credential-stuffing guard: the per-email bucket always applies (so a
-        # rotated source IP cannot escape it), plus a per-IP bucket when a
-        # trusted client IP is present; the wider window escalates a sustained
-        # burst into a lockout.
+        # The per-email bucket always applies so a rotated IP cannot escape it;
+        # the per-IP bucket is additive when a trusted client IP is present.
         try:
             await self._enforce_credential_rate_limits(
                 "login", request.email, self._client_ip(ctx), rules=((10, 60), (30, 900))
@@ -970,21 +983,31 @@ class AuthServicer:
         """Create new Alpaca credentials for the authenticated tenant."""
         from uuid import UUID
 
+        from pydantic import ValidationError
+
         from src.models import AlpacaCredentialsCreate
         from src.services.tenant_service import TenantService
 
         tenant_id, _ = self._authenticated_principal(ctx)
 
+        try:
+            data = AlpacaCredentialsCreate(
+                name=request.name,
+                api_key=request.api_key,
+                api_secret=request.api_secret,
+                is_paper=request.is_paper,
+            )
+        except ValidationError as e:
+            detail = "; ".join(
+                f"{'.'.join(str(loc) for loc in err['loc'])}: {err['msg']}" for err in e.errors()
+            )
+            raise ConnectError(Code.INVALID_ARGUMENT, f"Invalid credentials: {detail}") from e
+
         async with await self._get_db() as db:
             service = TenantService(db)
             creds = await service.create_alpaca_credentials(
                 tenant_id=UUID(tenant_id),
-                data=AlpacaCredentialsCreate(
-                    name=request.name,
-                    api_key=request.api_key,
-                    api_secret=request.api_secret,
-                    is_paper=request.is_paper,
-                ),
+                data=data,
             )
 
             # Write-only: never return the secret, and only a masked key prefix —

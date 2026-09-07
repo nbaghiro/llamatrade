@@ -10,10 +10,22 @@ from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import UUID, uuid4
 
-import bcrypt
 import jwt
 import pytest
 from connectrpc.errors import ConnectError
+
+from tests.fakes import (
+    JWT_ALGORITHM,
+    JWT_SECRET,
+    FakeRateLimiter,
+    FakeRevocationStore,
+    MockAPIKey,
+    MockAsyncSession,
+    MockRequestContext,
+    MockTenant,
+    MockUser,
+    create_test_token,
+)
 
 if TYPE_CHECKING:
     from src.grpc.servicer import AuthServicer
@@ -23,197 +35,6 @@ os.environ["JWT_SECRET"] = "test-secret"
 os.environ["JWT_ALGORITHM"] = "HS256"
 os.environ["ACCESS_TOKEN_EXPIRE_MINUTES"] = "30"
 os.environ["REFRESH_TOKEN_EXPIRE_DAYS"] = "7"
-
-JWT_SECRET = "test-secret"
-JWT_ALGORITHM = "HS256"
-
-
-# ===================
-# Mock Classes
-# ===================
-
-
-class MockUser:
-    """Mock User database model."""
-
-    def __init__(
-        self,
-        id: UUID | None = None,
-        tenant_id: UUID | None = None,
-        email: str = "test@example.com",
-        password: str = "Test123!",
-        first_name: str = "Test",
-        last_name: str = "User",
-        role: str = "admin",
-        is_active: bool = True,
-        avatar_url: str | None = None,
-    ) -> None:
-        self.id = id or uuid4()
-        self.tenant_id = tenant_id or uuid4()
-        self.email = email
-        self.password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
-        self.first_name = first_name
-        self.last_name = last_name
-        self.role = role
-        self.is_active = is_active
-        self.avatar_url = avatar_url
-        self.created_at = datetime.now(UTC)
-        self.last_login: datetime | None = None
-
-
-class MockTenant:
-    """Mock Tenant database model."""
-
-    def __init__(
-        self,
-        id: UUID | None = None,
-        name: str = "Test Tenant",
-        slug: str = "test-tenant",
-        is_active: bool = True,
-    ) -> None:
-        self.id = id or uuid4()
-        self.name = name
-        self.slug = slug
-        self.is_active = is_active
-        self.created_at = datetime.now(UTC)
-        self.settings: dict[str, str] = {}
-
-
-_STANDARD_TEST_API_KEY = "testkey_secretpart123"
-
-
-def _default_key_hash() -> str:
-    import hashlib
-
-    return hashlib.sha256(_STANDARD_TEST_API_KEY.encode()).hexdigest()
-
-
-class MockAPIKey:
-    """Mock APIKey database model."""
-
-    def __init__(
-        self,
-        id: UUID | None = None,
-        tenant_id: UUID | None = None,
-        user_id: UUID | None = None,
-        name: str = "Test Key",
-        key_prefix: str = "testkey_",
-        key_hash: str | None = None,
-        scopes: list[str] | None = None,
-        is_active: bool = True,
-        expires_at: datetime | None = None,
-    ) -> None:
-        self.id = id or uuid4()
-        self.tenant_id = tenant_id or uuid4()
-        self.user_id = user_id
-        self.name = name
-        self.key_prefix = key_prefix
-        self.key_hash = key_hash or _default_key_hash()
-        self.scopes = scopes or ["read", "write"]
-        self.is_active = is_active
-        self.expires_at = expires_at
-        self.last_used_at: datetime | None = None
-        self.created_at = datetime.now(UTC)
-
-
-class MockRequestContext:
-    """Mock ConnectRPC RequestContext."""
-
-    def __init__(self, headers: dict[str, str] | None = None) -> None:
-        self.headers = headers or {}
-
-    def request_headers(self) -> dict[str, str]:
-        """Return request headers (ConnectRPC API)."""
-        return self.headers
-
-
-class MockAsyncSession:
-    """Mock async database session."""
-
-    def __init__(self) -> None:
-        self._users: dict[str, MockUser] = {}
-        self._tenants: dict[str, MockTenant] = {}
-        self._api_keys: dict[str, MockAPIKey] = {}
-        self._query_result: MockUser | MockTenant | MockAPIKey | None = None
-
-    def set_user(self, user: MockUser) -> None:
-        self._users[str(user.id)] = user
-        self._users[user.email] = user
-
-    def set_tenant(self, tenant: MockTenant) -> None:
-        self._tenants[str(tenant.id)] = tenant
-
-    def set_api_key(self, api_key: MockAPIKey) -> None:
-        self._api_keys[api_key.key_prefix] = api_key
-
-    async def execute(self, query: object) -> MagicMock:
-        result = MagicMock()
-        result.scalar_one_or_none.return_value = self._query_result
-        rows = [self._query_result] if self._query_result is not None else []
-        result.scalars.return_value.all.return_value = rows
-        return result
-
-    async def scalar(self, query: object) -> object | None:
-        return self._query_result
-
-    async def flush(self) -> None:
-        pass
-
-    async def commit(self) -> None:
-        pass
-
-    def add(self, obj: object) -> None:
-        # Ensure created_at is set
-        if hasattr(obj, "created_at") and getattr(obj, "created_at") is None:
-            setattr(obj, "created_at", datetime.now(UTC))
-        if hasattr(obj, "email"):
-            self.set_user(obj)
-        elif hasattr(obj, "slug"):
-            self.set_tenant(obj)
-
-    async def __aenter__(self) -> MockAsyncSession:
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: object,
-    ) -> None:
-        pass
-
-
-class FakeRateLimiter:
-    """Records check_and_count calls and returns a fixed decision."""
-
-    def __init__(self, allowed: bool = True) -> None:
-        self.allowed = allowed
-        self.calls: list[tuple[str, int, int]] = []
-
-    async def check_and_count(self, key: str, limit: int, window_seconds: int) -> bool:
-        self.calls.append((key, limit, window_seconds))
-        return self.allowed
-
-
-class FakeRevocationStore:
-    """In-memory revocation store mirroring llamatrade_common.RevocationStore."""
-
-    def __init__(self) -> None:
-        self.revoked_jtis: dict[str, int] = {}
-        self.user_cutoffs: dict[str, int] = {}
-
-    async def revoke_token(self, jti: str, exp: int) -> None:
-        self.revoked_jtis[jti] = exp
-
-    async def revoke_all_for_user(self, user_id: str, now: int) -> None:
-        self.user_cutoffs[user_id] = now
-
-    async def is_revoked(self, claims: dict[str, object]) -> bool:
-        if str(claims.get("jti", "")) in self.revoked_jtis:
-            return True
-        cutoff = self.user_cutoffs.get(str(claims.get("sub")))
-        iat = claims.get("iat")
-        return cutoff is not None and isinstance(iat, int | float) and iat < cutoff
 
 
 # ===================
@@ -256,34 +77,6 @@ def auth_context(context: MockRequestContext) -> MockRequestContext:
     tenant_id = str(uuid4())
     token = create_test_token(user_id, tenant_id)
     return MockRequestContext(headers={"authorization": f"Bearer {token}"})
-
-
-def create_test_token(
-    user_id: str,
-    tenant_id: str,
-    token_type: str = "access",
-    expired: bool = False,
-    jti: str | None = None,
-) -> str:
-    """Create a test JWT token."""
-    now = datetime.now(UTC)
-    if expired:
-        exp = now - timedelta(hours=1)
-    else:
-        exp = now + timedelta(hours=1)
-
-    payload: dict[str, object] = {
-        "sub": user_id,
-        "tenant_id": tenant_id,
-        "email": "test@example.com",
-        "roles": ["admin"],
-        "type": token_type,
-        "iat": now,
-        "exp": exp,
-    }
-    if jti is not None:
-        payload["jti"] = jti
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
 # ===================
@@ -392,7 +185,7 @@ class TestRegister:
             last_name="Lovelace",
         )
         await auth_servicer.register(request, context)
-        rpc_user = mock_db._users["rpc@example.com"]
+        rpc_user = next(o for o in mock_db.added if getattr(o, "email", None) == "rpc@example.com")
 
         oauth_db = MockAsyncSession()
         oauth_user, _ = await create_tenant_and_user(
@@ -1069,22 +862,6 @@ class TestValidateAPIKey:
         response = await auth_servicer.validate_a_p_i_key(request, context)
         assert response.valid is False
 
-    async def test_validate_inactive_api_key(
-        self,
-        auth_servicer: AuthServicer,
-        mock_db: MockAsyncSession,
-        context: MockRequestContext,
-    ) -> None:
-        """Test validation of inactive API key."""
-        from llamatrade_proto.generated import auth_pb2
-
-        mock_db._query_result = None  # Inactive keys won't be found
-
-        request = auth_pb2.ValidateAPIKeyRequest(api_key="inactive_key123")
-
-        response = await auth_servicer.validate_a_p_i_key(request, context)
-        assert response.valid is False
-
     async def test_validate_api_key_wrong_secret(
         self,
         auth_servicer: AuthServicer,
@@ -1458,6 +1235,92 @@ class TestRateLimiting:
         request = auth_pb2.LoginRequest(email="test@example.com", password="Test123!")
         response = await auth_servicer.login(request, context)
         assert response.access_token
+
+
+class TestEmailTokenRateLimits:
+    """_enforce_credential_rate_limits on the email-token surfaces."""
+
+    async def test_request_password_reset_blocked_before_db(
+        self,
+        auth_servicer: AuthServicer,
+        mock_db: MockAsyncSession,
+        context: MockRequestContext,
+    ) -> None:
+        """A tripped limit refuses the RPC before any token can be issued."""
+        from connectrpc.code import Code
+
+        from llamatrade_proto.generated import auth_pb2
+
+        auth_servicer._rate_limiter = FakeRateLimiter(allowed=False)
+        request = auth_pb2.RequestPasswordResetRequest(email="victim@example.com")
+
+        with pytest.raises(ConnectError) as exc_info:
+            await auth_servicer.request_password_reset(request, context)
+
+        assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
+        assert mock_db.added == []
+
+    async def test_request_password_reset_bucket_keys_and_rules(
+        self,
+        auth_servicer: AuthServicer,
+        mock_db: MockAsyncSession,
+    ) -> None:
+        """Case-folded email bucket plus trusted-IP bucket, each with both windows."""
+        from llamatrade_proto.generated import auth_pb2
+
+        limiter = FakeRateLimiter(allowed=True)
+        auth_servicer._rate_limiter = limiter
+        mock_db._query_result = None
+
+        context = MockRequestContext(headers={"x-forwarded-for": "1.2.3.4, 10.0.0.1"})
+        request = auth_pb2.RequestPasswordResetRequest(email="Someone@Example.com")
+        response = await auth_servicer.request_password_reset(request, context)
+
+        assert response.success is True
+        keys = [c[0] for c in limiter.calls]
+        assert keys.count("pwreset:email:someone@example.com") == 2
+        assert keys.count("pwreset:ip:1.2.3.4") == 2
+        assert [(c[1], c[2]) for c in limiter.calls[:2]] == [(5, 60), (20, 3600)]
+
+    async def test_resend_verification_blocked_before_db(
+        self,
+        auth_servicer: AuthServicer,
+        mock_db: MockAsyncSession,
+        context: MockRequestContext,
+    ) -> None:
+        from connectrpc.code import Code
+
+        from llamatrade_proto.generated import auth_pb2
+
+        auth_servicer._rate_limiter = FakeRateLimiter(allowed=False)
+        request = auth_pb2.ResendVerificationRequest(email="victim@example.com")
+
+        with pytest.raises(ConnectError) as exc_info:
+            await auth_servicer.resend_verification(request, context)
+
+        assert exc_info.value.code == Code.RESOURCE_EXHAUSTED
+        assert mock_db.added == []
+
+    async def test_resend_verification_bucket_keys_and_rules(
+        self,
+        auth_servicer: AuthServicer,
+        mock_db: MockAsyncSession,
+    ) -> None:
+        from llamatrade_proto.generated import auth_pb2
+
+        limiter = FakeRateLimiter(allowed=True)
+        auth_servicer._rate_limiter = limiter
+        mock_db._query_result = None
+
+        context = MockRequestContext(headers={"x-forwarded-for": "1.2.3.4, 10.0.0.1"})
+        request = auth_pb2.ResendVerificationRequest(email="Someone@Example.com")
+        response = await auth_servicer.resend_verification(request, context)
+
+        assert response.success is True
+        keys = [c[0] for c in limiter.calls]
+        assert keys.count("verify:email:someone@example.com") == 2
+        assert keys.count("verify:ip:1.2.3.4") == 2
+        assert [(c[1], c[2]) for c in limiter.calls[:2]] == [(5, 60), (20, 3600)]
 
 
 # ===================

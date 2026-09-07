@@ -77,25 +77,6 @@ class TestGetAlpacaCredentials:
 
         assert result is None
 
-    async def test_get_alpaca_credentials_wrong_tenant_returns_none(
-        self, tenant_service: TenantService, test_tenant_id: UUID
-    ) -> None:
-        """Test getting credentials for wrong tenant returns None (isolation)."""
-        # Credentials exist but belong to different tenant
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None  # Query finds nothing
-        tenant_service.db.execute.return_value = mock_result
-
-        credentials_id = uuid4()
-        wrong_tenant_id = uuid4()
-
-        result = await tenant_service.get_alpaca_credentials(
-            credentials_id=credentials_id,
-            tenant_id=wrong_tenant_id,
-        )
-
-        assert result is None
-
     async def test_get_alpaca_credentials_uses_stored_prefix_without_decrypting(
         self, tenant_service: TenantService, test_tenant_id: UUID
     ) -> None:
@@ -388,22 +369,6 @@ class TestDeleteAlpacaCredentials:
         assert mock_creds.is_active is True
         tenant_service.db.commit.assert_not_called()
 
-    async def test_delete_checks_dependents_for_the_calling_tenant_only(
-        self, tenant_service: TenantService, test_tenant_id: UUID
-    ) -> None:
-        """The dependency query is scoped to the caller's tenant and credentials."""
-        self._stub_creds_row(tenant_service)
-        credentials_id = uuid4()
-        dependents = AsyncMock(return_value=CredentialDependents())
-
-        with patch("src.services.tenant_service.get_credential_dependents", dependents):
-            await tenant_service.delete_alpaca_credentials(
-                credentials_id=credentials_id,
-                tenant_id=test_tenant_id,
-            )
-
-        dependents.assert_awaited_once_with(tenant_service.db, test_tenant_id, credentials_id)
-
     async def test_delete_alpaca_credentials_not_found(
         self, tenant_service: TenantService, test_tenant_id: UUID
     ) -> None:
@@ -416,24 +381,6 @@ class TestDeleteAlpacaCredentials:
         result = await tenant_service.delete_alpaca_credentials(
             credentials_id=credentials_id,
             tenant_id=test_tenant_id,
-        )
-
-        assert result is False
-
-    async def test_delete_alpaca_credentials_wrong_tenant(
-        self, tenant_service: TenantService, test_tenant_id: UUID
-    ) -> None:
-        """Test deleting credentials for wrong tenant returns False (isolation)."""
-        # Query returns None because tenant_id doesn't match
-        mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
-        tenant_service.db.execute.return_value = mock_result
-
-        credentials_id = uuid4()
-        wrong_tenant_id = uuid4()
-        result = await tenant_service.delete_alpaca_credentials(
-            credentials_id=credentials_id,
-            tenant_id=wrong_tenant_id,
         )
 
         assert result is False

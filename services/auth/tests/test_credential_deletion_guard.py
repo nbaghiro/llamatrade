@@ -1,9 +1,10 @@
-"""End-to-end tests for the broker-credential deletion guard.
+"""Tenant-scoped credential SQL: the deletion guard plus get/list isolation.
 
 ``TenantService.delete_alpaca_credentials`` must refuse while live trading
-sessions or funded ledger sleeves still point at the credential set. These run
-the real SQL against a real (SQLite) schema so the tenant filters are exercised;
-the mock-based cases in ``test_tenant_service.py`` cover the message shape.
+sessions or funded ledger sleeves still point at the credential set, and the
+get/list/delete lookups must stay tenant-scoped. These run the real SQL against
+a real (SQLite) schema so the tenant filters are exercised; the mock-based
+cases in ``test_tenant_service.py`` cover the message shape.
 
 SQLite has no JSONB and no async driver installed, hence the type rendering and
 the awaitable facade over a synchronous session.
@@ -151,6 +152,48 @@ def _make_funded_sleeve(
     session.add(sleeve)
     session.flush()
     return sleeve
+
+
+async def test_get_is_tenant_scoped(service: TenantService, db_session: Session) -> None:
+    """The get filter runs in SQL: another tenant's id yields None, never the row."""
+    tenant_a, tenant_b = uuid4(), uuid4()
+    creds = _make_credentials(db_session, tenant_a)
+
+    assert await service.get_alpaca_credentials(creds.id, tenant_b) is None
+
+    own = await service.get_alpaca_credentials(creds.id, tenant_a)
+    assert own is not None
+    assert own.id == creds.id
+    assert own.api_key == "PKTEST12"
+    assert own.api_secret == ""
+
+
+async def test_get_inactive_credentials_returns_none(
+    service: TenantService, db_session: Session
+) -> None:
+    tenant_id = uuid4()
+    creds = _make_credentials(db_session, tenant_id)
+    creds.is_active = False
+    db_session.flush()
+
+    assert await service.get_alpaca_credentials(creds.id, tenant_id) is None
+
+
+async def test_list_is_tenant_scoped_and_active_only(
+    service: TenantService, db_session: Session
+) -> None:
+    """Listing returns only the caller's active rows on real SQL."""
+    tenant_a, tenant_b = uuid4(), uuid4()
+    active = _make_credentials(db_session, tenant_a)
+    inactive = _make_credentials(db_session, tenant_a)
+    inactive.is_active = False
+    _make_credentials(db_session, tenant_b)
+    db_session.flush()
+
+    rows = await service.list_alpaca_credentials(tenant_a)
+
+    assert [row.id for row in rows] == [active.id]
+    assert rows[0].api_key_prefix == "PKTEST12"
 
 
 async def test_delete_succeeds_without_dependents(
