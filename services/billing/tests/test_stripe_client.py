@@ -5,14 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.stripe.client import (
-    InvoiceResult,
-    PaymentMethodResult,
-    SetupIntentResult,
-    StripeClient,
-    StripeError,
-    SubscriptionResult,
-)
+from src.stripe.client import StripeClient, StripeError
 
 
 class TestStripeClientInit:
@@ -50,64 +43,6 @@ class TestTimestampConversion:
 
         result = client._timestamp_to_datetime(None)
         assert result is None
-
-
-class TestDataclassResults:
-    """Tests for result dataclasses."""
-
-    def test_setup_intent_result(self) -> None:
-        """Test SetupIntentResult dataclass."""
-        result = SetupIntentResult(
-            client_secret="seti_secret_123",
-            customer_id="cus_123",
-        )
-        assert result.client_secret == "seti_secret_123"
-        assert result.customer_id == "cus_123"
-
-    def test_payment_method_result(self) -> None:
-        """Test PaymentMethodResult dataclass."""
-        result = PaymentMethodResult(
-            id="pm_123",
-            type="card",
-            card_brand="visa",
-            card_last4="4242",
-            card_exp_month=12,
-            card_exp_year=2030,
-        )
-        assert result.id == "pm_123"
-        assert result.type == "card"
-        assert result.card_brand == "visa"
-        assert result.card_last4 == "4242"
-
-    def test_subscription_result(self) -> None:
-        """Test SubscriptionResult dataclass."""
-        now = datetime.now(UTC)
-        result = SubscriptionResult(
-            id="sub_123",
-            status="active",
-            current_period_start=now,
-            current_period_end=now,
-            cancel_at_period_end=False,
-        )
-        assert result.id == "sub_123"
-        assert result.status == "active"
-        assert result.cancel_at_period_end is False
-
-    def test_invoice_result(self) -> None:
-        """Test InvoiceResult dataclass."""
-        now = datetime.now(UTC)
-        result = InvoiceResult(
-            id="in_123",
-            amount_due=2900,
-            amount_paid=2900,
-            currency="usd",
-            status="paid",
-            period_start=now,
-            period_end=now,
-        )
-        assert result.id == "in_123"
-        assert result.amount_due == 2900
-        assert result.status == "paid"
 
 
 class TestStripeError:

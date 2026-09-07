@@ -1,126 +1,71 @@
 """Unit tests for billing services."""
 
-from datetime import UTC, datetime, timedelta
+from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from llamatrade_proto.generated import billing_pb2
+from tests.conftest import MockAsyncSession, MockPlan, MockStripeClient, MockSubscription
 
 from src.models import SubscriptionCreateRequest
-from src.services.billing_service import DEFAULT_PLANS, BillingService
+from src.services.billing_service import (
+    DEFAULT_PLANS,
+    BillingService,
+    stripe_status_to_proto,
+)
 from src.services.payment_method_service import PaymentMethodService
-from src.stripe.client import PaymentMethodResult, SetupIntentResult, SubscriptionResult
+from src.stripe.client import StripeClient, StripeError, SubscriptionResult
 
 
-class MockStripeClient:
-    """Mock Stripe client for unit tests."""
-
-    def __init__(self) -> None:
-        self.customers: dict[str, str] = {}
-
-    async def get_or_create_customer(
-        self, tenant_id: str, email: str, name: str | None = None
-    ) -> str:
-        if tenant_id in self.customers:
-            return self.customers[tenant_id]
-        customer_id = f"cus_test_{len(self.customers)}"
-        self.customers[tenant_id] = customer_id
-        return customer_id
-
-    async def create_setup_intent(self, customer_id: str) -> SetupIntentResult:
-        return SetupIntentResult(
-            client_secret=f"seti_secret_{customer_id}",
-            customer_id=customer_id,
-        )
-
-    async def attach_payment_method(
-        self, customer_id: str, payment_method_id: str
-    ) -> PaymentMethodResult:
-        return PaymentMethodResult(
-            id=payment_method_id,
-            type="card",
-            card_brand="visa",
-            card_last4="4242",
-            card_exp_month=12,
-            card_exp_year=2030,
-        )
-
-    async def set_default_payment_method(self, customer_id: str, payment_method_id: str) -> bool:
-        return True
-
-    async def detach_payment_method(self, payment_method_id: str) -> bool:
-        return True
-
-    async def list_payment_methods(self, customer_id: str) -> list[PaymentMethodResult]:
-        return []
+class _DownStripe(MockStripeClient):
+    """Stripe double whose subscription mutations all fail."""
 
     async def create_subscription(
         self, customer_id: str, price_id: str, payment_method_id: str, trial_days: int = 0
     ) -> SubscriptionResult:
-        now = datetime.now(UTC)
-        return SubscriptionResult(
-            id="sub_test_123",
-            status="trialing" if trial_days > 0 else "active",
-            current_period_start=now,
-            current_period_end=now + timedelta(days=30),
-            cancel_at_period_end=False,
-            trial_start=now if trial_days > 0 else None,
-            trial_end=now + timedelta(days=trial_days) if trial_days > 0 else None,
-        )
+        raise StripeError("stripe down", "api_error")
+
+    async def update_subscription(
+        self, subscription_id: str, price_id: str, proration_behavior: str = "create_prorations"
+    ) -> SubscriptionResult:
+        raise StripeError("stripe down", "api_error")
 
     async def cancel_subscription(self, subscription_id: str, at_period_end: bool = True) -> bool:
-        return True
+        raise StripeError("stripe down", "api_error")
 
     async def reactivate_subscription(self, subscription_id: str) -> SubscriptionResult:
-        now = datetime.now(UTC)
-        return SubscriptionResult(
-            id=subscription_id,
-            status="active",
-            current_period_start=now,
-            current_period_end=now + timedelta(days=30),
-            cancel_at_period_end=False,
+        raise StripeError("stripe down", "api_error")
+
+
+class _WeirdStatusStripe(MockStripeClient):
+    """Stripe double whose subscription mutations return an unrecognized status."""
+
+    async def create_subscription(
+        self, customer_id: str, price_id: str, payment_method_id: str, trial_days: int = 0
+    ) -> SubscriptionResult:
+        result = await super().create_subscription(
+            customer_id, price_id, payment_method_id, trial_days
         )
+        return replace(result, status="brand_new_status")
+
+    async def update_subscription(
+        self, subscription_id: str, price_id: str, proration_behavior: str = "create_prorations"
+    ) -> SubscriptionResult:
+        result = await super().update_subscription(subscription_id, price_id)
+        return replace(result, status="brand_new_status")
 
 
-class MockPlan:
-    """Mock Plan model."""
-
-    def __init__(self, **kwargs: Any) -> None:
-        self.id = kwargs.get("id", uuid4())
-        self.name = kwargs.get("name", "starter")
-        self.display_name = kwargs.get("display_name", "Starter")
-        self.tier = kwargs.get("tier", billing_pb2.PLAN_TIER_STARTER)
-        self.price_monthly = kwargs.get("price_monthly", 29)
-        self.price_yearly = kwargs.get("price_yearly", 290)
-        self.features = kwargs.get("features", {})
-        self.limits = kwargs.get("limits", {})
-        self.trial_days = kwargs.get("trial_days", 14)
-        self.stripe_price_id_monthly = kwargs.get("stripe_price_id_monthly", "price_monthly_test")
-        self.stripe_price_id_yearly = kwargs.get("stripe_price_id_yearly", "price_yearly_test")
+def _stripe(client: MockStripeClient) -> StripeClient:
+    return cast(StripeClient, client)
 
 
-class MockSubscription:
-    """Mock Subscription model."""
-
-    def __init__(self, **kwargs: Any) -> None:
-        self.id = kwargs.get("id", uuid4())
-        self.tenant_id = kwargs.get("tenant_id", uuid4())
-        self.plan = kwargs.get("plan", MockPlan())
-        self.plan_id = self.plan.id
-        self.status = kwargs.get("status", billing_pb2.SUBSCRIPTION_STATUS_ACTIVE)
-        self.billing_cycle = kwargs.get("billing_cycle", billing_pb2.BILLING_INTERVAL_MONTHLY)
-        self.stripe_subscription_id = kwargs.get("stripe_subscription_id", "sub_test_123")
-        self.stripe_customer_id = kwargs.get("stripe_customer_id", "cus_test_123")
-        now = datetime.now(UTC)
-        self.current_period_start = kwargs.get("current_period_start", now)
-        self.current_period_end = kwargs.get("current_period_end", now + timedelta(days=30))
-        self.cancel_at_period_end = kwargs.get("cancel_at_period_end", False)
-        self.trial_start = kwargs.get("trial_start")
-        self.trial_end = kwargs.get("trial_end")
-        self.created_at = kwargs.get("created_at", now)
+def _db(session: MockAsyncSession) -> AsyncSession:
+    return cast(AsyncSession, session)
 
 
 class TestBillingServicePlans:
@@ -171,16 +116,6 @@ class TestBillingServicePlans:
         plan = await service.get_plan("nonexistent")
 
         assert plan is None
-
-    async def test_is_uuid_with_valid_uuid(self) -> None:
-        """Test _is_uuid with valid UUID."""
-        service = BillingService(AsyncMock(), cast(Any, MockStripeClient()))
-        assert service._is_uuid(str(uuid4())) is True
-
-    async def test_is_uuid_with_invalid_uuid(self) -> None:
-        """Test _is_uuid with invalid UUID."""
-        service = BillingService(AsyncMock(), cast(Any, MockStripeClient()))
-        assert service._is_uuid("not-a-uuid") is False
 
 
 class TestBillingServiceSubscriptions:
@@ -301,7 +236,7 @@ class TestPaymentMethodService:
         service = PaymentMethodService(mock_db, cast(Any, stripe_client), billing_service)
         result = await service.create_setup_intent(uuid4(), "test@example.com")
 
-        assert result.client_secret.startswith("seti_secret_")
+        assert result.client_secret == "seti_test_0_secret_test"
 
     async def test_list_payment_methods_empty(self) -> None:
         """Test listing payment methods when none exist."""
@@ -471,30 +406,7 @@ class TestBillingServiceCreateSubscription:
 
 
 class TestDefaultPlans:
-    """Tests for default plan configurations."""
-
-    def test_free_plan_exists(self) -> None:
-        """Test that free plan is defined."""
-        free_plan = next((p for p in DEFAULT_PLANS if p.tier == billing_pb2.PLAN_TIER_FREE), None)
-        assert free_plan is not None
-        assert free_plan.price_monthly == 0
-        assert free_plan.trial_days == 0
-
-    def test_starter_plan_exists(self) -> None:
-        """Test that starter plan is defined."""
-        starter_plan = next(
-            (p for p in DEFAULT_PLANS if p.tier == billing_pb2.PLAN_TIER_STARTER), None
-        )
-        assert starter_plan is not None
-        assert starter_plan.price_monthly == 29
-        assert starter_plan.trial_days == 14
-
-    def test_pro_plan_exists(self) -> None:
-        """Test that pro plan is defined."""
-        pro_plan = next((p for p in DEFAULT_PLANS if p.tier == billing_pb2.PLAN_TIER_PRO), None)
-        assert pro_plan is not None
-        assert pro_plan.price_monthly == 99
-        assert pro_plan.trial_days == 14
+    """Cross-field invariants of the default catalog (values pinned by plan-limit parity)."""
 
     def test_all_plans_have_features(self) -> None:
         """Test that all plans have features defined."""
@@ -672,24 +584,7 @@ class TestGetPlanByName:
 
 
 class TestDefaultPlanFeatures:
-    """Tests for default plan feature configurations."""
-
-    def test_free_plan_no_live_trading(self) -> None:
-        """Test that free plan doesn't allow live trading."""
-        free_plan = next((p for p in DEFAULT_PLANS if p.tier == billing_pb2.PLAN_TIER_FREE), None)
-        assert free_plan is not None
-        assert free_plan.features.get("live_trading") is False
-
-    def test_pro_plan_has_live_trading(self) -> None:
-        """Test that pro plan allows live trading."""
-        pro_plan = next((p for p in DEFAULT_PLANS if p.tier == billing_pb2.PLAN_TIER_PRO), None)
-        assert pro_plan is not None
-        assert pro_plan.features.get("live_trading") is True
-
-    def test_all_plans_have_backtests(self) -> None:
-        """Test that all plans allow backtests."""
-        for plan in DEFAULT_PLANS:
-            assert plan.features.get("backtests") is True
+    """Cross-plan invariants of the default feature/limit configurations."""
 
     def test_free_plan_has_lowest_limits(self) -> None:
         """Test that free plan has the lowest limits."""
@@ -704,48 +599,6 @@ class TestDefaultPlanFeatures:
         pro_limit = pro_plan.limits.get("backtests_per_month") or float("inf")
 
         assert free_limit < pro_limit
-
-
-class TestPaymentMethodListBranches:
-    """Tests for payment method list operations."""
-
-    async def test_list_payment_methods_orders_by_default(self) -> None:
-        """Test that payment methods are ordered with default first."""
-        mock_pm1 = MockPaymentMethod(is_default=False, card_last4="1111")
-        mock_pm2 = MockPaymentMethod(is_default=True, card_last4="2222")
-
-        mock_db = AsyncMock()
-        mock_db.execute.return_value = MagicMock(
-            scalars=lambda: MagicMock(all=lambda: [mock_pm2, mock_pm1])
-        )
-        stripe_client = MockStripeClient()
-        billing_service = BillingService(mock_db, cast(Any, stripe_client))
-
-        service = PaymentMethodService(mock_db, cast(Any, stripe_client), billing_service)
-        methods = await service.list_payment_methods(uuid4())
-
-        assert len(methods) == 2
-        # First method should be the default
-        assert methods[0].card_last4 == "2222"
-
-
-class TestBillingServiceGetSubscription:
-    """Tests for getting subscription."""
-
-    async def test_get_subscription_with_plan(self) -> None:
-        """Test getting subscription includes plan details."""
-        mock_plan = MockPlan(name="pro", display_name="Pro Plan", tier=billing_pb2.PLAN_TIER_PRO)
-        mock_sub = MockSubscription(plan=mock_plan)
-
-        mock_db = AsyncMock()
-        mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: mock_sub)
-
-        service = BillingService(mock_db, cast(Any, MockStripeClient()))
-        result = await service.get_subscription(mock_sub.tenant_id)
-
-        assert result is not None
-        assert result.plan.display_name == "Pro Plan"
-        assert result.plan.tier == billing_pb2.PLAN_TIER_PRO
 
 
 class TestBillingServiceEnsureCustomer:
@@ -781,29 +634,179 @@ class TestBillingServiceEnsureCustomer:
         assert customer_id1 == customer_id2
 
 
-class TestSubscriptionBillingCycle:
-    """Tests for subscription billing cycle carried through as a proto int."""
+class TestStripeStatusToProto:
+    """Tests for the Stripe-status to proto-status converter."""
 
-    async def test_subscription_monthly_cycle(self) -> None:
-        """The returned row keeps the proto-int monthly interval."""
-        mock_sub = MockSubscription(billing_cycle=billing_pb2.BILLING_INTERVAL_MONTHLY)
-        mock_db = AsyncMock()
-        mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: mock_sub)
+    @pytest.mark.parametrize(
+        ("stripe_status", "expected"),
+        [
+            ("active", billing_pb2.SUBSCRIPTION_STATUS_ACTIVE),
+            ("ACTIVE", billing_pb2.SUBSCRIPTION_STATUS_ACTIVE),
+            ("past_due", billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE),
+            ("canceled", billing_pb2.SUBSCRIPTION_STATUS_CANCELED),
+            ("cancelled", billing_pb2.SUBSCRIPTION_STATUS_CANCELED),
+            ("trialing", billing_pb2.SUBSCRIPTION_STATUS_TRIALING),
+            ("paused", billing_pb2.SUBSCRIPTION_STATUS_PAUSED),
+            ("incomplete", billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE),
+            ("incomplete_expired", billing_pb2.SUBSCRIPTION_STATUS_CANCELED),
+            ("unpaid", billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE),
+        ],
+    )
+    def test_known_statuses_map(self, stripe_status: str, expected: int) -> None:
+        assert stripe_status_to_proto(stripe_status) == expected
 
-        service = BillingService(mock_db, cast(Any, MockStripeClient()))
-        result = await service.get_subscription(mock_sub.tenant_id)
+    def test_unknown_status_returns_none(self) -> None:
+        """An unrecognized status returns None (never UNSPECIFIED or active)."""
+        assert stripe_status_to_proto("brand_new_status") is None
 
-        assert result is not None
-        assert result.billing_cycle == billing_pb2.BILLING_INTERVAL_MONTHLY
 
-    async def test_subscription_yearly_cycle(self) -> None:
-        """The returned row keeps the proto-int yearly interval."""
-        mock_sub = MockSubscription(billing_cycle=billing_pb2.BILLING_INTERVAL_YEARLY)
-        mock_db = AsyncMock()
-        mock_db.execute.return_value = MagicMock(scalar_one_or_none=lambda: mock_sub)
+class TestCreateSubscriptionBranches:
+    """create_subscription error and fallback branches over the statement-aware session."""
 
-        service = BillingService(mock_db, cast(Any, MockStripeClient()))
-        result = await service.get_subscription(mock_sub.tenant_id)
+    def _service(self, db: MockAsyncSession, stripe: MockStripeClient) -> BillingService:
+        return BillingService(_db(db), _stripe(stripe))
 
-        assert result is not None
-        assert result.billing_cycle == billing_pb2.BILLING_INTERVAL_YEARLY
+    def _request(self) -> SubscriptionCreateRequest:
+        return SubscriptionCreateRequest(
+            plan_id="starter",
+            payment_method_id="pm_test",
+            billing_cycle=billing_pb2.BILLING_INTERVAL_MONTHLY,
+        )
+
+    async def test_paid_plan_missing_from_db_is_rejected(self) -> None:
+        """A catalog-only paid plan cannot be subscribed (no Stripe price rows)."""
+        db = MockAsyncSession()
+
+        with pytest.raises(ValueError, match="not found in database"):
+            await self._service(db, MockStripeClient()).create_subscription(
+                uuid4(), "test@example.com", self._request()
+            )
+
+    async def test_plan_without_price_for_cycle_is_rejected(self) -> None:
+        """A DB plan with no Stripe price for the requested cycle fails before Stripe."""
+        db = MockAsyncSession()
+        db.plans.append(MockPlan(stripe_price_id_monthly=""))
+        stripe = MockStripeClient()
+
+        with pytest.raises(ValueError, match="No Stripe price configured"):
+            await self._service(db, stripe).create_subscription(
+                uuid4(), "test@example.com", self._request()
+            )
+
+        assert stripe.subscriptions == {}
+
+    async def test_stripe_failure_surfaces_payment_error(self) -> None:
+        """A Stripe subscription failure maps to a payment ValueError, nothing persisted."""
+        db = MockAsyncSession()
+        db.plans.append(MockPlan())
+
+        with pytest.raises(ValueError, match="Payment failed"):
+            await self._service(db, _DownStripe()).create_subscription(
+                uuid4(), "test@example.com", self._request()
+            )
+
+        assert db.added == []
+
+    async def test_unknown_stripe_status_stored_as_past_due(self) -> None:
+        """An unrecognized status on create is stored as PAST_DUE pending review."""
+        db = MockAsyncSession()
+        db.plans.append(MockPlan())
+
+        subscription = await self._service(db, _WeirdStatusStripe()).create_subscription(
+            uuid4(), "test@example.com", self._request()
+        )
+
+        assert subscription.status == billing_pb2.SUBSCRIPTION_STATUS_PAST_DUE
+
+
+class TestUpdateSubscriptionBranches:
+    """update_subscription error and fallback branches."""
+
+    def _seed(
+        self, db: MockAsyncSession, *, stripe_subscription_id: str | None = "sub_live_1"
+    ) -> MockSubscription:
+        subscription = MockSubscription(stripe_subscription_id=stripe_subscription_id)
+        db.subscriptions.append(subscription)
+        return subscription
+
+    async def test_plan_missing_from_db_is_rejected(self) -> None:
+        """A catalog-only target plan cannot be switched to."""
+        db = MockAsyncSession()
+        self._seed(db)
+        service = BillingService(_db(db), _stripe(MockStripeClient()))
+
+        with pytest.raises(ValueError, match="not found in database"):
+            await service.update_subscription(uuid4(), "pro")
+
+    async def test_plan_without_price_is_rejected(self) -> None:
+        """A target plan with no Stripe price for the current cycle is rejected."""
+        db = MockAsyncSession()
+        self._seed(db)
+        db.plans.append(MockPlan(name="pro", stripe_price_id_monthly=""))
+        service = BillingService(_db(db), _stripe(MockStripeClient()))
+
+        with pytest.raises(ValueError, match="No Stripe price configured"):
+            await service.update_subscription(uuid4(), "pro")
+
+    async def test_non_stripe_subscription_is_rejected(self) -> None:
+        """A subscription with no Stripe id (free tier) cannot be plan-changed."""
+        db = MockAsyncSession()
+        self._seed(db, stripe_subscription_id=None)
+        db.plans.append(MockPlan(name="pro"))
+        service = BillingService(_db(db), _stripe(MockStripeClient()))
+
+        with pytest.raises(ValueError, match="Cannot update non-Stripe subscription"):
+            await service.update_subscription(uuid4(), "pro")
+
+    async def test_stripe_failure_surfaces_update_error(self) -> None:
+        """A Stripe update failure maps to a ValueError; the local plan is unchanged."""
+        db = MockAsyncSession()
+        subscription = self._seed(db)
+        original_plan_id = subscription.plan_id
+        db.plans.append(MockPlan(name="pro"))
+        service = BillingService(_db(db), _stripe(_DownStripe()))
+
+        with pytest.raises(ValueError, match="Subscription update failed"):
+            await service.update_subscription(uuid4(), "pro")
+
+        assert subscription.plan_id == original_plan_id
+
+    async def test_unknown_stripe_status_keeps_stored_status(self) -> None:
+        """An unrecognized status on update leaves the stored status unchanged."""
+        db = MockAsyncSession()
+        self._seed(db)
+        new_plan = MockPlan(name="pro")
+        db.plans.append(new_plan)
+        service = BillingService(_db(db), _stripe(_WeirdStatusStripe()))
+
+        result = await service.update_subscription(uuid4(), "pro")
+
+        assert result.status == billing_pb2.SUBSCRIPTION_STATUS_ACTIVE
+        assert result.plan_id == new_plan.id
+
+
+class TestCancelReactivateStripeFailures:
+    """Stripe failures on cancel/reactivate surface as ValueErrors, state unchanged."""
+
+    async def test_cancel_stripe_failure_keeps_subscription_active(self) -> None:
+        db = MockAsyncSession()
+        subscription = MockSubscription()
+        db.subscriptions.append(subscription)
+        service = BillingService(_db(db), _stripe(_DownStripe()))
+
+        with pytest.raises(ValueError, match="Cancellation failed"):
+            await service.cancel_subscription(uuid4())
+
+        assert subscription.cancel_at_period_end is False
+        assert subscription.status == billing_pb2.SUBSCRIPTION_STATUS_ACTIVE
+
+    async def test_reactivate_stripe_failure_keeps_pending_cancellation(self) -> None:
+        db = MockAsyncSession()
+        subscription = MockSubscription(cancel_at_period_end=True)
+        db.subscriptions.append(subscription)
+        service = BillingService(_db(db), _stripe(_DownStripe()))
+
+        with pytest.raises(ValueError, match="Reactivation failed"):
+            await service.reactivate_subscription(uuid4())
+
+        assert subscription.cancel_at_period_end is True

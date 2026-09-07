@@ -89,36 +89,7 @@ class TestCreateSetupIntent:
 
 
 class TestAttachPaymentMethod:
-    """Tests for attach_payment_method method."""
-
-    async def test_attach_payment_method_calls_stripe(
-        self, payment_service, mock_db, mock_stripe, test_tenant_id
-    ):
-        """Test attaching payment method calls Stripe."""
-        mock_pm = MagicMock()
-        mock_pm.id = "pm_123"
-        mock_pm.type = "card"
-        mock_pm.card_brand = "visa"
-        mock_pm.card_last4 = "4242"
-        mock_pm.card_exp_month = 12
-        mock_pm.card_exp_year = 2025
-        mock_stripe.attach_payment_method.return_value = mock_pm
-
-        # No existing payment methods
-        mock_result = MagicMock()
-        mock_result.scalars.return_value.all.return_value = []
-        mock_db.execute.return_value = mock_result
-
-        # The actual service creates a PaymentMethod object and adds to db
-        # We just verify the Stripe call is made
-        try:
-            await payment_service.attach_payment_method(
-                test_tenant_id, "test@example.com", "pm_123"
-            )
-        except Exception:
-            pass  # May fail on refresh, but we verify stripe was called
-
-        mock_stripe.attach_payment_method.assert_called_once()
+    """Tests for attach_payment_method method (happy path: test_grpc_servicer_sqlite.py)."""
 
     async def test_attach_payment_method_stripe_error(
         self, payment_service, mock_stripe, test_tenant_id

@@ -5,10 +5,7 @@ classification) over ASGI; handler internals are covered separately in
 test_webhook_handlers.py.
 """
 
-import hashlib
-import hmac
 import json
-import time
 from collections.abc import Iterator
 from unittest.mock import AsyncMock, patch
 
@@ -17,19 +14,12 @@ from httpx import AsyncClient
 from sqlalchemy.exc import OperationalError
 
 from llamatrade_telemetry import metrics
+from tests.conftest import sign_stripe_payload as _sign
 
 from src.routers import webhooks
 
 WEBHOOK_SECRET = "whsec_test_secret"
 WEBHOOK_PATH = "/webhooks/stripe"
-
-
-def _sign(payload: bytes, secret: str, timestamp: int | None = None) -> str:
-    """Build a real Stripe-Signature header for the payload."""
-    ts = timestamp if timestamp is not None else int(time.time())
-    signed = f"{ts}.".encode() + payload
-    mac = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
-    return f"t={ts},v1={mac}"
 
 
 def _event_payload(
@@ -97,6 +87,24 @@ async def test_valid_signature_dispatches_handler(client: AsyncClient, _verified
         )
     assert response.status_code == 200
     assert response.json() == {"received": True}
+    handler.assert_awaited_once()
+
+
+async def test_trial_will_end_event_dispatches_handler(
+    client: AsyncClient, _verified_env: None
+) -> None:
+    """customer.subscription.trial_will_end routes to its handler."""
+    payload = _event_payload(
+        event_id="evt_trial_1", event_type="customer.subscription.trial_will_end"
+    )
+    handler = AsyncMock()
+    with patch.object(webhooks, "_handle_trial_will_end", handler):
+        response = await client.post(
+            WEBHOOK_PATH,
+            content=payload,
+            headers={"stripe-signature": _sign(payload, WEBHOOK_SECRET)},
+        )
+    assert response.status_code == 200
     handler.assert_awaited_once()
 
 

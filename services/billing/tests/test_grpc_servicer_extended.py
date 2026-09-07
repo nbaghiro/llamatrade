@@ -1,4 +1,4 @@
-"""Extended tests for BillingServicer to improve coverage."""
+"""Mock-tier tests for BillingServicer (real SQL cases: test_grpc_servicer_sqlite.py)."""
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -12,8 +12,10 @@ from connectrpc.errors import ConnectError
 
 from llamatrade_db.models import Plan, Subscription
 from llamatrade_proto.generated import billing_pb2, common_pb2
+from tests.conftest import MockPlan, MockStripeClient
 
 from src.grpc.servicer import BillingServicer
+from src.stripe.client import CheckoutSessionResult, SetupIntentResult, StripeError
 
 # === Test Constants ===
 
@@ -425,8 +427,147 @@ class TestListPlans:
 # === create_checkout_session Tests ===
 
 
+class _SetupIntentDownStripe(MockStripeClient):
+    """Stripe double whose SetupIntent creation fails."""
+
+    async def create_setup_intent(self, customer_id: str) -> SetupIntentResult:
+        raise StripeError("stripe down", "api_error")
+
+
+class _CheckoutDownStripe(MockStripeClient):
+    """Stripe double whose Checkout Session creation fails."""
+
+    async def create_checkout_session(
+        self,
+        *,
+        customer_id: str,
+        price_id: str,
+        success_url: str,
+        cancel_url: str,
+        trial_days: int = 0,
+    ) -> CheckoutSessionResult:
+        raise StripeError("stripe down", "api_error")
+
+
+class _PortalDownStripe(MockStripeClient):
+    """Stripe double whose Customer Portal session creation fails."""
+
+    async def create_portal_session(self, customer_id: str, return_url: str) -> str:
+        raise StripeError("stripe down", "api_error")
+
+
+class TestCreateSetupIntent:
+    """CreateSetupIntent happy path and StripeError-to-INTERNAL mapping."""
+
+    @pytest.mark.asyncio
+    async def test_create_setup_intent_returns_client_secret(self, servicer, auth_context):
+        """A SetupIntent is created for the tenant's Stripe customer."""
+        request = billing_pb2.CreateSetupIntentRequest(context=auth_context)
+
+        with patch("src.grpc.servicer.get_stripe_client", return_value=MockStripeClient()):
+            response = await servicer.create_setup_intent(request, MagicMock())
+
+        assert response.client_secret == "seti_test_0_secret_test"
+        assert response.customer_id
+
+    @pytest.mark.asyncio
+    async def test_stripe_failure_maps_to_internal(self, servicer, auth_context):
+        """A StripeError surfaces as INTERNAL without leaking the Stripe message."""
+        request = billing_pb2.CreateSetupIntentRequest(context=auth_context)
+
+        with (
+            patch("src.grpc.servicer.get_stripe_client", return_value=_SetupIntentDownStripe()),
+            pytest.raises(ConnectError) as exc,
+        ):
+            await servicer.create_setup_intent(request, MagicMock())
+
+        assert exc.value.code == Code.INTERNAL
+        assert "stripe down" not in str(exc.value)
+
+
+class TestCreatePortalSession:
+    """CreatePortalSession happy path and StripeError-to-INTERNAL mapping."""
+
+    @pytest.mark.asyncio
+    async def test_create_portal_session_returns_url(self, servicer, auth_context):
+        """A portal session URL is returned for the tenant's Stripe customer."""
+        request = billing_pb2.CreatePortalSessionRequest(
+            context=auth_context,
+            return_url="https://example.com/billing",
+        )
+
+        with patch("src.grpc.servicer.get_stripe_client", return_value=MockStripeClient()):
+            response = await servicer.create_portal_session(request, MagicMock())
+
+        assert "billing.stripe.com" in response.portal_url
+
+    @pytest.mark.asyncio
+    async def test_stripe_failure_maps_to_internal(self, servicer, auth_context):
+        """A StripeError surfaces as INTERNAL without leaking the Stripe message."""
+        request = billing_pb2.CreatePortalSessionRequest(
+            context=auth_context,
+            return_url="https://example.com/billing",
+        )
+
+        with (
+            patch("src.grpc.servicer.get_stripe_client", return_value=_PortalDownStripe()),
+            pytest.raises(ConnectError) as exc,
+        ):
+            await servicer.create_portal_session(request, MagicMock())
+
+        assert exc.value.code == Code.INTERNAL
+        assert "stripe down" not in str(exc.value)
+
+
 class TestCreateCheckoutSession:
-    """Failure branches for create_checkout_session (happy path: test_grpc_billing.py)."""
+    """CreateCheckoutSession happy path and failure branches."""
+
+    @pytest.mark.asyncio
+    async def test_create_checkout_session_returns_url(self, servicer, auth_context):
+        """A checkout session is created against the plan's Stripe price."""
+        request = billing_pb2.CreateCheckoutSessionRequest(
+            context=auth_context,
+            plan_id="plan_starter",
+            interval=billing_pb2.BILLING_INTERVAL_MONTHLY,
+            success_url="https://example.com/success",
+            cancel_url="https://example.com/cancel",
+        )
+
+        with (
+            patch("src.grpc.servicer.get_stripe_client", return_value=MockStripeClient()),
+            patch(
+                "src.services.billing_service.BillingService.get_plan_db",
+                AsyncMock(return_value=MockPlan(name="plan_starter")),
+            ),
+        ):
+            response = await servicer.create_checkout_session(request, MagicMock())
+
+        assert "checkout.stripe.com" in response.checkout_url
+        assert response.session_id
+
+    @pytest.mark.asyncio
+    async def test_stripe_failure_maps_to_internal(self, servicer, auth_context):
+        """A StripeError surfaces as INTERNAL without leaking the Stripe message."""
+        request = billing_pb2.CreateCheckoutSessionRequest(
+            context=auth_context,
+            plan_id="plan_starter",
+            interval=billing_pb2.BILLING_INTERVAL_MONTHLY,
+            success_url="https://example.com/success",
+            cancel_url="https://example.com/cancel",
+        )
+
+        with (
+            patch("src.grpc.servicer.get_stripe_client", return_value=_CheckoutDownStripe()),
+            patch(
+                "src.services.billing_service.BillingService.get_plan_db",
+                AsyncMock(return_value=MockPlan(name="plan_starter")),
+            ),
+            pytest.raises(ConnectError) as exc,
+        ):
+            await servicer.create_checkout_session(request, MagicMock())
+
+        assert exc.value.code == Code.INTERNAL
+        assert "stripe down" not in str(exc.value)
 
     @pytest.mark.asyncio
     async def test_unknown_plan_raises_not_found(self, servicer, auth_context):

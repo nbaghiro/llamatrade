@@ -5,13 +5,19 @@ Handlers take typed stripe-python 15 resources; payloads here are built via
 subscription items, invoice→subscription linkage under ``parent``.
 """
 
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
 
-from stripe import Invoice, PaymentMethod, Subscription
-
 from llamatrade_proto.generated import billing_pb2
+from tests.conftest import (
+    make_stripe_invoice as _stripe_invoice,
+)
+from tests.conftest import (
+    make_stripe_payment_method as _stripe_payment_method,
+)
+from tests.conftest import (
+    make_stripe_subscription as _stripe_subscription,
+)
 
 from src.routers.webhooks import (
     _handle_invoice_paid,
@@ -22,78 +28,6 @@ from src.routers.webhooks import (
     _handle_subscription_deleted,
     _handle_subscription_updated,
 )
-
-
-def _stripe_subscription(**overrides: Any) -> Subscription:
-    data: dict[str, Any] = {
-        "id": "sub_123",
-        "object": "subscription",
-        "status": "active",
-        "cancel_at_period_end": False,
-        "canceled_at": None,
-        "trial_start": None,
-        "trial_end": None,
-        "items": {
-            "object": "list",
-            "data": [
-                {
-                    "id": "si_1",
-                    "object": "subscription_item",
-                    "current_period_start": 1700000000,
-                    "current_period_end": 1702592000,
-                }
-            ],
-            "has_more": False,
-        },
-    }
-    data.update(overrides)
-    return Subscription.construct_from(data, "sk_test")
-
-
-def _stripe_invoice(subscription: str | None = "sub_123", **overrides: Any) -> Invoice:
-    parent: dict[str, Any] | None = None
-    if subscription is not None:
-        parent = {
-            "type": "subscription_details",
-            "subscription_details": {
-                "subscription": subscription,
-                "metadata": {},
-                "subscription_proration_date": None,
-            },
-            "quote_details": None,
-        }
-    data: dict[str, Any] = {
-        "id": "in_123",
-        "object": "invoice",
-        "number": "INV-001",
-        "amount_due": 2900,
-        "amount_paid": 2900,
-        "currency": "usd",
-        "period_start": 1700000000,
-        "period_end": 1702592000,
-        "hosted_invoice_url": None,
-        "invoice_pdf": None,
-        "parent": parent,
-    }
-    data.update(overrides)
-    return Invoice.construct_from(data, "sk_test")
-
-
-def _stripe_payment_method(**overrides: Any) -> PaymentMethod:
-    data: dict[str, Any] = {
-        "id": "pm_123",
-        "object": "payment_method",
-        "type": "card",
-        "customer": "cus_123",
-        "card": {
-            "brand": "visa",
-            "last4": "4242",
-            "exp_month": 12,
-            "exp_year": 2030,
-        },
-    }
-    data.update(overrides)
-    return PaymentMethod.construct_from(data, "sk_test")
 
 
 class TestHandleSubscriptionCreated:

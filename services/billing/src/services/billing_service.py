@@ -185,6 +185,19 @@ class BillingService:
 
     # Subscriptions
 
+    async def _commit_and_reload(self, subscription: Subscription) -> Subscription:
+        """Commit, then reload every attribute ``subscription_to_proto`` reads.
+
+        Both loads are needed and neither covers the other: the row refresh picks
+        up the server-side timestamps the write expired, while the named refresh
+        loads ``plan``, which stays unloaded on a freshly inserted row. Anything
+        the mapper reads unloaded would attempt IO outside the greenlet and raise.
+        """
+        await self.db.commit()
+        await self.db.refresh(subscription)
+        await self.db.refresh(subscription, ["plan"])
+        return subscription
+
     async def get_subscription(self, tenant_id: UUID) -> Subscription | None:
         """Get the current subscription (with plan loaded) for a tenant."""
         result = await self.db.execute(
@@ -248,7 +261,7 @@ class BillingService:
                 trial_days=plan.trial_days,
             )
         except StripeError as e:
-            logger.error(f"Failed to create Stripe subscription: {e}")
+            logger.error("Failed to create Stripe subscription: %s", e)
             raise ValueError(f"Payment failed: {e.message}")
 
         status_value = stripe_status_to_proto(stripe_sub.status)
@@ -277,8 +290,7 @@ class BillingService:
         )
 
         self.db.add(subscription)
-        await self.db.commit()
-        await self.db.refresh(subscription, ["plan"])
+        await self._commit_and_reload(subscription)
 
         return subscription
 
@@ -319,8 +331,7 @@ class BillingService:
         )
 
         self.db.add(subscription)
-        await self.db.commit()
-        await self.db.refresh(subscription, ["plan"])
+        await self._commit_and_reload(subscription)
 
         return subscription
 
@@ -371,7 +382,7 @@ class BillingService:
                 price_id=price_id,
             )
         except StripeError as e:
-            logger.error(f"Failed to update Stripe subscription: {e}")
+            logger.error("Failed to update Stripe subscription: %s", e)
             raise ValueError(f"Subscription update failed: {e.message}")
 
         # Update local record
@@ -388,8 +399,7 @@ class BillingService:
         subscription.current_period_start = stripe_sub.current_period_start
         subscription.current_period_end = stripe_sub.current_period_end
 
-        await self.db.commit()
-        await self.db.refresh(subscription, ["plan"])
+        await self._commit_and_reload(subscription)
 
         return subscription
 
@@ -417,7 +427,7 @@ class BillingService:
                     at_period_end=at_period_end,
                 )
             except StripeError as e:
-                logger.error(f"Failed to cancel Stripe subscription: {e}")
+                logger.error("Failed to cancel Stripe subscription: %s", e)
                 raise ValueError(f"Cancellation failed: {e.message}")
 
         if at_period_end:
@@ -428,8 +438,7 @@ class BillingService:
 
             subscription.canceled_at = datetime.now(UTC)
 
-        await self.db.commit()
-        await self.db.refresh(subscription, ["plan"])
+        await self._commit_and_reload(subscription)
 
         return subscription
 
@@ -453,12 +462,11 @@ class BillingService:
                     subscription_id=subscription.stripe_subscription_id,
                 )
             except StripeError as e:
-                logger.error(f"Failed to reactivate Stripe subscription: {e}")
+                logger.error("Failed to reactivate Stripe subscription: %s", e)
                 raise ValueError(f"Reactivation failed: {e.message}")
 
         subscription.cancel_at_period_end = False
-        await self.db.commit()
-        await self.db.refresh(subscription, ["plan"])
+        await self._commit_and_reload(subscription)
 
         return subscription
 
