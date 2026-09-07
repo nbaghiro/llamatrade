@@ -7,8 +7,9 @@ A consumer service writes a handler; the runtime owns the plumbing.
 Failure handling under the default :class:`BoundedRetry` policy (each entry):
 - **undecodable bytes** → dead-lettered as raw + acked (never crashes the loop);
 - handler raises :class:`PoisonError` → dead-lettered immediately (no retries);
-- handler raises anything else → left un-acked → redelivered, up to
-  ``max_attempts``, then dead-lettered;
+- handler raises anything else → retried in place with backoff (the entry's
+  partition paused meanwhile), up to ``max_attempts`` total attempts, then
+  dead-lettered + acked;
 - handler returns → acked (and ``dedup``-marked).
 
 :class:`RetryForever` replaces the give-up path for streams where dropping an
@@ -40,7 +41,7 @@ from llamatrade_events.observability import (
 )
 from llamatrade_events.transport import TRANSPORT_ERRORS
 from llamatrade_events.transport.base import CURSOR_BEGIN, Cursor
-from llamatrade_telemetry import extract_context
+from llamatrade_telemetry import LogContext, extract_context
 from llamatrade_telemetry import span as trace_span
 
 logger = logging.getLogger(__name__)
@@ -67,9 +68,17 @@ QuarantineHandler = Callable[[bytes, "EventEnvelope | None", BaseException], Awa
 
 @dataclass(frozen=True)
 class BoundedRetry:
-    """Default policy: up to ``max_attempts`` deliveries, then dead-letter."""
+    """Default policy: up to ``max_attempts`` in-place attempts, then dead-letter.
+
+    Retries run in place with exponential backoff (the entry's partition paused
+    meanwhile) so the bound holds on every transport: an entry left un-acked for
+    redelivery would be committed past by any later ack in the same Kafka
+    partition and silently lost.
+    """
 
     max_attempts: int = 5
+    base_delay_seconds: float = 0.5
+    max_delay_seconds: float = 30.0
 
 
 @dataclass(frozen=True)
@@ -137,7 +146,6 @@ class StreamConsumer:
         # first starts after the producer never misses entries (safe with an
         # idempotent handler / dedup). Has no effect once the group exists.
         self._group_start = group_start
-        self._attempts: dict[str, int] = {}
         self._last_lag_sample = 0.0
 
     def _record(self, outcome: str) -> None:
@@ -145,22 +153,45 @@ class StreamConsumer:
             stream=stream_label(self._stream), group=self._group, outcome=outcome
         ).inc()
 
-    async def _run_handler(self, handler: Handler, env: EventEnvelope) -> None:
+    async def _run_handler(self, handler: Handler, env: EventEnvelope, cursor: str) -> None:
         """Run the handler under the producer's trace context, in a CONSUMER span.
 
         Links this service's processing to the producer that published the entry
-        (e.g. the fill that triggered a ledger projection).
+        (e.g. the fill that triggered a ledger projection). The envelope identity
+        is bound to the log context so every line the handler emits carries the
+        stream, cursor and event id that locate the entry.
         """
         token = _otel_context.attach(extract_context(dict(env.metadata)))
         try:
-            with trace_span(
-                f"consume {stream_label(self._stream)}",
-                kind=SpanKind.CONSUMER,
-                attributes={"event.id": env.id, "messaging.system": "kafka"},
+            with (
+                LogContext(
+                    tenant_id=env.tenant_id or None,
+                    user_id=env.user_id or None,
+                    event_id=env.id,
+                    stream=stream_label(self._stream),
+                    cursor=cursor,
+                ),
+                trace_span(
+                    f"consume {stream_label(self._stream)}",
+                    kind=SpanKind.CONSUMER,
+                    attributes={"event.id": env.id, "messaging.system": "kafka"},
+                ),
             ):
                 await handler(env)
         finally:
             _otel_context.detach(token)
+
+    def _log_retry(self, env: EventEnvelope, attempt: int, exc: BaseException) -> None:
+        """Log a retry, thinning as attempts mount so a stuck entry cannot flood."""
+        if attempt > 3 and attempt % 10 != 0:
+            return
+        logger.warning(
+            "Handler failed for event %s (attempt %d); retrying in place: %s",
+            env.id,
+            attempt,
+            exc,
+            exc_info=attempt == 1,
+        )
 
     async def run(self, handler: Handler, *, stop_event: asyncio.Event | None = None) -> None:
         """Consume until ``stop_event`` is set (or the transport stream ends)."""
@@ -178,6 +209,19 @@ class StreamConsumer:
         if isinstance(policy, RetryForever):
             await self._handle_one_retry_forever(policy, handler, cursor, raw)
             return
+        await self._handle_one_bounded(policy, handler, cursor, raw)
+
+    async def _handle_one_bounded(
+        self, policy: BoundedRetry, handler: Handler, cursor: str, raw: bytes
+    ) -> None:
+        """Handle one entry under :class:`BoundedRetry`.
+
+        Transient failures retry in place with backoff (the entry's partition
+        paused meanwhile), bounded at ``max_attempts`` total attempts; the
+        exhausted entry parks to the DLQ and acks. Retrying in place is what
+        makes the bound real on Kafka: an un-acked record would be committed
+        past by any later ack in its partition and never redeliver.
+        """
         # Decode inside the error boundary: a corrupt entry is poison, not a
         # crash. (decode_envelope is plain protobuf parsing — never blocks.)
         try:
@@ -194,19 +238,60 @@ class StreamConsumer:
             await self._bus.ack(self._stream, self._group, cursor)
             self._record("deduped")
             return
+
+        attempt = 0
+        paused = False
+        park: tuple[str, int | None] | None = None
         try:
-            await self._run_handler(handler, env)
-        except PoisonError:
-            await self._dead_letter(cursor, env, outcome="poison")
-            return
-        except Exception:
-            await self._on_failure(cursor, env, max_attempts=policy.max_attempts)
+            while True:
+                try:
+                    await self._run_handler(handler, env, cursor)
+                    break
+                except PoisonError:
+                    park = ("poison", None)
+                    break
+                except Exception as exc:
+                    attempt += 1
+                    if attempt >= policy.max_attempts:
+                        park = ("dlq", attempt)
+                        break
+                    self._record("error")
+                    self._log_retry(env, attempt, exc)
+                    paused = await self._pause_for_retry(
+                        cursor,
+                        attempt,
+                        paused,
+                        base_delay_seconds=policy.base_delay_seconds,
+                        max_delay_seconds=policy.max_delay_seconds,
+                    )
+        finally:
+            if paused:
+                await self._bus.resume_partition(self._stream, self._group, cursor)
+
+        if park is not None:
+            outcome, attempts = park
+            await self._dead_letter(cursor, env, outcome=outcome, attempts=attempts)
             return
         if self._dedup is not None:
             await self._dedup.mark(env.id)
         await self._bus.ack(self._stream, self._group, cursor)
-        self._attempts.pop(env.id, None)
         self._record("ok")
+
+    async def _pause_for_retry(
+        self,
+        cursor: str,
+        attempt: int,
+        paused: bool,
+        *,
+        base_delay_seconds: float,
+        max_delay_seconds: float,
+    ) -> bool:
+        """Pause the entry's partition (once) and sleep the attempt's backoff."""
+        if not paused:
+            await self._bus.pause_partition(self._stream, self._group, cursor)
+        delay = min(base_delay_seconds * (2 ** (attempt - 1)), max_delay_seconds)
+        await asyncio.sleep(delay)
+        return True
 
     async def _handle_one_retry_forever(
         self, policy: RetryForever, handler: Handler, cursor: str, raw: bytes
@@ -234,7 +319,7 @@ class StreamConsumer:
         try:
             while True:
                 try:
-                    await self._run_handler(handler, env)
+                    await self._run_handler(handler, env, cursor)
                     break
                 except PoisonError as exc:
                     failure = exc
@@ -245,19 +330,14 @@ class StreamConsumer:
                         break
                     attempt += 1
                     self._record("error")
-                    logger.warning(
-                        "Handler failed for event %s (attempt %d); retrying in place",
-                        env.id,
+                    self._log_retry(env, attempt, exc)
+                    paused = await self._pause_for_retry(
+                        cursor,
                         attempt,
+                        paused,
+                        base_delay_seconds=policy.base_delay_seconds,
+                        max_delay_seconds=policy.max_delay_seconds,
                     )
-                    if not paused:
-                        await self._bus.pause_partition(self._stream, self._group, cursor)
-                        paused = True
-                    delay = min(
-                        policy.base_delay_seconds * (2 ** (attempt - 1)),
-                        policy.max_delay_seconds,
-                    )
-                    await asyncio.sleep(delay)
         finally:
             if paused:
                 await self._bus.resume_partition(self._stream, self._group, cursor)
@@ -301,16 +381,6 @@ class StreamConsumer:
             exc,
         )
 
-    async def _on_failure(self, cursor: str, env: EventEnvelope, *, max_attempts: int) -> None:
-        attempts = self._attempts.get(env.id, 0) + 1
-        self._attempts[env.id] = attempts
-        if attempts >= max_attempts:
-            await self._dead_letter(cursor, env, outcome="dlq", attempts=attempts)
-        else:
-            # Don't ack → the entry redelivers (uncommitted offset / rebalance).
-            self._record("error")
-            logger.warning("Handler failed for event %s (attempt %d)", env.id, attempts)
-
     async def _dead_letter(
         self, cursor: str, env: EventEnvelope, *, outcome: str, attempts: int | None = None
     ) -> None:
@@ -318,7 +388,6 @@ class StreamConsumer:
         stops blocking the group."""
         await self._bus.publish_envelope(self._dlq_stream, env, key=_dlq_key(env))
         await self._bus.ack(self._stream, self._group, cursor)
-        self._attempts.pop(env.id, None)
         self._record(outcome)
         logger.error(
             "Dead-lettered event %s (%s%s)",

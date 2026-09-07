@@ -26,7 +26,7 @@ from collections.abc import AsyncIterator, Iterator, Mapping
 
 import pytest
 from aiokafka.abc import AbstractTokenProvider
-from conftest import metric_value
+from conftest import REQUIRE_DOCKER, metric_value, skip_or_fail
 
 from llamatrade_events.transport.base import CURSOR_BEGIN
 from llamatrade_events.transport.kafka import KafkaTransport, TransportAuthError
@@ -107,8 +107,12 @@ def sasl_bootstrap() -> Iterator[str]:
     if provided:
         yield provided
         return
-    kafka_mod = pytest.importorskip("testcontainers.kafka")
-    docker_errors = pytest.importorskip("docker.errors")
+    if REQUIRE_DOCKER:
+        import docker.errors as docker_errors
+        import testcontainers.kafka as kafka_mod
+    else:
+        kafka_mod = pytest.importorskip("testcontainers.kafka")
+        docker_errors = pytest.importorskip("docker.errors")
     try:
         container = kafka_mod.KafkaContainer().with_kraft()
         container.security_protocol_map = "BROKER:PLAINTEXT,PLAINTEXT:SASL_PLAINTEXT"
@@ -116,7 +120,7 @@ def sasl_bootstrap() -> Iterator[str]:
             container.with_env(name, value)
         container.start()
     except docker_errors.DockerException as exc:  # daemon down / image unavailable
-        pytest.skip(f"Docker/Kafka unavailable: {exc}")
+        skip_or_fail(f"Docker/Kafka unavailable: {exc}")
     # A broker that boots but never reports readiness is a broken SASL config,
     # not a missing prerequisite: let that fail loudly.
     try:

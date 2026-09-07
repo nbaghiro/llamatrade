@@ -1,4 +1,9 @@
-"""The transport seam contract."""
+"""The transport seam: sentinels, protocol conformance, and fake-only behaviors.
+
+The semantics both backends share are pinned by the parametrized contract suite
+in ``test_transport_contract.py``; this module keeps what is specific to the
+seam itself and to the fake (advisory ``maxlen`` trimming, monotonic cursors).
+"""
 
 from __future__ import annotations
 
@@ -24,11 +29,6 @@ def test_all_backends_satisfy_protocol() -> None:
     assert isinstance(KafkaTransport(), EventTransport)
 
 
-def test_kafka_transport_namespaces_topic() -> None:
-    t = KafkaTransport()
-    assert t.topic("ledger:fills") == "lt.ledger.fills"
-
-
 async def test_fake_publish_assigns_monotonic_cursors() -> None:
     t = FakeTransport()
     c1 = await t.publish("s", b"a", maxlen=10)
@@ -52,30 +52,3 @@ async def test_fake_maxlen_trims() -> None:
     for i in range(5):
         await t.publish("s", str(i).encode(), maxlen=2)
     assert [v for _, v in t.entries("s")] == [b"3", b"4"]
-
-
-async def test_fake_pause_resume_mirrors_calls() -> None:
-    t = FakeTransport()
-    await t.pause_partition("s", "g", "0:7")
-    assert ("s", "g") in t.paused
-    await t.resume_partition("s", "g", "0:7")
-    assert t.paused == set()
-    assert t.pause_calls == [("s", "g", "0:7")]
-    assert t.resume_calls == [("s", "g", "0:7")]
-
-
-async def test_fake_purge_clears_the_whole_stream() -> None:
-    t = FakeTransport()
-    for i in range(3):
-        await t.publish("s", f"f{i}".encode())
-    await t.purge("s")
-    assert await t.length("s") == 0
-
-
-async def test_fake_purge_up_to_cursor_leaves_later_entries() -> None:
-    t = FakeTransport()
-    for i in range(5):
-        await t.publish("s", f"f{i}".encode())  # cursors "1".."5"
-    await t.purge("s", up_to_cursor="3")  # drops cursors 1..3
-    assert [v for _, v in t.entries("s")] == [b"f3", b"f4"]
-    assert await t.length("s") == 2

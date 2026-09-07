@@ -11,17 +11,23 @@ is unavailable, so the default unit run stays green without a daemon.
 from __future__ import annotations
 
 import asyncio
-import os
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 from uuid import uuid4
 
 import pytest
 from aiokafka import AIOKafkaConsumer
 from aiokafka.admin import AIOKafkaAdminClient, NewTopic
+from conftest import take
 
 from llamatrade_events.bus import EventBus
 from llamatrade_events.codec import EventEnvelope, decode_envelope, make_envelope, parse_payload
-from llamatrade_events.consumer import PoisonError, StreamConsumer
+from llamatrade_events.consumer import (
+    BoundedRetry,
+    ErrorDisposition,
+    PoisonError,
+    RetryForever,
+    StreamConsumer,
+)
 from llamatrade_events.idempotency import derive_event_id
 from llamatrade_events.transport.base import CURSOR_BEGIN, OutgoingRecord
 from llamatrade_events.transport.kafka import KafkaTransport
@@ -31,30 +37,6 @@ pytestmark = pytest.mark.integration
 
 STREAM = "ledger:fills"
 GROUP = "portfolio-ledger"
-
-
-@pytest.fixture(scope="module")
-def bootstrap() -> Iterator[str]:
-    """A Kafka broker for the module.
-
-    Prefers a broker provided via ``KAFKA_BOOTSTRAP_SERVERS`` (the CI service
-    container); otherwise spins a throwaway ``KafkaContainer`` via testcontainers,
-    skipping the module when neither is available.
-    """
-    provided = os.getenv("KAFKA_BOOTSTRAP_SERVERS")
-    if provided:
-        yield provided
-        return
-    kafka_mod = pytest.importorskip("testcontainers.kafka")
-    try:
-        container = kafka_mod.KafkaContainer()
-        container.start()
-    except Exception as exc:  # Docker daemon down / image pull failed
-        pytest.skip(f"Docker/Kafka unavailable: {exc}")
-    try:
-        yield container.get_bootstrap_server()
-    finally:
-        container.stop()
 
 
 @pytest.fixture
@@ -70,56 +52,18 @@ async def transport(
         await t.close()
 
 
-async def _take[T](agen: AsyncIterator[T], n: int, *, timeout: float = 30.0) -> list[T]:
-    async def pull() -> list[T]:
-        out: list[T] = []
-        async for item in agen:
-            out.append(item)
-            if len(out) >= n:
-                break
-        return out
-
-    try:
-        return await asyncio.wait_for(pull(), timeout=timeout)
-    finally:
-        await agen.aclose()
-
-
-def _fill_env(client_order_id: str) -> EventEnvelope:
-    fill = events_pb2.LedgerFill(client_order_id=client_order_id, tenant_id="t1")
+def _fill_env(client_order_id: str, account_id: str = "") -> EventEnvelope:
+    fill = events_pb2.LedgerFill(
+        client_order_id=client_order_id, tenant_id="t1", account_id=account_id
+    )
     return make_envelope(
         events_pb2.EVENT_TYPE_LEDGER_FILL, fill, event_id=derive_event_id(client_order_id)
     )
 
 
 # -- publish / consume / ack / pending --
-
-
-async def test_consume_ack_and_pending(transport: KafkaTransport) -> None:
-    await transport.ensure_group(STREAM, GROUP)
-    await transport.publish(STREAM, b"f1", key="acctA")
-    entries = transport.consume(STREAM, GROUP, "c1", group_start_id=CURSOR_BEGIN)
-    # Kafka commits are consumer-scoped: ack while the consumer that yielded the
-    # entry is still live, before the generator (and its member) is closed.
-    async for cursor, value in entries:
-        assert value == b"f1"
-        assert await transport.pending(STREAM, GROUP) == 1  # delivered, not committed
-        await transport.ack(STREAM, GROUP, cursor)
-        break
-    await entries.aclose()
-    # committed offset advanced → no lag
-    assert await transport.pending(STREAM, GROUP) == 0
-
-
-async def test_per_account_order_preserved(transport: KafkaTransport) -> None:
-    await transport.ensure_group(STREAM, GROUP)
-    # Interleave two accounts; same-key records keep publish order in their partition.
-    await transport.publish(STREAM, b"a1", key="acctA")
-    await transport.publish(STREAM, b"b1", key="acctB")
-    await transport.publish(STREAM, b"a2", key="acctA")
-    got = await _take(transport.consume(STREAM, GROUP, "c1", group_start_id=CURSOR_BEGIN), 3)
-    vals = [v for _, v in got]
-    assert vals.index(b"a1") < vals.index(b"a2")  # per-account FIFO
+# (The shared publish/consume/ack, per-key order, redelivery, length and purge
+# semantics run against this broker via test_transport_contract.py.)
 
 
 async def test_publish_many_delivers_the_whole_batch_in_per_key_order(
@@ -132,7 +76,7 @@ async def test_publish_many_delivers_the_whole_batch_in_per_key_order(
     cursors = await transport.publish_many(STREAM, records)
     assert len(cursors) == len(records)  # one cursor per record
 
-    got = await _take(transport.consume(STREAM, GROUP, "c1", group_start_id=CURSOR_BEGIN), 10)
+    got = await take(transport.consume(STREAM, GROUP, "c1", group_start_id=CURSOR_BEGIN), 10)
     assert [v for _, v in got] == [f"m{i}".encode() for i in range(10)]
 
 
@@ -154,7 +98,7 @@ async def test_publish_many_keeps_per_key_order_across_partitions(
         partition_of.setdefault(record.key, _partition_of(cursor))
         assert _partition_of(cursor) == partition_of[record.key]  # sticky per key
 
-    got = await _take(
+    got = await take(
         transport.consume(STREAM, GROUP, "c1", group_start_id=CURSOR_BEGIN), len(batch)
     )
     for key in keys:
@@ -162,53 +106,11 @@ async def test_publish_many_keeps_per_key_order_across_partitions(
         assert seq == [f"{key}:{i}" for i in range(4)]  # per-key publish order holds
 
 
-async def test_length_and_purge_report_and_clear_the_topic(transport: KafkaTransport) -> None:
-    """Portfolio's DLQ replay gates on ``length`` and clears with ``purge``.
-
-    Both read the topic's partitions, which an unsubscribed consumer's cached
-    cluster never learns — so they are answered from the Admin API.
-    """
-    await transport.ensure_group(STREAM, GROUP)
-    assert await transport.length(STREAM) == 0
-    for i in range(3):
-        await transport.publish(STREAM, f"f{i}".encode(), key="acctA")
-
-    assert await transport.length(STREAM) == 3
-    await transport.purge(STREAM)
-    assert await transport.length(STREAM) == 0
-
-
-async def test_length_of_a_topic_that_does_not_exist_is_zero(transport: KafkaTransport) -> None:
-    assert await transport.length(STREAM + ":dlq") == 0
-
-
-async def test_purge_up_to_cursor_leaves_records_at_later_cursors(
-    transport: KafkaTransport,
-) -> None:
-    """Cursor-bounded purge clears only what a bounded drain read, leaving records
-    that arrived at later cursors — the DLQ-replay re-park race.
-    """
-    await transport.ensure_group(STREAM, GROUP)
-    for i in range(5):
-        await transport.publish(STREAM, f"f{i}".encode(), key="acctA")
-
-    # Drain the first three; keep the cursor of the last one read.
-    drained = await _take(transport.tail(STREAM, from_cursor=CURSOR_BEGIN), 3)
-    assert [v for _, v in drained] == [b"f0", b"f1", b"f2"]
-    cursor_of_third = drained[-1][0]
-
-    await transport.purge(STREAM, up_to_cursor=cursor_of_third)
-
-    assert await transport.length(STREAM) == 2  # f0..f2 removed, f3/f4 kept
-    rest = await _take(transport.tail(STREAM, from_cursor=CURSOR_BEGIN), 2)
-    assert [v for _, v in rest] == [b"f3", b"f4"]
-
-
 async def test_tail_filters_by_routing_key(transport: KafkaTransport) -> None:
     await transport.publish("trading:orders:sessA", b"a1", key="sessA")
     await transport.publish("trading:orders:sessB", b"b1", key="sessB")
     await transport.publish("trading:orders:sessA", b"a2", key="sessA")
-    got = await _take(transport.tail("trading:orders:sessA", from_cursor=CURSOR_BEGIN), 2)
+    got = await take(transport.tail("trading:orders:sessA", from_cursor=CURSOR_BEGIN), 2)
     assert [v for _, v in got] == [b"a1", b"a2"]  # only sessA
 
 
@@ -218,14 +120,14 @@ async def test_tail_resumes_from_concrete_cursor(transport: KafkaTransport) -> N
     for i in range(3):
         await transport.publish(stream, f"m{i}".encode(), key="sessR")
 
-    got = await _take(transport.tail(stream, from_cursor=CURSOR_BEGIN), 1)
+    got = await take(transport.tail(stream, from_cursor=CURSOR_BEGIN), 1)
     cursor, first = got[0]
     assert first == b"m0"
 
     for i in range(3, 5):
         await transport.publish(stream, f"m{i}".encode(), key="sessR")
 
-    rest = await _take(transport.tail(stream, from_cursor=cursor), 4)
+    rest = await take(transport.tail(stream, from_cursor=cursor), 4)
     assert [v for _, v in rest] == [b"m1", b"m2", b"m3", b"m4"]  # the whole gap, in order
 
 
@@ -310,7 +212,7 @@ async def test_key_routing_across_partitions_preserves_per_key_order(
             assert _partition_of(cursor) == first_partition[key]  # sticky per key
 
     total = len(candidates) + 6
-    got = await _take(transport.consume(STREAM, GROUP, "c1", group_start_id=CURSOR_BEGIN), total)
+    got = await take(transport.consume(STREAM, GROUP, "c1", group_start_id=CURSOR_BEGIN), total)
 
     def per_key(key: str) -> list[tuple[int, int]]:
         prefix = f"{key}:"
@@ -494,3 +396,134 @@ async def test_tail_cursor_resume_reads_every_partition(bootstrap: str) -> None:
         assert seen == {0, 1, 2}
     finally:
         await transport.close()
+
+
+# -- retry policies on the real broker (R0.1 / I3) --
+
+
+async def test_bounded_retry_parks_failed_record_despite_later_ack_in_partition(
+    bootstrap: str,
+) -> None:
+    """A record that keeps failing under BoundedRetry retries in place and parks
+    to the DLQ — it is NOT silently lost when a later record in the same
+    partition acks. (Kafka's ack commits ``offset + 1``: an entry merely left
+    un-acked would be committed past by that later ack and never redeliver.)"""
+    namespace = f"itbr{uuid4().hex[:12]}"
+    transport = KafkaTransport(bootstrap, namespace=namespace)
+    bus = EventBus(transport)
+    try:
+        await transport.ensure_group(STREAM, GROUP)
+        # Same key → same partition: "fine" acks behind the failing "doomed".
+        await bus.publish_envelope(STREAM, _fill_env("doomed", "acctA"), key="acctA")
+        await bus.publish_envelope(STREAM, _fill_env("fine", "acctA"), key="acctA")
+
+        consumer = StreamConsumer(
+            bus,
+            STREAM,
+            GROUP,
+            consumer_name="c1",
+            group_start=CURSOR_BEGIN,
+            policy=BoundedRetry(max_attempts=3, base_delay_seconds=0.01, max_delay_seconds=0.05),
+        )
+        attempts = 0
+        handled: list[str] = []
+        done = asyncio.Event()
+
+        async def handler(env: EventEnvelope) -> None:
+            nonlocal attempts
+            if parse_payload(env).client_order_id == "doomed":
+                attempts += 1
+                raise RuntimeError("transient-looking failure")
+            handled.append(parse_payload(env).client_order_id)
+            done.set()
+
+        task = asyncio.create_task(consumer.run(handler))
+        reader = AIOKafkaConsumer(
+            transport.topic(STREAM + ":dlq"),
+            bootstrap_servers=bootstrap,
+            group_id=None,
+            enable_auto_commit=False,
+            auto_offset_reset="earliest",
+        )
+        await reader.start()
+        try:
+            record = await asyncio.wait_for(reader.getone(), timeout=60.0)
+            await asyncio.wait_for(done.wait(), timeout=30.0)
+            drained = await _drains_to_zero(transport, timeout=30.0)
+        finally:
+            await reader.stop()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        assert attempts == 3  # retried in place, bounded
+        assert handled == ["fine"]  # the later record still lands
+        assert record.key == b"acctA"  # DLQ keyed like the source
+        assert record.value is not None
+        parked = parse_payload(decode_envelope(record.value))
+        assert isinstance(parked, events_pb2.LedgerFill)
+        assert parked.client_order_id == "doomed"  # parked, not lost
+        assert drained  # the group committed past both records
+    finally:
+        await bus.close()
+
+
+async def test_retry_forever_transient_failure_folds_exactly_once(bootstrap: str) -> None:
+    """A transient failure under RetryForever rides the real pause → backoff →
+    resume path on the live member and folds the entry exactly once: no
+    quarantine, no DLQ, offset committed past it."""
+    namespace = f"itrf{uuid4().hex[:12]}"
+    transport = KafkaTransport(bootstrap, namespace=namespace)
+    bus = EventBus(transport)
+    quarantined: list[bytes] = []
+
+    async def quarantine(raw: bytes, env: EventEnvelope | None, exc: BaseException) -> None:
+        quarantined.append(raw)
+
+    def classify(_exc: BaseException) -> ErrorDisposition:
+        return "transient"
+
+    try:
+        await transport.ensure_group(STREAM, GROUP)
+        await bus.publish_envelope(STREAM, _fill_env("flaky"), key="acctA")
+        consumer = StreamConsumer(
+            bus,
+            STREAM,
+            GROUP,
+            consumer_name="c1",
+            group_start=CURSOR_BEGIN,
+            policy=RetryForever(
+                classify=classify,
+                quarantine=quarantine,
+                base_delay_seconds=0.05,
+                max_delay_seconds=0.2,
+            ),
+        )
+        attempts = 0
+        folds: list[str] = []
+        done = asyncio.Event()
+
+        async def handler(env: EventEnvelope) -> None:
+            nonlocal attempts
+            attempts += 1
+            if attempts <= 2:
+                raise ConnectionError("db hiccup")
+            folds.append(parse_payload(env).client_order_id)
+            done.set()
+
+        task = asyncio.create_task(consumer.run(handler))
+        try:
+            await asyncio.wait_for(done.wait(), timeout=60.0)
+            drained = await _drains_to_zero(transport, timeout=30.0)
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+        assert folds == ["flaky"]  # exactly one fold
+        assert attempts == 3  # two transient failures retried in place
+        assert quarantined == []
+        assert await transport.length(STREAM + ":dlq") == 0
+        assert drained  # committed past the entry after the fold
+    finally:
+        await bus.close()

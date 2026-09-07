@@ -9,6 +9,7 @@ proven in ``test_integration_kafka.py``.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator
 from typing import cast
 
@@ -18,12 +19,7 @@ from aiokafka.admin import RecordsToDelete
 from aiokafka.errors import KafkaError
 from conftest import metric_value
 
-from llamatrade_events.transport.base import (
-    CURSOR_BEGIN,
-    CURSOR_NEW,
-    EventTransport,
-    OutgoingRecord,
-)
+from llamatrade_events.transport.base import CURSOR_BEGIN, CURSOR_NEW, OutgoingRecord
 from llamatrade_events.transport.kafka import (
     DEFAULT_PRODUCER_BATCH_SIZE,
     DEFAULT_PRODUCER_LINGER_MS,
@@ -32,6 +28,8 @@ from llamatrade_events.transport.kafka import (
     MissingTopicError,
     TransportAuthError,
     _cursor,
+    _env_float,
+    _env_int,
     _parse_cursor,
 )
 
@@ -41,10 +39,6 @@ PUBLISHED = "llamatrade_events_published_total"
 PUBLISH_FAILURES = "llamatrade_events_publish_failures_total"
 
 # --- pure logic (no broker) ---
-
-
-def test_satisfies_transport_protocol() -> None:
-    assert isinstance(KafkaTransport(), EventTransport)
 
 
 def test_topic_mapping_static_and_templated() -> None:
@@ -100,6 +94,7 @@ class _FakeBroker:
         self.stop_entered = asyncio.Event()
         self.consumers: list[_FakeConsumer] = []
         self.producers: list[_FakeProducer] = []
+        self.admins: list[_FakeAdmin] = []
         self.consumer_kwargs: list[dict[str, object]] = []
         self.producer_kwargs: list[dict[str, object]] = []
 
@@ -125,10 +120,13 @@ class _FakeProducer:
         self._broker = broker
         self.client = _FakeClient(broker)
         self.flush_calls = 0
+        self.stopped = False
         broker.producers.append(self)
 
     async def start(self) -> None: ...
-    async def stop(self) -> None: ...
+
+    async def stop(self) -> None:
+        self.stopped = True
 
     async def send(
         self, topic: str, value: bytes, key: bytes | None = None
@@ -160,6 +158,7 @@ class _FakeConsumer:
         self._fail_after = broker.fail_plan.pop(0) if broker.fail_plan else None
         self._delivered = 0
         self.paused: set[TopicPartition] = set()
+        self.stopped = False
         broker.consumers.append(self)
 
     def _seed(self, topic: str) -> None:
@@ -183,6 +182,7 @@ class _FakeConsumer:
             self._seed(topic)
 
     async def stop(self) -> None:
+        self.stopped = True
         if self._broker.stop_raises_cancelled:
             raise asyncio.CancelledError
         gate = self._broker.stop_gate
@@ -249,9 +249,13 @@ class _FakeAdmin:
     def __init__(self, broker: _FakeBroker) -> None:
         self._broker = broker
         self.created: list[str] = []
+        self.closed = False
+        broker.admins.append(self)
 
     async def start(self) -> None: ...
-    async def close(self) -> None: ...
+
+    async def close(self) -> None:
+        self.closed = True
 
     async def create_topics(self, topics: list[object]) -> None:
         for new_topic in topics:
@@ -527,6 +531,9 @@ async def test_pending_samples_lag_without_joining_the_group(broker: _FakeBroker
     assert made, "pending should open a probe consumer"
     # every consumer pending opens is a non-member (group_id=None) → no rebalance
     assert all(kw.get("group_id") is None for kw in made)
+
+
+async def test_tail_filters_by_routing_key(broker: _FakeBroker) -> None:
     """Per-session fan-out: one topic, filtered to the session's key."""
     t = KafkaTransport()
     await t.publish("trading:orders:sessA", b"a1", key="sessA")
@@ -1007,3 +1014,116 @@ async def test_a_successful_start_resets_the_failure_run(broker: _FakeBroker) ->
 
     assert [v for _, v in got] == [b"f1"]
     assert metric_value(BROKEN_CREDENTIALS, stream="ledger:fills", mode="consume") == before
+
+
+# --- close() lifecycle ---
+
+
+async def test_close_stops_every_client_and_clears_state(broker: _FakeBroker) -> None:
+    """close() releases the producer, the admin, and every registered group
+    consumer, and leaves the transport reporting disconnected."""
+    t = KafkaTransport()
+    await t.publish("ledger:fills", b"f1", key="acctA")  # builds producer + admin
+    agen = t.consume("ledger:fills", "portfolio-ledger", "c1", group_start_id=CURSOR_BEGIN)
+    async for _unused_cursor, _unused_value in agen:
+        break  # group consumer is live and registered
+    group_consumer = broker.consumers[-1]
+    assert t.is_connected() is True
+
+    await t.close()
+
+    assert t.is_connected() is False
+    assert group_consumer.stopped
+    assert broker.producers[-1].stopped
+    assert all(admin.closed for admin in broker.admins)
+    await t.close()  # idempotent: nothing left to stop, must not raise
+    await agen.aclose()
+
+
+async def test_close_contains_a_spurious_stop_cancellation(broker: _FakeBroker) -> None:
+    t = KafkaTransport()
+    await t.publish("ledger:fills", b"f1", key="acctA")
+    broker.stop_raises_cancelled = True
+
+    await t.close()  # must not raise
+
+    assert t.is_connected() is False
+
+
+# --- ack without a live consumer ---
+
+
+async def test_ack_without_live_consumer_warns_and_does_not_crash(
+    broker: _FakeBroker, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An ack after the group consumer died (rebalance, shutdown race) is dropped
+    with a warning — the redelivery to the next member re-acks it."""
+    t = KafkaTransport()
+    with caplog.at_level(logging.WARNING, logger="llamatrade_events.transport.kafka"):
+        await t.ack("ledger:fills", "portfolio-ledger", "0:0")
+    assert "no live consumer" in caplog.text
+
+
+# --- nonexistent-topic branches ---
+
+
+async def test_length_of_a_missing_topic_is_zero(broker: _FakeBroker) -> None:
+    t = KafkaTransport()
+    assert await t.length("ledger:fills") == 0
+
+
+async def test_purge_of_a_missing_topic_is_a_noop(broker: _FakeBroker) -> None:
+    t = KafkaTransport()
+    await t.purge("ledger:fills")  # must not raise
+    await t.purge("ledger:fills", up_to_cursor="0:3")
+
+
+async def test_pending_of_a_missing_topic_is_zero(broker: _FakeBroker) -> None:
+    t = KafkaTransport()
+    assert await t.pending("ledger:fills", "portfolio-ledger") == 0
+
+
+# --- env-var parsing fallbacks ---
+
+
+def test_env_float_uses_default_on_missing_or_garbage(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.delenv("LT_TEST_FLOAT", raising=False)
+    assert _env_float("LT_TEST_FLOAT", 1.5) == 1.5
+    monkeypatch.setenv("LT_TEST_FLOAT", "not-a-number")
+    with caplog.at_level(logging.WARNING, logger="llamatrade_events.transport.kafka"):
+        assert _env_float("LT_TEST_FLOAT", 1.5) == 1.5
+    assert "LT_TEST_FLOAT" in caplog.text
+    monkeypatch.setenv("LT_TEST_FLOAT", "0.25")
+    assert _env_float("LT_TEST_FLOAT", 1.5) == 0.25
+
+
+def test_env_int_uses_default_on_missing_or_garbage(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.delenv("LT_TEST_INT", raising=False)
+    assert _env_int("LT_TEST_INT", 7) == 7
+    monkeypatch.setenv("LT_TEST_INT", "3.5")  # a float is not an int either
+    with caplog.at_level(logging.WARNING, logger="llamatrade_events.transport.kafka"):
+        assert _env_int("LT_TEST_INT", 7) == 7
+    assert "LT_TEST_INT" in caplog.text
+    monkeypatch.setenv("LT_TEST_INT", "42")
+    assert _env_int("LT_TEST_INT", 7) == 42
+
+
+# --- is_connected: consumer branch ---
+
+
+async def test_is_connected_reflects_live_group_consumer(broker: _FakeBroker) -> None:
+    """A consume-only role (no producer built) reports connected while its group
+    consumer is live and disconnected once the generator closes."""
+    t = KafkaTransport()
+    broker.logs["lt.ledger.fills"] = [_FakeRecord(0, 0, None, b"f1")]
+    assert t.is_connected() is False
+    agen = t.consume("ledger:fills", "portfolio-ledger", "c1", group_start_id=CURSOR_BEGIN)
+    async for _unused_cursor, _unused_value in agen:
+        assert t.is_connected() is True  # consumer branch, producer never built
+        break
+    await agen.aclose()
+    assert t.is_connected() is False  # deregistered on generator close

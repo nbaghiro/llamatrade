@@ -1,9 +1,10 @@
 """The durable notification consumer: StreamConsumer over ``notifications``.
 
-``StreamConsumer`` supplies dedupe, in-place retry (5 attempts), DLQ produce,
-and the lag gauge; the handler (src/pipeline.py) persists before the ack and
-hands committed deliveries to the dispatcher. One consumer group across all
-pods; Kafka assigns each tenant's partition to one member.
+``StreamConsumer`` supplies dedupe, bounded in-place retry with backoff (5
+attempts, then the entry parks to the DLQ and acks), and the lag gauge; the
+handler (src/pipeline.py) persists before the ack and hands committed
+deliveries to the dispatcher. One consumer group across all pods; Kafka
+assigns each tenant's partition to one member.
 """
 
 from __future__ import annotations

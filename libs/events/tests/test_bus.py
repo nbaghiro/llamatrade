@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
 from conftest import FakeTransport
+from google.protobuf.message import DecodeError
 
 from llamatrade_events.bus import EventBus
 from llamatrade_events.codec import make_envelope
@@ -85,6 +87,18 @@ async def test_consume_raw_yields_undecodable_bytes(bus: EventBus) -> None:
         out.append(raw)
         await bus.ack("ledger:fills", "g1", cursor)
     assert out == [garbage]
+
+
+async def test_consume_envelopes_raises_on_corrupt_entry(bus: EventBus) -> None:
+    """consume_envelopes decodes inside the generator, so a corrupt entry raises
+    out of it — the documented contract steering DLQ-handling callers to
+    consume_raw."""
+    await bus.publish_raw("ledger:fills", b"\xff\x00 not an envelope", maxlen=10)
+    with pytest.raises(DecodeError):
+        async for _ in bus.consume_envelopes(
+            "ledger:fills", "g1", "c1", group_start_id=CURSOR_BEGIN
+        ):
+            pass
 
 
 async def test_consume_raw_new_group_skips_preexisting(bus: EventBus) -> None:

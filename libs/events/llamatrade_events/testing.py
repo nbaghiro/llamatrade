@@ -3,9 +3,10 @@
 ``FakeTransport`` satisfies the same Protocol as :class:`KafkaTransport` over plain
 dicts. ``tail``/``consume`` drain what's available and stop (instead of blocking),
 so ``async for`` terminates in tests; ``consume`` redelivers unacked ("pending")
-entries on each call to mimic dead-consumer reclaim, which exercises the retry/DLQ
-path. Shipped with the lib so consuming services reuse it instead of hand-rolling a
-fake.
+entries on each call, mirroring the shared transport guarantee that an entry
+consumed but never acked reaches a later consume of the same group (Kafka: the
+uncommitted offset after a rebalance). Shipped with the lib so consuming services
+reuse it instead of hand-rolling a fake.
 """
 
 from __future__ import annotations

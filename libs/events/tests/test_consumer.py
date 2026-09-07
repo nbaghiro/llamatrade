@@ -19,6 +19,7 @@ from llamatrade_events.codec import (
     parse_payload,
 )
 from llamatrade_events.consumer import (
+    BoundedRetry,
     DlqDepthSampler,
     ErrorDisposition,
     PoisonError,
@@ -58,6 +59,11 @@ def _fill_env(client_order_id: str) -> EventEnvelope:
     return make_envelope(
         events_pb2.EVENT_TYPE_LEDGER_FILL, fill, event_id=derive_event_id(client_order_id)
     )
+
+
+def _bounded(max_attempts: int = 5) -> BoundedRetry:
+    """A BoundedRetry whose backoff never sleeps (unit tests)."""
+    return BoundedRetry(max_attempts=max_attempts, base_delay_seconds=0.0, max_delay_seconds=0.0)
 
 
 async def test_trace_propagates_producer_to_consumer(bus: EventBus) -> None:
@@ -134,9 +140,16 @@ async def test_dedup_marks_after_success(bus: EventBus) -> None:
     assert await dedup.seen(env.id) is True
 
 
-async def test_poison_message_goes_to_dlq(bus: EventBus, transport: FakeTransport) -> None:
+async def test_persistent_failure_retries_in_place_then_dlqs(
+    bus: EventBus, transport: FakeTransport
+) -> None:
+    """A persistently failing entry retries in place (its partition paused) and
+    parks to the DLQ after max_attempts — within a single delivery, so the bound
+    holds on transports that never redeliver after a later ack (Kafka)."""
     await bus.publish_envelope(STREAM, _fill_env("bad"), maxlen=100)
-    consumer = StreamConsumer(bus, STREAM, GROUP, consumer_name="c1", max_attempts=3)
+    consumer = StreamConsumer(
+        bus, STREAM, GROUP, consumer_name="c1", policy=_bounded(max_attempts=3)
+    )
 
     attempts = 0
 
@@ -145,14 +158,14 @@ async def test_poison_message_goes_to_dlq(bus: EventBus, transport: FakeTranspor
         attempts += 1
         raise RuntimeError("nope")
 
-    # Each run() redelivers the unacked entry (FakeTransport mimics reclaim).
-    for _ in range(3):
-        await consumer.run(boom)
+    await consumer.run(boom)
 
-    assert attempts == 3
+    assert attempts == 3  # all attempts in one delivery
     assert len(transport.entries(STREAM + ":dlq")) == 1  # dead-lettered
     assert _dlq_records(transport)[0].key == ACCOUNT  # keyed like the source stream
     assert await bus.pending(STREAM, GROUP) == 0  # acked off the live stream
+    assert len(transport.pause_calls) == 1  # paused once, not per attempt
+    assert len(transport.resume_calls) == 1
 
 
 async def test_stop_event_halts_loop(bus: EventBus) -> None:
@@ -248,27 +261,104 @@ async def test_unknown_event_type_routed_to_dlq(bus: EventBus, transport: FakeTr
     assert await bus.pending(STREAM, GROUP) == 0
 
 
-# -- bounded retry then DLQ (outcome metric) --
+# -- bounded in-place retry then DLQ --
 
 
 async def test_retry_exhaustion_records_dlq_outcome(
     bus: EventBus, transport: FakeTransport
 ) -> None:
     await bus.publish_envelope(STREAM, _fill_env("retry"), maxlen=100)
-    consumer = StreamConsumer(bus, STREAM, GROUP, consumer_name="c1", max_attempts=3)
+    consumer = StreamConsumer(
+        bus, STREAM, GROUP, consumer_name="c1", policy=_bounded(max_attempts=3)
+    )
 
     async def boom(_: EventEnvelope) -> None:
         raise RuntimeError("transient-looking but persistent")
 
     before_err = _outcome_count(STREAM, GROUP, "error")
     before_dlq = _outcome_count(STREAM, GROUP, "dlq")
-    for _ in range(3):
-        await consumer.run(boom)
+    await consumer.run(boom)
 
-    # Two failed deliveries recorded "error", the third exhausted → "dlq".
+    # Two failed attempts recorded "error", the third exhausted → "dlq".
     assert _outcome_count(STREAM, GROUP, "error") == before_err + 2
     assert _outcome_count(STREAM, GROUP, "dlq") == before_dlq + 1
     assert len(transport.entries(STREAM + ":dlq")) == 1
+
+
+async def test_bounded_transient_failure_recovers_in_place(
+    bus: EventBus, transport: FakeTransport
+) -> None:
+    """A failure that clears before max_attempts acks normally: no DLQ, the
+    partition paused once for the retries and resumed after."""
+    await bus.publish_envelope(STREAM, _fill_env("flaky"), maxlen=100)
+    consumer = StreamConsumer(bus, STREAM, GROUP, consumer_name="c1", policy=_bounded())
+
+    failures = 2
+    handled: list[str] = []
+
+    async def flaky(env: EventEnvelope) -> None:
+        nonlocal failures
+        if failures > 0:
+            failures -= 1
+            raise ConnectionError("db hiccup")
+        handled.append(parse_payload(env).client_order_id)
+
+    before_err = _outcome_count(STREAM, GROUP, "error")
+    before_ok = _outcome_count(STREAM, GROUP, "ok")
+    await consumer.run(flaky)
+
+    assert handled == ["flaky"]
+    assert transport.entries(STREAM + ":dlq") == []
+    assert await bus.pending(STREAM, GROUP) == 0
+    assert len(transport.pause_calls) == 1
+    assert len(transport.resume_calls) == 1
+    assert _outcome_count(STREAM, GROUP, "error") == before_err + 2
+    assert _outcome_count(STREAM, GROUP, "ok") == before_ok + 1
+
+
+async def test_bounded_backoff_grows_exponentially_between_attempts(
+    bus: EventBus, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from llamatrade_events import consumer as consumer_mod
+
+    await bus.publish_envelope(STREAM, _fill_env("bb"), maxlen=100)
+    policy = BoundedRetry(max_attempts=4, base_delay_seconds=0.5, max_delay_seconds=1.0)
+    consumer = StreamConsumer(bus, STREAM, GROUP, consumer_name="c1", policy=policy)
+
+    delays: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        delays.append(seconds)
+
+    monkeypatch.setattr(consumer_mod.asyncio, "sleep", fake_sleep)
+
+    async def boom(_: EventEnvelope) -> None:
+        raise RuntimeError("still failing")
+
+    await consumer.run(boom)
+    # Three non-final attempts back off (doubling, capped); the fourth parks.
+    assert delays == [0.5, 1.0, 1.0]
+
+
+async def test_bounded_dedup_marks_after_in_place_recovery(bus: EventBus) -> None:
+    """Success after in-place retries still dedup-marks the event id."""
+    env = _fill_env("bm")
+    await bus.publish_envelope(STREAM, env, maxlen=100)
+    dedup = InMemoryDedupStore()
+    consumer = StreamConsumer(
+        bus, STREAM, GROUP, consumer_name="c1", dedup=dedup, policy=_bounded()
+    )
+
+    failures = 1
+
+    async def flaky(_: EventEnvelope) -> None:
+        nonlocal failures
+        if failures > 0:
+            failures -= 1
+            raise ConnectionError("hiccup")
+
+    await consumer.run(flaky)
+    assert await dedup.seen(env.id) is True
 
 
 # -- group-start position --
@@ -623,6 +713,24 @@ async def test_forever_dedup_skips_and_marks(bus: EventBus) -> None:
     await consumer.run(handler)
     assert called == 0
     assert await bus.pending(STREAM, GROUP) == 0
+
+
+async def test_forever_dedup_marks_after_success(bus: EventBus) -> None:
+    """A handled entry is dedup-marked under RetryForever, exactly as under the
+    bounded policy — a redelivery after a crash-before-commit must skip it."""
+    env = _fill_env("fm1")
+    await bus.publish_envelope(STREAM, env, maxlen=100)
+    dedup = InMemoryDedupStore()
+    quarantine = _QuarantineRecorder()
+    consumer = StreamConsumer(
+        bus, STREAM, GROUP, consumer_name="c1", dedup=dedup, policy=_forever(quarantine)
+    )
+
+    async def handler(_: EventEnvelope) -> None:
+        return None
+
+    await consumer.run(handler)
+    assert await dedup.seen(env.id) is True
 
 
 async def test_forever_preserves_producer_trace_context(bus: EventBus) -> None:
