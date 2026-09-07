@@ -11,7 +11,7 @@ from uuid import UUID
 
 import pytest
 
-from src.services.backtest_service import MarketDataError
+from src.services.backtest_service import MarketDataError, MarketDataFetcher
 from src.workers import celery_tasks
 
 BACKTEST_ID = "44444444-4444-4444-4444-444444444444"
@@ -157,6 +157,74 @@ class TestRunBacktestTask:
         assert resets == []
 
 
+class TestTaskRegistry:
+    """Config typos in task paths must fail here, not silently at runtime."""
+
+    def test_every_beat_schedule_task_is_registered(self):
+        from src.celery_app import celery_app
+
+        for entry in celery_app.conf.beat_schedule.values():
+            assert entry["task"] in celery_app.tasks, (
+                f"beat schedule references unregistered task {entry['task']!r}"
+            )
+
+    def test_every_routed_task_is_registered(self):
+        from src.celery_app import TASK_ROUTES, celery_app
+
+        for task_path in TASK_ROUTES:
+            assert task_path in celery_app.tasks, (
+                f"task_routes references unregistered task {task_path!r}"
+            )
+
+
+class TestEvictStaleDatasetsTask:
+    """The dataset janitor task evicts only through a LocalDatasetStore."""
+
+    def test_non_local_store_is_a_noop(self, monkeypatch):
+        from src.dataset import store as store_module
+        from src.dataset.store import InMemoryDatasetStore
+
+        monkeypatch.setattr(store_module, "get_dataset_store", lambda: InMemoryDatasetStore())
+
+        assert celery_tasks.evict_stale_datasets_task() == 0
+
+    def test_local_store_evicts_with_configured_ttl(self, monkeypatch, tmp_path):
+        from src.dataset import store as store_module
+        from src.dataset.store import LocalDatasetStore
+
+        store = LocalDatasetStore(str(tmp_path))
+        evict_calls: list[float] = []
+
+        def fake_evict(max_age_seconds: float) -> int:
+            evict_calls.append(max_age_seconds)
+            return 3
+
+        monkeypatch.setattr(store, "evict_stale", fake_evict)
+        monkeypatch.setattr(store_module, "get_dataset_store", lambda: store)
+        monkeypatch.setenv("BACKTEST_DATASET_TTL_SECONDS", "1234")
+
+        assert celery_tasks.evict_stale_datasets_task() == 3
+        assert evict_calls == [1234.0]
+
+    def test_local_store_default_ttl_is_seven_days(self, monkeypatch, tmp_path):
+        from src.dataset import store as store_module
+        from src.dataset.store import LocalDatasetStore
+
+        store = LocalDatasetStore(str(tmp_path))
+        evict_calls: list[float] = []
+
+        def fake_evict(max_age_seconds: float) -> int:
+            evict_calls.append(max_age_seconds)
+            return 0
+
+        monkeypatch.setattr(store, "evict_stale", fake_evict)
+        monkeypatch.setattr(store_module, "get_dataset_store", lambda: store)
+        monkeypatch.delenv("BACKTEST_DATASET_TTL_SECONDS", raising=False)
+
+        assert celery_tasks.evict_stale_datasets_task() == 0
+        assert evict_calls == [float(7 * 24 * 3600)]
+
+
 class TestExecuteBacktest:
     @pytest.mark.asyncio
     async def test_execute_uses_injected_session_and_client(self, monkeypatch):
@@ -164,7 +232,7 @@ class TestExecuteBacktest:
         from contextlib import asynccontextmanager
 
         fake_session = AsyncMock()
-        fake_client = AsyncMock()
+        fake_client = AsyncMock(spec=MarketDataFetcher)
 
         @asynccontextmanager
         async def fake_scope(*, tenant_id=None, system_reason=None):

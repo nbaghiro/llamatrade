@@ -2,13 +2,19 @@
 
 from collections.abc import Iterator
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from typing import cast
 
 import pytest
 
 from src.dataset.prepare import _find_gaps, _merge_dedup, prepare_dataset
 from src.dataset.spec import DatasetSpec
-from src.dataset.store import LocalDatasetStore
+from src.dataset.store import (
+    DatasetCorruptError,
+    InMemoryDatasetStore,
+    LocalDatasetStore,
+    get_dataset_store,
+)
 from src.engine.bars import BarData
 
 
@@ -133,6 +139,150 @@ class TestLocalDatasetStore:
 
         with pytest.raises(ValueError, match=f"has no {field}"):
             store.write(spec, {"SPY": [bar]})
+
+
+class TestCorruptSnapshotHandling:
+    """A corrupt or truncated Parquet snapshot must self-heal, not fail runs forever."""
+
+    def test_read_of_corrupt_file_raises_and_unlinks(self, tmp_path: Path) -> None:
+        store = LocalDatasetStore(str(tmp_path))
+        spec = DatasetSpec.create(["SPY"], "1D", date(2024, 1, 1), date(2024, 1, 5))
+        path = tmp_path / spec.object_key
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"not a parquet file")
+
+        with pytest.raises(DatasetCorruptError, match="corrupt dataset snapshot"):
+            store.read(spec)
+
+        assert not path.exists(), "the corrupt snapshot must be dropped so the next run rebuilds"
+
+    def test_read_of_truncated_file_raises_and_unlinks(self, tmp_path: Path) -> None:
+        store = LocalDatasetStore(str(tmp_path))
+        spec = DatasetSpec.create(["SPY"], "1D", date(2024, 1, 1), date(2024, 1, 5))
+        store.write(spec, {"SPY": _series(5)})
+        path = tmp_path / spec.object_key
+        path.write_bytes(path.read_bytes()[: path.stat().st_size // 2])
+
+        with pytest.raises(DatasetCorruptError):
+            store.read(spec)
+
+        assert not path.exists()
+
+    @pytest.mark.asyncio
+    async def test_prepare_rebuilds_over_a_corrupt_warm_hit(self, tmp_path: Path) -> None:
+        store = LocalDatasetStore(str(tmp_path))
+        spec = DatasetSpec.create(["SPY"], "1D", date(2024, 1, 1), date(2024, 1, 5))
+        path = tmp_path / spec.object_key
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"garbage")
+        calls = 0
+
+        async def fetch(symbols: list[str], tf: str, s: date, e: date) -> dict[str, list[BarData]]:
+            nonlocal calls
+            calls += 1
+            return {"SPY": _series(5)}
+
+        out = await prepare_dataset(spec, fetch, store)
+
+        assert calls == 1, "a corrupt warm hit must fall through to a rebuild"
+        assert out["SPY"]
+        assert store.read(spec)["SPY"] == out["SPY"]
+
+
+class TestTruncatedSnapshotPrevention:
+    """A mid-fetch failure or failed write must never publish a partial dataset."""
+
+    @pytest.mark.asyncio
+    async def test_failed_fetch_writes_nothing(self) -> None:
+        store = _FakeStore()
+
+        async def fetch(symbols: list[str], tf: str, s: date, e: date) -> dict[str, list[BarData]]:
+            raise RuntimeError("upstream died mid-fetch")
+
+        with pytest.raises(RuntimeError, match="mid-fetch"):
+            await prepare_dataset(_SPEC, fetch, store)
+
+        assert not store.exists(_SPEC)
+
+    @pytest.mark.asyncio
+    async def test_failed_gap_fill_fetch_writes_nothing(self) -> None:
+        """The snapshot publishes only after gap-fill; a mid-fill failure must not persist."""
+        store = _FakeStore()
+        spec = DatasetSpec.create(["SPY"], "1D", date(2024, 1, 1), date(2024, 1, 31))
+        anchor = datetime(2024, 1, 1, tzinfo=UTC)
+        holey = {"SPY": [_bar(anchor), _bar(anchor + timedelta(days=20))]}
+        calls = 0
+
+        async def fetch(symbols: list[str], tf: str, s: date, e: date) -> dict[str, list[BarData]]:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return holey
+            raise RuntimeError("gap re-fetch failed")
+
+        with pytest.raises(RuntimeError, match="gap re-fetch"):
+            await prepare_dataset(spec, fetch, store)
+
+        assert calls == 2
+        assert not store.exists(spec)
+
+    def test_failed_parquet_write_leaves_no_visible_snapshot(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from src.dataset import store as store_module
+
+        store = LocalDatasetStore(str(tmp_path))
+        spec = DatasetSpec.create(["SPY"], "1D", date(2024, 1, 1), date(2024, 1, 5))
+
+        def broken_write_table(table, where, compression=None):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(store_module.pq, "write_table", broken_write_table)
+
+        with pytest.raises(OSError, match="disk full"):
+            store.write(spec, {"SPY": _series(5)})
+
+        assert not store.exists(spec)
+        assert list(tmp_path.rglob("*.parquet.tmp")) == [], "the temp file must be cleaned up"
+
+
+class TestInMemoryDatasetStore:
+    def test_round_trip_and_isolation_between_specs(self) -> None:
+        store = InMemoryDatasetStore()
+        a = DatasetSpec.create(["SPY"], "1D", date(2024, 1, 1), date(2024, 1, 5))
+        b = DatasetSpec.create(["QQQ"], "1D", date(2024, 1, 1), date(2024, 1, 5))
+        bars = {"SPY": _series(5)}
+
+        assert not store.exists(a)
+        store.write(a, bars)
+
+        assert store.exists(a)
+        assert not store.exists(b)
+        assert store.read(a) == bars
+
+    def test_read_of_missing_spec_raises(self) -> None:
+        store = InMemoryDatasetStore()
+        spec = DatasetSpec.create(["SPY"], "1D", date(2024, 1, 1), date(2024, 1, 5))
+        with pytest.raises(KeyError):
+            store.read(spec)
+
+    def test_instances_do_not_share_state(self) -> None:
+        spec = DatasetSpec.create(["SPY"], "1D", date(2024, 1, 1), date(2024, 1, 5))
+        first = InMemoryDatasetStore()
+        first.write(spec, {"SPY": _series(5)})
+        assert not InMemoryDatasetStore().exists(spec)
+
+
+class TestGetDatasetStore:
+    def test_env_dir_selects_local_store(self, tmp_path: Path, monkeypatch) -> None:
+        monkeypatch.setenv("BACKTEST_DATASET_DIR", str(tmp_path))
+        store = get_dataset_store()
+        assert isinstance(store, LocalDatasetStore)
+        assert store._root == tmp_path
+
+    def test_no_env_selects_in_memory_store(self, monkeypatch) -> None:
+        monkeypatch.delenv("BACKTEST_DATASET_DIR", raising=False)
+        assert isinstance(get_dataset_store(), InMemoryDatasetStore)
 
 
 class TestGapDetection:

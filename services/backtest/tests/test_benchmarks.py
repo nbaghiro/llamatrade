@@ -5,7 +5,79 @@ from datetime import UTC, datetime, timedelta
 import numpy as np
 import pytest
 
-from src.engine.benchmarks import BenchmarkCalculator
+from src.engine.benchmarks import BenchmarkBarData, BenchmarkCalculator, align_daily_returns
+
+
+def _day(day: int, hour: int = 16) -> datetime:
+    return datetime(2024, 1, day, hour, tzinfo=UTC)
+
+
+def _bench(points: list[tuple[datetime, float]]) -> list[BenchmarkBarData]:
+    return [BenchmarkBarData(timestamp=ts, close=close) for ts, close in points]
+
+
+class TestAlignDailyReturns:
+    """Date-joined day-over-day returns, pinned to exact expected values."""
+
+    def test_returns_pinned_on_fully_overlapping_days(self):
+        strategy = [(_day(1), 100.0), (_day(2), 110.0), (_day(3), 99.0)]
+        benchmark = _bench([(_day(1), 200.0), (_day(2), 210.0), (_day(3), 189.0)])
+
+        strat, bench = align_daily_returns(strategy, benchmark)
+
+        assert strat.tolist() == pytest.approx([0.10, -0.10])
+        assert bench.tolist() == pytest.approx([0.05, -0.10])
+
+    def test_missing_benchmark_date_is_dropped_from_both(self):
+        """A date absent from one series must not positionally skew the other."""
+        strategy = [(_day(1), 100.0), (_day(2), 110.0), (_day(3), 121.0)]
+        # Benchmark has no Jan 2 bar: only the Jan-3 return exists on both grids
+        # once the missing date breaks the day-2 join.
+        benchmark = _bench([(_day(1), 200.0), (_day(3), 220.0)])
+
+        strat, bench = align_daily_returns(strategy, benchmark)
+
+        assert strat.tolist() == pytest.approx([0.10])
+        assert bench.tolist() == pytest.approx([0.10])
+
+    def test_intraday_points_collapse_to_last_value_per_day(self):
+        strategy = [
+            (_day(1, hour=10), 100.0),
+            (_day(1, hour=16), 104.0),
+            (_day(2, hour=10), 130.0),
+            (_day(2, hour=16), 130.0),
+        ]
+        benchmark = _bench([(_day(1), 200.0), (_day(2), 220.0)])
+
+        strat, bench = align_daily_returns(strategy, benchmark)
+
+        # Day-1 close is the LAST point (104), so the day-2 return is 25%, not 30%.
+        assert strat.tolist() == pytest.approx([0.25])
+        assert bench.tolist() == pytest.approx([0.10])
+
+    def test_non_positive_previous_value_skips_that_return(self):
+        strategy = [(_day(1), 0.0), (_day(2), 50.0), (_day(3), 55.0)]
+        benchmark = _bench([(_day(1), 100.0), (_day(2), 100.0), (_day(3), 110.0)])
+
+        strat, bench = align_daily_returns(strategy, benchmark)
+
+        # The day-2 strategy return divides by zero equity and is dropped.
+        assert strat.tolist() == pytest.approx([0.10])
+        assert bench.tolist() == pytest.approx([0.10])
+
+    def test_no_common_dates_yields_empty_arrays(self):
+        strategy = [(_day(1), 100.0), (_day(2), 110.0)]
+        benchmark = _bench([(_day(10), 200.0), (_day(11), 210.0)])
+
+        strat, bench = align_daily_returns(strategy, benchmark)
+
+        assert strat.size == 0
+        assert bench.size == 0
+
+    def test_empty_inputs_yield_empty_arrays(self):
+        strat, bench = align_daily_returns([], [])
+        assert strat.size == 0
+        assert bench.size == 0
 
 
 class TestBenchmarkCalculator:

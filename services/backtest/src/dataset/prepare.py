@@ -18,7 +18,7 @@ from datetime import date, datetime, timedelta
 from typing import Protocol
 
 from src.dataset.spec import DatasetSpec
-from src.dataset.store import DatasetStore
+from src.dataset.store import DatasetCorruptError, DatasetStore
 from src.engine.bars import BarData
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,9 @@ async def prepare_dataset(
     applies) — fine for local/single-node; prod passes a client to coalesce concurrent prepares.
     """
     if await asyncio.to_thread(store.exists, spec):
-        return await asyncio.to_thread(store.read, spec)
+        cached = await _read_snapshot(spec, store)
+        if cached is not None:
+            return cached
 
     if redis is None:
         return await _materialize(spec, fetch, store)
@@ -88,13 +90,26 @@ async def prepare_dataset(
         await asyncio.sleep(_POLL_INTERVAL_SECONDS)
         waited += _POLL_INTERVAL_SECONDS
         if await asyncio.to_thread(store.exists, spec):
-            return await asyncio.to_thread(store.read, spec)
+            cached = await _read_snapshot(spec, store)
+            if cached is not None:
+                return cached
+            # The producer published garbage; waiting more cannot fix it.
+            break
 
     # The producer died or stalled past the deadline: materialize directly rather than hang.
     logger.warning(
         "dataset %s not ready after %.0fs; materializing directly", spec.dataset_hash, wait_timeout
     )
     return await _materialize(spec, fetch, store)
+
+
+async def _read_snapshot(spec: DatasetSpec, store: DatasetStore) -> dict[str, list[BarData]] | None:
+    """Read a stored snapshot; a corrupt file reads as a miss so the caller rebuilds it."""
+    try:
+        return await asyncio.to_thread(store.read, spec)
+    except DatasetCorruptError:
+        logger.warning("corrupt snapshot for %s; treating as a miss", spec.dataset_hash)
+        return None
 
 
 async def _materialize(

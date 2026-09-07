@@ -34,6 +34,10 @@ _SCHEMA = pa.schema(
 _NUMERIC_FIELDS = ("open", "high", "low", "close")
 
 
+class DatasetCorruptError(Exception):
+    """A stored snapshot could not be read back (truncated or corrupt Parquet)."""
+
+
 def _bars_to_table(bars: dict[str, list[BarData]]) -> pa.Table:
     """Flatten multi-symbol bars into one columnar table, symbol- then time-ordered.
 
@@ -101,7 +105,14 @@ class LocalDatasetStore:
         return self._path(spec).exists()
 
     def read(self, spec: DatasetSpec) -> dict[str, list[BarData]]:
-        return _table_to_bars(pq.read_table(self._path(spec)))
+        path = self._path(spec)
+        try:
+            table = pq.read_table(path)
+        except (pa.ArrowException, OSError) as e:
+            # Drop the bad snapshot so later runs rebuild it instead of failing forever.
+            path.unlink(missing_ok=True)
+            raise DatasetCorruptError(f"corrupt dataset snapshot {spec.object_key}: {e}") from e
+        return _table_to_bars(table)
 
     def write(self, spec: DatasetSpec, bars: dict[str, list[BarData]]) -> None:
         path = self._path(spec)

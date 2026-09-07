@@ -1,6 +1,5 @@
 """Shared test fixtures for backtest service."""
 
-from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID
 
@@ -8,6 +7,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from src.main import app
+from src.services.backtest_service import MarketDataFetcher
 
 # Test UUIDs
 TEST_TENANT_ID = UUID("11111111-1111-1111-1111-111111111111")
@@ -49,28 +49,10 @@ def mock_db():
 
 @pytest.fixture
 def mock_market_data_client():
-    """Create a mock market data client."""
-    client = AsyncMock()
-    client.fetch_bars = AsyncMock(return_value={})
-    client.check_health = AsyncMock(return_value=True)
+    """Market-data client double, spec-bound to the MarketDataFetcher protocol."""
+    client = AsyncMock(spec=MarketDataFetcher)
+    client.fetch_bars.return_value = {}
     return client
-
-
-@pytest.fixture
-def mock_backtest_service():
-    """Create a mock backtest service."""
-    return AsyncMock()
-
-
-@pytest.fixture
-def mock_tenant_context():
-    """Create a mock tenant context for auth."""
-    return MagicMock(
-        tenant_id=TEST_TENANT_ID,
-        user_id=TEST_USER_ID,
-        email="test@example.com",
-        roles=["user"],
-    )
 
 
 @pytest.fixture
@@ -79,46 +61,6 @@ async def client():
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
-
-
-@pytest.fixture
-def sample_bar_data():
-    """Sample bar data for testing."""
-    return {
-        "timestamp": datetime(2024, 1, 2, 9, 30, tzinfo=UTC),
-        "open": 100.0,
-        "high": 105.0,
-        "low": 99.0,
-        "close": 104.0,
-        "volume": 10000,
-    }
-
-
-@pytest.fixture
-def sample_bars():
-    """Sample multi-day bars for backtesting."""
-    from datetime import timedelta
-
-    base_date = datetime(2024, 1, 2, tzinfo=UTC)
-    bars = []
-    price = 100.0
-
-    for i in range(30):  # 30 days of data
-        date = base_date + timedelta(days=i)
-        # Simple price movement
-        price = price * (1 + (0.01 if i % 3 == 0 else -0.005))
-        bars.append(
-            {
-                "timestamp": date,
-                "open": price * 0.99,
-                "high": price * 1.02,
-                "low": price * 0.98,
-                "close": price,
-                "volume": 10000 + i * 100,
-            }
-        )
-
-    return {"AAPL": bars}
 
 
 @pytest.fixture(autouse=True)

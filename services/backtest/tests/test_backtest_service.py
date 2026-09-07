@@ -15,7 +15,7 @@ from llamatrade_proto.generated.backtest_pb2 import (
     BACKTEST_STATUS_RUNNING,
 )
 
-from src.services.backtest_service import BacktestService, warmup_padding_days
+from src.services.backtest_service import BacktestService, MarketDataFetcher, warmup_padding_days
 
 # Test UUIDs
 TEST_TENANT_ID = UUID("11111111-1111-1111-1111-111111111111")
@@ -474,7 +474,7 @@ class TestBacktestServiceRun:
             MagicMock(scalar_one_or_none=MagicMock(return_value=mock_strategy_version)),
         ]
 
-        mock_market_client = AsyncMock()
+        mock_market_client = AsyncMock(spec=MarketDataFetcher)
         mock_market_client.fetch_bars.return_value = {}  # No data
 
         service = BacktestService(mock_db, market_data_client=mock_market_client)
@@ -744,7 +744,7 @@ class TestFetchSymbolHandling:
         ]
 
         # Fetch succeeds but returns no bars for AAPL
-        mock_market_client = AsyncMock()
+        mock_market_client = AsyncMock(spec=MarketDataFetcher)
         mock_market_client.fetch_bars.return_value = {"AAPL": [], "SPY": [{"close": 400}]}
 
         service = BacktestService(mock_db, market_data_client=mock_market_client)
@@ -766,7 +766,7 @@ class TestFetchSymbolHandling:
             MagicMock(scalar_one_or_none=MagicMock(return_value=mock_strategy_version)),
         ]
 
-        mock_market_client = AsyncMock()
+        mock_market_client = AsyncMock(spec=MarketDataFetcher)
         mock_market_client.fetch_bars.return_value = {}
 
         service = BacktestService(mock_db, market_data_client=mock_market_client)
@@ -800,7 +800,7 @@ class TestFetchSymbolHandling:
             "close": 100.0,
             "volume": 1000,
         }
-        mock_market_client = AsyncMock()
+        mock_market_client = AsyncMock(spec=MarketDataFetcher)
         mock_market_client.fetch_bars.return_value = {
             "AAPL": [corrupt_bar],
             "SPY": [corrupt_bar],
@@ -1025,7 +1025,7 @@ class TestZeroVsNullSemantics:
 
         mock_db.refresh = AsyncMock(side_effect=fake_refresh)
 
-        mock_market_client = AsyncMock()
+        mock_market_client = AsyncMock(spec=MarketDataFetcher)
         mock_market_client.fetch_bars.return_value = self._flat_bars({"AAPL": 150.0, "SPY": 400.0})
 
         service = BacktestService(mock_db, market_data_client=mock_market_client)
@@ -1069,7 +1069,7 @@ class TestZeroVsNullSemantics:
 
         mock_db.refresh = AsyncMock(side_effect=fake_refresh)
 
-        mock_market_client = AsyncMock()
+        mock_market_client = AsyncMock(spec=MarketDataFetcher)
         mock_market_client.fetch_bars.return_value = self._flat_bars({"AAPL": 150.0, "SPY": 400.0})
 
         service = BacktestService(mock_db, market_data_client=mock_market_client)
@@ -1162,7 +1162,7 @@ class TestSessionHealthReporting:
             obj.created_at = datetime.now(UTC)
 
         mock_db.refresh = AsyncMock(side_effect=fake_refresh)
-        mock_market_client = AsyncMock()
+        mock_market_client = AsyncMock(spec=MarketDataFetcher)
         mock_market_client.fetch_bars.return_value = TestZeroVsNullSemantics._flat_bars(
             {"AAPL": 150.0, "SPY": 400.0}
         )
@@ -1217,7 +1217,7 @@ class TestCancellationFlow:
         ]
 
         bars = TestZeroVsNullSemantics._flat_bars({"AAPL": 150.0, "SPY": 400.0})
-        mock_market_client = AsyncMock()
+        mock_market_client = AsyncMock(spec=MarketDataFetcher)
         mock_market_client.fetch_bars.return_value = bars
 
         # Cancel flag fires immediately
@@ -1248,7 +1248,7 @@ class TestCancellationFlow:
         ]
 
         bars = TestZeroVsNullSemantics._flat_bars({"AAPL": 150.0, "SPY": 400.0})
-        mock_market_client = AsyncMock()
+        mock_market_client = AsyncMock(spec=MarketDataFetcher)
         mock_market_client.fetch_bars.return_value = bars
 
         # Simulate a cancel landing mid-run: the pre-save refresh observes it
@@ -1283,7 +1283,7 @@ class TestCancellationFlow:
             fake_request_cancel,
         )
 
-        service = BacktestService(mock_db, market_data_client=AsyncMock())
+        service = BacktestService(mock_db, market_data_client=AsyncMock(spec=MarketDataFetcher))
         cancelled = await service.cancel_backtest(TEST_BACKTEST_ID, TEST_TENANT_ID)
 
         assert cancelled is True
@@ -1383,6 +1383,247 @@ class TestStreamingFetch:
             )
 
 
+class TestProtoMarketDataClientLifecycle:
+    """Lazy client construction and close on ProtoMarketDataClient."""
+
+    @pytest.mark.asyncio
+    async def test_get_client_is_lazy_and_cached(self):
+        from llamatrade_proto import MarketDataClient
+
+        from src.services.backtest_service import ProtoMarketDataClient
+
+        client = ProtoMarketDataClient("unused:1")
+        assert client._client is None
+
+        first = await client._get_client()
+        second = await client._get_client()
+
+        assert isinstance(first, MarketDataClient)
+        assert second is first
+
+    @pytest.mark.asyncio
+    async def test_close_closes_and_clears_underlying_client(self):
+        from src.services.backtest_service import ProtoMarketDataClient
+
+        client = ProtoMarketDataClient("unused:1")
+        underlying = MagicMock()
+        underlying.close = AsyncMock()
+        client._client = underlying
+
+        await client.close()
+
+        underlying.close.assert_awaited_once()
+        assert client._client is None
+
+    @pytest.mark.asyncio
+    async def test_close_without_client_is_a_noop(self):
+        from src.services.backtest_service import ProtoMarketDataClient
+
+        await ProtoMarketDataClient("unused:1").close()
+
+
+class TestQueueBacktestGuards:
+    """queue_backtest refuses rows that are missing or not PENDING."""
+
+    @pytest.mark.asyncio
+    async def test_queue_missing_backtest_raises(self, mock_db):
+        mock_db.execute.return_value = MagicMock(scalar_one_or_none=MagicMock(return_value=None))
+
+        service = BacktestService(mock_db, market_data_client=AsyncMock(spec=MarketDataFetcher))
+
+        with pytest.raises(ValueError, match="not found"):
+            await service.queue_backtest(TEST_BACKTEST_ID, TEST_TENANT_ID)
+
+    @pytest.mark.asyncio
+    async def test_queue_non_pending_backtest_raises(self, mock_db, mock_backtest, monkeypatch):
+        mock_backtest.status = BACKTEST_STATUS_RUNNING
+        mock_db.execute.return_value = MagicMock(
+            scalar_one_or_none=MagicMock(return_value=mock_backtest)
+        )
+        enqueued: list[UUID] = []
+
+        def fake_enqueue(backtest_id, tenant_id):
+            enqueued.append(backtest_id)
+            return "task-1"
+
+        monkeypatch.setattr("src.services.backtest_service._enqueue_run_backtest", fake_enqueue)
+
+        service = BacktestService(mock_db, market_data_client=AsyncMock(spec=MarketDataFetcher))
+
+        with pytest.raises(ValueError, match="cannot queue"):
+            await service.queue_backtest(TEST_BACKTEST_ID, TEST_TENANT_ID)
+        assert enqueued == []
+
+    @pytest.mark.asyncio
+    async def test_queue_pending_backtest_returns_task_id(
+        self, mock_db, mock_backtest, monkeypatch
+    ):
+        mock_backtest.status = BACKTEST_STATUS_PENDING
+        mock_db.execute.return_value = MagicMock(
+            scalar_one_or_none=MagicMock(return_value=mock_backtest)
+        )
+        enqueued: list[tuple[UUID, UUID]] = []
+
+        def fake_enqueue(backtest_id, tenant_id):
+            enqueued.append((backtest_id, tenant_id))
+            return "task-42"
+
+        monkeypatch.setattr("src.services.backtest_service._enqueue_run_backtest", fake_enqueue)
+
+        service = BacktestService(mock_db, market_data_client=AsyncMock(spec=MarketDataFetcher))
+        task_id = await service.queue_backtest(TEST_BACKTEST_ID, TEST_TENANT_ID)
+
+        assert task_id == "task-42"
+        assert enqueued == [(TEST_BACKTEST_ID, TEST_TENANT_ID)]
+
+
+class TestGetTaskStatus:
+    """get_task_status maps Celery AsyncResult state onto the status dict."""
+
+    @staticmethod
+    def _patch_async_result(monkeypatch, *, status: str, ready: bool, result: object):
+        from src.celery_app import celery_app
+
+        fake = MagicMock()
+        fake.status = status
+        fake.ready.return_value = ready
+        fake.result = result
+        captured: list[str] = []
+
+        def fake_async_result(task_id):
+            captured.append(task_id)
+            return fake
+
+        monkeypatch.setattr(celery_app, "AsyncResult", fake_async_result)
+        return captured
+
+    @pytest.mark.asyncio
+    async def test_finished_task_includes_result(self, mock_db, monkeypatch):
+        captured = self._patch_async_result(
+            monkeypatch, status="SUCCESS", ready=True, result={"total_trades": 3}
+        )
+
+        service = BacktestService(mock_db, market_data_client=AsyncMock(spec=MarketDataFetcher))
+        status = await service.get_task_status("task-9")
+
+        assert captured == ["task-9"]
+        assert status == {
+            "task_id": "task-9",
+            "status": "SUCCESS",
+            "result": {"total_trades": 3},
+        }
+
+    @pytest.mark.asyncio
+    async def test_running_task_has_no_result(self, mock_db, monkeypatch):
+        self._patch_async_result(monkeypatch, status="STARTED", ready=False, result=None)
+
+        service = BacktestService(mock_db, market_data_client=AsyncMock(spec=MarketDataFetcher))
+        status = await service.get_task_status("task-10")
+
+        assert status["status"] == "STARTED"
+        assert status["result"] is None
+
+
+class TestSizingOverrides:
+    """Stored proto sizing config maps to build_session kwargs; unset keeps defaults."""
+
+    def test_empty_config_keeps_engine_defaults(self):
+        from src.services.backtest_service import _sizing_overrides
+
+        assert _sizing_overrides({}) == {}
+
+    def test_unset_mode_zero_keeps_engine_default(self):
+        from src.services.backtest_service import _sizing_overrides
+
+        assert _sizing_overrides({"sizing_mode": 0}) == {}
+
+    def test_binary_mode_maps_to_enum(self):
+        from llamatrade_proto.generated import common_pb2
+        from llamatrade_runtime import SizingMode
+
+        from src.services.backtest_service import _sizing_overrides
+
+        overrides = _sizing_overrides({"sizing_mode": common_pb2.SIZING_MODE_BINARY})
+        assert overrides == {"sizing_mode": SizingMode.BINARY}
+
+    def test_drift_mode_with_tolerance_and_notional(self):
+        from llamatrade_proto.generated import common_pb2
+        from llamatrade_runtime import SizingMode
+
+        from src.services.backtest_service import _sizing_overrides
+
+        overrides = _sizing_overrides(
+            {
+                "sizing_mode": common_pb2.SIZING_MODE_DRIFT,
+                "drift_tolerance": 0.05,
+                "min_order_notional": 25.0,
+            }
+        )
+        assert overrides == {
+            "sizing_mode": SizingMode.DRIFT,
+            "drift_tolerance": 0.05,
+            "min_order_notional": 25.0,
+        }
+
+    def test_null_stored_fields_stay_unset(self):
+        from src.services.backtest_service import _sizing_overrides
+
+        overrides = _sizing_overrides(
+            {"sizing_mode": None, "drift_tolerance": None, "min_order_notional": None}
+        )
+        assert overrides == {}
+
+    def test_zero_tolerance_is_a_value_not_unset(self):
+        from src.services.backtest_service import _sizing_overrides
+
+        overrides = _sizing_overrides({"drift_tolerance": 0.0, "min_order_notional": 0.0})
+        assert overrides == {"drift_tolerance": 0.0, "min_order_notional": 0.0}
+
+
+class TestCreateBacktestSizingValidation:
+    """create_backtest rejects negative sizing overrides before touching the DB."""
+
+    @pytest.mark.asyncio
+    async def test_negative_drift_tolerance_rejected(self, mock_db):
+        service = BacktestService(mock_db, market_data_client=AsyncMock(spec=MarketDataFetcher))
+
+        with pytest.raises(ValueError, match="drift_tolerance"):
+            await service.create_backtest(
+                tenant_id=TEST_TENANT_ID,
+                user_id=TEST_USER_ID,
+                strategy_id=TEST_STRATEGY_ID,
+                strategy_version=None,
+                name="Test",
+                start_date=date(2024, 1, 1),
+                end_date=date(2024, 6, 30),
+                initial_capital=100000.0,
+                symbols=["AAPL"],
+                commission=0.0,
+                slippage=0.0,
+                drift_tolerance=-0.01,
+            )
+
+    @pytest.mark.asyncio
+    async def test_negative_min_order_notional_rejected(self, mock_db):
+        service = BacktestService(mock_db, market_data_client=AsyncMock(spec=MarketDataFetcher))
+
+        with pytest.raises(ValueError, match="min_order_notional"):
+            await service.create_backtest(
+                tenant_id=TEST_TENANT_ID,
+                user_id=TEST_USER_ID,
+                strategy_id=TEST_STRATEGY_ID,
+                strategy_version=None,
+                name="Test",
+                start_date=date(2024, 1, 1),
+                end_date=date(2024, 6, 30),
+                initial_capital=100000.0,
+                symbols=["AAPL"],
+                commission=0.0,
+                slippage=0.0,
+                min_order_notional=-1.0,
+            )
+
+
 class TestGetBacktestTradesService:
     """Service-layer pagination for trades."""
 
@@ -1411,7 +1652,7 @@ class TestGetBacktestTradesService:
 
     @pytest.mark.asyncio
     async def test_paginates_slice_and_total(self, mock_db, monkeypatch):
-        service = BacktestService(mock_db, market_data_client=AsyncMock())
+        service = BacktestService(mock_db, market_data_client=AsyncMock(spec=MarketDataFetcher))
         monkeypatch.setattr(
             service,
             "get_result_rows",
@@ -1429,7 +1670,7 @@ class TestGetBacktestTradesService:
     async def test_page_size_is_clamped(self, mock_db, monkeypatch):
         from src.services.backtest_service import MAX_TRADES_PAGE_SIZE
 
-        service = BacktestService(mock_db, market_data_client=AsyncMock())
+        service = BacktestService(mock_db, market_data_client=AsyncMock(spec=MarketDataFetcher))
         monkeypatch.setattr(
             service,
             "get_result_rows",
@@ -1445,7 +1686,7 @@ class TestGetBacktestTradesService:
 
     @pytest.mark.asyncio
     async def test_no_results_returns_empty(self, mock_db, monkeypatch):
-        service = BacktestService(mock_db, market_data_client=AsyncMock())
+        service = BacktestService(mock_db, market_data_client=AsyncMock(spec=MarketDataFetcher))
         monkeypatch.setattr(service, "get_result_rows", AsyncMock(return_value=None))
 
         page, total = await service.get_backtest_trades(TEST_BACKTEST_ID, TEST_TENANT_ID)

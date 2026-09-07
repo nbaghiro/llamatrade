@@ -9,6 +9,7 @@ never Alpaca directly.
 from src.dataset.prepare import Fetcher, RedisLike, prepare_dataset
 from src.dataset.spec import DatasetSpec
 from src.dataset.store import (
+    DatasetCorruptError,
     DatasetStore,
     InMemoryDatasetStore,
     LocalDatasetStore,
@@ -16,6 +17,7 @@ from src.dataset.store import (
 )
 
 __all__ = [
+    "DatasetCorruptError",
     "DatasetSpec",
     "DatasetStore",
     "Fetcher",

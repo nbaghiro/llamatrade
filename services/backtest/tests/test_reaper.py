@@ -21,7 +21,7 @@ from llamatrade_proto.generated.backtest_pb2 import (
     BACKTEST_STATUS_RUNNING,
 )
 
-from src.services.backtest_service import BacktestService
+from src.services.backtest_service import BacktestService, MarketDataFetcher
 
 pytestmark = pytest.mark.asyncio
 
@@ -61,7 +61,7 @@ def _session(running_rows, pending_rows):
 
 
 def _service(session) -> BacktestService:
-    return BacktestService(session, market_data_client=AsyncMock())
+    return BacktestService(session, market_data_client=AsyncMock(spec=MarketDataFetcher))
 
 
 async def test_orphaned_running_is_failed():
@@ -141,7 +141,9 @@ async def test_reaper_task_invokes_service(monkeypatch):
 
     monkeypatch.setattr(celery_tasks, "_session_scope", fake_scope)
     monkeypatch.setattr(celery_tasks, "BacktestService", lambda *a, **k: fake_service)
-    monkeypatch.setattr(celery_tasks, "_create_market_data_client", lambda: AsyncMock())
+    monkeypatch.setattr(
+        celery_tasks, "_create_market_data_client", lambda: AsyncMock(spec=MarketDataFetcher)
+    )
 
     result = celery_tasks.reap_stale_backtests_task()
 

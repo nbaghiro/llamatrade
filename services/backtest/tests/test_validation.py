@@ -1,5 +1,6 @@
 """Tests for data validation module."""
 
+import logging
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -421,17 +422,25 @@ class TestValidateBarsFunction:
 class TestLogValidationResult:
     """Tests for log_validation_result function."""
 
-    def test_log_valid_result(self, caplog):
-        """Test logging valid result."""
+    def test_valid_result_logs_the_summary_at_info(self, caplog):
         result = BarValidationResult(valid=True, symbols_checked=1, bars_checked=10)
-        log_validation_result(result)
-        # Should log info level for valid result
 
-    def test_log_invalid_result(self, caplog):
-        """Test logging invalid result."""
+        with caplog.at_level(logging.INFO):
+            log_validation_result(result)
+
+        assert [r.levelno for r in caplog.records] == [logging.INFO]
+        assert result.summary() in caplog.records[0].getMessage()
+
+    def test_invalid_result_logs_a_warning_summary_and_each_error(self, caplog):
         issues = [
             ValidationIssue(ValidationSeverity.ERROR, "AAPL", 0, None, "high", "error"),
         ]
         result = BarValidationResult(valid=False, issues=issues)
-        log_validation_result(result)
-        # Should log warning/error level for invalid result
+
+        with caplog.at_level(logging.INFO):
+            log_validation_result(result)
+
+        levels = [r.levelno for r in caplog.records]
+        assert levels == [logging.WARNING, logging.ERROR]
+        assert result.summary() in caplog.records[0].getMessage()
+        assert "AAPL" in caplog.records[1].getMessage()

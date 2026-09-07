@@ -25,7 +25,7 @@ from llamatrade_proto.generated.backtest_pb2 import (
 )
 from llamatrade_proto.generated.strategy_pb2 import STRATEGY_STATUS_ACTIVE
 
-from src.services.backtest_service import MarketDataError
+from src.services.backtest_service import MarketDataError, MarketDataFetcher
 
 TEST_TENANT_ID = UUID("11111111-1111-1111-1111-111111111111")
 TEST_USER_ID = UUID("22222222-2222-2222-2222-222222222222")
@@ -155,7 +155,7 @@ class FakeStore:
 
 def make_fake_market_client(fail: bool = False) -> AsyncMock:
     """Deterministic market data: 40 trending days of AAPL + SPY."""
-    client = AsyncMock()
+    client = AsyncMock(spec=MarketDataFetcher)
 
     if fail:
         client.fetch_bars = AsyncMock(side_effect=MarketDataError("market data down"))
@@ -195,6 +195,15 @@ def eager_celery():
     celery_app.conf.task_eager_propagates = False
     yield celery_app
     celery_app.conf.task_always_eager = False
+
+
+@pytest.fixture(autouse=True)
+def no_cancel_flag(monkeypatch):
+    """Inject a fake cancel checker so the engine loop never touches real Redis."""
+    monkeypatch.setattr(
+        "src.services.backtest_service.CancellationFlag.make_should_abort",
+        lambda self, backtest_id, check_interval=1.0: lambda: False,
+    )
 
 
 @pytest.fixture

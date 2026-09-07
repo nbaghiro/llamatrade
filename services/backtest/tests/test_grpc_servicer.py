@@ -805,6 +805,120 @@ class TestStreamBacktestProgress:
                 assert updates[0].status == backtest_pb2.BACKTEST_STATUS_COMPLETED
 
 
+class _StubProgressSubscriber:
+    """ProgressSubscriber double: yields canned updates, records the tail/close calls."""
+
+    instances: list[_StubProgressSubscriber] = []
+
+    def __init__(self, updates):
+        self._updates = updates
+        self.tail_ids: list[str] = []
+        self.yielded = 0
+        self.closed = False
+        _StubProgressSubscriber.instances.append(self)
+
+    async def tail(self, backtest_id: str, idle_timeout: float = 300.0):
+        self.tail_ids.append(backtest_id)
+        for update in self._updates:
+            self.yielded += 1
+            yield update
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+class TestStreamBacktestProgressLoop:
+    """The tail loop: status coercion, terminal break, and subscriber cleanup."""
+
+    @staticmethod
+    def _update(progress: int, status: int):
+        from llamatrade_proto.generated import backtest_pb2
+
+        return backtest_pb2.BacktestProgressUpdate(
+            backtest_id=str(TEST_BACKTEST_ID),
+            status=status,
+            progress_percent=progress,
+            message=f"at {progress}%",
+        )
+
+    async def _stream(self, backtest_servicer, rpc_context, updates):
+        from llamatrade_proto.generated import backtest_pb2, common_pb2
+        from llamatrade_proto.generated.backtest_pb2 import BACKTEST_STATUS_RUNNING
+
+        _StubProgressSubscriber.instances.clear()
+
+        mock_service = MagicMock()
+        mock_service.get_backtest = AsyncMock(
+            return_value=make_mock_backtest(status=BACKTEST_STATUS_RUNNING)
+        )
+        mock_db = MagicMock()
+
+        def make_subscriber():
+            return _StubProgressSubscriber(updates)
+
+        with (
+            patch("src.grpc.servicer.tenant_session", create_mock_get_db(mock_db)),
+            patch("src.grpc.servicer.BacktestService", new=create_mock_service_class(mock_service)),
+            patch("src.progress.ProgressSubscriber", new=make_subscriber),
+        ):
+            request = backtest_pb2.StreamBacktestProgressRequest(
+                context=common_pb2.TenantContext(
+                    tenant_id=str(TEST_TENANT_ID),
+                    user_id=str(TEST_USER_ID),
+                ),
+                backtest_id=str(TEST_BACKTEST_ID),
+            )
+            received = []
+            async for update in backtest_servicer.stream_backtest_progress(request, rpc_context):
+                received.append(update)
+        return received, _StubProgressSubscriber.instances[0]
+
+    async def test_loop_relays_updates_and_stops_at_terminal(self, backtest_servicer, rpc_context):
+        from llamatrade_proto.generated.backtest_pb2 import (
+            BACKTEST_STATUS_RUNNING,
+            BACKTEST_STATUS_UNSPECIFIED,
+        )
+
+        updates = [
+            self._update(50, BACKTEST_STATUS_UNSPECIFIED),
+            self._update(75, BACKTEST_STATUS_RUNNING),
+            self._update(100, BACKTEST_STATUS_COMPLETED),
+            self._update(100, BACKTEST_STATUS_COMPLETED),  # past terminal: never pulled
+        ]
+
+        received, subscriber = await self._stream(backtest_servicer, rpc_context, updates)
+
+        # Initial RUNNING snapshot, then the three tailed updates up to terminal.
+        assert [u.progress_percent for u in received] == [0, 50, 75, 100]
+        # An UNSPECIFIED wire status is coerced to RUNNING for consumers.
+        assert received[1].status == BACKTEST_STATUS_RUNNING
+        assert received[3].status == BACKTEST_STATUS_COMPLETED
+        assert subscriber.tail_ids == [str(TEST_BACKTEST_ID)]
+        assert subscriber.yielded == 3, "the loop must break at the first terminal update"
+        assert subscriber.closed is True
+
+    async def test_loop_treats_failed_as_terminal(self, backtest_servicer, rpc_context):
+        from llamatrade_proto.generated.backtest_pb2 import (
+            BACKTEST_STATUS_FAILED,
+            BACKTEST_STATUS_RUNNING,
+        )
+
+        updates = [
+            self._update(40, BACKTEST_STATUS_RUNNING),
+            self._update(100, BACKTEST_STATUS_FAILED),
+            self._update(100, BACKTEST_STATUS_FAILED),
+        ]
+
+        received, subscriber = await self._stream(backtest_servicer, rpc_context, updates)
+
+        assert [u.status for u in received[1:]] == [
+            BACKTEST_STATUS_RUNNING,
+            BACKTEST_STATUS_FAILED,
+        ]
+        assert subscriber.yielded == 2
+        assert subscriber.closed is True
+
+
 class TestGetBacktestTrades:
     """Tests for the paginated GetBacktestTrades RPC."""
 
