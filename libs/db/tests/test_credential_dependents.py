@@ -10,18 +10,12 @@ calls to a synchronous session.
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import Executable, create_engine
-from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.engine import Engine, Result
-from sqlalchemy.engine.result import ScalarResult
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.ext.compiler import compiles
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
-from sqlalchemy.sql.compiler import GenericTypeCompiler
 
 from llamatrade_db.base import Base
 from llamatrade_db.credential_dependents import (
@@ -32,16 +26,11 @@ from llamatrade_db.credential_dependents import (
 from llamatrade_db.models.ledger import Account, Sleeve, SleeveStatus, SleeveType
 from llamatrade_db.models.trading import TradingSession
 from llamatrade_proto.generated import common_pb2
+from tests._sqlite_tier import as_async_session as _db
 
 pytestmark = pytest.mark.asyncio
 
 _TABLES = [TradingSession.__table__, Account.__table__, Sleeve.__table__]
-
-
-@compiles(JSONB, "sqlite")
-def _render_jsonb_on_sqlite(type_: JSONB, compiler: GenericTypeCompiler, **kw: Any) -> str:
-    """SQLite has no JSONB; its JSON type stores the same values."""
-    return "JSON"
 
 
 @pytest.fixture(scope="module")
@@ -62,23 +51,6 @@ def db_session(sqlite_engine: Engine) -> Iterator[Session]:
     finally:
         session.rollback()
         session.close()
-
-
-class _SyncSessionAdapter:
-    """Awaitable facade over a synchronous Session (SQLite has no async driver here)."""
-
-    def __init__(self, session: Session) -> None:
-        self._session = session
-
-    async def execute(self, statement: Executable) -> Result[tuple[object, ...]]:
-        return self._session.execute(statement)
-
-    async def scalars(self, statement: Executable) -> ScalarResult[object]:
-        return self._session.scalars(statement)
-
-
-def _db(session: Session) -> AsyncSession:
-    return cast(AsyncSession, _SyncSessionAdapter(session))
 
 
 def _make_session(

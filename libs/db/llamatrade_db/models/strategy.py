@@ -20,6 +20,7 @@ from uuid import UUID
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -152,8 +153,8 @@ class StrategyExecution(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
         ExecutionStatusType(), nullable=False, default=1
     )  # PENDING=1
 
-    started_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    stopped_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stopped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Runtime configuration overrides (e.g., different symbols, risk params)
     config_override: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)

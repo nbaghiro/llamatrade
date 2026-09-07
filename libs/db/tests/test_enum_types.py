@@ -16,32 +16,26 @@ from __future__ import annotations
 import warnings
 from collections.abc import Iterator
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import Dialect, create_engine, select, text
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SAWarning, StatementError
-from sqlalchemy.ext.compiler import compiles
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.sql.cache_key import NO_CACHE
-from sqlalchemy.sql.compiler import GenericTypeCompiler
 
 import llamatrade_db.models._enum_types as et
 from llamatrade_db.base import Base
 from llamatrade_db.models.agent import AgentMemoryFact
 from llamatrade_db.models.trading import Order, TradingSession
 from llamatrade_proto.generated import common_pb2
+from tests._sqlite_tier import install_sqlite_jsonb
 
 _DIALECT = cast(Dialect, None)
 
-
-@compiles(JSONB, "sqlite")
-def _render_jsonb_on_sqlite(type_: JSONB, compiler: GenericTypeCompiler, **kw: Any) -> str:
-    """SQLite has no JSONB; its JSON type stores the same values."""
-    return "JSON"
+install_sqlite_jsonb()
 
 
 @pytest.fixture(scope="module")

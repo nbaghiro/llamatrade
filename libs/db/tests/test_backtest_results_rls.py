@@ -20,9 +20,15 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 from sqlalchemy.pool import NullPool
 
+_REQUIRE_DOCKER = os.environ.get("CI_REQUIRE_DOCKER") == "1"
+
 # testcontainers is an optional integration dependency; skip the whole module
-# rather than error at collection time when it (or Docker) is missing.
-PostgresContainer = pytest.importorskip("testcontainers.postgres").PostgresContainer
+# rather than error at collection time when it (or Docker) is missing — unless
+# CI_REQUIRE_DOCKER=1, where a missing dep must fail.
+if _REQUIRE_DOCKER:
+    from testcontainers.postgres import PostgresContainer
+else:
+    PostgresContainer = pytest.importorskip("testcontainers.postgres").PostgresContainer
 
 _ALEMBIC_DIR = Path(__file__).resolve().parents[1] / "llamatrade_db" / "alembic"
 _APP_ROLE = "backtest_rls_app_role"
@@ -39,9 +45,14 @@ def _docker_available() -> bool:
         return False
 
 
-pytestmark = pytest.mark.skipif(
-    not _docker_available(), reason="Docker not available for testcontainers"
-)
+_docker_up = _docker_available()
+if _REQUIRE_DOCKER and not _docker_up:
+    pytest.fail("CI_REQUIRE_DOCKER=1: Docker is required but unavailable", pytrace=False)
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(not _docker_up, reason="Docker not available for testcontainers"),
+]
 
 
 def _apply_migrations(async_url: str) -> None:

@@ -1,6 +1,9 @@
-"""Tests for llamatrade_db.base module."""
+"""Tests for the llamatrade_db.base mixins (column type/default contracts)."""
 
-from sqlalchemy import String
+from uuid import UUID
+
+from sqlalchemy import DateTime, Index, String
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from llamatrade_db.base import (
@@ -11,203 +14,76 @@ from llamatrade_db.base import (
 )
 
 
-class TestBase:
-    """Tests for Base declarative class."""
-
-    def test_base_is_declarative_base(self) -> None:
-        """Test Base is a proper SQLAlchemy DeclarativeBase."""
-        from sqlalchemy.orm import DeclarativeBase
-
-        assert issubclass(Base, DeclarativeBase)
-
-    def test_base_has_metadata(self) -> None:
-        """Test Base has metadata attribute."""
-        assert hasattr(Base, "metadata")
-        assert Base.metadata is not None
-
-
 class TestUUIDPrimaryKeyMixin:
-    """Tests for UUIDPrimaryKeyMixin."""
+    def test_id_is_uuid_primary_key_with_uuid4_default(self) -> None:
+        """The id column pairs the PG UUID type with a client-side uuid4 default."""
 
-    def test_mixin_adds_id_column(self) -> None:
-        """Test mixin adds id column."""
-
-        class TestModel(Base, UUIDPrimaryKeyMixin):
+        class UuidPkModel(Base, UUIDPrimaryKeyMixin):
             __tablename__ = "test_uuid_pk"
             name: Mapped[str] = mapped_column(String(100))
 
-        # Check that id column exists
-        assert hasattr(TestModel, "id")
-
-    def test_id_is_uuid_type(self) -> None:
-        """Test id column is UUID type."""
-
-        class TestModel(Base, UUIDPrimaryKeyMixin):
-            __tablename__ = "test_uuid_type"
-            name: Mapped[str] = mapped_column(String(100))
-
-        # Check column type annotation
-        columns = TestModel.__table__.columns
-        assert "id" in columns
-
-    def test_id_default_generates_uuid(self) -> None:
-        """Test id default generates a UUID."""
-
-        class TestModel(Base, UUIDPrimaryKeyMixin):
-            __tablename__ = "test_uuid_default"
-            name: Mapped[str] = mapped_column(String(100))
-
-        # Check that column has a default
-        id_column = TestModel.__table__.columns["id"]
-        assert id_column.default is not None
+        column = UuidPkModel.__table__.columns["id"]
+        assert column.primary_key is True
+        assert isinstance(column.type, PG_UUID)
+        assert column.type.as_uuid is True
+        # SQLAlchemy wraps zero-arg callables, so assert the behavior, not identity.
+        assert column.default is not None and column.default.is_callable
+        generated = {column.default.arg({}) for _ in range(3)}
+        assert len(generated) == 3 and all(isinstance(v, UUID) for v in generated)
 
 
 class TestTenantMixin:
-    """Tests for TenantMixin."""
-
-    def test_mixin_adds_tenant_id_column(self) -> None:
-        """Test mixin adds tenant_id column."""
-
-        class TestModel(Base, TenantMixin):
+    def test_tenant_id_is_required_uuid(self) -> None:
+        class TenantModel(Base, TenantMixin):
             __tablename__ = "test_tenant"
             id: Mapped[int] = mapped_column(primary_key=True)
-            name: Mapped[str] = mapped_column(String(100))
 
-        # Check that tenant_id column exists
-        assert hasattr(TestModel, "tenant_id")
-        columns = TestModel.__table__.columns
-        assert "tenant_id" in columns
+        column = TenantModel.__table__.columns["tenant_id"]
+        assert column.nullable is False
+        assert isinstance(column.type, PG_UUID)
 
-    def test_tenant_id_is_not_nullable(self) -> None:
-        """Test tenant_id is not nullable."""
+    def test_mixin_contributes_named_tenant_index(self) -> None:
+        """__table_args__ carries exactly the ix_<table>_tenant_id index on tenant_id."""
 
-        class TestModel(Base, TenantMixin):
-            __tablename__ = "test_tenant_nullable"
-            id: Mapped[int] = mapped_column(primary_key=True)
-
-        tenant_id_col = TestModel.__table__.columns["tenant_id"]
-        assert tenant_id_col.nullable is False
-
-    def test_tenant_mixin_creates_index(self) -> None:
-        """Test TenantMixin creates index on tenant_id."""
-
-        class TestModel(Base, TenantMixin):
+        class TenantIndexModel(Base, TenantMixin):
             __tablename__ = "test_tenant_index"
             id: Mapped[int] = mapped_column(primary_key=True)
 
-        # Check table args include an index
-        table_args = TestModel.__table_args__
-        assert isinstance(table_args, tuple)
-        assert len(table_args) > 0
-
-        # Find the tenant index
-        from sqlalchemy import Index
-
-        tenant_indexes = [
-            arg for arg in table_args if isinstance(arg, Index) and "tenant_id" in str(arg)
-        ]
-        assert len(tenant_indexes) >= 1
+        indexes = [arg for arg in TenantIndexModel.__table_args__ if isinstance(arg, Index)]
+        (tenant_index,) = indexes
+        assert tenant_index.name == "ix_test_tenant_index_tenant_id"
+        assert list(tenant_index.expressions) == ["tenant_id"]
 
 
 class TestTimestampMixin:
-    """Tests for TimestampMixin."""
+    def test_timestamp_columns_are_tz_aware_with_server_defaults(self) -> None:
+        """created_at/updated_at: timezone-aware, required, server-defaulted;
+        updated_at also refreshes via onupdate."""
 
-    def test_mixin_adds_created_at_column(self) -> None:
-        """Test mixin adds created_at column."""
-
-        class TestModel(Base, TimestampMixin):
-            __tablename__ = "test_timestamp_created"
+        class TimestampModel(Base, TimestampMixin):
+            __tablename__ = "test_timestamp"
             id: Mapped[int] = mapped_column(primary_key=True)
 
-        assert hasattr(TestModel, "created_at")
-        columns = TestModel.__table__.columns
-        assert "created_at" in columns
-
-    def test_mixin_adds_updated_at_column(self) -> None:
-        """Test mixin adds updated_at column."""
-
-        class TestModel(Base, TimestampMixin):
-            __tablename__ = "test_timestamp_updated"
-            id: Mapped[int] = mapped_column(primary_key=True)
-
-        assert hasattr(TestModel, "updated_at")
-        columns = TestModel.__table__.columns
-        assert "updated_at" in columns
-
-    def test_created_at_has_server_default(self) -> None:
-        """Test created_at has server_default."""
-
-        class TestModel(Base, TimestampMixin):
-            __tablename__ = "test_timestamp_default"
-            id: Mapped[int] = mapped_column(primary_key=True)
-
-        created_at_col = TestModel.__table__.columns["created_at"]
-        assert created_at_col.server_default is not None
-
-    def test_updated_at_has_onupdate(self) -> None:
-        """Test updated_at has onupdate trigger."""
-
-        class TestModel(Base, TimestampMixin):
-            __tablename__ = "test_timestamp_onupdate"
-            id: Mapped[int] = mapped_column(primary_key=True)
-
-        updated_at_col = TestModel.__table__.columns["updated_at"]
-        assert updated_at_col.onupdate is not None
-
-    def test_timestamp_columns_not_nullable(self) -> None:
-        """Test timestamp columns are not nullable."""
-
-        class TestModel(Base, TimestampMixin):
-            __tablename__ = "test_timestamp_nullable"
-            id: Mapped[int] = mapped_column(primary_key=True)
-
-        created_at_col = TestModel.__table__.columns["created_at"]
-        updated_at_col = TestModel.__table__.columns["updated_at"]
-
-        assert created_at_col.nullable is False
-        assert updated_at_col.nullable is False
+        created = TimestampModel.__table__.columns["created_at"]
+        updated = TimestampModel.__table__.columns["updated_at"]
+        for column in (created, updated):
+            assert column.nullable is False
+            assert isinstance(column.type, DateTime)
+            assert column.type.timezone is True
+            assert column.server_default is not None
+        assert created.onupdate is None
+        assert updated.onupdate is not None
 
 
 class TestMixinCombinations:
-    """Tests for combining multiple mixins."""
+    def test_all_mixins_compose_without_clobbering_table_args(self) -> None:
+        """All three mixins stack on one model; the tenant index survives the merge."""
 
-    def test_all_mixins_together(self) -> None:
-        """Test combining all mixins works correctly."""
-
-        class TestModel(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
+        class AllMixinsModel(Base, UUIDPrimaryKeyMixin, TenantMixin, TimestampMixin):
             __tablename__ = "test_all_mixins"
             name: Mapped[str] = mapped_column(String(100))
 
-        columns = TestModel.__table__.columns
-
-        # All columns should exist
-        assert "id" in columns
-        assert "tenant_id" in columns
-        assert "created_at" in columns
-        assert "updated_at" in columns
-        assert "name" in columns
-
-    def test_uuid_and_tenant_mixins(self) -> None:
-        """Test combining UUID and Tenant mixins."""
-
-        class TestModel(Base, UUIDPrimaryKeyMixin, TenantMixin):
-            __tablename__ = "test_uuid_tenant"
-            name: Mapped[str] = mapped_column(String(100))
-
-        columns = TestModel.__table__.columns
-
-        assert "id" in columns
-        assert "tenant_id" in columns
-
-    def test_uuid_and_timestamp_mixins(self) -> None:
-        """Test combining UUID and Timestamp mixins."""
-
-        class TestModel(Base, UUIDPrimaryKeyMixin, TimestampMixin):
-            __tablename__ = "test_uuid_timestamp"
-            name: Mapped[str] = mapped_column(String(100))
-
-        columns = TestModel.__table__.columns
-
-        assert "id" in columns
-        assert "created_at" in columns
-        assert "updated_at" in columns
+        columns = AllMixinsModel.__table__.columns
+        assert {"id", "tenant_id", "created_at", "updated_at", "name"} <= set(columns.keys())
+        index_names = {i.name for i in AllMixinsModel.__table__.indexes}
+        assert "ix_test_all_mixins_tenant_id" in index_names

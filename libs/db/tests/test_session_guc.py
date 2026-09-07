@@ -6,6 +6,7 @@ against a throwaway Postgres. Requires Docker (testcontainers).
 
 import asyncio
 import logging
+import os
 from collections.abc import AsyncGenerator
 from uuid import UUID, uuid4
 
@@ -30,9 +31,15 @@ from llamatrade_db.session import (
     unbind_tenant_guc,
 )
 
+_REQUIRE_DOCKER = os.environ.get("CI_REQUIRE_DOCKER") == "1"
+
 # testcontainers is an optional integration dependency; when it's absent this
-# whole module skips instead of erroring at collection time.
-PostgresContainer = pytest.importorskip("testcontainers.postgres").PostgresContainer
+# whole module skips instead of erroring at collection time — unless
+# CI_REQUIRE_DOCKER=1, where a missing dep must fail.
+if _REQUIRE_DOCKER:
+    from testcontainers.postgres import PostgresContainer
+else:
+    PostgresContainer = pytest.importorskip("testcontainers.postgres").PostgresContainer
 
 
 def _docker_available() -> bool:
@@ -46,11 +53,16 @@ def _docker_available() -> bool:
         return False
 
 
-# Skip cleanly (rather than error) where Docker isn't available — e.g. a
-# pre-commit run on a machine without Docker. CI runs these with Docker up.
-pytestmark = pytest.mark.skipif(
-    not _docker_available(), reason="Docker not available for testcontainers"
-)
+# Skip cleanly where Docker isn't available — e.g. a pre-commit run on a machine
+# without Docker. CI sets CI_REQUIRE_DOCKER=1 so a missing daemon fails loudly.
+_docker_up = _docker_available()
+if _REQUIRE_DOCKER and not _docker_up:
+    pytest.fail("CI_REQUIRE_DOCKER=1: Docker is required but unavailable", pytrace=False)
+
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(not _docker_up, reason="Docker not available for testcontainers"),
+]
 
 _BYPASS_ROLE = "rls_bypass_role"
 _APP_ROLE = "rls_app_role"
@@ -293,6 +305,35 @@ class TestEngineServerSettings:
             assert raw == "90000"
         finally:
             await self._reset_engine()
+
+
+class TestInitDb:
+    """``init_db`` (RLS capability check + full-metadata create_all) on real Postgres."""
+
+    async def test_creates_full_schema(self, pg_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
+        from llamatrade_db import models
+        from llamatrade_db.base import Base
+        from llamatrade_db.session import close_db, get_engine, init_db
+
+        # Importing the models package is what registers tables on Base.metadata.
+        assert models.User.__table__ is Base.metadata.tables["users"]
+        expected = set(Base.metadata.tables)
+        assert {"agent_sessions", "subscriptions", "trading_sessions", "users"} <= expected
+
+        monkeypatch.setenv("DATABASE_URL", pg_url)
+        # The container role is a superuser; the RLS check must warn, not raise.
+        monkeypatch.setenv("ENVIRONMENT", "development")
+        await close_db()
+        try:
+            await init_db()
+            async with get_engine().connect() as conn:
+                result = await conn.execute(
+                    text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
+                )
+                created = set(result.scalars())
+            assert expected <= created
+        finally:
+            await close_db()
 
 
 class TestAssertRlsCapable:

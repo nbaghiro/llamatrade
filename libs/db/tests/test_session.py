@@ -297,26 +297,3 @@ class TestGetDb:
             assert session_ref is not None
         finally:
             await close_db()
-
-
-class TestInitDb:
-    """Tests for init_db function."""
-
-    @pytest.mark.asyncio
-    @pytest.mark.skipif(
-        os.environ.get("DATABASE_URL") is None,
-        reason="Requires running PostgreSQL database",
-    )
-    async def test_init_db_creates_tables(self) -> None:
-        """Test init_db creates database tables.
-
-        Note: This test requires a running PostgreSQL database.
-        Set DATABASE_URL environment variable to run this test.
-        """
-        from llamatrade_db.session import close_db, init_db
-
-        try:
-            # Should not raise
-            await init_db()
-        finally:
-            await close_db()

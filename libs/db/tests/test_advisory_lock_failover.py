@@ -18,7 +18,7 @@ import os
 import time
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, NoReturn
 
 import pytest
 from sqlalchemy import text
@@ -28,8 +28,20 @@ from sqlalchemy.pool import NullPool
 from llamatrade_db.advisory import advisory_unlock, holds_advisory_lock, try_advisory_lock
 from llamatrade_db.session import close_db, get_session_maker
 
+pytestmark = pytest.mark.integration
+
 POSTGRES_IMAGE = "postgres:16-alpine"
 DBNAME = "advisory_locks"
+
+_REQUIRE_DOCKER = os.environ.get("CI_REQUIRE_DOCKER") == "1"
+
+
+def _skip_or_fail(reason: str) -> NoReturn:
+    """Skip locally; fail when CI_REQUIRE_DOCKER=1 demands the Docker-gated tests run."""
+    if _REQUIRE_DOCKER:
+        pytest.fail(f"CI_REQUIRE_DOCKER=1: {reason}", pytrace=False)
+    pytest.skip(reason)
+
 
 # A stable key in the same shape the services use (a signed 64-bit bigint).
 LOCK_KEY = 0x6C6F636B74657374  # "locktest"
@@ -47,14 +59,17 @@ ORDER BY pid
 
 @pytest.fixture(scope="module")
 def pg_dsn() -> Iterator[str]:
-    postgres_mod: Any = pytest.importorskip("testcontainers.postgres")
+    if _REQUIRE_DOCKER:
+        import testcontainers.postgres as postgres_mod
+    else:
+        postgres_mod: Any = pytest.importorskip("testcontainers.postgres")
     try:
         container = postgres_mod.PostgresContainer(
             POSTGRES_IMAGE, username="test", password="test", dbname=DBNAME
         )
         container.start()
     except Exception as exc:  # Docker down / image pull blocked
-        pytest.skip(f"Postgres container unavailable: {exc}")
+        _skip_or_fail(f"Postgres container unavailable: {exc}")
     try:
         raw = str(container.get_connection_url())
         yield raw.replace("+psycopg2", "+asyncpg").replace("postgresql://", "postgresql+asyncpg://")
