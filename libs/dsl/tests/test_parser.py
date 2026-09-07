@@ -402,6 +402,150 @@ class TestParseErrors:
             parse('(strategy "Test" (weight :method invalid (asset VTI)))')
 
 
+class TestTokenizerErrors:
+    """Characters the grammar does not know must fail loudly, not lex-skip silently."""
+
+    @pytest.mark.parametrize(
+        "garbage", ["@", "#", "%", "&", ",", "'", "^", "~", "`", "?", "!", "."]
+    )
+    def test_garbage_character_rejected(self, garbage: str) -> None:
+        with pytest.raises(ParseError, match="Unexpected character"):
+            parse(f'(strategy "Test" {garbage} (asset VTI :weight 100))')
+
+    def test_garbage_reports_position(self) -> None:
+        with pytest.raises(ParseError) as exc_info:
+            parse('(strategy "Test"\n  @bad (asset VTI :weight 100))')
+        assert exc_info.value.line == 2
+        assert exc_info.value.column == 3
+
+    def test_unterminated_string_rejected_at_open_quote(self) -> None:
+        with pytest.raises(ParseError, match="Unexpected character") as exc_info:
+            parse('(strategy "Unterminated)')
+        assert exc_info.value.column == 11
+
+
+class TestParserErrorBranches:
+    """Table-driven coverage of the parser's error branches."""
+
+    ERROR_CASES = [
+        (
+            "tokens-after-strategy",
+            '(strategy "X" (asset SPY :weight 100)) extra',
+            "Unexpected tokens after strategy",
+        ),
+        (
+            "benchmark-not-symbol",
+            '(strategy "X" :benchmark 5 (asset SPY :weight 100))',
+            "Expected symbol for benchmark",
+        ),
+        ("block-not-lparen", '(strategy "X" foo)', r"Expected '\(', got foo"),
+        ("block-eof-after-lparen", '(strategy "X" (', "Unexpected end of input"),
+        ("block-type-not-symbol", '(strategy "X" (123))', "Expected block type, got 123"),
+        (
+            "group-weight-not-number",
+            '(strategy "X" (group "G" :weight abc (asset SPY)))',
+            "Expected number for :weight",
+        ),
+        (
+            "weight-lookback-not-number",
+            '(strategy "X" (weight :method momentum :lookback abc (asset SPY)))',
+            "Expected number for :lookback",
+        ),
+        (
+            "weight-top-not-number",
+            '(strategy "X" (weight :method momentum :top abc (asset SPY)))',
+            "Expected number for :top",
+        ),
+        ("asset-symbol-missing", '(strategy "X" (asset 5))', "Expected asset symbol"),
+        (
+            "asset-weight-not-number",
+            '(strategy "X" (asset SPY :weight abc))',
+            "Expected number for :weight",
+        ),
+        (
+            "filter-criteria-not-symbol",
+            '(strategy "X" (filter :by 5 :select (top 1) (asset SPY)))',
+            "Expected filter criteria",
+        ),
+        (
+            "filter-criteria-invalid",
+            '(strategy "X" (filter :by bogus :select (top 1) (asset SPY)))',
+            "Invalid filter criteria: bogus",
+        ),
+        (
+            "filter-select-not-symbol",
+            '(strategy "X" (filter :by momentum :select (5 1) (asset SPY)))',
+            "Expected 'top' or 'bottom' in :select",
+        ),
+        (
+            "filter-select-wrong-symbol",
+            '(strategy "X" (filter :by momentum :select (middle 1) (asset SPY)))',
+            "Expected 'top' or 'bottom' in :select",
+        ),
+        (
+            "filter-select-count-not-number",
+            '(strategy "X" (filter :by momentum :select (top x) (asset SPY)))',
+            "Expected number in :select",
+        ),
+        (
+            "filter-lookback-not-number",
+            '(strategy "X" (filter :by momentum :select (top 1) :lookback abc (asset SPY)))',
+            "Expected number for :lookback",
+        ),
+        ("condition-eof", '(strategy "X" (if (', "Expected condition operator"),
+        (
+            "condition-head-not-operator",
+            '(strategy "X" (if (5) (asset SPY)))',
+            "Expected operator, got 5",
+        ),
+        (
+            "condition-unknown-operator",
+            '(strategy "X" (if (foo 1 2) (asset SPY)))',
+            "Unknown condition operator: foo",
+        ),
+        ("value-eof", '(strategy "X" (if (>', "Expected value"),
+        (
+            "value-not-expression",
+            '(strategy "X" (if (> abc 1) (asset SPY)))',
+            "Expected value expression, got abc",
+        ),
+        (
+            "value-fn-not-symbol",
+            '(strategy "X" (if (> (123) 1) (asset SPY)))',
+            "Expected function name in value expression",
+        ),
+        (
+            "value-fn-unknown",
+            '(strategy "X" (if (> (bogus SPY) 1) (asset SPY)))',
+            "Unknown value function: bogus",
+        ),
+        (
+            "price-symbol-missing",
+            '(strategy "X" (if (> (price 5) 1) (asset SPY)))',
+            "Expected symbol in price expression",
+        ),
+        (
+            "indicator-symbol-missing",
+            '(strategy "X" (if (> (sma 5) 1) (asset SPY)))',
+            "Expected symbol in sma indicator",
+        ),
+        (
+            "metric-symbol-missing",
+            '(strategy "X" (if (> (drawdown 5) 1) (asset SPY)))',
+            "Expected symbol in drawdown metric",
+        ),
+    ]
+
+    @pytest.mark.parametrize(
+        "source,match",
+        [(source, match) for _, source, match in ERROR_CASES],
+        ids=[case_id for case_id, _, _ in ERROR_CASES],
+    )
+    def test_error_branch(self, source: str, match: str) -> None:
+        with pytest.raises(ParseError, match=match):
+            parse(source)
+
+
 class TestParseStrategyAlias:
     """Test that parse_strategy is an alias for parse."""
 

@@ -319,6 +319,22 @@ def _extract_symbols_from_value(value: Value, symbols: set[str]) -> None:
         symbols.add(value.symbol)
 
 
+# Extra series each indicator reads beyond its spec source, mirroring the runtime
+# library's compute_indicator reads (pinned by test_vocabulary_parity).
+_EXTRA_INDICATOR_SOURCES: dict[str, frozenset[str]] = {
+    "atr": frozenset({"high", "low", "close"}),
+    "adx": frozenset({"high", "low", "close"}),
+    "stoch": frozenset({"high", "low", "close"}),
+    "cci": frozenset({"high", "low", "close"}),
+    "williams-r": frozenset({"high", "low", "close"}),
+    "keltner": frozenset({"high", "low", "close"}),
+    "donchian": frozenset({"high", "low"}),
+    "obv": frozenset({"volume"}),
+    "mfi": frozenset({"high", "low", "close", "volume"}),
+    "vwap": frozenset({"high", "low", "close", "volume"}),
+}
+
+
 def get_required_sources(indicators: list[IndicatorSpec]) -> set[str]:
     """Get all price/volume sources required by indicators.
 
@@ -332,9 +348,5 @@ def get_required_sources(indicators: list[IndicatorSpec]) -> set[str]:
     for spec in indicators:
         if spec.source in ("close", "open", "high", "low", "volume"):
             sources.add(spec.source)
-        # Add additional sources needed by specific indicators
-        if spec.indicator_type in ("atr", "stoch", "williams-r", "cci"):
-            sources.update({"high", "low", "close"})
-        if spec.indicator_type in ("obv", "mfi", "vwap"):
-            sources.add("volume")
+        sources.update(_EXTRA_INDICATOR_SOURCES.get(spec.indicator_type, frozenset()))
     return sources

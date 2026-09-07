@@ -1,5 +1,7 @@
 """Tests for allocation-based strategy DSL validator."""
 
+from typing import cast
+
 from llamatrade_dsl import (
     Asset,
     Comparison,
@@ -13,7 +15,9 @@ from llamatrade_dsl import (
     NumericLiteral,
     Price,
     Strategy,
+    ValidationError,
     Weight,
+    WeightMethod,
     validate,
     validate_strategy,
 )
@@ -756,7 +760,9 @@ class TestValidatorRejectPaths:
         )
         result = validate(self._wrap_condition(cond))
         assert not result.valid
-        assert any("unknown indicator" in str(e).lower() for e in result.errors)
+        error = next(e for e in result.errors if "unknown indicator" in str(e).lower())
+        assert "sma" in error.suggestions
+        assert "did you mean" in str(error)
 
     def test_indicator_nonpositive_param(self):
         cond = Comparison(
@@ -926,3 +932,67 @@ class TestValidateDeclaredWeightSum:
         )
         result = validate(strategy)
         assert result.valid
+
+
+class TestValidateNestedStrategy:
+    """A strategy block may only appear at the root."""
+
+    def test_nested_strategy_is_rejected(self):
+        strategy = Strategy(
+            name="Outer",
+            children=[Strategy(name="Inner", children=[Asset(symbol="SPY", weight=100)])],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        assert any("Nested strategy blocks are not allowed" in str(e) for e in result.errors)
+
+
+class TestInvalidWeightMethodSuggestions:
+    """An invalid method (reachable via the unchecked from_json cast) must suggest fixes."""
+
+    def test_misspelled_method_reports_suggestions(self):
+        strategy = Strategy(
+            name="T",
+            children=[
+                Weight(
+                    method=cast(WeightMethod, "momentam"),
+                    children=[Asset(symbol="SPY"), Asset(symbol="BND")],
+                )
+            ],
+        )
+        result = validate(strategy)
+        assert not result.valid
+        error = next(e for e in result.errors if "Invalid weight method" in str(e))
+        assert "momentum" in error.suggestions
+        assert "did you mean" in str(error)
+
+
+class TestValidationErrorStr:
+    """ValidationError.__str__ must render every location/suggestion combination."""
+
+    def test_message_only(self):
+        assert str(ValidationError(message="broken")) == "broken"
+
+    def test_path_only(self):
+        error = ValidationError(message="broken", path="strategy.children[0]")
+        assert str(error) == "strategy.children[0]: broken"
+
+    def test_line_only(self):
+        error = ValidationError(message="broken", line=3)
+        assert str(error) == "line 3: broken"
+
+    def test_line_and_column(self):
+        error = ValidationError(message="broken", line=3, column=7)
+        assert str(error) == "line 3, column 7: broken"
+
+    def test_line_column_and_path(self):
+        error = ValidationError(message="broken", path="strategy.name", line=3, column=7)
+        assert str(error) == "line 3, column 7: strategy.name: broken"
+
+    def test_suggestions_suffix(self):
+        error = ValidationError(message="broken", suggestions=["sma", "ema"])
+        assert str(error) == "broken (did you mean: sma, ema?)"
+
+    def test_suggestions_truncated_to_three(self):
+        error = ValidationError(message="broken", suggestions=["a", "b", "c", "d"])
+        assert str(error) == "broken (did you mean: a, b, c?)"

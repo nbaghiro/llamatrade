@@ -1,0 +1,5 @@
+(strategy "Collision \\n stays literal \\\\n and \"quoted \\n\""
+  :rebalance daily
+  :description "Real\nnewline vs literal \\n"
+  (weight :method equal
+    (asset SPY)))

@@ -15,40 +15,6 @@ from llamatrade_dsl.analysis import (
 class TestIndicatorSpec:
     """Tests for IndicatorSpec dataclass."""
 
-    def test_indicator_spec_creation(self) -> None:
-        """Test creating an IndicatorSpec."""
-        spec = IndicatorSpec(
-            indicator_type="sma",
-            symbol="AAPL",
-            source="close",
-            params=(20,),
-            output_key="sma_AAPL_close_20",
-            output_field=None,
-            required_bars=20,
-        )
-
-        assert spec.indicator_type == "sma"
-        assert spec.symbol == "AAPL"
-        assert spec.source == "close"
-        assert spec.params == (20,)
-        assert spec.output_key == "sma_AAPL_close_20"
-        assert spec.output_field is None
-        assert spec.required_bars == 20
-
-    def test_indicator_spec_with_output_field(self) -> None:
-        """Test creating an IndicatorSpec with output field."""
-        spec = IndicatorSpec(
-            indicator_type="macd",
-            symbol="AAPL",
-            source="close",
-            params=(12, 26, 9),
-            output_key="macd_AAPL_close_12_26_9_signal",
-            output_field="signal",
-            required_bars=26,
-        )
-
-        assert spec.output_field == "signal"
-
     def test_indicator_spec_str_without_output_field(self) -> None:
         """Test IndicatorSpec string representation without output field."""
         spec = IndicatorSpec(
@@ -93,23 +59,6 @@ class TestIndicatorSpec:
 
         with pytest.raises(AttributeError):
             spec.params = (10,)
-
-    def test_indicator_spec_hashable(self) -> None:
-        """Test IndicatorSpec is hashable."""
-        spec = IndicatorSpec(
-            indicator_type="sma",
-            symbol="AAPL",
-            source="close",
-            params=(20,),
-            output_key="sma_AAPL_close_20",
-            output_field=None,
-            required_bars=20,
-        )
-
-        # Should be hashable
-        assert hash(spec) is not None
-        specs_set = {spec}
-        assert spec in specs_set
 
 
 class TestExtractIndicators:

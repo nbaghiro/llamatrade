@@ -1,7 +1,5 @@
 """Tests for allocation-based strategy DSL serializer."""
 
-import pytest
-
 from llamatrade_dsl import (
     Asset,
     Comparison,
@@ -16,7 +14,6 @@ from llamatrade_dsl import (
     Price,
     Strategy,
     Weight,
-    parse,
     serialize,
 )
 
@@ -424,80 +421,6 @@ class TestSerializePretty:
         lines = result.split("\n")
         # Check indentation
         assert any("  " in line for line in lines)
-
-
-class TestSerializeRoundtrip:
-    """Test that parsing then serializing produces equivalent results."""
-
-    @pytest.mark.parametrize(
-        "source",
-        [
-            '(strategy "Test" (asset VTI :weight 100))',
-            '(strategy "Test" (weight :method equal (asset VTI) (asset BND)))',
-            '(strategy "Test" :rebalance monthly (asset VTI :weight 100))',
-            '(strategy "Test" :benchmark SPY (asset VTI :weight 100))',
-            '(strategy "Test" (group "Equities" (asset VTI :weight 100)))',
-            '(strategy "Test" (weight :method momentum :lookback 90 (asset XLK) (asset XLF)))',
-        ],
-    )
-    def test_roundtrip_simple(self, source: str):
-        """Parse, serialize, parse again should give equivalent AST."""
-        original = parse(source)
-        serialized = serialize(original)
-        reparsed = parse(serialized)
-
-        assert original.name == reparsed.name
-        assert original.rebalance == reparsed.rebalance
-        assert original.benchmark == reparsed.benchmark
-        assert len(original.children) == len(reparsed.children)
-
-    def test_roundtrip_complex_strategy(self):
-        source = """
-        (strategy "Dual Moving Average"
-          :rebalance daily
-          :benchmark SPY
-          (if (> (sma SPY 50) (sma SPY 200))
-            (group "Risk On"
-              (weight :method specified
-                (asset VTI :weight 60)
-                (asset VXUS :weight 40)))
-            (else
-              (group "Risk Off"
-                (weight :method equal
-                  (asset BND)
-                  (asset SHY))))))
-        """
-        original = parse(source)
-        serialized = serialize(original)
-        reparsed = parse(serialized)
-
-        assert original.name == reparsed.name
-        assert original.rebalance == reparsed.rebalance
-        assert original.benchmark == reparsed.benchmark
-
-    def test_roundtrip_all_weather(self):
-        source = """
-        (strategy "All-Weather"
-          :rebalance quarterly
-          (group "Growth"
-            (weight :method specified
-              (asset VTI :weight 30)))
-          (group "Inflation Protection"
-            (weight :method specified
-              (asset DBC :weight 7.5)
-              (asset GLD :weight 7.5)))
-          (group "Bonds"
-            (weight :method specified
-              (asset TLT :weight 40)
-              (asset IEF :weight 15))))
-        """
-        original = parse(source)
-        serialized = serialize(original)
-        reparsed = parse(serialized)
-
-        assert original.name == reparsed.name
-        assert len(original.children) == 3
-        assert len(reparsed.children) == 3
 
 
 class TestSerializeEscaping:

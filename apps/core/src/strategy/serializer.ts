@@ -143,8 +143,11 @@ function escapeDSLString(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
 }
 
+const DSL_ESCAPE_CHARS: Record<string, string> = { n: '\n', '"': '"', '\\': '\\' };
+
+// Unescapes in a single pass so an unescaped backslash never re-forms an escape.
 function unescapeDSLString(s: string): string {
-  return s.replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\');
+  return s.replace(/\\(.)/g, (match, char: string) => DSL_ESCAPE_CHARS[char] ?? match);
 }
 
 // Verbose text generation

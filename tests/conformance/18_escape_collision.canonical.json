@@ -1,0 +1,18 @@
+{
+  "children": [
+    {
+      "children": [
+        {
+          "symbol": "SPY",
+          "type": "asset"
+        }
+      ],
+      "method": "equal",
+      "type": "weight"
+    }
+  ],
+  "description": "Real\nnewline vs literal \\n",
+  "name": "Collision \\n stays literal \\\\n and \"quoted \\n\"",
+  "rebalance": "daily",
+  "type": "strategy"
+}

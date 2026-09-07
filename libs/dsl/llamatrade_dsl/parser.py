@@ -42,6 +42,14 @@ from llamatrade_dsl.ast import (
     WeightMethod,
 )
 
+_STRING_ESCAPE = re.compile(r"\\(.)")
+_ESCAPE_CHARS = {"n": "\n", '"': '"', "\\": "\\"}
+
+
+def _unescape_string(raw: str) -> str:
+    """Unescape in a single pass so an unescaped backslash never re-forms an escape."""
+    return _STRING_ESCAPE.sub(lambda m: _ESCAPE_CHARS.get(m.group(1), m.group(0)), raw)
+
 
 class ParseError(Exception):
     """Raised when parsing fails."""
@@ -66,7 +74,8 @@ class Tokenizer:
         (?P<OPERATOR>>=|<=|!=|crosses-above|crosses-below|[><+\-*/=])|
         (?P<SYMBOL>[a-zA-Z_$][a-zA-Z0-9_-]*)|
         (?P<SKIP>\s+)|
-        (?P<COMMENT>;[^\n]*)
+        (?P<COMMENT>;[^\n]*)|
+        (?P<ERROR>.)
         """,
         re.VERBOSE,
     )
@@ -94,6 +103,9 @@ class Tokenizer:
 
             column = start - line_start + 1
 
+            if kind == "ERROR":
+                raise ParseError(f"Unexpected character: {value!r}", start, line, column)
+
             if kind is not None and kind not in ("SKIP", "COMMENT"):
                 self.tokens.append((kind, value, start, line, column))
 
@@ -102,11 +114,17 @@ class Tokenizer:
 # deeply-nested payload from raising RecursionError out of the recursive descent.
 _MAX_NESTING = 150
 
+# Source length bounds total tokenizer/parser work, so capping it here rejects a
+# hostile oversized payload before any lexing happens.
+_MAX_SOURCE_CHARS = 100_000
+
 
 class Parser:
     """Recursive descent parser for allocation-based strategy DSL."""
 
     def __init__(self, source: str):
+        if len(source) > _MAX_SOURCE_CHARS:
+            raise ParseError(f"Source exceeds {_MAX_SOURCE_CHARS} characters")
         self.source = source
         self.tokenizer = Tokenizer(source)
         self.tokens = list(self.tokenizer.tokens)
@@ -683,8 +701,7 @@ class Parser:
         if tok is None or tok[0] != "STRING":
             raise ParseError("Expected string")
         self.pos += 1
-        # Unescape string
-        return tok[1][1:-1].replace('\\"', '"').replace("\\n", "\n").replace("\\\\", "\\")
+        return _unescape_string(tok[1][1:-1])
 
 
 def parse(source: str) -> Strategy:

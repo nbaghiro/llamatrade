@@ -7,7 +7,7 @@ passing a shallow shape check.
 
 import pytest
 
-from llamatrade_dsl import parse, serialize, to_json, validate
+from llamatrade_dsl import Asset, Strategy, parse, serialize, to_json, validate
 
 CASES = [
     (
@@ -69,3 +69,27 @@ def test_pretty_serialize_round_trip_is_lossless(name: str, source: str) -> None
     original = parse(source)
     reparsed = parse(serialize(original, pretty=True))
     assert to_json(reparsed) == to_json(original), f"{name}: pretty round trip lost AST content"
+
+
+ESCAPE_TEXTS = [
+    ("literal-backslash-n", "Uses \\n literally"),
+    ("double-backslash-n", "Uses \\\\n literally"),
+    ("backslash-n-and-quotes", 'Mix "q" then \\n end'),
+    ("backslash-before-quote", 'Trail \\" edge'),
+    ("trailing-backslash", "Ends with \\"),
+    ("real-newline", "Line1\nLine2"),
+    ("real-newline-after-backslash-n", "A \\n B\nC"),
+]
+
+
+@pytest.mark.parametrize("pretty", [False, True], ids=["compact", "pretty"])
+@pytest.mark.parametrize("case_id,text", ESCAPE_TEXTS, ids=[c[0] for c in ESCAPE_TEXTS])
+def test_escape_round_trip_preserves_text(case_id: str, text: str, pretty: bool) -> None:
+    original = Strategy(
+        name=text,
+        description=text,
+        children=[Asset(symbol="SPY", weight=100)],
+    )
+    reparsed = parse(serialize(original, pretty=pretty))
+    assert reparsed.name == text, f"{case_id}: name corrupted by escape round trip"
+    assert reparsed.description == text, f"{case_id}: description corrupted by escape round trip"
