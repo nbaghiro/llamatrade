@@ -9,9 +9,7 @@ dependencies = [
     "uvicorn[standard]>=0.27.0",
     "pydantic>=2.5.0",
     "httpx>=0.26.0",
-    "websockets>=12.0",
     "redis>=5.0.0",
-    "python-jose[cryptography]>=3.3.0",
     "grpcio>=1.60.0",
     "llamatrade-common",
     "llamatrade-db",
@@ -43,14 +41,30 @@ packages = ["src"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
+asyncio_default_fixture_loop_scope = "function"
 markers = [
-    "integration: requires Docker (real TimescaleDB/Redis via testcontainers)",
+    "integration: requires Docker (real TimescaleDB/Kafka/Redis via testcontainers)",
+]
+
+# Coverage is NOT in addopts on purpose (same policy as portfolio): full coverage
+# needs the Docker-backed integration tier, so a unit-only run sits below the
+# gate. CI enforces the floor by running the FULL suite with coverage.
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+# Ratchet floor (D3): measured 88.15% on 2026-08-02 (full suite incl. integration).
+fail_under = 88
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
 ]
 
 [tool.ruff]
 extend = "../../pyproject.toml"
-line-length = 100
-target-version = "py314"
 
 [tool.pyright]
 venvPath = "../.."

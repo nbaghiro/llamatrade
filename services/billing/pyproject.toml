@@ -34,11 +34,24 @@ packages = ["src"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+# Ratchet floor (D3): measured 92.56% on 2026-08-03; raise as suites grow.
+fail_under = 92
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
 
 [tool.ruff]
 extend = "../../pyproject.toml"
-line-length = 100
-target-version = "py314"
 
 [tool.pyright]
 venvPath = "../.."

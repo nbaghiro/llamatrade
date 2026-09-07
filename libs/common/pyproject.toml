@@ -9,9 +9,7 @@ dependencies = [
     "pydantic[email]>=2.5.0",
     "PyJWT[crypto]>=2.8.0",
     "cryptography>=41.0.0",
-    "prometheus-client>=0.19.0",
     "fastapi>=0.109.0",
-    "httpx>=0.26.0",
     "redis>=5.0.0",
     "connect-python>=0.8.1",
     "sqlalchemy[asyncio]>=2.0.0",
@@ -44,7 +42,14 @@ packages = ["llamatrade_common"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"
 addopts = "--cov=llamatrade_common --cov-report=term-missing --cov-fail-under=80"
+markers = [
+    "integration: requires Docker (testcontainers) or other external services",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:testcontainers.*:",
+]
 
 [tool.coverage.run]
 source = ["llamatrade_common"]
@@ -59,11 +64,7 @@ exclude_lines = [
 ]
 
 [tool.ruff]
-line-length = 100
-target-version = "py314"
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP"]
+extend = "../../pyproject.toml"
 
 [tool.pyright]
 venvPath = "../.."

@@ -36,13 +36,16 @@ packages = ["llamatrade_alpaca"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "--cov=llamatrade_alpaca --cov-report=term-missing"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "--cov=llamatrade_alpaca --cov-report=term-missing --cov-fail-under=91"
 
 [tool.coverage.run]
 source = ["llamatrade_alpaca"]
 branch = true
 
 [tool.coverage.report]
+# Ratchet floor (D3): measured 81.34% on 2026-08-02 after the stream-loop suites; raise as suites grow.
+fail_under = 91
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",
@@ -50,11 +53,7 @@ exclude_lines = [
 ]
 
 [tool.ruff]
-line-length = 100
-target-version = "py314"
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP"]
+extend = "../../pyproject.toml"
 
 [tool.pyright]
 venvPath = "../.."

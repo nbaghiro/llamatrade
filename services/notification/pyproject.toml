@@ -15,6 +15,7 @@ dependencies = [
     "llamatrade-proto",
     "llamatrade-runtime",
     "llamatrade-telemetry",
+    "numpy>=1.26.0",
 ]
 
 [project.optional-dependencies]
@@ -37,14 +38,13 @@ packages = ["src"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"
 pythonpath = ["."]
 markers = [
     "integration: requires Docker (real Postgres via testcontainers)",
 ]
 
 [tool.ruff]
-line-length = 100
-target-version = "py314"
 extend = "../../pyproject.toml"
 
 [tool.pyright]

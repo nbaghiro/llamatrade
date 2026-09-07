@@ -266,8 +266,10 @@ make lint                   # All linting
 cd services/auth && pytest --cov=src --cov-report=term-missing    # Coverage report
 cd services/auth && pytest --cov=src --cov-report=html            # HTML report → htmlcov/
 
-# Formatting
-ruff check --fix services/ libs/
+# Formatting (always pass --config: CI pins the root config, and without it ruff
+# picks up each package's pyproject and sorts `src` imports the other way)
+ruff check --fix --config pyproject.toml services/ libs/ tests/ scripts/
+ruff format --config pyproject.toml services/ libs/ tests/ scripts/
 npm run lint:fix            # Frontend
 ```
 
@@ -280,7 +282,7 @@ npm run lint:fix            # Frontend
 **Python (Ruff):**
 - Line length: 100 characters
 - Rules: E, F, I, N, W, UP
-- Run: `ruff check --fix` and `ruff format`
+- Run: `ruff check --fix --config pyproject.toml` and `ruff format --config pyproject.toml` (the `--config` flag is required; see the Commands section)
 
 **TypeScript (ESLint + Prettier):**
 - Strict mode enabled

@@ -9,16 +9,13 @@ dependencies = [
     "uvicorn[standard]>=0.27.0",
     "pydantic>=2.5.0",
     "httpx>=0.26.0",
-    "websockets>=12.0",
     "grpcio>=1.60.0",
     "exchange-calendars>=4.2.0",
-    "redis>=5.0.0",
-    "tenacity>=8.2.0",
     "llamatrade-common[gcp-kms]",
     "llamatrade-db",
-    "llamatrade-dsl",
     "llamatrade-alpaca",
     "llamatrade-runtime",
+    "llamatrade-events",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +24,9 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.1.0",
     "ruff>=0.1.0",
+]
+integration = [
+    "testcontainers[postgres,kafka]>=4.0.0",
 ]
 
 [build-system]
@@ -43,6 +43,10 @@ pythonpath = ["."]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: requires Docker (real Kafka/Postgres via testcontainers)",
+    "real_ownership_check: exercise the servicer's session-ownership gate (not stubbed)",
+]
 # Enforce the trading service coverage floor on every full-suite run (local,
 # pre-commit, and CI). Run a subset with --no-cov to skip the gate while iterating.
 addopts = "--cov=src --cov-report=term-missing --cov-fail-under=80"

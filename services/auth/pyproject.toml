@@ -41,11 +41,10 @@ packages = ["src"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.ruff]
 extend = "../../pyproject.toml"
-line-length = 100
-target-version = "py314"
 
 [tool.pyright]
 venvPath = "../.."

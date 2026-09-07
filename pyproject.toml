@@ -20,7 +20,10 @@ extend-exclude = [
 ]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "N", "W", "UP"]
+# G/LOG keep logging structured: a message template plus arguments, never an
+# f-string. The template is what the dedupe filter keys on and what a log
+# backend groups by, and it is only interpolated if the record is emitted.
+select = ["E", "F", "I", "N", "W", "UP", "G", "LOG"]
 ignore = ["E501", "UP036", "UP046", "UP007"]
 
 [tool.ruff.lint.isort]
@@ -40,15 +43,11 @@ forced-separate = ["src"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["services/*/tests"]
+testpaths = ["services/*/tests", "libs/*/tests"]
+asyncio_default_fixture_loop_scope = "function"
 addopts = "--cov --cov-report=term-missing"
 markers = [
     "integration: requires real database (deselect with '-m not integration')",
-    "slow: takes >10 seconds (deselect with '-m not slow')",
-    "security: tenant isolation tests",
-    "workflow: multi-service tests",
-    "gateway: Kong gateway configuration tests",
-    "billing: billing and subscription tests",
     "e2e: runs against a live mesh (needs the running stack + backtest worker + seeded demo; auto-skips when unreachable)",
 ]
 filterwarnings = [

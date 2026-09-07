@@ -9,13 +9,17 @@ dependencies = [
     "uvicorn[standard]>=0.27.0",
     "pydantic>=2.5.0",
     "anthropic>=0.31.0",
-    "openai>=1.0.0",
     "google-genai>=1.0.0",
     "llamatrade-common",
     "llamatrade-events",
     "llamatrade-db",
     "llamatrade-dsl",
     "llamatrade-proto",
+    "redis>=5.0.0",
+    "sqlalchemy[asyncio]>=2.0.0",
+    "connect-python>=0.8.1",
+    "starlette>=0.37.0",
+    "llamatrade-telemetry",
 ]
 
 [project.optional-dependencies]
@@ -26,6 +30,7 @@ dev = [
     "httpx>=0.26.0",
     "ruff>=0.1.0",
 ]
+integration = ["testcontainers[postgres]>=4.0.0"]
 
 [build-system]
 requires = ["hatchling"]
@@ -37,11 +42,13 @@ packages = ["src"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: requires Docker (real Postgres via testcontainers)",
+]
 
 [tool.ruff]
 extend = "../../pyproject.toml"
-line-length = 100
-target-version = "py314"
 
 [tool.pyright]
 venvPath = "../.."

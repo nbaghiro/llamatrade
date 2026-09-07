@@ -12,7 +12,6 @@ dependencies = [
     "celery[redis]>=5.3.0",
     "redis>=5.0.0",
     "httpx>=0.27.0",
-    "websockets>=12.0",
     "grpcio>=1.60.0",
     "llamatrade-common",
     "llamatrade-events",
@@ -30,6 +29,9 @@ dev = [
     "ruff>=0.1.0",
     "celery-types>=0.22.0",  # Type stubs for Celery
 ]
+integration = [
+    "testcontainers[postgres,redis]>=4.0.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -46,6 +48,9 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 asyncio_default_fixture_loop_scope = "function"
 addopts = "--cov=src --cov-report=term-missing --cov-fail-under=80"
+markers = [
+    "integration: requires Docker (real Postgres/Redis via testcontainers)",
+]
 
 [tool.coverage.run]
 source = ["src"]

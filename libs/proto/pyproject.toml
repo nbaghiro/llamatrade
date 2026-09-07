@@ -7,7 +7,6 @@ requires-python = ">=3.14"
 dependencies = [
     "connect-python>=0.8.1",
     "grpcio>=1.60.0",
-    "grpcio-tools>=1.60.0",
     "protobuf>=4.25.0",
     "llamatrade-telemetry",
 ]
@@ -31,13 +30,14 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["llamatrade_proto"]
 
-[tool.ruff]
-line-length = 100
-target-version = "py314"
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"
+addopts = "--cov=llamatrade_proto --cov-report=term-missing --cov-fail-under=86"
 
-[tool.ruff.lint]
-select = ["E", "F", "I", "UP"]
-ignore = ["E501"]
+[tool.ruff]
+extend = "../../pyproject.toml"
 
 [tool.pyright]
 venvPath = "../.."
@@ -48,6 +48,8 @@ pythonVersion = "3.14"
 omit = ["llamatrade_proto/generated/*", "tests/*"]
 
 [tool.coverage.report]
+# Ratchet floor (D3): measured 86.47% on 2026-08-02; ratchet up as suites grow.
+fail_under = 86
 exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",

@@ -33,6 +33,7 @@ packages = ["llamatrade_events"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"
 addopts = "--cov=llamatrade_events --cov-report=term-missing --cov-fail-under=80"
 markers = [
     "integration: requires a real Kafka via Docker (deselect with -m 'not integration')",
@@ -53,8 +54,6 @@ exclude_lines = [
 
 [tool.ruff]
 extend = "../../pyproject.toml"
-line-length = 100
-target-version = "py314"
 
 [tool.pyright]
 venvPath = "../.."

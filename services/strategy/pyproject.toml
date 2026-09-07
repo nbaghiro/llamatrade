@@ -8,7 +8,6 @@ dependencies = [
     "fastapi>=0.109.0",
     "uvicorn[standard]>=0.27.0",
     "pydantic>=2.5.0",
-    "numpy>=1.26.0",
     "llamatrade-common",
     "llamatrade-events",
     "llamatrade-db",
@@ -39,6 +38,10 @@ packages = ["src"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: requires Docker (real Postgres via testcontainers)",
+]
 addopts = "--cov=src --cov-report=term-missing --cov-fail-under=80"
 
 [tool.coverage.run]
@@ -57,8 +60,6 @@ exclude_lines = [
 
 [tool.ruff]
 extend = "../../pyproject.toml"
-line-length = 100
-target-version = "py314"
 
 [tool.pyright]
 venvPath = "../.."

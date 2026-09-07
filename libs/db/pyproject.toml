@@ -12,7 +12,6 @@ dependencies = [
     "asyncpg>=0.29.0",
     "alembic>=1.13.0",
     "greenlet>=3.0.0",
-    "pgvector>=0.3.0",
     "llamatrade-common",
     "llamatrade-proto",
     "llamatrade-telemetry",
@@ -27,6 +26,33 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["llamatrade_db"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"
+addopts = "--cov=llamatrade_db --cov-report=term-missing --cov-fail-under=96"
+markers = [
+    "integration: requires Docker (testcontainers) or other external services",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning:testcontainers.*:",
+]
+
+[tool.coverage.run]
+source = ["llamatrade_db"]
+branch = true
+omit = ["llamatrade_db/alembic/*"]
+
+[tool.coverage.report]
+# Ratchet floor (D3): measured 96.97% on 2026-08-02 (full suite incl. Docker-gated modules).
+fail_under = 96
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
 
 [tool.pyright]
 venvPath = "../.."
