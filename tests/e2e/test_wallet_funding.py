@@ -10,6 +10,7 @@ call is a real ledger event through the running portfolio process.
 from __future__ import annotations
 
 import time
+from uuid import uuid4
 
 import pytest
 
@@ -31,13 +32,17 @@ def test_deposit_credits_free_cash_then_withdraw_restores(demo: MeshClient) -> N
     before = _ledger.unallocated_free(demo, account_id)
 
     dep = demo.call(
-        "ledger", "DepositFunds", {"accountId": account_id, "amount": {"value": DEPOSIT}}
+        "ledger",
+        "DepositFunds",
+        {"accountId": account_id, "amount": {"value": DEPOSIT}, "requestId": str(uuid4())},
     )
     after = decimal_val(dep.get("unallocated", {}).get("cash", {}).get("balance"))
     assert abs(after - (before + float(DEPOSIT))) < 1e-6
 
     wd = demo.call(
-        "ledger", "WithdrawFunds", {"accountId": account_id, "amount": {"value": DEPOSIT}}
+        "ledger",
+        "WithdrawFunds",
+        {"accountId": account_id, "amount": {"value": DEPOSIT}, "requestId": str(uuid4())},
     )
     final = decimal_val(wd.get("unallocated", {}).get("cash", {}).get("balance"))
     assert abs(final - before) < 1e-6
@@ -46,7 +51,11 @@ def test_deposit_credits_free_cash_then_withdraw_restores(demo: MeshClient) -> N
 def test_deposit_surfaces_as_newest_wallet_activity(demo: MeshClient) -> None:
     account_id = _paper_account_id(demo)
     try:
-        demo.call("ledger", "DepositFunds", {"accountId": account_id, "amount": {"value": DEPOSIT}})
+        demo.call(
+            "ledger",
+            "DepositFunds",
+            {"accountId": account_id, "amount": {"value": DEPOSIT}, "requestId": str(uuid4())},
+        )
         # The just-made deposit is the most recent ledger event, so the newest
         # ListTransactions row is ours — proves the funding op reached the read model.
         surfaced = False
@@ -67,5 +76,7 @@ def test_deposit_surfaces_as_newest_wallet_activity(demo: MeshClient) -> None:
     finally:
         # Keep the leg balance-neutral even if the assertion above fails.
         demo.try_call(
-            "ledger", "WithdrawFunds", {"accountId": account_id, "amount": {"value": DEPOSIT}}
+            "ledger",
+            "WithdrawFunds",
+            {"accountId": account_id, "amount": {"value": DEPOSIT}, "requestId": str(uuid4())},
         )

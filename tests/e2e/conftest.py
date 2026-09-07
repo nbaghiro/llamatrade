@@ -23,20 +23,25 @@ def _enabled(var: str) -> bool:
 
 _LIVE_LLM = _enabled("E2E_LIVE_LLM")
 _LIVE_ALPACA = _enabled("E2E_LIVE_ALPACA")
+_SLOW = _enabled("E2E_SLOW")
+_RESTART = _enabled("E2E_RESTART")
 
 
 def pytest_configure(config: pytest.Config) -> None:
     """Register suite-local markers (shared markers live in the root pyproject)."""
     config.addinivalue_line("markers", "e2e: end-to-end test against the live service mesh.")
     config.addinivalue_line(
-        "markers", "e2e_smoke: fast PR subset — auth + strategy lifecycle + funding."
-    )
-    config.addinivalue_line(
         "markers", "live_llm: exercises the real LLM; opt-in via E2E_LIVE_LLM=1."
     )
     config.addinivalue_line(
         "markers",
         "live_alpaca: needs real Alpaca paper keys on the account; opt-in via E2E_LIVE_ALPACA=1.",
+    )
+    config.addinivalue_line(
+        "markers", "slow: spends real wall-clock waiting on a timer; opt-in via E2E_SLOW=1."
+    )
+    config.addinivalue_line(
+        "markers", "restart: restarts a container mid-flow; opt-in via E2E_RESTART=1."
     )
 
 
@@ -45,6 +50,8 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     gates = (
         ("live_llm", _LIVE_LLM, "set E2E_LIVE_LLM=1 to run"),
         ("live_alpaca", _LIVE_ALPACA, "set E2E_LIVE_ALPACA=1 (needs real paper keys)"),
+        ("slow", _SLOW, "set E2E_SLOW=1 to spend the wall-clock"),
+        ("restart", _RESTART, "set E2E_RESTART=1 to allow container restarts"),
     )
     for keyword, enabled, hint in gates:
         if enabled:

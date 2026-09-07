@@ -41,18 +41,43 @@ def _paid_plan(plans: list[dict[str, object]]) -> dict[str, object]:
 
 
 def _create_checkout(client: MeshClient, plan_id: str) -> dict[str, object]:
-    """CreateCheckoutSession for a plan; the UI omits the tenant context, so fall
-    back to a context-less call if the contexted one is rejected."""
-    body = {
-        "planId": plan_id,
-        "interval": _INTERVAL_MONTHLY,
-        "successUrl": "http://localhost:8800/billing?success=true",
-        "cancelUrl": "http://localhost:8800/subscribe",
-    }
-    try:
-        return client.call("billing", "CreateCheckoutSession", body)
-    except MeshError:
-        return client.call("billing", "CreateCheckoutSession", body, context=False)
+    """CreateCheckoutSession for a plan, exactly as SubscribePage calls it."""
+    return client.call(
+        "billing",
+        "CreateCheckoutSession",
+        {
+            "planId": plan_id,
+            "interval": _INTERVAL_MONTHLY,
+            "successUrl": "http://localhost:8800/billing?success=true",
+            "cancelUrl": "http://localhost:8800/subscribe",
+        },
+    )
+
+
+def test_checkout_works_without_a_tenant_context(
+    throwaway_tenant: Callable[[str], MeshClient],
+) -> None:
+    """The RPC derives the tenant from the JWT, so the context arg is optional.
+
+    Pinned separately because the helper above used to retry context-less on any
+    error, which would have masked a real failure of the contexted call.
+    """
+    client = throwaway_tenant("bill-ctx")
+    plan_id = _paid_plan(client.call("billing", "ListPlans", {}).get("plans", [])).get("id")
+
+    resp = client.call(
+        "billing",
+        "CreateCheckoutSession",
+        {
+            "planId": plan_id,
+            "interval": _INTERVAL_MONTHLY,
+            "successUrl": "http://localhost:8800/billing?success=true",
+            "cancelUrl": "http://localhost:8800/subscribe",
+        },
+        context=False,
+    )
+
+    assert str(resp.get("checkoutUrl", "")).startswith("http")
 
 
 # --- Reads (seeded demo tenant) ----------------------------------------------
@@ -127,28 +152,104 @@ def test_checkout_session_returns_a_stripe_url(
     assert resp.get("sessionId")
 
 
-def test_create_subscription_or_fall_back_to_checkout(
+def test_create_subscription_subscribes_the_tenant(
     throwaway_tenant: Callable[[str], MeshClient],
 ) -> None:
+    """Subscribing must succeed outright.
+
+    This previously fell back to the checkout path on any error, which swallowed
+    a real 500: the create maps the new row to proto with ``plan`` still unloaded.
+    """
     client = throwaway_tenant("bill")
     plans = client.call("billing", "ListPlans", {}).get("plans", [])
     plan = _paid_plan(plans)
     plan_id = plan.get("id")
     assert isinstance(plan_id, str) and plan_id
 
-    try:
-        sub = client.call(
-            "billing",
-            "CreateSubscription",
-            {"planId": plan_id, "interval": _INTERVAL_MONTHLY, "paymentMethodId": ""},
-        ).get("subscription", {})
-    except MeshError:
-        # stripe-mock may not carry a subscription create cleanly (needs a real
-        # payment method); the checkout path is the required purchase proof.
-        resp = _create_checkout(client, plan_id)
-        assert str(resp.get("checkoutUrl", "")).startswith("http")
-        return
+    sub = client.call(
+        "billing",
+        "CreateSubscription",
+        {"planId": plan_id, "interval": _INTERVAL_MONTHLY, "paymentMethodId": ""},
+    ).get("subscription", {})
 
     assert sub.get("id")
     assert sub.get("planId") == plan_id
-    assert sub.get("status")
+    assert status_is(sub.get("status"), "SUBSCRIPTION_STATUS_ACTIVE", 1)
+
+    # The subscription must be readable back, with its plan resolved.
+    read_back = client.call("billing", "GetSubscription", {}).get("subscription", {})
+    assert read_back.get("id") == sub.get("id")
+    assert read_back.get("plan", {}).get("name")
+
+
+# --- Cancel / resume (round trip on the seeded demo subscription) -------------
+def test_cancel_then_resume_round_trips_the_demo_subscription(demo: MeshClient) -> None:
+    """Cancel-at-period-end and resume, the two controls on the billing page.
+
+    Both mutate then map the row back to proto, which is where they used to fail:
+    the UPDATE expires the server-side timestamps and the mapper read them after
+    only the plan had been refreshed, so both returned an opaque 500. The demo
+    subscription is restored either way, so the leg is repeatable.
+    """
+    before = demo.call("billing", "GetSubscription", {}).get("subscription", {})
+    assert status_is(before.get("status"), "SUBSCRIPTION_STATUS_ACTIVE", 1), (
+        "this leg needs the seeded active subscription"
+    )
+    assert not before.get("cancelAtPeriodEnd")
+
+    resumed = False
+    try:
+        canceled = demo.call(
+            "billing", "CancelSubscription", {"cancelImmediately": False, "reason": "e2e"}
+        ).get("subscription", {})
+
+        assert canceled.get("cancelAtPeriodEnd") is True
+        # Cancelling at period end leaves access intact until the period closes.
+        assert status_is(canceled.get("status"), "SUBSCRIPTION_STATUS_ACTIVE", 1)
+        assert (
+            demo.call("billing", "GetSubscription", {})
+            .get("subscription", {})
+            .get("cancelAtPeriodEnd")
+        ), "the pending cancellation must survive a re-read"
+
+        restored = demo.call("billing", "ResumeSubscription", {}).get("subscription", {})
+        resumed = True
+        assert not restored.get("cancelAtPeriodEnd")
+        assert status_is(restored.get("status"), "SUBSCRIPTION_STATUS_ACTIVE", 1)
+    finally:
+        if not resumed:
+            demo.try_call("billing", "ResumeSubscription", {})
+
+
+def test_resume_without_a_pending_cancellation_is_refused(demo: MeshClient) -> None:
+    """Nothing to resume is a client error, not a 500."""
+    assert (
+        not demo.call("billing", "GetSubscription", {})
+        .get("subscription", {})
+        .get("cancelAtPeriodEnd")
+    ), "the demo subscription must not be pending cancellation here"
+
+    with pytest.raises(MeshError) as exc:
+        demo.call("billing", "ResumeSubscription", {})
+    assert exc.value.http_status < 500, f"expected a client error, got {exc.value}"
+
+
+def test_cancel_on_a_tenant_without_a_subscription_is_refused(
+    throwaway_tenant: Callable[[str], MeshClient],
+) -> None:
+    client = throwaway_tenant("bill-cancel")
+
+    with pytest.raises(MeshError) as exc:
+        client.call("billing", "CancelSubscription", {"cancelImmediately": False, "reason": "e2e"})
+    assert exc.value.http_status < 500, f"expected a client error, got {exc.value}"
+
+
+def test_plan_change_to_an_unknown_plan_is_refused(demo: MeshClient) -> None:
+    """UpdateSubscription shares the mutate-then-map path; pin its refusal shape."""
+    with pytest.raises(MeshError) as exc:
+        demo.call(
+            "billing",
+            "UpdateSubscription",
+            {"planId": "no-such-plan", "interval": _INTERVAL_MONTHLY, "prorate": True},
+        )
+    assert exc.value.http_status < 500, f"expected a client error, got {exc.value}"

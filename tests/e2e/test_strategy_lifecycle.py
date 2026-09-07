@@ -126,6 +126,109 @@ def test_update_reflects_new_name_and_description(
     assert fetched.get("description") == "edited by e2e"
 
 
+def _rename_in_dsl(dsl: str, new_name: str) -> str:
+    """Rewrite the quoted strategy name, the smallest edit that is still valid DSL."""
+    head, _, rest = dsl.partition('"')
+    _, _, tail = rest.partition('"')
+    return f'{head}"{new_name}"{tail}'
+
+
+def test_edited_dsl_round_trips_through_save_and_reopen(
+    throwaway_tenant: Callable[[str], MeshClient], sourced_dsl: JSON
+) -> None:
+    """The builder's core loop: edit the DSL, save, reopen, get the same text back.
+
+    A save that normalizes or re-serializes the DSL would silently rewrite the
+    user's source, so this compares the reopened text byte for byte.
+    """
+    client = throwaway_tenant("strat")
+    created = _create(client, sourced_dsl["dslCode"], "E2E Round Trip")
+    edited = _rename_in_dsl(sourced_dsl["dslCode"], "Renamed By E2E")
+    assert edited != sourced_dsl["dslCode"], "the edit must actually change the DSL"
+
+    client.call(
+        "strategy",
+        "UpdateStrategy",
+        {
+            "strategyId": created["id"],
+            "name": "E2E Round Trip",
+            "dslCode": edited,
+            "symbols": sourced_dsl.get("symbols", []),
+            "changeSummary": "renamed the strategy",
+        },
+    )
+
+    reopened = client.call("strategy", "GetStrategy", {"strategyId": created["id"]}).get(
+        "strategy", {}
+    )
+    assert reopened.get("dslCode") == edited
+    assert reopened.get("symbols"), "symbols stay derived after an edit"
+
+
+def test_version_history_records_each_save(
+    throwaway_tenant: Callable[[str], MeshClient], sourced_dsl: JSON
+) -> None:
+    """The builder's history pane: every save adds a version carrying its DSL."""
+    client = throwaway_tenant("strat")
+    created = _create(client, sourced_dsl["dslCode"], "E2E Versioned")
+    edited = _rename_in_dsl(sourced_dsl["dslCode"], "Second Revision")
+
+    client.call(
+        "strategy",
+        "UpdateStrategy",
+        {
+            "strategyId": created["id"],
+            "name": "E2E Versioned",
+            "dslCode": edited,
+            "symbols": sourced_dsl.get("symbols", []),
+            "changeSummary": "second revision",
+        },
+    )
+
+    versions = client.call("strategy", "ListStrategyVersions", {"strategyId": created["id"]}).get(
+        "versions", []
+    )
+
+    assert versions, "a saved edit must leave a version behind"
+    numbers = [v.get("version") for v in versions]
+    assert len(set(numbers)) == len(numbers), f"version numbers must be unique: {numbers}"
+    assert any(v.get("dslCode") == edited for v in versions), (
+        "the edited DSL must be recoverable from history"
+    )
+    assert any("second revision" in (v.get("changeSummary") or "") for v in versions)
+
+
+def test_version_history_never_leaks_across_tenants(
+    throwaway_tenant: Callable[[str], MeshClient], sourced_dsl: JSON
+) -> None:
+    """History carries the full DSL, so a missing tenant filter would leak source.
+
+    The handler resolves the parent strategy under the caller's tenant first, so a
+    foreign id yields an empty list rather than NOT_FOUND. Emptiness is the
+    security property worth pinning; the shape differs from GetStrategy.
+    """
+    owner = throwaway_tenant("strat-owner")
+    intruder = throwaway_tenant("strat-intruder")
+    created = _create(owner, sourced_dsl["dslCode"], "E2E Private History")
+    owner.call(
+        "strategy",
+        "UpdateStrategy",
+        {
+            "strategyId": created["id"],
+            "name": "E2E Private History",
+            "dslCode": _rename_in_dsl(sourced_dsl["dslCode"], "Owner Revision"),
+            "symbols": sourced_dsl.get("symbols", []),
+            "changeSummary": "owner-only revision",
+        },
+    )
+    assert owner.call("strategy", "ListStrategyVersions", {"strategyId": created["id"]}).get(
+        "versions"
+    ), "the owner must see the history this test is checking is private"
+
+    stolen = intruder.call("strategy", "ListStrategyVersions", {"strategyId": created["id"]})
+    assert stolen.get("versions", []) == []
+
+
 def test_update_status_activates_the_strategy(
     throwaway_tenant: Callable[[str], MeshClient], sourced_dsl: JSON
 ) -> None:
@@ -146,14 +249,25 @@ def test_clone_produces_a_distinct_draft(
     client = throwaway_tenant("strat")
     original = _create(client, sourced_dsl["dslCode"], "E2E Original")
 
-    source = client.call("strategy", "GetStrategy", {"strategyId": original["id"]}).get(
-        "strategy", {}
-    )
-    clone = _create(client, source["dslCode"], "E2E Original (copy)")
+    clone = client.call(
+        "strategy",
+        "CloneStrategy",
+        {"strategyId": original["id"], "newName": "E2E Original clone", "version": 0},
+    ).get("strategy", {})
 
     assert clone.get("id")
     assert clone["id"] != original["id"]
+    assert clone.get("name") == "E2E Original clone"
     assert status_is(clone.get("status"), "STRATEGY_STATUS_DRAFT", 1)
+    assert clone.get("description") == "Cloned from: E2E Original"
+
+    # The clone carries the source DSL and re-derived symbols.
+    fetched = client.call("strategy", "GetStrategy", {"strategyId": clone["id"]}).get(
+        "strategy", {}
+    )
+    assert fetched.get("dslCode") == sourced_dsl["dslCode"]
+    # Symbols are re-derived from the DSL, so ordering may differ from the source row.
+    assert set(fetched.get("symbols", [])) == set(sourced_dsl.get("symbols", []))
 
 
 def test_delete_soft_archives_and_hides_from_the_list(

@@ -637,6 +637,10 @@ class Seeder:
             return
         logger.info("existing demo tenant %s found — purging tenant-scoped rows", tenant_id)
         statements = [
+            "DELETE FROM notifications WHERE tenant_id = :t",
+            "DELETE FROM alerts WHERE tenant_id = :t",
+            "DELETE FROM notification_channels WHERE tenant_id = :t",
+            "DELETE FROM webhooks WHERE tenant_id = :t",
             "DELETE FROM tool_call_logs WHERE tenant_id = :t",
             "DELETE FROM pending_artifacts WHERE tenant_id = :t",
             "DELETE FROM agent_memory_facts WHERE tenant_id = :t",

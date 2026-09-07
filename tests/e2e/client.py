@@ -72,6 +72,9 @@ NO_CONTEXT_METHODS: frozenset[str] = frozenset(
         "DeleteAlpacaCredentials",
         "ValidateAlpacaCredentials",
         "GetAlpacaCredentials",
+        # Session RPCs whose requests carry no TenantContext field at all.
+        "ChangePassword",
+        "Logout",
         # Market-data reads are identified by the JWT only (no body context) — the
         # web market store sends them without a TenantContext.
         "GetMarketStatus",
@@ -80,6 +83,7 @@ NO_CONTEXT_METHODS: frozenset[str] = frozenset(
         "GetHistoricalBars",
         "GetMultiBars",
         "GetAssets",
+        "StreamBars",
     }
 )
 

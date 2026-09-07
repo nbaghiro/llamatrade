@@ -19,6 +19,8 @@ Unallocated cash); assertions are delta-based so the leg is repeatable.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
 
 from . import _ledger
@@ -138,6 +140,45 @@ def test_start_session_validates_broker_credentials(demo: MeshClient) -> None:
         "invalid_argument",
         "permission_denied",
     )
+
+
+def test_blotter_reads_are_available_without_a_live_session(demo: MeshClient) -> None:
+    """The trading page loads before any session exists: empty is a valid blotter.
+
+    Sessions and orders are tenant-wide reads, so the page can render them with no
+    session selected. Both only ran under the live_alpaca gate, so a regression in
+    their pagination or tenant scoping was invisible on every default CI run.
+    """
+    sessions = demo.call("trading", "ListSessions", {"pagination": {"page": 1, "pageSize": 50}})
+    assert isinstance(sessions.get("sessions", []), list)
+
+    orders = demo.call("trading", "ListOrders", {"pagination": {"page": 1, "pageSize": 50}})
+    assert isinstance(orders.get("orders", []), list)
+
+
+def test_list_positions_without_a_session_is_refused_not_a_500(demo: MeshClient) -> None:
+    """Positions are session-scoped: a blank session id is a client error.
+
+    ListPositions parses session_id unconditionally, so an unset field used to
+    surface the resulting ValueError as an opaque INTERNAL. ListOrders and
+    ClosePosition already mapped it to invalid_argument.
+    """
+    for session_id in ("", "not-a-uuid"):
+        with pytest.raises(MeshError) as exc:
+            demo.call("trading", "ListPositions", {"sessionId": session_id})
+        assert exc.value.code == "invalid_argument", (
+            f"blank/malformed session id must be a client error, got {exc.value}"
+        )
+
+
+def test_blotter_reads_are_tenant_scoped(
+    throwaway_tenant: Callable[[str], MeshClient],
+) -> None:
+    """A brand-new tenant sees an empty blotter, never another tenant's rows."""
+    client = throwaway_tenant("blotter")
+
+    assert client.call("trading", "ListSessions", {}).get("sessions", []) == []
+    assert client.call("trading", "ListOrders", {}).get("orders", []) == []
 
 
 @pytest.mark.live_alpaca

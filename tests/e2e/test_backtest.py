@@ -146,8 +146,14 @@ def test_list_backtests_includes_the_run(demo: MeshClient, completed_run: JSON) 
     assert completed_run["id"] in ids
 
 
-def test_cancel_moves_a_run_to_a_terminal_state(demo: MeshClient) -> None:
-    """CancelBacktest returns cleanly and the run settles CANCELLED (or COMPLETED if it raced)."""
+def test_cancel_observes_a_cancelled_terminal_state(demo: MeshClient) -> None:
+    """An immediate CancelBacktest lands the run in CANCELLED, never COMPLETED.
+
+    The cancel is fired straight after RunBacktest returns: the six-month run
+    takes tens of seconds on the worker, so the PENDING/RUNNING -> CANCELLED
+    write always wins (finalize is guarded by ``WHERE status = RUNNING``, so a
+    cancelled run can never be overwritten to COMPLETED).
+    """
     strategy = _backtestable_strategy(demo)
     started = demo.call("backtest", "RunBacktest", {"config": _config(strategy)})
     backtest_id = started.get("backtest", {}).get("id")
@@ -157,7 +163,6 @@ def test_cancel_moves_a_run_to_a_terminal_state(demo: MeshClient) -> None:
     assert cancelled.get("backtest"), "CancelBacktest returned no backtest"
 
     run = _poll_until_terminal(demo, backtest_id)
-    status = run.get("status")
-    assert status_is(status, *_CANCELLED) or status_is(status, *_COMPLETED), (
-        f"expected a terminal CANCELLED or COMPLETED run, got {status}"
+    assert status_is(run.get("status"), *_CANCELLED), (
+        f"expected CANCELLED, got {run.get('status')} ({run.get('statusMessage')})"
     )
