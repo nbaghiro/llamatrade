@@ -94,11 +94,8 @@ def _validate_status_transition(current: int, target: int) -> tuple[bool, str]:
     return False, f"Invalid status transition: {current} → {target}"
 
 
-# Template parameter overrides. Each entry maps a public parameter name to:
-#   (field_pattern, value_validator, replacement)
-# field_pattern locates the S-expression field to replace, value_validator
-# constrains caller input so it cannot inject arbitrary S-expression text, and
-# replacement is the substitution (``{value}`` is filled with the validated input).
+# Public parameter name -> (field_pattern, value_validator, replacement); the
+# validator is what stops caller input injecting arbitrary S-expression text.
 _TEMPLATE_PARAM_FIELDS: dict[str, tuple[str, str, str]] = {
     "symbols": (
         r":symbols\s+\[.*?\]",
@@ -131,10 +128,8 @@ def _apply_template_params(config_sexpr: str, template_id: str, params: dict[str
     return config_sexpr
 
 
-# Symbol-count bounds. The soft threshold warns; the hard cap rejects, so one
-# tenant cannot fan a single strategy out over an unbounded universe downstream
-# (backtest datasets and the live ingest subscription). The cap is configurable
-# via STRATEGY_MAX_SYMBOLS and must stay above the warning threshold.
+# Soft threshold warns, hard cap rejects: bounds one strategy's downstream
+# fan-out (backtest datasets, live ingest subscription).
 _SYMBOL_WARNING_THRESHOLD = 20
 _MAX_SYMBOLS_PER_STRATEGY = max(int(os.getenv("STRATEGY_MAX_SYMBOLS", "100")), 1)
 
@@ -923,7 +918,9 @@ class StrategyService:
         Raises:
             ValueError: If execution is not in PENDING status, or funding fails.
         """
-        execution = await self._get_execution_by_id(tenant_id, execution_id)
+        # Locked: the status check and the funding below must be atomic, or two
+        # concurrent starts both read PENDING and both allocate capital.
+        execution = await self._get_execution_by_id(tenant_id, execution_id, for_update=True)
         if not execution:
             return None
 
@@ -1025,33 +1022,6 @@ class StrategyService:
             )
 
         execution.status = EXECUTION_STATUS_PAUSED
-        await self.db.commit()
-        await self.db.refresh(execution)
-
-        return execution
-
-    async def resume_execution(
-        self,
-        tenant_id: UUID,
-        execution_id: UUID,
-    ) -> StrategyExecution | None:
-        """Resume a paused execution.
-
-        Transitions status from PAUSED to RUNNING.
-
-        Raises:
-            ValueError: If execution is not in PAUSED status.
-        """
-        execution = await self._get_execution_by_id(tenant_id, execution_id)
-        if not execution:
-            return None
-
-        if execution.status != EXECUTION_STATUS_PAUSED:
-            raise ValueError(
-                f"Cannot resume execution: status is {execution_status_to_str(execution.status)}, expected paused"
-            )
-
-        execution.status = EXECUTION_STATUS_RUNNING
         await self.db.commit()
         await self.db.refresh(execution)
 
@@ -1209,14 +1179,24 @@ class StrategyService:
         return released
 
     async def _get_execution_by_id(
-        self, tenant_id: UUID, execution_id: UUID
+        self, tenant_id: UUID, execution_id: UUID, for_update: bool = False
     ) -> StrategyExecution | None:
-        """Get execution ensuring tenant isolation."""
+        """Get execution ensuring tenant isolation.
+
+        Args:
+            tenant_id: Tenant UUID for isolation
+            execution_id: Execution UUID
+            for_update: If True, acquires row-level lock (SELECT FOR UPDATE).
+                       Required on paths that fund a sleeve: without it two
+                       concurrent starts both read PENDING and both allocate.
+        """
         stmt = (
             select(StrategyExecution)
             .where(StrategyExecution.id == execution_id)
             .where(StrategyExecution.tenant_id == tenant_id)
         )
+        if for_update:
+            stmt = stmt.with_for_update()
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 

@@ -702,6 +702,101 @@ class TestCompileStrategy:
         assert exc.value.code == Code.UNAUTHENTICATED
 
 
+class TestValidateStrategy:
+    """Tests for validate_strategy gRPC method.
+
+    The servicer loads the strategy's current version and validates its stored
+    config; ``validate_config`` runs the real parser via ``validate_config_sexpr``
+    so the structured result is honest, not a mock echo.
+    """
+
+    VALID_SEXPR = '(strategy "Test" (weight :method equal (asset SPY) (asset AGG)))'
+
+    def _request(
+        self, *, tenant: str = str(TEST_TENANT_ID), user: str = str(TEST_USER_ID)
+    ) -> strategy_pb2.ValidateStrategyRequest:
+        return strategy_pb2.ValidateStrategyRequest(
+            context=common_pb2.TenantContext(tenant_id=tenant, user_id=user),
+            strategy_id=str(TEST_STRATEGY_ID),
+        )
+
+    def _service_with_config(self, mock_service_cls: MagicMock, config_sexpr: str) -> MagicMock:
+        from src.services.strategy_service import validate_config_sexpr
+
+        mock_service = mock_service_cls.return_value
+        mock_service.get_strategy = AsyncMock(
+            return_value=make_strategy_response(config_sexpr=config_sexpr)
+        )
+        mock_service.validate_config = AsyncMock(side_effect=validate_config_sexpr)
+        return mock_service
+
+    async def test_validate_strategy_valid_config(
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
+    ) -> None:
+        """A strategy whose stored config parses reports valid with no errors."""
+        with patch("src.services.strategy_service.StrategyService") as mock_service_cls:
+            mock_service = self._service_with_config(mock_service_cls, self.VALID_SEXPR)
+
+            response = await strategy_servicer.validate_strategy(self._request(), grpc_context)
+
+            assert response.result.valid is True
+            assert len(response.result.errors) == 0
+            assert "SPY" in response.result.detected_symbols
+            mock_service.validate_config.assert_awaited_once_with(self.VALID_SEXPR)
+
+    async def test_validate_strategy_invalid_config(
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
+    ) -> None:
+        """A stored config that fails to parse reports structured errors."""
+        with patch("src.services.strategy_service.StrategyService") as mock_service_cls:
+            self._service_with_config(mock_service_cls, "(strategy (invalid))")
+
+            response = await strategy_servicer.validate_strategy(self._request(), grpc_context)
+
+            assert response.result.valid is False
+            assert len(response.result.errors) > 0
+
+    async def test_validate_strategy_not_found(
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
+    ) -> None:
+        """Validating a nonexistent strategy returns NOT_FOUND."""
+        with patch("src.services.strategy_service.StrategyService") as mock_service_cls:
+            mock_service = mock_service_cls.return_value
+            mock_service.get_strategy = AsyncMock(return_value=None)
+
+            with pytest.raises(ConnectError) as exc_info:
+                await strategy_servicer.validate_strategy(self._request(), grpc_context)
+
+            assert "NOT_FOUND" in str(exc_info.value.code)
+
+    async def test_validate_strategy_scopes_lookup_to_resolved_tenant(
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
+    ) -> None:
+        """The strategy lookup is filtered by the resolved tenant identity."""
+        with patch("src.services.strategy_service.StrategyService") as mock_service_cls:
+            mock_service = self._service_with_config(mock_service_cls, self.VALID_SEXPR)
+
+            await strategy_servicer.validate_strategy(self._request(), grpc_context)
+
+            mock_service.get_strategy.assert_awaited_once_with(TEST_TENANT_ID, TEST_STRATEGY_ID)
+
+    async def test_validate_strategy_requires_identity(
+        self, strategy_servicer: MockStrategyServicer, grpc_context: RequestContext
+    ) -> None:
+        """An empty tenant context is rejected before any lookup."""
+        with patch("src.services.strategy_service.StrategyService") as mock_service_cls:
+            mock_service = mock_service_cls.return_value
+            mock_service.get_strategy = AsyncMock()
+
+            with pytest.raises(ConnectError) as exc_info:
+                await strategy_servicer.validate_strategy(
+                    self._request(tenant="", user=""), grpc_context
+                )
+
+            assert exc_info.value.code == Code.UNAUTHENTICATED
+            mock_service.get_strategy.assert_not_awaited()
+
+
 class TestUpdateStrategyStatus:
     """Tests for update_strategy_status gRPC method."""
 

@@ -6,6 +6,7 @@ they stub out the query builder. Requires Docker (testcontainers Postgres).
 """
 
 import asyncio
+import os
 from uuid import uuid4
 
 import pytest
@@ -19,10 +20,15 @@ from llamatrade_db.models.strategy import Strategy, StrategyExecution, StrategyV
 from src.models import ExecutionCreate, StrategyCreate
 from src.services.strategy_service import StrategyService
 
+_REQUIRE_DOCKER = os.environ.get("CI_REQUIRE_DOCKER") == "1"
+
 # testcontainers is an optional integration dependency (strategy[integration]); when
 # it's absent (unit-only installs) this whole module skips instead of erroring at
-# collection time.
-PostgresContainer = pytest.importorskip("testcontainers.postgres").PostgresContainer
+# collection time — unless CI_REQUIRE_DOCKER=1, where a missing dep must fail.
+if _REQUIRE_DOCKER:
+    from testcontainers.postgres import PostgresContainer
+else:
+    PostgresContainer = pytest.importorskip("testcontainers.postgres").PostgresContainer
 
 
 def _docker_available() -> bool:
@@ -36,11 +42,13 @@ def _docker_available() -> bool:
         return False
 
 
-# Skip cleanly (rather than error) where Docker isn't available — e.g. a
-# pre-commit run on a machine without Docker. CI runs these with Docker up.
-pytestmark = pytest.mark.skipif(
-    not _docker_available(), reason="Docker not available for testcontainers"
-)
+# Skip cleanly where Docker isn't available — e.g. a pre-commit run on a machine
+# without Docker. CI sets CI_REQUIRE_DOCKER=1 so a missing daemon fails loudly.
+_docker_up = _docker_available()
+if _REQUIRE_DOCKER and not _docker_up:
+    pytest.fail("CI_REQUIRE_DOCKER=1: Docker is required but unavailable", pytrace=False)
+
+pytestmark = pytest.mark.skipif(not _docker_up, reason="Docker not available for testcontainers")
 
 _SEXPR = '(strategy "ISO Test" (weight :method equal (asset SPY) (asset AGG)))'
 _TABLES = [Strategy.__table__, StrategyVersion.__table__, StrategyExecution.__table__]
