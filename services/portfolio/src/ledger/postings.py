@@ -137,11 +137,7 @@ def build_postings(event_type: LedgerEventType, data: dict[str, object]) -> list
             ]
 
         case LedgerEventType.SPLIT_APPLIED:
-            # A stock split adds (or removes, on a reverse split) shares at zero
-            # incremental cost — cost basis is preserved, only qty changes. The
-            # single zero-dollar POSITION leg keeps cash conservation intact;
-            # ``qty_delta`` is the signed share change for THIS sleeve (the
-            # corporate-action planner computes it per holding sleeve).
+            # Shares change at zero incremental cost; basis is preserved.
             sleeve = str(data["sleeve_id"])
             symbol = str(data["symbol"])
             qty_delta = _d(data, "qty_delta")
@@ -199,11 +195,7 @@ def _order_filled_postings(data: dict[str, object]) -> list[Posting]:
         ]
 
     if side == "sell":
-        # Fail-closed: a sell MUST carry a resolved cost basis (the consumer
-        # enriches via FIFO at ingestion). Defaulting to notional would fabricate
-        # zero realized P&L and silently corrupt the remaining lots' basis, so we
-        # refuse to build postings for a basis-less sell — the writer rejects it
-        # and the fill is quarantined rather than recorded wrong-but-balanced.
+        # Defaulting the basis would fabricate zero realized P&L; quarantine instead.
         if "cost_basis" not in data:
             raise ValueError("sell ORDER_FILLED missing cost_basis (FIFO enrichment did not run)")
         cost = _d(data, "cost_basis")

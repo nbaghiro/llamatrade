@@ -70,11 +70,8 @@ DEFAULT_CLIENT_START_TIMEOUT_SECONDS = 30.0
 # credentials rather than a transient fault.
 DEFAULT_AUTH_FAILURE_ALERT_THRESHOLD = 5
 
-# Producer batching: linger briefly so records enqueued together through
-# publish_many (a bar flush) coalesce into one produce request instead of one
-# round trip each, lifting throughput off the 1/RTT ceiling. A solo publish
-# flushes immediately (see publish), so the money path never waits out the linger;
-# the batch size caps a request's payload.
+# Lets publish_many coalesce into one request; a solo publish flushes immediately,
+# so the money path never waits out the linger.
 DEFAULT_PRODUCER_LINGER_MS = 10
 DEFAULT_PRODUCER_BATCH_SIZE = 65_536
 # lz4 (cramjam-backed) costs far less CPU than gzip at a comparable ratio, so it
@@ -86,10 +83,8 @@ _TRUTHY = {"1", "true", "yes", "on"}
 # Errors worth a reconnect: aiokafka's KafkaError tree plus raw socket failures.
 _RECONNECT_ERRORS = (KafkaError, ConnectionError, OSError)
 
-# The failure types a transport call surfaces to its caller: aiokafka's error
-# tree, raw socket failures, and a partition that disappeared between two admin
-# reads (``KeyError`` out of an offsets map). Callers that must not fail on a
-# broker blip — the lag gauge — catch exactly these and let anything else through.
+# What a transport call may raise: aiokafka errors, socket failures, and a
+# partition that vanished between admin reads. The lag gauge catches exactly these.
 TRANSPORT_ERRORS: tuple[type[Exception], ...] = (KafkaError, OSError, KeyError)
 
 

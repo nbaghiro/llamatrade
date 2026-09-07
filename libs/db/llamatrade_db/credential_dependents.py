@@ -32,10 +32,8 @@ BLOCKING_SESSION_STATUSES: tuple[common_pb2.ExecutionStatus.ValueType, ...] = (
     common_pb2.EXECUTION_STATUS_PAUSED,
 )
 
-# Live cash is projected from the event log, so ``allocated_capital`` is the only
-# durable funded marker on the row. It also excludes the three base singleton
-# sleeves (Unallocated / Manual / Unmanaged), which are always open and always
-# carry zero allocated capital, so an account is not blocked forever.
+# The only durable funded marker on the row (live cash is projected), and it
+# excludes the always-open base sleeves so an account is never blocked forever.
 _ZERO = Decimal("0")
 
 

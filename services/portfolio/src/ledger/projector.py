@@ -59,33 +59,16 @@ class _Checkpoint:
     lots: AccountLotBook
 
 
-# Process-level incremental-projection cache — the FIRST-level checkpoint cache
-# (the persisted ``checkpoint_store`` rows are the second, surviving restarts).
-# Populated ONLY from committed reads (a fresh read-only session): folding the
-# delta since a checkpoint onto a deep copy of it equals a full fold by
-# construction (shared ``fold_into`` + the split-invariance property test).
-# In-transaction writers must NOT use the incremental path — a mid-transaction
-# (uncommitted) read would seed a checkpoint with events that may roll back.
-# Keyed by (tenant_id, account_id). Bounded LRU so a long-lived process can't
-# retain a checkpoint per account forever; the least-recently-projected
-# accounts fall out and simply re-fold.
+# Bounded LRU checkpoint cache, seeded only from committed reads: an uncommitted
+# read would checkpoint events that may roll back (see .docs/portfolio-ledger.md).
 _MAX_CACHED_ACCOUNTS = 2048
 _INCREMENTAL_CACHE: OrderedDict[tuple[str, str], _Checkpoint] = OrderedDict()
 
 # Cash reconciliation alerts above this |broker_cash − ledger_cash| ($): small drifts are rounding, material drift means a missing ledger event.
 _CASH_DRIFT_ALERT_DOLLARS = Decimal("1")
 
-# A checkpoint must never advance onto an event still inside this window. The
-# ``sequence`` identity is assigned at INSERT but the row commits later, so
-# commit order is not sequence order: a fill that takes a low sequence and holds
-# its transaction open can commit AFTER a higher-sequence event a reconciliation
-# pass already checkpointed past, and would then be folded once and never again.
-# Advancing only past events older than the window makes that safe as long as no
-# ledger write transaction outlives the window: ``idle_in_transaction_session_timeout``
-# (enforced engine-wide in libs/db, 120s default) is the backstop that force-closes
-# a stuck transaction, so the window must be >= that timeout for an event older
-# than it to be guaranteed durably committed. The recent tail is re-folded each
-# pass (cheap, bounded).
+# Checkpoints never advance onto events newer than this: sequence order is not
+# commit order, so must be >= idle_in_transaction_session_timeout (libs/db).
 _CHECKPOINT_SAFETY_WINDOW = timedelta(
     seconds=float(os.getenv("LEDGER_CHECKPOINT_SAFETY_WINDOW_SECONDS", "120"))
 )

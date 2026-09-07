@@ -43,11 +43,8 @@ _WINDOW_BUFFER = 10
 
 _VOL_METHODS = {"inverse-volatility", "risk-parity", "min-variance"}
 
-# Cumulative indicators (obv, vwap) have no lookback but read the entire retained series,
-# so their value shifts as unrelated bars roll off a bounded window. Treat a reference to
-# one as an unbounded read so it gets the full window, like a period-less metric.
-# Accepted tradeoff: this forces the full ~2000-bar retention and O(N*window) recompute even
-# for an otherwise-short strategy (an incremental cumulative update would remove it).
+# No lookback but they read the whole retained series, so a reference forces the
+# full window (accepted cost: max retention even for a short strategy).
 _CUMULATIVE_INDICATORS = frozenset({"obv", "vwap"})
 
 # Hard cap on retained history when a strategy reads unbounded history (a period-less

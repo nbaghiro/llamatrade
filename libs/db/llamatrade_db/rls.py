@@ -41,10 +41,8 @@ BYPASS_GUC = "app.rls_bypass"
 
 PROD_ENVIRONMENTS = frozenset({"production", "staging"})
 
-# A row is visible when a trusted system bypass is active, or the row's tenant
-# matches the transaction-local tenant GUC. ``NULLIF(..., '')`` maps an unset or
-# blank GUC to NULL so ``tenant_id = NULL`` yields no rows (fail-closed) instead
-# of raising on an invalid-uuid cast.
+# Visible on a system bypass or a tenant match. ``NULLIF`` maps an unset GUC to
+# NULL so an unbound session sees no rows instead of raising on the uuid cast.
 _PREDICATE = (
     f"(current_setting('{BYPASS_GUC}', true) = 'on' "
     f"OR tenant_id = NULLIF(current_setting('{TENANT_GUC}', true), '')::uuid)"
@@ -111,11 +109,8 @@ RLS_TABLES: tuple[str, ...] = (
     "positions",
 )
 
-# Model tables that intentionally carry no ``tenant_id`` and therefore no RLS
-# policy, each with the reason it is safe. ``test_rls`` asserts these are the
-# ONLY non-tenant tables, so a new child-keyed table holding tenant data cannot
-# slip through unclassified (the parity check is otherwise blind to a table
-# without a ``tenant_id`` column).
+# Tables intentionally without ``tenant_id``, each with its reason. ``test_rls``
+# asserts this is the complete set, so a new tenant table cannot slip through.
 RLS_EXEMPT_TABLES: frozenset[str] = frozenset(
     {
         "tenants",  # the tenant root itself; RLS would be self-referential

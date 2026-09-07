@@ -400,10 +400,8 @@ class Validator:
         # Validate then block
         self._validate_block(if_block.then_block, f"{path}.then")
 
-        # An else is mandatory: an else-less if evaluates to nothing on a false condition,
-        # which drops its share and silently scales the remaining siblings to 100% (a 60%
-        # sleeve with a conditional hedge becomes 100% the moment the hedge switches off).
-        # Require an explicit else so the false case allocates (e.g. a cash-proxy holding).
+        # Mandatory: an else-less if drops its share on a false condition and
+        # silently rescales its siblings to 100%.
         if if_block.else_block is not None:
             self._validate_block(if_block.else_block, f"{path}.else")
         else:

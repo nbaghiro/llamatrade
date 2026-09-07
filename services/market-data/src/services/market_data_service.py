@@ -49,10 +49,8 @@ def _utcnow() -> datetime:
     return datetime.now(UTC)
 
 
-# In-flight single-symbol snapshot fills, keyed by symbol. Process-wide (not on
-# the per-request service instance) so concurrent misses across requests coalesce
-# onto one upstream call. Guarded by asyncio's single-threaded scheduling: the
-# check-and-insert below never awaits between the read and the write.
+# Process-wide so concurrent misses coalesce onto one upstream call; the
+# check-and-insert below never awaits, so no lock is needed.
 _snapshot_inflight: dict[str, asyncio.Future[Snapshot | None]] = {}
 
 

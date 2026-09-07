@@ -59,12 +59,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Authentication (fail-closed); Login/Register/RefreshToken stay public. The
-# OAuth callback is a browser redirect from Alpaca with no bearer token, so it is
-# public too (its trust comes from the signed ``state``); /oauth/alpaca/start
-# stays protected so the initiating tenant/user is known.
-# Added before CORS so CORS remains outermost (preflight + headers on 401s).
-# redis_client enables revocation checking (fails open if Redis is down).
+# Fail-closed auth. The OAuth callback is public (trust rides the signed state);
+# added before CORS so CORS stays outermost for preflight and 401 headers.
 app.add_middleware(
     AuthMiddleware,
     redis_client=get_redis(),

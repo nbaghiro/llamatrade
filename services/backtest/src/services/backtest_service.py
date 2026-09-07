@@ -64,11 +64,8 @@ MARKET_DATA_MAX_BARS_PER_SYMBOL = int(os.getenv("BACKTEST_MAX_BARS_PER_SYMBOL", 
 MAX_TRADES_PAGE_SIZE = int(os.getenv("BACKTEST_MAX_TRADES_PAGE_SIZE", "200"))
 
 # --- Reaper thresholds ---------------------------------------------------
-# A RUNNING row whose worker was lost (OOM, eviction, hard kill) never runs the
-# run_backtest except handlers, so it is stranded forever. We only reap RUNNING
-# rows whose started_at predates the hard time limit by a safe grace, so a
-# legitimately long (but still alive) run is never reaped — Celery would have
-# killed it at the hard limit anyway.
+# A lost worker strands its RUNNING row; the grace past the hard limit keeps a
+# live long run from being reaped.
 _TASK_TIME_LIMIT_SECONDS = int(os.getenv("BACKTEST_TASK_TIME_LIMIT", "3600"))
 _REAPER_RUNNING_GRACE_SECONDS = int(os.getenv("BACKTEST_REAPER_RUNNING_GRACE", "300"))
 # A PENDING row older than this (but younger than the fail threshold) is assumed
@@ -392,10 +389,8 @@ class ProtoMarketDataClient:
 
         try:
             client = await self._get_client()
-            # Consume the server-streamed bars incrementally: each bar is
-            # converted and appended, so we never buffer the whole response as a
-            # single list before building the engine's input. The stream arrives
-            # in timestamp order, so each symbol's list stays chronological.
+            # Converted per bar so the whole response is never buffered; the
+            # stream is timestamp-ordered, so each symbol stays chronological.
             async for bar in client.stream_historical_bars(
                 symbols=symbols,
                 start=datetime.combine(start_date, datetime.min.time()).replace(tzinfo=UTC),
@@ -825,11 +820,8 @@ class BacktestService:
         if reporter:
             await reporter.publish_phase("Strategy compiled", 20)
 
-        # Fetch historical bars using timeframe from config.
-        # - includes indicator-only symbols the strategy references
-        #   (e.g. RSI(SPY) while trading TLT)
-        # - includes the benchmark symbol to avoid a duplicate API call
-        # - extends the start back so indicators are warm on day one
+        # Covers indicator-only and benchmark symbols, with the start extended
+        # back so indicators are warm on day one.
         if reporter:
             await reporter.publish_phase("Fetching market data", 30)
 
@@ -889,10 +881,8 @@ class BacktestService:
             reporter.set_total_bars(total_bars)
             await reporter.publish_phase("Running simulation", 40)
 
-        # Convert to the runtime's Bar representation once, extract the windowed
-        # benchmark bars the post-sim comparison needs, then drop the dict dataset so
-        # the heavy simulation phase holds a single copy of the strategy bars rather
-        # than the BarData dicts and the Bar objects at the same time.
+        # Converted once, then the dict dataset is dropped so the simulation
+        # holds one copy of the bars rather than two.
         compiler_bars = _to_compiler_bars(bars)
         window_start = datetime.combine(backtest.start_date, datetime.min.time(), tzinfo=UTC)
         benchmark_bars_list: list[BarData] = []

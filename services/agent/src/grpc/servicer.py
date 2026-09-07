@@ -674,10 +674,8 @@ class AgentServicer:
             from src.services.conversation_service import ConversationService
 
             async with tenant_session(tenant_id, self._maker()) as db:
-                # _consume_proposal commits mid-RPC to release the row lock,
-                # which clears the transaction-local tenant GUC; bind it durably
-                # so the post-commit history read, resume, and single-writer
-                # persist stay tenant-scoped under the RLS role.
+                # The mid-RPC commit clears the transaction-local tenant GUC;
+                # rebind so the post-commit reads and writes stay scoped.
                 bind_tenant_guc(db, tenant_id)
                 conv_service = ConversationService(db)
 

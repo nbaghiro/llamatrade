@@ -24,10 +24,8 @@ class DatasetSpec:
     fetch_start: date
     end: date
     adjustment: str = "raw"
-    # Cache-busting vintage. Empty for closed history (stable key, warm-hit reuse);
-    # set to the materialization date when `end` falls inside the corporate-action
-    # self-heal window, since the same bars can be restated there with no other key
-    # change (a split would otherwise replay pre-split prices from the cache).
+    # Empty for closed history; set to the materialization date inside the
+    # self-heal window, where bars restate with no other key change.
     data_version: str = ""
 
     @classmethod

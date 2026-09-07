@@ -39,10 +39,8 @@ class BaseGRPCClient:
         self._target = target
         self._secure = secure
         self._credentials = credentials
-        # Telemetry first so every outgoing call injects the current trace context
-        # and is measured. ServiceAuth next so every inter-service call carries an
-        # internal service token and passes the callee's fail-closed AuthMiddleware
-        # (it won't override a caller-set Authorization, e.g. a forwarded user token).
+        # Telemetry first (trace context + metrics), then ServiceAuth, which mints
+        # a token without overriding a caller-set Authorization header.
         self._interceptors = [
             TelemetryClientInterceptor(),
             ServiceAuthClientInterceptor(),
