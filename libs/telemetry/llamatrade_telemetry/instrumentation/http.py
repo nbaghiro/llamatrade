@@ -134,11 +134,9 @@ class TelemetryMiddleware:
 
         headers = _headers(scope)
         request_id = headers.get("x-request-id") or str(uuid.uuid4())
-        set_request_context(
-            request_id=request_id,
-            tenant_id=headers.get("x-tenant-id"),
-            user_id=headers.get("x-user-id"),
-        )
+        # Only the request id is knowable here; tenant and user are published by
+        # resolve_identity once verified, since the wire headers are forgeable.
+        set_request_context(request_id=request_id)
 
         method = scope.get("method", "GET")
         transport = _transport(headers, path)
@@ -201,6 +199,19 @@ class TelemetryMiddleware:
             else:
                 HTTP_STREAMS_ACTIVE.labels(**labels).dec()
             HTTP_REQUESTS_IN_PROGRESS.labels(**labels).dec()
-            logger.info("HTTP %s %s %d %.3fs", method, path, status_code, duration)
+            logger.info(
+                "HTTP %s %s %d %.3fs",
+                method,
+                path,
+                status_code,
+                duration,
+                extra={
+                    "http_method": method,
+                    "http_route": route,
+                    "http_path": path,
+                    "http_status": status_code,
+                    "duration_ms": round(duration * 1000, 2),
+                },
+            )
             clear_request_context()
             otel_context.detach(token)

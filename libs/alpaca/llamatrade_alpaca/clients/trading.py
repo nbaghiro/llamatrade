@@ -233,10 +233,10 @@ class TradingClient(AlpacaClientBase):
             try:
                 response = await self._delete(f"/orders/{order_id}")
                 if response.status_code == 204:
-                    logger.info(f"Cancelled order {order_id}")
+                    logger.info("Cancelled order %s", order_id)
                     return
                 # Unexpected but successful status code
-                logger.debug(f"Cancel order returned status {response.status_code}")
+                logger.debug("Cancel order returned status %s", response.status_code)
             except Exception as e:
                 if getattr(e, "status_code", None) == 404:
                     raise OrderNotFoundError(order_id) from e
@@ -367,7 +367,7 @@ class TradingClient(AlpacaClientBase):
                     params["qty"] = str(qty)
 
                 response = await self._delete(f"/positions/{symbol.upper()}", params=params or None)
-                logger.info(f"Closed position for {symbol}")
+                logger.info("Closed position for %s", symbol)
                 return parse_order(response.json())
             except Exception as e:
                 if getattr(e, "status_code", None) == 404:
@@ -391,7 +391,7 @@ class TradingClient(AlpacaClientBase):
             response = await self._delete("/positions", params=params)
 
             data: list[dict[str, Any]] = response.json()
-            logger.info(f"Closed all positions: {len(data)} liquidation orders")
+            logger.info("Closed all positions: %s liquidation orders", len(data))
 
             # Response is list of orders or order wrappers
             orders: list[Order] = []

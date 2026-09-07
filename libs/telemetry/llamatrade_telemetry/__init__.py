@@ -20,6 +20,7 @@ from llamatrade_telemetry.logging import (
     clear_request_context,
     configure_logging,
     get_logger,
+    mask_destination,
     set_request_context,
 )
 from llamatrade_telemetry.registry import (
@@ -67,6 +68,7 @@ __all__ = [
     "set_request_context",
     "clear_request_context",
     "LogContext",
+    "mask_destination",
     # tracing
     "span",
     "get_tracer",

@@ -184,7 +184,7 @@ class SlackChannel:
 
                 # Handle error
                 error_msg = response.text or f"HTTP {response.status_code}"
-                logger.error(f"Slack API error: {error_msg}")
+                logger.error("Slack API error: %s", error_msg)
                 metrics.notification.delivery_failed(
                     channel=_CHANNEL, reason=f"http_{response.status_code}"
                 )
@@ -195,11 +195,11 @@ class SlackChannel:
             metrics.notification.delivery_failed(channel=_CHANNEL, reason="timeout")
             return SlackResult(success=False, error_message="Request timed out")
         except httpx.RequestError as e:
-            logger.error(f"Slack API request error: {e}")
+            logger.error("Slack API request error: %s", e)
             metrics.notification.delivery_failed(channel=_CHANNEL, reason="request_error")
             return SlackResult(success=False, error_message=str(e))
         except Exception as e:
-            logger.error(f"Unexpected error sending to Slack: {e}")
+            logger.error("Unexpected error sending to Slack: %s", e)
             metrics.notification.delivery_failed(channel=_CHANNEL, reason=type(e).__name__)
             return SlackResult(success=False, error_message=str(e))
         finally:

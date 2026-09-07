@@ -176,11 +176,10 @@ class BacktestServicer:
                     # Compensating action: the PENDING row was already
                     # committed, so a failed enqueue would strand it. Mark it
                     # FAILED so the DB matches the error the caller gets.
-                    logger.error(
+                    logger.exception(
                         "Failed to enqueue backtest %s; marking FAILED: %s",
                         backtest.id,
                         enqueue_error,
-                        exc_info=True,
                     )
                     await service.fail_backtest(
                         backtest.id,
@@ -288,10 +287,8 @@ class BacktestServicer:
 
         async with tenant_session(tenant_id, self._maker()) as db:
             async with BacktestService(db) as service:
-                # AUTHORIZATION: the cancel flag is keyed by backtest_id
-                # only. cancel_backtest is tenant-scoped and returns False for
-                # a backtest the caller's tenant does not own, so a cross-tenant
-                # cancel cannot set the flag.
+                # AUTHORIZATION: the flag is keyed by backtest_id alone; this
+                # tenant-scoped call is what refuses a cross-tenant cancel.
                 success = await service.cancel_backtest(
                     backtest_id=backtest_id,
                     tenant_id=tenant_id,
@@ -341,10 +338,8 @@ class BacktestServicer:
         subscriber = ProgressSubscriber()
 
         try:
-            # AUTHORIZATION: the progress stream below is keyed by
-            # backtest_id only and carries no tenant scope of its own. This
-            # tenant-scoped ownership lookup is the gate — a caller from another
-            # tenant gets NOT_FOUND and never reaches subscriber.tail().
+            # AUTHORIZATION: the stream is keyed by backtest_id alone, so this
+            # tenant-scoped lookup is the only gate before subscriber.tail().
             async with tenant_session(tenant_id, self._maker()) as db:
                 async with BacktestService(db) as service:
                     backtest = await service.get_backtest(
@@ -373,12 +368,8 @@ class BacktestServicer:
                     if backtest.status in terminal_statuses:
                         return
 
-            # Tail the bounded stream from the start so a client connecting
-            # mid-run replays prior updates and catches up immediately. The
-            # subscriber yields the BacktestProgressUpdate proto directly, with
-            # an EXPLICIT status set by the publisher — inferring status from the
-            # progress number is wrong: failed runs also publish progress=100 and
-            # would be reported as COMPLETED.
+            # Tail from the start so a late client replays. Status is published,
+            # never inferred: failed runs also reach progress=100.
             async for update in subscriber.tail(backtest_id):
                 if update.status == backtest_pb2.BACKTEST_STATUS_UNSPECIFIED:
                     update.status = backtest_pb2.BACKTEST_STATUS_RUNNING

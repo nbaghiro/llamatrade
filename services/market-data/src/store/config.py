@@ -36,6 +36,7 @@ def get_engine() -> AsyncEngine:
         _engine = create_async_engine(
             get_market_data_db_url(),
             echo=os.getenv("SQL_ECHO", "false").lower() == "true",
+            hide_parameters=True,
             pool_pre_ping=True,
             pool_size=int(os.getenv("MARKET_DATA_DB_POOL_SIZE", "5")),
             max_overflow=int(os.getenv("MARKET_DATA_DB_MAX_OVERFLOW", "5")),

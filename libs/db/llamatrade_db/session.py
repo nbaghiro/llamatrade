@@ -158,6 +158,9 @@ def get_engine() -> AsyncEngine:
         _engine = create_async_engine(
             get_database_url(),
             echo=os.getenv("SQL_ECHO", "false").lower() == "true",
+            # Keeps bound values out of StatementError text, which error handlers
+            # log verbatim (credentials, agent message content, destinations).
+            hide_parameters=True,
             pool_pre_ping=True,
             pool_size=int(os.getenv("DB_POOL_SIZE", "10")),
             max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "20")),

@@ -45,12 +45,8 @@ SYMBOL_PATTERN = re.compile(r"^[A-Z]{1,5}(\.[A-Z])?(/[A-Z]{3,4})?$")
 # Nil UUID for detecting missing context
 _NIL_UUID = UUID("00000000-0000-0000-0000-000000000000")
 
-# Request bounds: an unbounded symbol fan-out or bar limit lets one request fan a
-# huge upstream fetch (a strategy may declare tens of thousands of symbols; the
-# backtest asks for up to 100k bars/symbol) and monopolize the shared read path.
-# The bar ceiling must cover the backtest's per-symbol window (BACKTEST_MAX_BARS_
-# PER_SYMBOL, default 100000); an over-ceiling request is rejected, not truncated,
-# so a caller never backtests on silently-cut history.
+# Bounds one request's upstream fan-out; must cover BACKTEST_MAX_BARS_PER_SYMBOL.
+# Over-ceiling requests are rejected, never truncated.
 _DEFAULT_BARS_LIMIT = 1000
 _MAX_SYMBOLS_PER_REQUEST = int(os.getenv("MARKET_DATA_MAX_SYMBOLS_PER_REQUEST", "100"))
 _MAX_BARS_LIMIT = int(os.getenv("MARKET_DATA_MAX_BARS_LIMIT", "100000"))
@@ -360,7 +356,7 @@ class MarketDataServicer:
         except ConnectError:
             raise
         except Exception as e:
-            logger.error("stream_historical_bars error: %s", e, exc_info=True)
+            logger.exception("stream_historical_bars error: %s", e)
             raise ConnectError(Code.INTERNAL, "Failed to fetch historical bars") from e
 
         # Stream in timestamp order via a lazy k-way merge of the per-symbol series

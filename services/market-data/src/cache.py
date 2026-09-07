@@ -139,32 +139,32 @@ class MarketDataCache:
         try:
             value = await self._redis.get(key)
             if value:
-                logger.debug(f"Cache hit: {key}")
+                logger.debug("Cache hit: %s", key)
                 return value.decode("utf-8") if isinstance(value, bytes) else value
-            logger.debug(f"Cache miss: {key}")
+            logger.debug("Cache miss: %s", key)
             return None
         except RedisError as e:
-            logger.warning(f"Cache get failed for key {key}: {e}")
+            logger.warning("Cache get failed for key %s: %s", key, e)
             return None
 
     async def set(self, key: str, value: str, ttl: int) -> bool:
         """Set a value in cache with TTL. Returns False on error."""
         try:
             await self._redis.setex(key, timedelta(seconds=ttl), value)
-            logger.debug(f"Cache set: {key} (TTL: {ttl}s)")
+            logger.debug("Cache set: %s (TTL: %ss)", key, ttl)
             return True
         except RedisError as e:
-            logger.warning(f"Cache set failed for key {key}: {e}")
+            logger.warning("Cache set failed for key %s: %s", key, e)
             return False
 
     async def delete(self, key: str) -> bool:
         """Delete a key from cache. Returns False on error."""
         try:
             await self._redis.delete(key)
-            logger.debug(f"Cache delete: {key}")
+            logger.debug("Cache delete: %s", key)
             return True
         except RedisError as e:
-            logger.warning(f"Cache delete failed for key {key}: {e}")
+            logger.warning("Cache delete failed for key %s: %s", key, e)
             return False
 
     async def mget(self, keys: list[str]) -> dict[str, str | None]:
@@ -189,10 +189,10 @@ class MarketDataCache:
                     hits += 1
                 else:
                     result[key] = None
-            logger.debug(f"Cache mget: {len(keys)} keys, {hits} hits")
+            logger.debug("Cache mget: %s keys, %s hits", len(keys), hits)
             return result
         except RedisError as e:
-            logger.warning(f"Cache mget failed for {len(keys)} keys: {e}")
+            logger.warning("Cache mget failed for %s keys: %s", len(keys), e)
             # Return all misses on error
             return {key: None for key in keys}
 
@@ -242,10 +242,10 @@ async def init_cache() -> MarketDataCache | None:
             if inspect.isawaitable(result):
                 await result
             _cache = MarketDataCache(redis_client)
-            logger.info(f"Redis cache connected: {redis_url}")
+            logger.info("Redis cache connected: %s", redis_url)
             return _cache
         except RedisError as e:
-            logger.warning(f"Redis connection failed, caching disabled: {e}")
+            logger.warning("Redis connection failed, caching disabled: %s", e)
             return None
 
 
@@ -262,7 +262,7 @@ async def close_cache() -> None:
                 await _cache.redis.close()
                 logger.info("Redis cache connection closed")
             except RedisError as e:
-                logger.warning(f"Error closing Redis connection: {e}")
+                logger.warning("Error closing Redis connection: %s", e)
             finally:
                 _cache = None
 

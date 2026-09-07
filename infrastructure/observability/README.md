@@ -2,8 +2,9 @@
 
 Collects the telemetry emitted by `llamatrade_telemetry` (see
 [`.docs/telemetry.md`](../../.docs/telemetry.md)): Prometheus scrapes every
-service's `/metrics`, Grafana visualizes it, the OTel Collector receives traces,
-and Alertmanager routes SLO alerts.
+service's `/metrics`, the OTel Collector receives traces and logs and forwards
+them to Tempo and Loki, Grafana visualizes all three, and Alertmanager routes
+SLO alerts.
 
 ## Run (dev)
 
@@ -15,7 +16,7 @@ docker compose -f infrastructure/docker/docker-compose.yml \
 # or just the observability services
 docker compose -f infrastructure/docker/docker-compose.yml \
                -f infrastructure/docker/docker-compose.dev.yml \
-               up prometheus grafana otel-collector alertmanager
+               up prometheus grafana otel-collector alertmanager tempo loki
 ```
 
 | Service | URL | Notes |
@@ -24,6 +25,8 @@ docker compose -f infrastructure/docker/docker-compose.yml \
 | Grafana | http://localhost:3001 | login `admin` / `admin`; dashboards auto-provisioned under the **LlamaTrade** folder |
 | Alertmanager | http://localhost:9093 | |
 | OTel Collector | OTLP http `:4318`, grpc `:4317`; health `:13133` | debug exporter logs spans |
+| Tempo | http://localhost:3200 | trace backend (TraceQL) |
+| Loki | http://localhost:3100 | log backend (LogQL) |
 
 ## Metrics
 
@@ -32,19 +35,29 @@ Metrics carry **no `service` label** — the Prometheus scrape **`job`** label (
 per target in `prometheus/prometheus.yml`) is how dashboards/alerts distinguish
 services, alongside OTel `target_info`.
 
-## Traces (opt-in)
+## Traces and logs
 
-Tracing exports only when a service has `OTEL_EXPORTER_OTLP_ENDPOINT` set. To turn
-it on in dev, add to the relevant service in `docker-compose.dev.yml`:
+Both export only when a service has `OTEL_EXPORTER_OTLP_ENDPOINT` set, which
+`docker-compose.dev.yml` does for every service. Trace sampling defaults to 10%
+(`OTEL_TRACES_SAMPLER_ARG`); logs are not sampled.
 
-```yaml
-    environment:
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+Container stdout is independent of this pipeline and stays the source of truth.
+The dev stack sets `LOG_FORMAT=console` so `docker compose logs` renders for a
+person, while the same records go to Loki with their fields intact. Deployments
+leave the `json` default, which the GKE node agent parses into Cloud Logging
+natively, so no logs exporter is needed there.
+
+To read a request end to end: open its trace in Tempo and use **Logs for this
+span**, or find a log line in Loki and follow its **TraceID** link back. Both
+directions are provisioned in `grafana/provisioning/datasources/datasource.yml`.
+
+Useful LogQL, given the fields the library binds:
+
+```logql
+{service_name="trading"} | json | client_order_id="lt-8f21c4de"
+{service_name=~"trading|portfolio"} | json | severity="ERROR"
+{service_name="portfolio"} | json | tenant_id="<uuid>"
 ```
-
-Spans flow service → collector (and to Tempo/Cloud Trace once that exporter is
-uncommented in `otel-collector/config.yaml`). Sampling defaults to 10%
-(`OTEL_TRACES_SAMPLER_ARG`).
 
 ## Files
 
@@ -52,7 +65,9 @@ uncommented in `otel-collector/config.yaml`). Sampling defaults to 10%
 prometheus/prometheus.yml   # scrape config (job=<service>) + Alertmanager wiring
 prometheus/alerts.yml       # SLO / burn-rate alert rules (PromQL on llamatrade_* metrics)
 alertmanager/alertmanager.yml
-otel-collector/config.yaml  # OTLP receivers → batch → exporter
+otel-collector/config.yaml  # OTLP receivers → batch → Tempo (traces) + Loki (logs)
+tempo/tempo.yaml            # trace backend
+loki/loki.yaml              # log backend
 grafana/provisioning/       # datasource + dashboard providers (auto-loaded)
 grafana/dashboards/         # dashboard JSON (Platform/RED, ...)
 ```

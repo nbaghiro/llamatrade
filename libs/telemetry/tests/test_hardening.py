@@ -60,16 +60,16 @@ def test_settings_strict_labels_by_environment() -> None:
 # Invalid LOG_LEVEL must not crash startup
 # --------------------------------------------------------------------------- #
 def test_invalid_log_level_defaults_to_info() -> None:
-    configure_logging("svc", "definitely-not-a-level", json_output=True)
+    configure_logging("svc", "definitely-not-a-level", fmt="json")
     assert logging.getLogger().level == logging.INFO
     # restore a sane default for the rest of the session
-    configure_logging("svc", "INFO", json_output=True)
+    configure_logging("svc", "INFO", fmt="json")
 
 
 def test_valid_log_level_applied() -> None:
-    configure_logging("svc", "warning", json_output=True)
+    configure_logging("svc", "warning", fmt="json")
     assert logging.getLogger().level == logging.WARNING
-    configure_logging("svc", "INFO", json_output=True)
+    configure_logging("svc", "INFO", fmt="json")
 
 
 # --------------------------------------------------------------------------- #

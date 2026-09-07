@@ -325,7 +325,7 @@ class CircuitBreaker:
             elif (
                 self._state == CircuitState.CLOSED and self._failure_count >= self.failure_threshold
             ):
-                logger.warning(f"Circuit breaker opening after {self._failure_count} failures")
+                logger.warning("Circuit breaker opening after %s failures", self._failure_count)
                 self._state = CircuitState.OPEN
                 record_circuit_transition(CircuitState.OPEN.value)
 
@@ -425,13 +425,20 @@ def retry_with_backoff(
                         delay = config.calculate_delay(attempt)
                         record_retry_attempt(_retry_reason(e))
                         logger.warning(
-                            f"Retrying {func.__name__} after {delay:.2f}s "
-                            f"(attempt {attempt + 1}/{config.max_retries + 1}): {e}"
+                            "Retrying %s after %.2fs (attempt %s/%s): %s",
+                            func.__name__,
+                            delay,
+                            attempt + 1,
+                            config.max_retries + 1,
+                            e,
                         )
                         await asyncio.sleep(delay)
                     else:
                         logger.error(
-                            f"Max retries ({config.max_retries}) exceeded for {func.__name__}: {e}"
+                            "Max retries (%s) exceeded for %s: %s",
+                            config.max_retries,
+                            func.__name__,
+                            e,
                         )
 
                 except Exception:

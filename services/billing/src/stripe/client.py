@@ -120,10 +120,10 @@ class StripeClient:
                     name=name or "",
                     metadata={"tenant_id": tenant_id},
                 )
-            logger.info(f"Created Stripe customer {customer.id} for tenant {tenant_id}")
+            logger.info("Created Stripe customer %s for tenant %s", customer.id, tenant_id)
             return str(customer.id)
         except stripe.StripeError as e:
-            logger.error(f"Stripe error creating customer: {e}")
+            logger.error("Stripe error creating customer: %s", e)
             raise StripeError(str(e), getattr(e, "code", None))
 
     async def get_customer(self, customer_id: str) -> Customer | None:
@@ -134,7 +134,7 @@ class StripeClient:
         except stripe.InvalidRequestError:
             return None
         except stripe.StripeError as e:
-            logger.error(f"Stripe error getting customer: {e}")
+            logger.error("Stripe error getting customer: %s", e)
             raise StripeError(str(e), getattr(e, "code", None))
 
     # Payment Methods
@@ -153,7 +153,7 @@ class StripeClient:
                 customer_id=customer_id,
             )
         except stripe.StripeError as e:
-            logger.error(f"Stripe error creating setup intent: {e}")
+            logger.error("Stripe error creating setup intent: %s", e)
             raise StripeError(str(e), getattr(e, "code", None))
 
     # Checkout & Portal
@@ -182,7 +182,7 @@ class StripeClient:
                 session = stripe.checkout.Session.create(**params)
             return CheckoutSessionResult(url=session.url or "", session_id=str(session.id))
         except stripe.StripeError as e:
-            logger.error(f"Stripe error creating checkout session: {e}")
+            logger.error("Stripe error creating checkout session: %s", e)
             raise StripeError(str(e), getattr(e, "code", None))
 
     async def create_portal_session(self, customer_id: str, return_url: str) -> str:
@@ -194,7 +194,7 @@ class StripeClient:
                 )
             return str(session.url)
         except stripe.StripeError as e:
-            logger.error(f"Stripe error creating portal session: {e}")
+            logger.error("Stripe error creating portal session: %s", e)
             raise StripeError(str(e), getattr(e, "code", None))
 
     async def attach_payment_method(
@@ -206,7 +206,7 @@ class StripeClient:
                 pm = PaymentMethod.attach(payment_method_id, customer=customer_id)
             return self._payment_method_to_result(pm)
         except stripe.StripeError as e:
-            logger.error(f"Stripe error attaching payment method: {e}")
+            logger.error("Stripe error attaching payment method: %s", e)
             raise StripeError(str(e), getattr(e, "code", None))
 
     async def detach_payment_method(self, payment_method_id: str) -> bool:
@@ -216,7 +216,7 @@ class StripeClient:
                 PaymentMethod.detach(payment_method_id)
             return True
         except stripe.StripeError as e:
-            logger.error(f"Stripe error detaching payment method: {e}")
+            logger.error("Stripe error detaching payment method: %s", e)
             raise StripeError(str(e), getattr(e, "code", None))
 
     async def list_payment_methods(self, customer_id: str) -> list[PaymentMethodResult]:
@@ -226,7 +226,7 @@ class StripeClient:
                 methods = PaymentMethod.list(customer=customer_id, type="card")
             return [self._payment_method_to_result(pm) for pm in methods.data]
         except stripe.StripeError as e:
-            logger.error(f"Stripe error listing payment methods: {e}")
+            logger.error("Stripe error listing payment methods: %s", e)
             raise StripeError(str(e), getattr(e, "code", None))
 
     async def set_default_payment_method(self, customer_id: str, payment_method_id: str) -> bool:
@@ -239,7 +239,7 @@ class StripeClient:
                 )
             return True
         except stripe.StripeError as e:
-            logger.error(f"Stripe error setting default payment method: {e}")
+            logger.error("Stripe error setting default payment method: %s", e)
             raise StripeError(str(e), getattr(e, "code", None))
 
     async def get_default_payment_method(self, customer_id: str) -> str | None:
@@ -254,7 +254,7 @@ class StripeClient:
             # default_payment_method is the id, or the expanded PaymentMethod
             return default_pm if isinstance(default_pm, str) else default_pm.id
         except stripe.StripeError as e:
-            logger.error(f"Stripe error getting default payment method: {e}")
+            logger.error("Stripe error getting default payment method: %s", e)
             raise StripeError(str(e), getattr(e, "code", None))
 
     def _payment_method_to_result(self, pm: PaymentMethod) -> PaymentMethodResult:
@@ -295,7 +295,7 @@ class StripeClient:
                 subscription = Subscription.create(**params)
             return self._subscription_to_result(subscription)
         except stripe.StripeError as e:
-            logger.error(f"Stripe error creating subscription: {e}")
+            logger.error("Stripe error creating subscription: %s", e)
             raise StripeError(str(e), getattr(e, "code", None))
 
     async def update_subscription(
@@ -322,7 +322,7 @@ class StripeClient:
                 )
             return self._subscription_to_result(updated)
         except stripe.StripeError as e:
-            logger.error(f"Stripe error updating subscription: {e}")
+            logger.error("Stripe error updating subscription: %s", e)
             raise StripeError(str(e), getattr(e, "code", None))
 
     async def cancel_subscription(self, subscription_id: str, at_period_end: bool = True) -> bool:
@@ -336,7 +336,7 @@ class StripeClient:
                     Subscription.cancel(subscription_id)
             return True
         except stripe.StripeError as e:
-            logger.error(f"Stripe error canceling subscription: {e}")
+            logger.error("Stripe error canceling subscription: %s", e)
             raise StripeError(str(e), getattr(e, "code", None))
 
     async def reactivate_subscription(self, subscription_id: str) -> SubscriptionResult:
@@ -349,7 +349,7 @@ class StripeClient:
                 )
             return self._subscription_to_result(subscription)
         except stripe.StripeError as e:
-            logger.error(f"Stripe error reactivating subscription: {e}")
+            logger.error("Stripe error reactivating subscription: %s", e)
             raise StripeError(str(e), getattr(e, "code", None))
 
     async def get_subscription(self, subscription_id: str) -> SubscriptionResult | None:
@@ -361,7 +361,7 @@ class StripeClient:
         except stripe.InvalidRequestError:
             return None
         except stripe.StripeError as e:
-            logger.error(f"Stripe error getting subscription: {e}")
+            logger.error("Stripe error getting subscription: %s", e)
             raise StripeError(str(e), getattr(e, "code", None))
 
     def _subscription_to_result(self, sub: Subscription) -> SubscriptionResult:
@@ -394,7 +394,7 @@ class StripeClient:
                 invoices = Invoice.list(customer=customer_id, limit=limit)
             return [self._invoice_to_result(inv) for inv in invoices.data]
         except stripe.StripeError as e:
-            logger.error(f"Stripe error listing invoices: {e}")
+            logger.error("Stripe error listing invoices: %s", e)
             raise StripeError(str(e), getattr(e, "code", None))
 
     def _invoice_to_result(self, inv: Invoice) -> InvoiceResult:
@@ -424,10 +424,10 @@ class StripeClient:
             event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
             return event
         except stripe.SignatureVerificationError as e:
-            logger.error(f"Webhook signature verification failed: {e}")
+            logger.error("Webhook signature verification failed: %s", e)
             raise StripeError("Invalid webhook signature", "signature_verification_error")
         except ValueError as e:
-            logger.error(f"Invalid webhook payload: {e}")
+            logger.error("Invalid webhook payload: %s", e)
             raise StripeError("Invalid webhook payload", "invalid_payload")
 
 

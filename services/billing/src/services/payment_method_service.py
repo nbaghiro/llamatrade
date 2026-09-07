@@ -43,7 +43,7 @@ class PaymentMethodService:
                 customer_id=result.customer_id,
             )
         except StripeError as e:
-            logger.error(f"Failed to create setup intent: {e}")
+            logger.error("Failed to create setup intent: %s", e)
             raise ValueError(f"Failed to initialize card setup: {e.message}")
 
     async def attach_payment_method(
@@ -63,7 +63,7 @@ class PaymentMethodService:
                 payment_method_id=payment_method_id,
             )
         except StripeError as e:
-            logger.error(f"Failed to attach payment method: {e}")
+            logger.error("Failed to attach payment method: %s", e)
             raise ValueError(f"Failed to add card: {e.message}")
 
         # Check if this is the first payment method (make it default)
@@ -167,7 +167,7 @@ class PaymentMethodService:
         try:
             await self.stripe.detach_payment_method(payment_method.stripe_payment_method_id)
         except StripeError as e:
-            logger.error(f"Failed to detach payment method from Stripe: {e}")
+            logger.error("Failed to detach payment method from Stripe: %s", e)
             # Continue to delete from database even if Stripe fails
 
         # Delete from database
@@ -220,7 +220,7 @@ class PaymentMethodService:
                 payment_method.stripe_payment_method_id,
             )
         except StripeError as e:
-            logger.error(f"Failed to set default in Stripe: {e}")
+            logger.error("Failed to set default in Stripe: %s", e)
             raise ValueError(f"Failed to set default: {e.message}")
 
         # Clear existing default

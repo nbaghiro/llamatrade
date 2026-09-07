@@ -6,7 +6,7 @@ import time
 from dataclasses import dataclass
 from enum import StrEnum
 
-from llamatrade_telemetry import metrics
+from llamatrade_telemetry import mask_destination, metrics
 from llamatrade_telemetry.instrumentation.dependency import time_dependency
 
 logger = logging.getLogger(__name__)
@@ -99,7 +99,7 @@ class SMSChannel:
 
         # Validate phone number format
         if not to.startswith("+"):
-            logger.warning(f"Invalid phone number format: {to}")
+            logger.warning("Invalid phone number format: %s", mask_destination(to))
             metrics.notification.delivery_failed(channel=_CHANNEL, reason="invalid_number")
             return SMSResult(
                 success=False,
@@ -155,7 +155,7 @@ class SMSChannel:
 
                 if response.status_code == 201:
                     data = response.json()
-                    logger.info(f"SMS sent successfully: {data.get('sid')}")
+                    logger.info("SMS sent successfully: %s", data.get("sid"))
                     metrics.notification.delivered(channel=_CHANNEL)
                     return SMSResult(
                         success=True,
@@ -172,7 +172,7 @@ class SMSChannel:
                     else f"HTTP {response.status_code}"
                 )
 
-                logger.error(f"Twilio API error: {error_code} - {error_message}")
+                logger.error("Twilio API error: %s - %s", error_code, error_message)
                 metrics.notification.delivery_failed(
                     channel=_CHANNEL, reason=f"http_{response.status_code}"
                 )
@@ -191,7 +191,7 @@ class SMSChannel:
                 error_message="Request to Twilio API timed out",
             )
         except httpx.RequestError as e:
-            logger.error(f"Twilio API request error: {e}")
+            logger.error("Twilio API request error: %s", e)
             metrics.notification.delivery_failed(channel=_CHANNEL, reason="request_error")
             return SMSResult(
                 success=False,
@@ -199,7 +199,7 @@ class SMSChannel:
                 error_message=str(e),
             )
         except Exception as e:
-            logger.error(f"Unexpected error sending SMS: {e}")
+            logger.error("Unexpected error sending SMS: %s", e)
             metrics.notification.delivery_failed(channel=_CHANNEL, reason=type(e).__name__)
             return SMSResult(
                 success=False,

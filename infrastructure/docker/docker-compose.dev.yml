@@ -25,6 +25,8 @@ services:
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      LOG_FORMAT: console
+      LOG_COLOR: always
     command: uvicorn src.main:app --host 0.0.0.0 --port 8810 --reload --reload-dir /app/src
 
   strategy:
@@ -39,6 +41,8 @@ services:
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      LOG_FORMAT: console
+      LOG_COLOR: always
     command: uvicorn src.main:app --host 0.0.0.0 --port 8820 --reload --reload-dir /app/src
 
   backtest:
@@ -53,6 +57,8 @@ services:
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      LOG_FORMAT: console
+      LOG_COLOR: always
     command: uvicorn src.main:app --host 0.0.0.0 --port 8830 --reload --reload-dir /app/src
 
   backtest-worker:
@@ -67,6 +73,8 @@ services:
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      LOG_FORMAT: console
+      LOG_COLOR: always
     command: celery -A src.celery_app:celery_app worker --queues backtest --loglevel info
 
   # Embedded beat scheduler + maintenance-queue worker: runs the periodic
@@ -83,6 +91,8 @@ services:
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      LOG_FORMAT: console
+      LOG_COLOR: always
     command: celery -A src.celery_app:celery_app worker -B --queues backtest_maintenance --concurrency 1 --loglevel info
 
   market-data:
@@ -98,6 +108,8 @@ services:
       - ../../libs/alpaca/llamatrade_alpaca:/app/libs/alpaca/llamatrade_alpaca:cached
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      LOG_FORMAT: console
+      LOG_COLOR: always
     command: uvicorn src.main:app --host 0.0.0.0 --port 8840 --reload --reload-dir /app/src
 
   market-data-migrate:
@@ -122,6 +134,8 @@ services:
       - ../../libs/alpaca/llamatrade_alpaca:/app/libs/alpaca/llamatrade_alpaca:cached
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      LOG_FORMAT: console
+      LOG_COLOR: always
     ports:
       - "8841:8841"
     command: python -m src.ingest.main
@@ -138,6 +152,8 @@ services:
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      LOG_FORMAT: console
+      LOG_COLOR: always
     command: uvicorn src.main:app --host 0.0.0.0 --port 8850 --reload --reload-dir /app/src
 
   portfolio:
@@ -152,6 +168,8 @@ services:
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      LOG_FORMAT: console
+      LOG_COLOR: always
     command: uvicorn src.main:app --host 0.0.0.0 --port 8860 --reload --reload-dir /app/src
 
   notification:
@@ -169,6 +187,8 @@ services:
       - ../../libs/events/llamatrade_events:/app/libs/events/llamatrade_events:cached
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      LOG_FORMAT: console
+      LOG_COLOR: always
       # Email header-logo assets resolve to the local origin so they render in mailpit QA.
       EMAIL_ASSET_BASE_URL: http://localhost:8800
     command: uvicorn src.main:app --host 0.0.0.0 --port 8870 --reload --reload-dir /app/src
@@ -193,6 +213,8 @@ services:
       - ../../libs/proto/llamatrade_proto:/app/libs/proto/llamatrade_proto:cached
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      LOG_FORMAT: console
+      LOG_COLOR: always
       STRIPE_SECRET_KEY: sk_test_mock
       STRIPE_API_BASE: http://stripe-mock:12111
     depends_on:
@@ -213,6 +235,8 @@ services:
       - ../../libs/dsl/llamatrade_dsl:/app/libs/dsl/llamatrade_dsl:cached
     environment:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      LOG_FORMAT: console
+      LOG_COLOR: always
     command: uvicorn src.main:app --host 0.0.0.0 --port 8890 --reload --reload-dir /app/src
 
   # ===================
@@ -277,6 +301,7 @@ services:
     command: ["--config=/etc/otelcol/config.yaml"]
     depends_on:
       - tempo
+      - loki
     volumes:
       - ../observability/otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
     ports:
@@ -298,11 +323,27 @@ services:
     ports:
       - "3200:3200" # Tempo HTTP API (Grafana datasource / TraceQL)
 
+  # Log backend: the collector exports OTLP logs here; Grafana queries :3100 and
+  # links each line back to its trace in Tempo.
+  loki:
+    image: grafana/loki:3.3.2
+    container_name: llamatrade-loki
+    # The image user cannot create /loki on a fresh named volume.
+    user: root
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ../observability/loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - llamatrade_loki_data:/loki
+    ports:
+      - "3100:3100" # Loki HTTP API (Grafana datasource / LogQL)
+
   grafana:
     image: grafana/grafana:11.4.0
     container_name: llamatrade-grafana
     depends_on:
       - prometheus
+      - loki
+      - tempo
     volumes:
       - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
@@ -318,3 +359,4 @@ volumes:
   llamatrade_prometheus_data:
   llamatrade_grafana_data:
   llamatrade_tempo_data:
+  llamatrade_loki_data:

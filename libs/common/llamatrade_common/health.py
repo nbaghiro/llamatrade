@@ -344,7 +344,7 @@ async def check_postgres(database_url: str) -> bool:
         from sqlalchemy import text
         from sqlalchemy.ext.asyncio import create_async_engine
 
-        engine = create_async_engine(database_url, pool_pre_ping=True)
+        engine = create_async_engine(database_url, pool_pre_ping=True, hide_parameters=True)
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
         await engine.dispose()

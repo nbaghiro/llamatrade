@@ -55,7 +55,7 @@ from redis.asyncio import Redis
 
 from llamatrade_common.revocation import RevocationStore
 from llamatrade_common.utils import is_production_environment, require_secret
-from llamatrade_telemetry import metrics
+from llamatrade_telemetry import metrics, set_request_context
 
 _NIL_UUID = UUID("00000000-0000-0000-0000-000000000000")
 _DEFAULT_SECRET = "dev-secret-change-in-production"
@@ -294,6 +294,12 @@ def _accepted_services_from_env() -> frozenset[str] | None:
     return names or None
 
 
+def _trusted(tenant_id: UUID, user_id: UUID) -> tuple[UUID, UUID]:
+    """Publish the verified identity to the log context and return it."""
+    set_request_context(tenant_id=str(tenant_id), user_id=str(user_id))
+    return tenant_id, user_id
+
+
 def resolve_identity(
     wire_tenant_id: str | None,
     wire_user_id: str | None,
@@ -346,7 +352,7 @@ def resolve_identity(
                     "permission_denied",
                     "user_id in request does not match the authenticated principal",
                 )
-        return ctx.tenant_id, ctx.user_id
+        return _trusted(ctx.tenant_id, ctx.user_id)
 
     # Service context, or no middleware (unit tests): trust the wire identity.
     if not wire_tenant_id or not wire_user_id:
@@ -360,7 +366,7 @@ def resolve_identity(
         raise AuthError(
             "unauthenticated", "valid tenant context is required (nil UUID not allowed)"
         )
-    return tenant_id, user_id
+    return _trusted(tenant_id, user_id)
 
 
 class AuthMiddleware:

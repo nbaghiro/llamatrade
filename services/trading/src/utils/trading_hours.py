@@ -272,7 +272,7 @@ class TradingHoursChecker:
             search_date = search_date + timedelta(days=1)
 
         # Fallback: shouldn't happen unless calendar is malformed
-        logger.warning(f"Could not find next trading session within {max_days} days")
+        logger.warning("Could not find next trading session within %s days", max_days)
         return datetime.combine(search_date, self.config.regular_open, tzinfo=ET)
 
     def get_next_close(self, from_timestamp: datetime | None = None) -> datetime:

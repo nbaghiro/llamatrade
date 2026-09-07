@@ -23,6 +23,7 @@ from llamatrade_db.advisory import advisory_unlock, try_advisory_lock
 from llamatrade_db.models.notification import Alert
 from llamatrade_events.catalog.bars import Bar, BarEvents
 from llamatrade_proto.generated import notification_pb2
+from llamatrade_telemetry import LogContext, span
 
 from src.alerts.engine import (
     MARKET_CONDITION_TYPES,
@@ -153,14 +154,22 @@ async def _evaluate_symbol(
         hit, detail = evaluate_market(alert, window)
         if not hit:
             continue
-        await trigger_alert(
-            session_factory,
-            dispatcher,
-            alert_id=alert.id,
-            tenant_id=tenant_by_alert[alert.id],
-            reason=detail,
-            bucket=f"bar:{symbol}:{bucket}",
-        )
+        # A fired alert is user-visible work with no request behind it; root a
+        # trace and bind its identity so the dispatch that follows is traceable.
+        with (
+            span("price-alert", attributes={"llamatrade.symbol": symbol}),
+            LogContext(
+                tenant_id=str(tenant_by_alert[alert.id]), alert_id=str(alert.id), symbol=symbol
+            ),
+        ):
+            await trigger_alert(
+                session_factory,
+                dispatcher,
+                alert_id=alert.id,
+                tenant_id=tenant_by_alert[alert.id],
+                reason=detail,
+                bucket=f"bar:{symbol}:{bucket}",
+            )
 
 
 def _decimal_value(raw: str) -> Decimal | None:

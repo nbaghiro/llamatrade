@@ -1,9 +1,14 @@
 # Grafana datasource provisioning — auto-loaded on startup.
+#
+# Tempo and Loki are cross-linked on trace_id, so a slow span opens its logs and
+# a log line opens its trace. Both directions have to be configured; neither is
+# inferred from the data.
 apiVersion: 1
 
 datasources:
   - name: Prometheus
     type: prometheus
+    uid: prometheus
     access: proxy
     # Container DNS on the shared llamatrade-network.
     url: http://prometheus:9090
@@ -16,7 +21,36 @@ datasources:
 
   - name: Tempo
     type: tempo
+    uid: tempo
     access: proxy
     # Tempo HTTP API; traces arrive via the OTel Collector's otlp/tempo exporter.
     url: http://tempo:3200
     editable: true
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        filterByTraceID: true
+        filterBySpanID: false
+      tracesToMetrics:
+        datasourceUid: prometheus
+      nodeGraph:
+        enabled: true
+
+  - name: Loki
+    type: loki
+    uid: loki
+    access: proxy
+    # Logs arrive via the OTel Collector's otlphttp/loki exporter.
+    url: http://loki:3100
+    editable: true
+    jsonData:
+      # trace_id rides every record emitted inside a span, as structured metadata.
+      derivedFields:
+        - name: TraceID
+          matcherType: label
+          matcherRegex: trace_id
+          url: "${__value.raw}"
+          datasourceUid: tempo
+          urlDisplayLabel: View trace

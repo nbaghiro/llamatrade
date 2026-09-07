@@ -146,12 +146,12 @@ def handle_service_errors[**P, T](
                 message = on_integrity_error(e) if on_integrity_error is not None else None
                 raise ConnectError(Code.FAILED_PRECONDITION, message or _DEFAULT_INTEGRITY_MESSAGE)
             except OperationalError as e:
-                logger.error("Database operational error in %s: %s", fn.__name__, e)
+                logger.exception("Database operational error in %s: %s", fn.__name__, e)
                 raise ConnectError(
                     Code.UNAVAILABLE, "Database temporarily unavailable. Please try again."
                 )
             except SQLAlchemyError as e:
-                logger.error("Database error in %s: %s", fn.__name__, e)
+                logger.exception("Database error in %s: %s", fn.__name__, e)
                 raise ConnectError(
                     Code.INTERNAL, "An internal database error occurred. Please try again."
                 )

@@ -105,7 +105,7 @@ class StreamManager:
         async with self._lock:
             queue: asyncio.Queue[StreamMessage] = asyncio.Queue(maxsize=QUEUE_MAX_SIZE)
             self._queues[client_id] = queue
-        logger.debug(f"Client {client_id} connected")
+        logger.debug("Client %s connected", client_id)
         return queue
 
     async def disconnect(self, client_id: int) -> None:
@@ -142,9 +142,9 @@ class StreamManager:
             try:
                 await self._on_unsubscribe(removed_trades, removed_quotes, removed_bars)
             except Exception as e:
-                logger.error(f"Error in unsubscribe callback: {e}")
+                logger.error("Error in unsubscribe callback: %s", e)
 
-        logger.debug(f"Client {client_id} disconnected")
+        logger.debug("Client %s disconnected", client_id)
 
     async def subscribe(
         self,
@@ -190,7 +190,7 @@ class StreamManager:
             try:
                 await self._on_subscribe(new_trades, new_quotes, new_bars)
             except Exception as e:
-                logger.error(f"Error in subscribe callback: {e}")
+                logger.error("Error in subscribe callback: %s", e)
 
     async def unsubscribe(
         self,
@@ -236,7 +236,7 @@ class StreamManager:
             try:
                 await self._on_unsubscribe(removed_trades, removed_quotes, removed_bars)
             except Exception as e:
-                logger.error(f"Error in unsubscribe callback: {e}")
+                logger.error("Error in unsubscribe callback: %s", e)
 
     async def broadcast_trade(self, symbol: str, data: TradeData) -> None:
         """Broadcast trade data to subscribed clients."""
@@ -279,7 +279,7 @@ class StreamManager:
                     # Non-blocking put - if queue is full, skip this message
                     queue.put_nowait(message)
                 except asyncio.QueueFull:
-                    logger.warning(f"Queue full for client {client_id}, dropping message")
+                    logger.warning("Queue full for client %s, dropping message", client_id)
                 except Exception:
                     disconnected.append(client_id)
             else:

@@ -15,6 +15,7 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import Response
 
+from llamatrade_telemetry import logs as log_export
 from llamatrade_telemetry import tracing
 from llamatrade_telemetry.config import TelemetrySettings, load_settings
 from llamatrade_telemetry.instrumentation.db import PoolStatsLike, register_pool_observer
@@ -75,11 +76,18 @@ def init_telemetry(
     resolved = settings or load_settings()
     resource = _build_resource(service, version, resolved)
 
-    configure_logging(service, resolved.log_level, resolved.json_logs)
+    configure_logging(
+        service,
+        resolved.log_level,
+        fmt=resolved.log_format,
+        color=resolved.log_color,
+        project_id=resolved.gcp_project_id,
+    )
     configure_metrics(
         resource, enabled=resolved.metrics_enabled, strict_labels=resolved.strict_labels
     )
     configure_tracing(resource, resolved)
+    log_export.configure_log_export(resource, resolved)
 
     if pool_stats_provider is not None:
         register_pool_observer(pool_stats_provider)
@@ -103,3 +111,4 @@ def init_telemetry(
 def shutdown() -> None:
     """Flush exporters on process shutdown (call from a lifespan handler)."""
     tracing.shutdown()
+    log_export.shutdown()

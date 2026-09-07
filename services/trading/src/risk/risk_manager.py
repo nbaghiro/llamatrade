@@ -31,7 +31,7 @@ class RiskManager:
     """Manages risk limits and validates orders against them."""
 
     # Shared config cache (60s TTL) across all RiskManager instances — cuts DB queries.
-    _config_cache: AsyncTTLCache = AsyncTTLCache(default_ttl=60.0, max_size=100)
+    _config_cache: AsyncTTLCache[RiskConfig | None] = AsyncTTLCache(default_ttl=60.0, max_size=100)
 
     def __init__(
         self,
@@ -231,7 +231,7 @@ class RiskManager:
         try:
             detail = await client.get_sleeve(tenant_id, "", sleeve_id)
         except Exception as e:
-            logger.warning(f"Sleeve check failed for {sleeve_id}: {e}")
+            logger.warning("Sleeve check failed for %s: %s", sleeve_id, e)
             return f"Unable to verify sleeve state for {sleeve_id}"
 
         if detail.sleeve.status == SLEEVE_STATUS_FROZEN:
@@ -312,7 +312,7 @@ class RiskManager:
         # Invalidate cache for this config
         cache_key = f"risk_config:{tenant_id}:{session_id or 'tenant'}"
         await self._config_cache.invalidate(cache_key)
-        logger.debug(f"Risk config cache invalidated: {cache_key}")
+        logger.debug("Risk config cache invalidated: %s", cache_key)
 
         return limits
 
@@ -450,10 +450,10 @@ class RiskManager:
         # Check cache first
         cached = await self._config_cache.get(cache_key)
         if cached is not None:
-            logger.debug(f"Risk config cache hit: {cache_key}")
+            logger.debug("Risk config cache hit: %s", cache_key)
             return cached
 
-        logger.debug(f"Risk config cache miss: {cache_key}")
+        logger.debug("Risk config cache miss: %s", cache_key)
 
         # Query database
         stmt = (
@@ -505,11 +505,11 @@ class RiskManager:
                     self._price_cache[symbol] = price
                     return price
             except Exception as e:
-                logger.warning(f"Failed to get price from market data for {symbol}: {e}")
+                logger.warning("Failed to get price from market data for %s: %s", symbol, e)
 
         # Fall back to cached price
         if symbol in self._price_cache:
-            logger.debug(f"Using cached price for {symbol}: {self._price_cache[symbol]}")
+            logger.debug("Using cached price for %s: %s", symbol, self._price_cache[symbol])
             return self._price_cache[symbol]
 
         # If we have DB, try to get last known price from position
@@ -527,13 +527,13 @@ class RiskManager:
                 if cached_price:
                     price = Decimal(str(cached_price))
                     self._price_cache[symbol] = price
-                    logger.debug(f"Using DB price for {symbol}: {price}")
+                    logger.debug("Using DB price for %s: %s", symbol, price)
                     return price
             except Exception as e:
-                logger.warning(f"Failed to get price from DB for {symbol}: {e}")
+                logger.warning("Failed to get price from DB for %s: %s", symbol, e)
 
         # No price available - return None to trigger fail-safe rejection
-        logger.warning(f"No price available for {symbol} from any source")
+        logger.warning("No price available for %s from any source", symbol)
         return None
 
     async def _check_position_size(
@@ -573,7 +573,7 @@ class RiskManager:
             fetched_price = await self._get_current_price(symbol)
             if fetched_price is None:
                 # Fail-safe: can't verify position size without price
-                logger.warning(f"Cannot check position size for {symbol} - price unavailable")
+                logger.warning("Cannot check position size for %s - price unavailable", symbol)
                 return False
             current_price = fetched_price
 

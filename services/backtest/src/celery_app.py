@@ -37,11 +37,8 @@ celery_app.conf.update(
     task_time_limit=TASK_TIME_LIMIT,
     task_acks_late=True,  # Acknowledge after task completion
     task_reject_on_worker_lost=True,  # Reject if worker dies
-    # With acks_late a task is redelivered if it outlives the broker visibility
-    # timeout. Kombu's default equals task_time_limit (3600s), so a task still
-    # running at the hour mark is handed to a second worker and the backtest runs
-    # twice. Set the timeout past the hard limit so a live task is never
-    # redelivered; Celery kills it at task_time_limit anyway.
+    # Past the hard limit: kombu's default equals it, so a live task at the
+    # boundary would be redelivered and run twice under acks_late.
     broker_transport_options={"visibility_timeout": TASK_TIME_LIMIT * 2},
     # Retry settings
     task_default_retry_delay=60,  # Wait 60s before retry
@@ -52,6 +49,9 @@ celery_app.conf.update(
     # Worker settings
     worker_prefetch_multiplier=1,  # Only fetch one task at a time (for fair scheduling)
     worker_concurrency=WORKER_CONCURRENCY,  # Number of concurrent workers
+    # Celery would otherwise replace the root handler init_telemetry installed,
+    # so worker logs would leave the shared format and lose trace correlation.
+    worker_hijack_root_logger=False,
     # Serialization
     task_serializer="json",
     result_serializer="json",

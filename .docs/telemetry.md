@@ -47,7 +47,7 @@
 | Setup | one `init_telemetry()` call per service/worker |
 | Metrics | `llamatrade_telemetry` core + typed `metrics.<domain>.*` namespaces |
 | Alpaca metrics | one set, owned by `libs/alpaca` |
-| Logging | JSON everywhere, with `trace_id` / `span_id` |
+| Logging | Cloud Logging-native JSON, or a console rendering locally; both carry `trace_id` / `span_id` |
 | Tracing | OTel spans + W3C propagation across services (no-op without a collector) |
 | Events | `llamatrade_events_*` counters/gauges via the telemetry registry; W3C trace propagated through the envelope |
 | Scraping | each service exposes `/metrics`; Prometheus scrapes all nine services plus the market-data ingestor; Grafana / Tempo / OTel Collector / Alertmanager run in compose and k8s (§9) |
@@ -153,7 +153,8 @@ libs/telemetry/llamatrade_telemetry/
 ├── setup.py           # init_telemetry(app, service, version): wires everything; /metrics; idempotent
 ├── domain.py          # typed namespaces: metrics.trading.*, metrics.ledger.*, …
 ├── runtime.py         # event-loop lag + process collectors
-├── logging.py         # JSON formatter + stdlib config + request-context contextvars
+├── logging.py         # JSON + console formatters, context/dedupe filters, contextvars
+├── logs.py            # OTLP log export (the structured record for Loki)
 ├── tracing.py         # TracerProvider + OTLP export (no-op w/o collector); span(); W3C inject/extract
 └── instrumentation/
     ├── http.py        # ASGI RED middleware: TelemetryMiddleware
@@ -209,9 +210,12 @@ init_telemetry(service="backtest-worker", version=__version__)  # no app → no 
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | _(unset → tracing no-ops)_ | OTLP collector |
 | `OTEL_TRACES_SAMPLER` / `_ARG` | `parentbased_traceidratio` / `0.1` | sampling |
 | `LOG_LEVEL` | `INFO` | |
-| `LOG_FORMAT` | `json` (`text` for local dev) | |
+| `LOG_FORMAT` | `json` | `console` renders for a human reader (set in the dev stack) |
+| `LOG_COLOR` | `auto` | `always` / `never`; `auto` needs a TTY, which a container stdout is not |
+| `GOOGLE_CLOUD_PROJECT` | _(unset)_ | renders `logging.googleapis.com/trace` as a linkable resource name |
 | `TELEMETRY_METRICS_ENABLED` | `true` | metrics kill-switch |
 | `TELEMETRY_TRACING_ENABLED` | `true` | tracing kill-switch (export also needs an OTLP endpoint) |
+| `TELEMETRY_LOGS_ENABLED` | `true` | OTLP log-export kill-switch (export also needs an OTLP endpoint) |
 | `TELEMETRY_STRICT_LABELS` | _(unset → strict in dev/test, lenient in prod/staging)_ | fail fast on a bad label |
 | `SERVICE_VERSION` / `GIT_SHA` | from build | `service.version` / `service.git_sha` resource attrs |
 
@@ -312,9 +316,6 @@ share the naming + label validation. Labelled by the stream's logical prefix onl
 - `llamatrade_events_dlq_depth{stream}` (gauge — entries parked on a
   dead-letter stream, sampled on an interval by `DlqDepthSampler` in the owning
   service)
-- `llamatrade_events_fanout_dropped_total{fanout}` ·
-  `llamatrade_events_fanout_clients{fanout}` (gauge) — gRPC fan-out backpressure
-  drops / connected clients
 
 **Async runtime** (async-first → critical):
 - `llamatrade_runtime_event_loop_lag_seconds` · `llamatrade_runtime_asyncio_tasks`
@@ -414,8 +415,6 @@ Prometheus exporter as `target_info`; there is no separate service-info metric.
   write-through) · `bar_fanout_lag_seconds` (bar timestamp→StreamManager
   fan-out, end-to-end lag in bus-mode serving) ·
   `broadcast_circuit_breaker_transitions_total{state}` (`open`/`closed`).
-  Fan-out backpressure rides the events series
-  (`llamatrade_events_fanout_dropped_total` / `_fanout_clients`).
 - data quality: `data_staleness_seconds{data_type}` (`bars`/`quotes`/`trades`,
   age of served data) · `data_gaps_detected_total` (interior holes in served
   intraday bar series) · `missing_symbol_errors_total`
@@ -514,16 +513,108 @@ cloud spend. Per-tenant unit economics via log-based aggregation / ledger, not m
 
 ## 7. Structured logs
 
-JSON (`JSONFormatter`) on every service, with fields:
-`timestamp, level, logger, message, service, request_id, tenant_id, user_id,
-trace_id, span_id, location, exception, extra`.
+One record, two renderings, selected by `LOG_FORMAT`. The dev stack sets
+`console`; deployments leave the `json` default.
 
-- `trace_id`/`span_id` injected from the active OTel span → click from a log
-  to its trace.
-- Context via `contextvars` set by the RED middleware (`set_request_context`).
-- Noise suppression for `uvicorn.access`, `httpx`, `httpcore`.
+**`json` (`JSONFormatter`)** follows Google's structured-log contract so a GKE
+deployment gets severity filtering, trace links, source location and Error
+Reporting grouping with no collector rule: `severity`, `message`, `time`,
+`logger`, `service`, `logging.googleapis.com/trace`,
+`logging.googleapis.com/spanId`, `logging.googleapis.com/trace_sampled`,
+`logging.googleapis.com/sourceLocation`, `stack_trace`. `GOOGLE_CLOUD_PROJECT`
+renders the trace as the resource name Cloud Logging needs to link it.
+
+**`console` (`ConsoleFormatter`)** renders `time level logger message fields`
+with the traceback indented beneath instead of escaped into the message, and
+abbreviates UUID-shaped values to their first block. It is a view for a person;
+the full value is always in the JSON and in Loki.
+
+Correlation fields (`request_id`, `tenant_id`, `user_id`) and domain fields
+(`client_order_id`, `execution_id`, `event_id`, ...) are flat in the JSON, so
+they query as `jsonPayload.client_order_id` rather than through a nested object.
+
+- Fields are bound with `LogContext(**fields)` at a boundary, not repeated at
+  every call site. The bindings in place are the Kafka consumer
+  (`StreamConsumer._run_handler`: tenant, event id, stream, cursor), the Celery
+  task signals (task id, name, backtest id), the trading runner
+  (`RunnerManager._run_session`: tenant, execution) and the adoption loop.
+- `tenant_id`/`user_id` are published by `resolve_identity` once verified. The
+  HTTP middleware sets only `request_id`, since the wire headers are forgeable.
+- `ContextFilter` stamps bound fields onto the record itself, so the stdout
+  formatter and the OTLP handler emit the same set.
+- `DedupeFilter` collapses identical repeated lines (first 3 per 5 minutes, then
+  a `+N identical suppressed` count on the next one). It keys on the rendered
+  message, so a line naming a distinct order or symbol is never collapsed, and
+  DEBUG is exempt.
+- A session task detaches from the request that started it (context and span),
+  so one request id and one trace do not cover every order in the session.
+- Noise suppression for `uvicorn.access`, `httpx`, `httpcore`, `urllib3`,
+  `asyncio`, the chatty `aiokafka` internals, `websockets.client` and `stripe`.
+- Loggers that install their own handler and stop propagating (`uvicorn`,
+  `uvicorn.error`, `celery.task`) are reclaimed, so startup and shutdown lines
+  render like everything else instead of as plain text on stderr.
+- The console line carries a short `trace=` marker so one flow can be grepped
+  across every service in the same local stream; the whole id is in the JSON.
 - Log-based metrics/alerts (Loki ruler / Cloud Logging) cover per-tenant slices
   that must not become Prometheus labels.
+
+### 7.1 Writing a log call
+
+Enforced by ruff `G`/`LOG`, so a violation fails CI rather than review:
+
+```python
+# no
+logger.info(f"Submitted {qty} {symbol} for {tenant_id}")
+logger.error("boom: %s", e, exc_info=True)
+
+# yes
+logger.info("Submitted %s %s", qty, symbol, extra={"client_order_id": coid})
+logger.exception("boom: %s", e)
+```
+
+The template is not cosmetic: it is what `DedupeFilter` keys on and what a log
+backend groups by, and it is only interpolated when the record is emitted.
+Identifiers belong in fields so they query as `jsonPayload.client_order_id`
+rather than by substring.
+
+Bind at the boundary rather than repeating `extra=`. A handler, task or loop
+tick wrapped in `LogContext` stamps every line emitted inside it, including
+lines from library code that knows nothing about the binding.
+
+### 7.2 Correlating a flow end to end
+
+Three identifiers do the work. `trace_id` spans services and is the only one
+that survives every hop. `request_id` is minted at the edge, returned to the
+client as `X-Request-ID`, and forwarded by `inject_headers` so one id covers
+every service a call touches. Domain fields (`client_order_id`, `execution_id`,
+`event_id`) are what you actually search by.
+
+| Origin | Root span | How context reaches the next hop |
+|---|---|---|
+| Browser | minted in `apps/web/src/telemetry/trace.ts`, sampled | `traceparent` header → `TelemetryMiddleware` |
+| Another service | the caller's span | `inject_headers` (trace + `x-request-id`) |
+| Kafka | the producer's PRODUCER span | W3C in the envelope metadata → `StreamConsumer` |
+| Celery | the enqueueing request's span | `apply_async(headers=inject_headers())` → `task_prerun` |
+| Strategy session | `_process_bar` / `_submit_runtime_order` | the tick is the root; everything below joins it |
+| Broker fill | `_handle_trade_event` | a fill is its own unit of work, arriving long after the tick |
+| Price alert | `_evaluate_symbol` | a fired alert has no request behind it |
+
+Work with no request behind it has to root its own trace. A session that
+inherited the trace of the call that started it would put a week of orders in
+one trace; a session that roots nothing leaves the broker call and each ledger
+publish as separate traces with nothing tying them to the evaluation.
+
+### 7.3 Where logs go
+
+stdout is the source of truth in both environments and is never given up for
+machine formatting. In GKE the node agent ships it to Cloud Logging, which parses
+the `json` fields natively. Locally, stdout stays human-readable and
+`llamatrade_telemetry.logs` exports the same records over OTLP to the collector,
+which forwards them to Loki. Grafana links Tempo and Loki on `trace_id` in both
+directions, so a slow span opens its logs and a log line opens its trace.
+
+Export is off unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set, so tests and bare
+local runs need no setup; `TELEMETRY_LOGS_ENABLED=false` disables it explicitly.
 
 ---
 

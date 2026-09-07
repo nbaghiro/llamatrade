@@ -34,7 +34,8 @@ def register_error_handlers(app: FastAPI) -> None:
     async def symbol_not_found_handler(request: Request, exc: SymbolNotFoundError) -> JSONResponse:
         """Handle symbol not found errors (404)."""
         logger.warning(
-            f"Symbol not found: {exc.symbol}",
+            "Symbol not found: %s",
+            exc.symbol,
             extra={"symbol": exc.symbol, "path": request.url.path},
         )
         return JSONResponse(
@@ -50,7 +51,8 @@ def register_error_handlers(app: FastAPI) -> None:
     async def invalid_request_handler(request: Request, exc: InvalidRequestError) -> JSONResponse:
         """Handle invalid request errors (400)."""
         logger.warning(
-            f"Invalid request: {exc.message}",
+            "Invalid request: %s",
+            exc.message,
             extra={"path": request.url.path},
         )
         return JSONResponse(
@@ -93,7 +95,8 @@ def register_error_handlers(app: FastAPI) -> None:
     async def alpaca_server_error_handler(request: Request, exc: AlpacaServerError) -> JSONResponse:
         """Handle Alpaca server errors (502 Bad Gateway)."""
         logger.error(
-            f"Alpaca server error: {exc.message}",
+            "Alpaca server error: %s",
+            exc.message,
             extra={"status_code": exc.status_code, "path": request.url.path},
         )
         return JSONResponse(
@@ -125,7 +128,8 @@ def register_error_handlers(app: FastAPI) -> None:
     async def alpaca_error_handler(request: Request, exc: AlpacaError) -> JSONResponse:
         """Catch-all handler for any other Alpaca errors."""
         logger.error(
-            f"Alpaca error: {exc.message}",
+            "Alpaca error: %s",
+            exc.message,
             extra={"status_code": exc.status_code, "path": request.url.path},
         )
         return JSONResponse(

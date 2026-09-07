@@ -191,7 +191,7 @@ async def handle_stripe_webhook(
             )
         except StripeError as e:
             metrics.billing.webhook_signature_failure()
-            logger.error(f"Webhook signature verification failed: {e}")
+            logger.error("Webhook signature verification failed: %s", e)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Invalid webhook signature",
@@ -199,20 +199,20 @@ async def handle_stripe_webhook(
 
     event_type = event.type if hasattr(event, "type") else ""
 
-    logger.info(f"Processing Stripe webhook: {event_type}")
+    logger.info("Processing Stripe webhook: %s", event_type)
 
     # Map of handled event types to their dispatch coroutines. Only handled
     # types are counted/timed; unrecognized events are no-ops (Stripe sends
     # many we don't subscribe to).
     handled = event_type in _HANDLED_EVENT_TYPES
     if not handled:
-        logger.debug(f"Unhandled webhook event type: {event_type}")
+        logger.debug("Unhandled webhook event type: %s", event_type)
         return {"received": True}
 
     event_id = str(getattr(event, "id", "") or "")
     if event_id and _event_seen(event_id):
         metrics.billing.webhook_duplicate()
-        logger.info(f"Duplicate Stripe webhook {event_id} ({event_type}); skipping")
+        logger.info("Duplicate Stripe webhook %s (%s); skipping", event_id, event_type)
         return {"received": True}
 
     metrics.billing.webhook_received(event_type=event_type)
@@ -238,14 +238,14 @@ async def handle_stripe_webhook(
                 await _handle_payment_method_detached(db, _payload_as(PaymentMethod, event))
     except _TRANSIENT_ERRORS as e:
         # 500 so Stripe redelivers; the event is not marked seen.
-        logger.error(f"Transient error processing webhook {event_type}: {e}")
+        logger.error("Transient error processing webhook %s: %s", event_type, e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Transient error processing webhook",
         )
     except Exception as e:
         # Permanent/logic failure: 200 so Stripe doesn't retry a poison event.
-        logger.error(f"Error processing webhook {event_type}: {e}")
+        logger.error("Error processing webhook %s: %s", event_type, e)
     else:
         if event_id:
             _mark_event_seen(event_id)
@@ -275,7 +275,7 @@ async def _handle_subscription_created(db: AsyncSession, subscription: Subscript
 
     from llamatrade_db.models import Subscription as DbSubscription
 
-    logger.info(f"Subscription created: {subscription.id}, status: {subscription.status}")
+    logger.info("Subscription created: %s, status: %s", subscription.id, subscription.status)
 
     # Find subscription in our database
     result = await db.execute(
@@ -305,7 +305,7 @@ async def _handle_subscription_updated(db: AsyncSession, subscription: Subscript
 
     from llamatrade_db.models import Subscription as DbSubscription
 
-    logger.info(f"Subscription updated: {subscription.id}, status: {subscription.status}")
+    logger.info("Subscription updated: %s, status: %s", subscription.id, subscription.status)
 
     result = await db.execute(
         select(DbSubscription).where(DbSubscription.stripe_subscription_id == subscription.id)
@@ -348,7 +348,7 @@ async def _handle_subscription_deleted(db: AsyncSession, subscription: Subscript
 
     from llamatrade_db.models import Subscription as DbSubscription
 
-    logger.info(f"Subscription deleted: {subscription.id}")
+    logger.info("Subscription deleted: %s", subscription.id)
 
     result = await db.execute(
         select(DbSubscription).where(DbSubscription.stripe_subscription_id == subscription.id)
@@ -378,7 +378,7 @@ async def _handle_invoice_paid(db: AsyncSession, invoice: Invoice) -> None:
 
     stripe_sub_id = _invoice_subscription_id(invoice)
 
-    logger.info(f"Invoice paid: {invoice.id}")
+    logger.info("Invoice paid: %s", invoice.id)
 
     # Find the subscription to get tenant_id (eager-load plan for revenue metric)
     result = await db.execute(
@@ -389,7 +389,7 @@ async def _handle_invoice_paid(db: AsyncSession, invoice: Invoice) -> None:
     subscription = result.scalar_one_or_none()
 
     if not subscription:
-        logger.warning(f"No subscription found for invoice {invoice.id}")
+        logger.warning("No subscription found for invoice %s", invoice.id)
         return
 
     plan_name = subscription.plan.name
@@ -444,7 +444,7 @@ async def _handle_payment_failed(db: AsyncSession, invoice: Invoice) -> None:
 
     stripe_sub_id = _invoice_subscription_id(invoice)
 
-    logger.warning(f"Payment failed for subscription: {stripe_sub_id}")
+    logger.warning("Payment failed for subscription: %s", stripe_sub_id)
 
     if not stripe_sub_id:
         metrics.billing.invoice_payment_failed(plan=_UNKNOWN_PLAN)
@@ -482,7 +482,7 @@ async def _handle_trial_will_end(db: AsyncSession, subscription: Subscription) -
     )
     local_sub = result.scalar_one_or_none()
     if local_sub is None:
-        logger.warning(f"No subscription found for trial_will_end: {subscription.id}")
+        logger.warning("No subscription found for trial_will_end: %s", subscription.id)
         return
     trial_end = _ts(subscription.trial_end)
     await _notify_billing(
@@ -504,7 +504,7 @@ async def _handle_payment_method_attached(db: AsyncSession, payment_method: Paym
     customer_id = customer if isinstance(customer, str) or customer is None else customer.id
     card = payment_method.card
 
-    logger.info(f"Payment method attached: {payment_method.id}")
+    logger.info("Payment method attached: %s", payment_method.id)
 
     # Check if already exists
     result = await db.execute(
@@ -524,7 +524,7 @@ async def _handle_payment_method_attached(db: AsyncSession, payment_method: Paym
     tenant_id = result.scalar_one_or_none()
 
     if not tenant_id:
-        logger.warning(f"No tenant found for customer {customer_id}")
+        logger.warning("No tenant found for customer %s", customer_id)
         return
 
     # Check if this is the first payment method
@@ -554,7 +554,7 @@ async def _handle_payment_method_detached(db: AsyncSession, payment_method: Paym
 
     from llamatrade_db.models import PaymentMethod as DbPaymentMethod
 
-    logger.info(f"Payment method detached: {payment_method.id}")
+    logger.info("Payment method detached: %s", payment_method.id)
 
     await db.execute(
         delete(DbPaymentMethod).where(DbPaymentMethod.stripe_payment_method_id == payment_method.id)

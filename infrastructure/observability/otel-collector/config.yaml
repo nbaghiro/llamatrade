@@ -1,9 +1,10 @@
 # OpenTelemetry Collector config for the LlamaTrade dev stack.
 #
-# Services export traces via OTLP/HTTP when OTEL_EXPORTER_OTLP_ENDPOINT is set
-# (see docker-compose.dev.yml). The collector receives OTLP (http + grpc),
-# batches, and exports to Tempo (persistent traces, queried via Grafana) with
-# the debug exporter kept as a secondary sink for one-line span summaries.
+# Services export traces and logs via OTLP/HTTP when OTEL_EXPORTER_OTLP_ENDPOINT
+# is set (see docker-compose.dev.yml). The collector receives OTLP (http + grpc),
+# batches, and exports traces to Tempo and logs to Loki, both queried through
+# Grafana. Service stdout stays independent: it renders for a human reader while
+# this pipeline carries the structured record.
 receivers:
   otlp:
     protocols:
@@ -34,11 +35,21 @@ exporters:
     tls:
       insecure: true
 
+  # Log backend (grafana/loki). Loki 3.x ingests OTLP natively at /otlp/v1/logs;
+  # record fields become structured metadata rather than stream labels.
+  otlphttp/loki:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
+
   # --- Google Cloud Trace (GCP) -------------------------------------------
   # Requires the contrib image (already used here) + GCP credentials mounted
   # via GOOGLE_APPLICATION_CREDENTIALS.
   # googlecloud:
   #   project: ${GCP_PROJECT_ID}
+  #
+  # GKE needs no logs exporter: the node agent already ships container stdout to
+  # Cloud Logging, and LOG_FORMAT=json emits the fields it parses natively.
 
 extensions:
   # Liveness endpoint for the container healthcheck / k8s probes.
@@ -57,3 +68,7 @@ service:
       processors: [memory_limiter, batch]
       exporters: [debug, otlp/tempo]
       # exporters: [debug, googlecloud]     # or Cloud Trace
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/loki]

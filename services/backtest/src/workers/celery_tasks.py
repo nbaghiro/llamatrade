@@ -86,7 +86,7 @@ async def _session_scope(
     commit), or the transaction-local system bypass for the cross-tenant reaper. Under
     the fail-closed RLS role, a write with no bound scope is rejected by the row policies.
     """
-    engine = create_async_engine(DATABASE_URL)
+    engine = create_async_engine(DATABASE_URL, hide_parameters=True)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     try:
         async with factory() as session:
@@ -170,11 +170,11 @@ def run_backtest_task(
     Returns:
         Dictionary with status and results
     """
-    logger.info(f"Starting backtest task: {backtest_id}")
+    logger.info("Starting backtest task: %s", backtest_id)
 
     try:
         result = _run_async(_execute_backtest(backtest_id, tenant_id))
-        logger.info(f"Backtest completed: {backtest_id}")
+        logger.info("Backtest completed: %s", backtest_id)
         return result
     except MarketDataError as e:
         # Celery task protocol attributes exist at runtime; stubs are incomplete
@@ -184,17 +184,20 @@ def run_backtest_task(
 
         if retries_so_far < max_retries:
             logger.warning(
-                f"Backtest {backtest_id} hit a market data error "
-                f"(attempt {retries_so_far + 1}/{max_retries + 1}), retrying: {e}"
+                "Backtest %s hit a market data error (attempt %s/%s), retrying: %s",
+                backtest_id,
+                retries_so_far + 1,
+                max_retries + 1,
+                e,
             )
             _run_async(_reset_to_pending(backtest_id, tenant_id))
             retry = getattr(self, "retry")
             raise retry(exc=e) from e
 
-        logger.error(f"Backtest failed after retries: {backtest_id} - {e}")
+        logger.error("Backtest failed after retries: %s - %s", backtest_id, e)
         raise
     except Exception as e:
-        logger.error(f"Backtest failed: {backtest_id} - {e}")
+        logger.error("Backtest failed: %s - %s", backtest_id, e)
         raise
 
 
@@ -207,7 +210,7 @@ def reap_stale_backtests_task() -> dict[str, int]:
     counts for observability.
     """
     counts = _run_async(_reap_stale_backtests())
-    logger.info(f"Reaper pass complete: {counts}")
+    logger.info("Reaper pass complete: %s", counts)
     return counts
 
 
@@ -225,5 +228,5 @@ def evict_stale_datasets_task() -> int:
     max_age = float(os.getenv("BACKTEST_DATASET_TTL_SECONDS", str(7 * 24 * 3600)))
     removed = store.evict_stale(max_age)
     if removed:
-        logger.info(f"Dataset janitor removed {removed} stale snapshots")
+        logger.info("Dataset janitor removed %s stale snapshots", removed)
     return removed

@@ -384,8 +384,8 @@ class CircuitBreaker:
             elapsed = (datetime.now(UTC) - self._triggered_at).total_seconds()
             if elapsed < self.config.cooldown_seconds:
                 logger.warning(
-                    f"Cannot reset circuit breaker: cooldown has "
-                    f"{self.config.cooldown_seconds - elapsed:.0f}s remaining"
+                    "Cannot reset circuit breaker: cooldown has %.0fs remaining",
+                    self.config.cooldown_seconds - elapsed,
                 )
                 return False
 
@@ -408,7 +408,8 @@ class CircuitBreaker:
         self._api_errors.reset()
 
         logger.info(
-            f"Circuit breaker reset for session {self.session_id}",
+            "Circuit breaker reset for session %s",
+            self.session_id,
             extra={"tenant_id": str(self.tenant_id), "session_id": str(self.session_id)},
         )
 
@@ -419,7 +420,7 @@ class CircuitBreaker:
                     session_id=self.session_id,
                 )
             except Exception as e:
-                logger.error(f"Error in circuit breaker reset callback: {e}")
+                logger.error("Error in circuit breaker reset callback: %s", e)
 
         return True
 
@@ -450,7 +451,8 @@ class CircuitBreaker:
         self._triggered_details = details
 
         logger.warning(
-            f"Circuit breaker triggered: {reason.value}",
+            "Circuit breaker triggered: %s",
+            reason.value,
             extra={
                 "tenant_id": str(self.tenant_id),
                 "session_id": str(self.session_id),
@@ -470,7 +472,7 @@ class CircuitBreaker:
                     details=details,
                 )
             except Exception as e:
-                logger.error(f"Error in circuit breaker trigger callback: {e}")
+                logger.error("Error in circuit breaker trigger callback: %s", e)
 
         if self.config.auto_reset:
             self._cooldown_task = asyncio.create_task(self._cooldown_timer())

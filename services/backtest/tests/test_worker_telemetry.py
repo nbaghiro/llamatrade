@@ -86,7 +86,7 @@ class TestTaskSpanLifecycle:
         task = _task(headers={"traceparent": SAMPLED_TRACEPARENT})
         worker_telemetry._on_task_prerun(task_id="t-1", task=task, args=(BACKTEST_ID, TENANT_ID))
 
-        span, _token = worker_telemetry._task_spans["t-1"][-1]
+        span, _token, _bind = worker_telemetry._task_spans["t-1"][-1]
         context = span.get_span_context()
         assert context.trace_id == int(TRACE_ID_HEX, 16)
         assert span.parent is not None
@@ -109,14 +109,14 @@ class TestTaskSpanLifecycle:
         task.request.traceparent = SAMPLED_TRACEPARENT
 
         worker_telemetry._on_task_prerun(task_id="t-2", task=task, args=(BACKTEST_ID,))
-        span, _token = worker_telemetry._task_spans["t-2"][-1]
+        span, _token, _bind = worker_telemetry._task_spans["t-2"][-1]
         assert span.get_span_context().trace_id == int(TRACE_ID_HEX, 16)
         worker_telemetry._on_task_postrun(task_id="t-2", state=states.SUCCESS, retval=None)
 
     def test_failure_marks_error_status(self) -> None:
         task = _task(headers={"traceparent": SAMPLED_TRACEPARENT})
         worker_telemetry._on_task_prerun(task_id="t-3", task=task, args=(BACKTEST_ID,))
-        span, _token = worker_telemetry._task_spans["t-3"][-1]
+        span, _token, _bind = worker_telemetry._task_spans["t-3"][-1]
 
         boom = ValueError("bad strategy")
         worker_telemetry._on_task_postrun(task_id="t-3", state=states.FAILURE, retval=boom)
@@ -139,8 +139,8 @@ class TestTaskSpanLifecycle:
         worker_telemetry._on_task_prerun(task_id="t-5", task=first, args=(BACKTEST_ID,))
         worker_telemetry._on_task_prerun(task_id="t-6", task=second, args=(BACKTEST_ID,))
 
-        span_a, _ = worker_telemetry._task_spans["t-5"][-1]
-        span_b, _ = worker_telemetry._task_spans["t-6"][-1]
+        span_a, _, _ = worker_telemetry._task_spans["t-5"][-1]
+        span_b, _, _ = worker_telemetry._task_spans["t-6"][-1]
         assert span_a is not span_b
 
         worker_telemetry._on_task_postrun(task_id="t-5", state=states.SUCCESS, retval=None)
@@ -151,9 +151,9 @@ class TestTaskSpanLifecycle:
     def test_eager_retry_reenters_the_same_task_id_without_leaking(self) -> None:
         task = _task(headers={"traceparent": SAMPLED_TRACEPARENT})
         worker_telemetry._on_task_prerun(task_id="t-r", task=task, args=(BACKTEST_ID,))
-        outer, _ = worker_telemetry._task_spans["t-r"][-1]
+        outer, _, _ = worker_telemetry._task_spans["t-r"][-1]
         worker_telemetry._on_task_prerun(task_id="t-r", task=task, args=(BACKTEST_ID,))
-        inner, _ = worker_telemetry._task_spans["t-r"][-1]
+        inner, _, _ = worker_telemetry._task_spans["t-r"][-1]
         assert inner is not outer
 
         worker_telemetry._on_task_postrun(task_id="t-r", state=states.SUCCESS, retval=None)

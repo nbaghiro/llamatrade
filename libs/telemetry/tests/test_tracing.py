@@ -4,7 +4,8 @@ import pytest
 
 from llamatrade_telemetry import tracing
 from llamatrade_telemetry.config import TelemetrySettings
-from llamatrade_telemetry.tracing import _build_sampler
+from llamatrade_telemetry.logging import clear_request_context, set_request_context
+from llamatrade_telemetry.tracing import _build_sampler, inject_headers
 
 
 def test_span_reraises_and_records() -> None:
@@ -60,3 +61,26 @@ def test_export_traces_property() -> None:
 def test_get_tracer_returns_tracer() -> None:
     tracer = tracing.get_tracer("x")
     assert tracer is not None
+
+
+def test_inject_headers_forwards_the_request_id() -> None:
+    """One request id must span every service a call touches."""
+    set_request_context(request_id="r-42")
+    try:
+        assert inject_headers()["x-request-id"] == "r-42"
+    finally:
+        clear_request_context()
+
+
+def test_inject_headers_never_overwrites_an_explicit_request_id() -> None:
+    set_request_context(request_id="r-42")
+    try:
+        carrier = inject_headers({"x-request-id": "caller-supplied"})
+        assert carrier["x-request-id"] == "caller-supplied"
+    finally:
+        clear_request_context()
+
+
+def test_inject_headers_omits_the_request_id_when_unbound() -> None:
+    clear_request_context()
+    assert "x-request-id" not in inject_headers()

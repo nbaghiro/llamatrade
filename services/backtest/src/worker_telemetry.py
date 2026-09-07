@@ -32,16 +32,16 @@ from opentelemetry import trace
 from opentelemetry.context import Context
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
-from llamatrade_telemetry import extract_context, get_tracer, init_telemetry
+from llamatrade_telemetry import LogContext, extract_context, get_tracer, init_telemetry
 
 WORKER_SERVICE_NAME = "backtest-worker"
 
 _RUN_TASK_SUFFIX = "run_backtest_task"
 
-# task_id -> stack of (span, context token). Keyed per task so concurrent tasks
-# in one worker never collide; a stack because an eager retry re-enters the
-# signals with the same task id before the outer postrun fires.
-_task_spans: dict[str, list[tuple[trace.Span, Token[Context]]]] = {}
+# task_id -> stack of (span, context token, log binding). Keyed per task so
+# concurrent tasks in one worker never collide; a stack because an eager retry
+# re-enters the signals with the same task id before the outer postrun fires.
+_task_spans: dict[str, list[tuple[trace.Span, Token[Context], LogContext]]] = {}
 
 
 def _init_worker_telemetry(**_kwargs: object) -> None:
@@ -85,10 +85,14 @@ def _on_task_prerun(
         name, context=ctx, kind=SpanKind.CONSUMER
     )
     span.set_attribute("celery.task_id", task_id)
+    fields: dict[str, object] = {"celery_task_id": task_id, "celery_task": name}
     if args and name.endswith(_RUN_TASK_SUFFIX):
         span.set_attribute("backtest.id", str(args[0]))
+        fields["backtest_id"] = str(args[0])
+    binding = LogContext(**fields)
+    binding.__enter__()
     token = otel_context.attach(trace.set_span_in_context(span))
-    _task_spans.setdefault(task_id, []).append((span, token))
+    _task_spans.setdefault(task_id, []).append((span, token, binding))
 
 
 def _on_task_postrun(
@@ -101,7 +105,7 @@ def _on_task_postrun(
     stack = _task_spans.get(task_id) if task_id is not None else None
     if not stack or task_id is None:
         return
-    span, token = stack.pop()
+    span, token, binding = stack.pop()
     if not stack:
         del _task_spans[task_id]
     if state == states.FAILURE:
@@ -109,6 +113,7 @@ def _on_task_postrun(
             span.record_exception(retval)
         span.set_status(Status(StatusCode.ERROR, str(retval)))
     otel_context.detach(token)
+    binding.__exit__(None, None, None)
     span.end()
 
 

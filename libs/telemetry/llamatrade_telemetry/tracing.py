@@ -25,6 +25,7 @@ from opentelemetry.sdk.trace.sampling import (
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
 from llamatrade_telemetry.config import TelemetrySettings
+from llamatrade_telemetry.logging import current_request_id
 
 _provider: TracerProvider | None = None
 _configured = False
@@ -114,13 +115,18 @@ def inject_context(carrier: MutableMapping[str, str]) -> None:
 
 
 def inject_headers(headers: Mapping[str, str] | None = None) -> dict[str, str]:
-    """Return a copy of ``headers`` with the current W3C trace context injected.
+    """Return a copy of ``headers`` carrying this request's correlation context.
 
-    Use at service-to-service header seams (Connect clients). With no active
-    span the propagator injects nothing and the copy comes back unchanged.
+    Use at service-to-service header seams (Connect clients). Injects the W3C
+    trace context and forwards ``x-request-id`` so one request id spans every
+    service a call touches, rather than each minting its own. With no active
+    span and no bound request the copy comes back unchanged.
     """
     carrier: dict[str, str] = dict(headers) if headers else {}
     inject(carrier)
+    request_id = current_request_id()
+    if request_id and "x-request-id" not in {key.lower() for key in carrier}:
+        carrier["x-request-id"] = request_id
     return carrier
 
 

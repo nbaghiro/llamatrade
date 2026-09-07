@@ -112,16 +112,6 @@ class StreamBridge:
             on_bar=self._handle_bar,
         )
 
-    @property
-    def circuit_breaker_status(self) -> dict[str, int | bool | float]:
-        """Get circuit breaker status for monitoring."""
-        return {
-            "is_open": self._circuit_breaker.is_open,
-            "consecutive_failures": self._circuit_breaker.consecutive_failures,
-            "total_failures": self._circuit_breaker.total_failures,
-            "total_successes": self._circuit_breaker.total_successes,
-        }
-
     def clear_subscription_callbacks(self) -> None:
         """Clear subscription callbacks from the stream manager."""
         self._manager.set_subscription_callbacks(
@@ -159,7 +149,7 @@ class StreamBridge:
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            logger.error(f"Stream bridge error: {e}")
+            logger.error("Stream bridge error: %s", e)
 
     async def add_subscriptions(
         self,
@@ -209,8 +199,10 @@ class StreamBridge:
                     bars=new_bars,
                 )
                 logger.debug(
-                    f"Added Alpaca subscriptions: trades={new_trades}, "
-                    f"quotes={new_quotes}, bars={new_bars}"
+                    "Added Alpaca subscriptions: trades=%s, quotes=%s, bars=%s",
+                    new_trades,
+                    new_quotes,
+                    new_bars,
                 )
 
     async def remove_subscriptions(
@@ -267,8 +259,10 @@ class StreamBridge:
                     bars=remove_bars,
                 )
                 logger.debug(
-                    f"Removed Alpaca subscriptions: trades={remove_trades}, "
-                    f"quotes={remove_quotes}, bars={remove_bars}"
+                    "Removed Alpaca subscriptions: trades=%s, quotes=%s, bars=%s",
+                    remove_trades,
+                    remove_quotes,
+                    remove_bars,
                 )
 
     async def _handle_trade(self, symbol: str, data: TradeData) -> None:
@@ -300,11 +294,12 @@ class StreamBridge:
         except Exception as e:
             if self._circuit_breaker.record_failure():
                 logger.error(
-                    f"Circuit breaker OPEN: {self._circuit_breaker.consecutive_failures} "
-                    f"consecutive broadcast failures. Last error: {e}"
+                    "Circuit breaker OPEN: %s consecutive broadcast failures. Last error: %s",
+                    self._circuit_breaker.consecutive_failures,
+                    e,
                 )
             else:
-                logger.error(f"Error broadcasting trade for {symbol}: {e}")
+                logger.error("Error broadcasting trade for %s: %s", symbol, e)
 
     async def _broadcast_quote(self, symbol: str, data: QuoteData) -> None:
         """Broadcast quote data to subscribed clients."""
@@ -317,11 +312,12 @@ class StreamBridge:
         except Exception as e:
             if self._circuit_breaker.record_failure():
                 logger.error(
-                    f"Circuit breaker OPEN: {self._circuit_breaker.consecutive_failures} "
-                    f"consecutive broadcast failures. Last error: {e}"
+                    "Circuit breaker OPEN: %s consecutive broadcast failures. Last error: %s",
+                    self._circuit_breaker.consecutive_failures,
+                    e,
                 )
             else:
-                logger.error(f"Error broadcasting quote for {symbol}: {e}")
+                logger.error("Error broadcasting quote for %s: %s", symbol, e)
 
     async def _broadcast_bar(self, symbol: str, data: BarData) -> None:
         """Broadcast bar data to subscribed clients."""
@@ -334,11 +330,12 @@ class StreamBridge:
         except Exception as e:
             if self._circuit_breaker.record_failure():
                 logger.error(
-                    f"Circuit breaker OPEN: {self._circuit_breaker.consecutive_failures} "
-                    f"consecutive broadcast failures. Last error: {e}"
+                    "Circuit breaker OPEN: %s consecutive broadcast failures. Last error: %s",
+                    self._circuit_breaker.consecutive_failures,
+                    e,
                 )
             else:
-                logger.error(f"Error broadcasting bar for {symbol}: {e}")
+                logger.error("Error broadcasting bar for %s: %s", symbol, e)
 
 
 _bridge: StreamBridge | None = None

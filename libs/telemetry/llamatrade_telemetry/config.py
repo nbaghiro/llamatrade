@@ -18,11 +18,15 @@ class TelemetrySettings(BaseSettings):
 
     environment: str = Field(default="development", alias="ENVIRONMENT")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
-    # "json" for prod, "text" for local readability.
+    # "json" is Cloud Logging-native; "console" renders for a human reader.
     log_format: str = Field(default="json", alias="LOG_FORMAT")
+    log_color: str = Field(default="auto", alias="LOG_COLOR")
+    # Renders trace ids as the resource name Cloud Logging needs to link a trace.
+    gcp_project_id: str | None = Field(default=None, alias="GOOGLE_CLOUD_PROJECT")
 
     metrics_enabled: bool = Field(default=True, alias="TELEMETRY_METRICS_ENABLED")
     tracing_enabled: bool = Field(default=True, alias="TELEMETRY_TRACING_ENABLED")
+    logs_enabled: bool = Field(default=True, alias="TELEMETRY_LOGS_ENABLED")
 
     # OTLP/HTTP traces endpoint. Unset → tracing exports nothing (no-op).
     otlp_endpoint: str | None = Field(default=None, alias="OTEL_EXPORTER_OTLP_ENDPOINT")
@@ -38,12 +42,12 @@ class TelemetrySettings(BaseSettings):
     strict_labels_override: bool | None = Field(default=None, alias="TELEMETRY_STRICT_LABELS")
 
     @property
-    def json_logs(self) -> bool:
-        return self.log_format.lower() == "json"
-
-    @property
     def export_traces(self) -> bool:
         return self.tracing_enabled and self.otlp_endpoint is not None
+
+    @property
+    def export_logs(self) -> bool:
+        return self.logs_enabled and self.otlp_endpoint is not None
 
     @property
     def strict_labels(self) -> bool:

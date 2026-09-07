@@ -127,6 +127,14 @@ services/[name]/
 - Use `HTTPException` for client errors, let unexpected errors propagate
 - **Enums:** Proto definitions are the single source of truth. Import integer constants from `llamatrade_proto.generated` (e.g., `ORDER_SIDE_BUY`). Use conversion helpers (`order_side_to_str()`) only for external APIs. Store as integers in database.
 
+**Logging** (see `.docs/telemetry.md` §7; ruff `G`/`LOG` enforce the first rule):
+- A message template plus arguments, never an f-string: `logger.info("Submitted %s", symbol)`. The template is what flood control keys on and what a log backend groups by, and it is only interpolated if the record is actually emitted.
+- Identifiers go in fields, not prose: `extra={"client_order_id": coid}`, so they query as `jsonPayload.client_order_id`.
+- Bind at the boundary, not at every call site: `with LogContext(tenant_id=..., execution_id=...)` around a consumer handler, task, or loop tick stamps every line inside it. Prefer this over repeating `extra=`.
+- Background work that no request drives (a session tick, a scheduled sweep, a fired alert) must open its own root `span()`; otherwise every downstream call starts a separate trace.
+- `logger.exception(...)` inside an except block, never `logger.error(..., exc_info=True)`. Pass `exc_info=exc` when the handler is a helper that receives the exception.
+- Never log a credential, a full recipient address, or a raw upstream response body. Use `mask_destination()` for delivery targets.
+
 **Naming:**
 - Functions/variables: `snake_case`
 - Classes: `PascalCase`
@@ -349,6 +357,7 @@ Never allow cross-tenant data access. When in doubt, add tenant filtering.
 - Raw SQL queries (use SQLAlchemy ORM)
 - Hardcoded configuration values
 - `print()` statements (use logging)
+- **f-strings in log calls** — `logger.info(f"...")` is a ruff `G004` failure; use a template plus arguments
 - `Any` types in Python — use proper types or generics instead
 - `any` or `never` types in TypeScript — use proper types or `unknown` if truly needed
 - Class-based React components

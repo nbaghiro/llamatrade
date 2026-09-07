@@ -15,7 +15,7 @@ from email.message import EmailMessage
 
 import aiosmtplib
 
-from llamatrade_telemetry import metrics
+from llamatrade_telemetry import mask_destination, metrics
 from llamatrade_telemetry.instrumentation.dependency import time_dependency
 
 logger = logging.getLogger(__name__)
@@ -70,7 +70,7 @@ class EmailChannel:
                     timeout=_TIMEOUT,
                 )
         except (aiosmtplib.SMTPException, OSError) as e:
-            logger.warning("email delivery to %s failed: %s", to, e)
+            logger.warning("email delivery to %s failed: %s", mask_destination(to), e)
             metrics.notification.delivery_failed(channel=_CHANNEL, reason=type(e).__name__)
             return False
         finally:

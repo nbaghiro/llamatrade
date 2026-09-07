@@ -23,6 +23,9 @@ data:
   OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4318"
   # Common settings
   LOG_LEVEL: "INFO"
+  # LOG_FORMAT defaults to the Cloud Logging-native JSON renderer, which the GKE
+  # node agent parses for severity, trace links and source location. Set
+  # GOOGLE_CLOUD_PROJECT per overlay so the trace field is a linkable resource name.
   ENVIRONMENT: "production"
   # Per-pod SQLAlchemy connection pool (llamatrade_db.get_engine). Each pod holds
   # its own pool, so the platform draws (DB_POOL_SIZE + DB_MAX_OVERFLOW) x pods
