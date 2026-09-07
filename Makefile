@@ -105,11 +105,18 @@ test-unit-quick:
 	done
 
 # Run integration tests (per-service testcontainers suites; requires Docker)
+# Trading runs with --no-cov: its addopts gate full-suite coverage, which an
+# integration-only subset cannot meet.
 test-integration:
 	@. .venv/bin/activate 2>/dev/null || (python3 -m venv .venv && . .venv/bin/activate); \
-	pip install -q -e "services/portfolio[dev,integration]" -e "services/market-data[dev,integration]" -e "libs/events[dev,integration]"; \
+	pip install -q -e "services/portfolio[dev,integration]" -e "services/market-data[dev,integration]" -e "services/trading[dev,integration]" -e "services/backtest[dev,integration]" -e "services/agent[dev,integration]" -e "services/notification[dev]" -e "libs/events[dev,integration]" -e "libs/db[dev]"; \
 	(cd services/portfolio && pytest tests/integration -v --timeout=180) && \
 	(cd services/market-data && pytest tests/integration -v --timeout=180) && \
+	(cd services/trading && pytest tests/integration -v --timeout=180 --no-cov) && \
+	(cd services/backtest && pytest tests/integration -v --timeout=180 --no-cov) && \
+	(cd services/agent && pytest tests/integration -v --timeout=180 --no-cov) && \
+	(cd services/notification && pytest tests/integration -v --timeout=180 --no-cov) && \
+	(cd libs/db && pytest -m integration -v --timeout=180 --no-cov) && \
 	(cd libs/events && pytest tests/test_integration_kafka.py -v --timeout=180)
 
 test-security:
@@ -179,7 +186,7 @@ test-proto:
 	cd libs/proto && pytest tests -v
 
 test-frontend:
-	cd apps/web && npm test -- --run --passWithNoTests
+	cd apps/web && npm test -- --run
 
 # ===================
 # Linting & Type Checking

@@ -201,6 +201,17 @@ if [[ "$RUN_TESTS" == "true" && "$RUN_BACKEND" == "true" ]]; then
     fi
     pip uninstall -y llamatrade-strategy -q 2>/dev/null || true
 
+    # Test billing service
+    print_step "Testing billing service"
+    pip install -e "services/billing[dev]" -q
+    if (cd services/billing && pytest tests -v); then
+        print_success "Billing tests passed"
+    else
+        print_error "Billing tests failed"
+        FAILED+=("Billing tests")
+    fi
+    pip uninstall -y llamatrade-billing -q 2>/dev/null || true
+
     # Test notification service (stateless unit tests, no DB/broker needed)
     print_step "Testing notification service"
     pip install -e "services/notification[dev]" -q
@@ -226,9 +237,11 @@ if [[ "$RUN_TESTS" == "true" && "$RUN_BACKEND" == "true" ]]; then
         FAILED+=("Proto tests")
     fi
 
-    # Shared-lib suites: CI's Test Backend runs these, so drift here only ever
-    # surfaced remotely before this step existed. Docker-gated integration
-    # tests inside them self-skip without a broker.
+    # Shared-lib suites: CI's Test Backend runs every one of these (telemetry,
+    # events, dsl, runtime, alpaca, common, db) with their coverage gates bound;
+    # this loop mirrors that locally, minus coverage (--no-cov). Docker-gated
+    # integration tests inside them self-skip without a daemon (CI sets
+    # CI_REQUIRE_DOCKER=1 to turn those skips into failures).
     for lib in telemetry events dsl runtime alpaca common db; do
         print_step "libs/${lib} tests"
         if (cd "libs/${lib}" && pytest tests -q --no-cov); then
@@ -247,7 +260,7 @@ if [[ "$RUN_TESTS" == "true" && "$RUN_FRONTEND" == "true" ]]; then
     if [[ -d "apps/web" ]]; then
         cd apps/web
         if [[ -f "package.json" ]]; then
-            run_step "Frontend tests" npm test -- --run --passWithNoTests || true
+            run_step "Frontend tests" npm test -- --run || true
         fi
         cd "$PROJECT_ROOT"
     fi
@@ -258,7 +271,7 @@ if [[ "$RUN_TESTS" == "true" && "$RUN_INTEGRATION" == "true" ]]; then
     print_header "Integration Tests"
 
     # Ensure testcontainers dependencies are installed
-    pip install -q "testcontainers[postgres,kafka]>=4.0.0" pytest-xdist pytest-timeout
+    pip install -q "testcontainers[postgres,kafka,redis]>=4.0.0" pytest-xdist pytest-timeout
 
     # Per-service integration suites against real Postgres/Timescale/Kafka
     print_step "Portfolio integration tests (ledger, RLS, Kafka fills)"
@@ -275,6 +288,46 @@ if [[ "$RUN_TESTS" == "true" && "$RUN_INTEGRATION" == "true" ]]; then
     else
         print_error "Market-data integration tests failed"
         FAILED+=("Market-data integration tests")
+    fi
+
+    print_step "Backtest integration tests (service writes, cancellation flag, Celery smoke)"
+    if (cd services/backtest && pytest tests/integration -v --timeout=180 --no-cov); then
+        print_success "Backtest integration tests passed"
+    else
+        print_error "Backtest integration tests failed"
+        FAILED+=("Backtest integration tests")
+    fi
+
+    print_step "Trading integration tests (order constraints, lease failover, Kafka publish)"
+    if (cd services/trading && pytest tests/integration -v --timeout=180 --no-cov); then
+        print_success "Trading integration tests passed"
+    else
+        print_error "Trading integration tests failed"
+        FAILED+=("Trading integration tests")
+    fi
+
+    print_step "Agent integration tests (confirm lock on real Postgres)"
+    if (cd services/agent && pytest tests/integration -v --timeout=180 --no-cov); then
+        print_success "Agent integration tests passed"
+    else
+        print_error "Agent integration tests failed"
+        FAILED+=("Agent integration tests")
+    fi
+
+    print_step "Notification integration tests (pipeline, alerts, market loop)"
+    if (cd services/notification && pytest tests/integration -v --timeout=180 --no-cov); then
+        print_success "Notification integration tests passed"
+    else
+        print_error "Notification integration tests failed"
+        FAILED+=("Notification integration tests")
+    fi
+
+    print_step "DB lib integration tests (RLS policy parity, GUC, advisory locks)"
+    if (cd libs/db && pytest -m integration -v --timeout=180 --no-cov); then
+        print_success "DB integration tests passed"
+    else
+        print_error "DB integration tests failed"
+        FAILED+=("DB integration tests")
     fi
 
     print_step "Events lib Kafka integration tests"

@@ -120,6 +120,10 @@ jobs:
     env:
       KAFKA_BOOTSTRAP_SERVERS: localhost:9092
       KAFKA_SECURITY_PROTOCOL: PLAINTEXT
+      # Docker-gated suites must RUN in this job: with this set, their skip
+      # guards hard-fail instead of skipping, so a runner-side Docker or
+      # testcontainers regression fails loudly rather than passing green.
+      CI_REQUIRE_DOCKER: "1"
 
     steps:
       - uses: actions/checkout@v4
@@ -152,15 +156,36 @@ jobs:
         # library are present; the rest of the suite runs and gates coverage.
         run: cd libs/runtime && pytest tests -v
 
+      - name: Run telemetry lib tests (>=80% gate)
+        # The package's addopts enforce the coverage gate.
+        run: |
+          pip install -e libs/telemetry[dev]
+          cd libs/telemetry && pytest tests -v
+
+      - name: Run alpaca lib tests (>=91% ratchet gate)
+        # Ratchet floor (D3): gate at the measured level, raise as suites grow.
+        run: |
+          pip install -e libs/alpaca[dev]
+          cd libs/alpaca && pytest tests -v --cov-fail-under=91
+
+      - name: Run common lib tests (>=80% gate)
+        run: cd libs/common && pytest tests -v
+
+      - name: Run db lib tests (>=96% ratchet gate, incl. Docker-backed RLS/GUC suites)
+        # The RLS/GUC/advisory-lock modules run testcontainers Postgres over the
+        # runner's Docker daemon; CI_REQUIRE_DOCKER makes their guards binding.
+        run: |
+          pip install "testcontainers[postgres]>=4.0.0"
+          cd libs/db && pytest tests -v --cov-fail-under=96
+
       - name: Run auth tests with coverage
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test
           REDIS_URL: redis://localhost:6379
         run: |
           pip install -e services/auth[dev]
-          # Ratchet floor: below the 80 target, gate at the current level so
-          # coverage can only move up. Raise toward 80 as the suite grows.
-          cd services/auth && pytest tests -v --cov=src --cov-report=term-missing --cov-fail-under=70
+          # Ratchet floor: gate at the measured level so coverage can only move up.
+          cd services/auth && pytest tests -v --cov=src --cov-report=term-missing --cov-fail-under=85
           pip uninstall -y llamatrade-auth
 
       - name: Run strategy tests with coverage (>=80% gate)
@@ -176,17 +201,29 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test
           REDIS_URL: redis://localhost:6379
         run: |
-          pip install -e services/agent[dev]
+          pip install -e services/agent[dev,integration]
           # Ratchet floor, same policy as auth.
-          cd services/agent && pytest tests -v --cov=src --cov-report=term-missing --cov-fail-under=60
+          cd services/agent && pytest tests -v --cov=src --cov-report=term-missing --cov-fail-under=81
 
       - name: Run backtest tests with coverage (>=80% gate)
+        # The [integration] extra pulls testcontainers so the Docker-gated
+        # Postgres/Redis tier (service writes, cancellation flag, Celery smoke)
+        # runs here instead of skipping.
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test
           REDIS_URL: redis://localhost:6379
         run: |
-          pip install -e services/backtest[dev]
+          pip install -e services/backtest[dev,integration]
           cd services/backtest && pytest tests -v --cov=src --cov-report=term-missing --cov-fail-under=80
+
+      - name: Run billing tests with coverage (>=92% ratchet gate)
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test
+          REDIS_URL: redis://localhost:6379
+        run: |
+          pip install -e services/billing[dev]
+          # Ratchet floor (D3): gate at the measured level, raise as suites grow.
+          cd services/billing && pytest tests -v --cov=src --cov-report=term-missing --cov-fail-under=92
 
       - name: Run portfolio tests with coverage (>=80% gate)
         # Full suite (unit + Docker-backed integration via testcontainers): the
@@ -202,12 +239,14 @@ jobs:
           cd services/portfolio && pytest tests --cov=src --cov-report=term-missing --cov-fail-under=80
 
       - name: Run trading tests with coverage (>=80% gate)
+        # The [integration] extra pulls testcontainers so the Docker-gated
+        # constraint/failover suites run here rather than silently skipping.
         env:
           DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test
           REDIS_URL: redis://localhost:6379
         run: |
           pip install -e libs/alpaca
-          pip install -e services/trading[dev]
+          pip install -e services/trading[dev,integration]
           cd services/trading && pytest tests -v --cov=src --cov-report=term-missing --cov-fail-under=80
 
       - name: Run events lib tests (unit + real-Kafka integration, >=80% gate)
@@ -218,15 +257,15 @@ jobs:
           pip install -e "libs/events[dev,integration]"
           cd libs/events && pytest tests -v
 
-      - name: Run market-data tests with coverage (unit + Kafka/Timescale integration)
+      - name: Run market-data tests with coverage (unit + Kafka/Timescale integration, >=88% ratchet gate)
         # Kafka integration uses the Redpanda service via the env-aware fixture;
         # Timescale integration uses testcontainers over the ubuntu-latest Docker
-        # daemon (same pattern as the portfolio step).
+        # daemon (same pattern as the portfolio step). Ratchet floor (D3).
         env:
           REDIS_URL: redis://localhost:6379
         run: |
           pip install -e "services/market-data[dev,integration]"
-          cd services/market-data && pytest tests -v --cov=src --cov-report=term-missing
+          cd services/market-data && pytest tests -v --cov=src --cov-report=term-missing --cov-fail-under=88
 
       - name: Run notification tests with coverage
         # Real implementation (consumer pipeline, delivery, price alerts):
@@ -242,12 +281,8 @@ jobs:
     name: E2E (live mesh, simulated)
     runs-on: ubuntu-latest
     needs: lint-python
-    # Runs on push-to-main + manual dispatch, NOT every PR. A live-mesh job is
-    # heavier and more exposed to seed/timing flake than the unit suites, so it
-    # is scoped to main until it has proven reliably green on PR traffic. The
-    # `build` job needs this one, so a red e2e blocks image build on main.
-    # Remaining promotion step: add `pull_request` coverage by dropping the `if`.
-    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    # Runs on every trigger, including pull_request (D1). The `build` job needs
+    # this one, so a red e2e blocks image build on main.
     services:
       postgres:
         image: postgres:16-alpine
@@ -511,7 +546,8 @@ jobs:
         run: cd ../.. && make proto-ts
 
       - name: Run tests
-        run: npm test -- --run --passWithNoTests
+        # No --passWithNoTests: collecting zero tests must fail the job.
+        run: npm test -- --run
 
   conformance-corpus:
     name: DSL Conformance Corpus (fresh)
@@ -599,10 +635,11 @@ jobs:
           pip install -e services/strategy
           pip install -e services/trading
 
-      - name: Run proto lib tests (timestamps + servicer-binding conformance)
+      - name: Run proto lib tests (timestamps + servicer-binding conformance, >=86% ratchet gate)
         # Gates the F1 class of drift (a servicer whose method names do not match
         # the generated snake_case bindings resolves zero endpoints at dispatch).
-        run: cd libs/proto && pytest tests -v
+        # Coverage ratchet floor (D3) rides on the package addopts.
+        run: cd libs/proto && pytest tests -v --cov-fail-under=86
 
   proto:
     name: Proto (lint + breaking)
