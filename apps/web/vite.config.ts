@@ -1,8 +1,14 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  test: {
+    // Explicit environment + include so an empty collection is a config bug,
+    // not a silent pass (CI runs without --passWithNoTests).
+    environment: 'node',
+    include: ['src/**/__tests__/**/*.test.{ts,tsx}'],
+  },
   // Base "/": the app is the catch-all behind the Caddy proxy. See infrastructure/docker/Caddyfile.
   server: {
     host: true,
