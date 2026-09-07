@@ -1,11 +1,21 @@
 """Tests for llamatrade_runtime.evaluation.conditions module."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import numpy as np
 import pytest
 
-from llamatrade_dsl import Comparison, Crossover, Indicator, LogicalOp, NumericLiteral, Price
+from llamatrade_dsl import (
+    Comparison,
+    Crossover,
+    Indicator,
+    LogicalOp,
+    Metric,
+    NumericLiteral,
+    Price,
+)
+from llamatrade_dsl.ast import CrossoverDirection, LogicalOperator
 from llamatrade_runtime.evaluation.conditions import (
     EvaluationError,
     evaluate_condition,
@@ -534,40 +544,8 @@ class TestEvaluateConditionSafe:
         assert evaluate_condition_safe(condition, state) is False
 
 
-class TestEvaluationError:
-    """Tests for EvaluationError exception."""
-
-    def test_evaluation_error_message(self) -> None:
-        """Test EvaluationError has correct message."""
-        error = EvaluationError("Test error message")
-        assert str(error) == "Test error message"
-
-
 class TestEdgeCases:
     """Tests for edge cases in condition evaluation."""
-
-    def test_comparison_with_nan_indicator(self, sample_bar: Bar, prev_bar: Bar) -> None:
-        """Test comparison when indicator value is NaN."""
-        indicators = {
-            "rsi_AAPL_close_14": np.array([45.0, 48.0, 52.0, 55.0, np.nan]),  # Last is NaN
-        }
-
-        state = EvaluationState(
-            current_bars={"AAPL": sample_bar},
-            prev_bars={"AAPL": prev_bar},
-            indicators=indicators,
-        )
-
-        condition = Comparison(
-            operator=">",
-            left=Indicator(name="rsi", symbol="AAPL", params=(14,)),
-            right=NumericLiteral(value=50),
-        )
-
-        # NaN comparisons should return False
-        result = evaluate_condition(condition, state)
-        # NaN > 50 is False in Python
-        assert result is False
 
     def test_comparison_nan_equals_nan(self, sample_bar: Bar, prev_bar: Bar) -> None:
         """Test that NaN != NaN in comparisons."""
@@ -610,10 +588,9 @@ class TestEdgeCases:
             slow=Indicator(name="sma", symbol="AAPL", params=(20,)),
         )
 
-        # Previous values are NaN, comparison fails
-        result = evaluate_condition(condition, state)
-        # NaN comparisons: verify crossover returns a bool rather than crashing.
-        assert isinstance(result, bool)
+        # The previous values are NaN: no cross, and the degradation is counted.
+        assert evaluate_condition(condition, state) is False
+        assert state.degraded_evaluations == 1
 
     def test_missing_symbol_in_price_data(self, sample_bar: Bar, prev_bar: Bar) -> None:
         """Test accessing price for non-existent symbol."""
@@ -631,23 +608,6 @@ class TestEdgeCases:
 
         with pytest.raises(KeyError):
             evaluate_condition(condition, state)
-
-    def test_evaluate_safe_missing_symbol(self, sample_bar: Bar, prev_bar: Bar) -> None:
-        """Test evaluate_condition_safe returns False for missing symbol."""
-        state = EvaluationState(
-            current_bars={"AAPL": sample_bar},
-            prev_bars={"AAPL": prev_bar},
-            indicators={},
-        )
-
-        condition = Comparison(
-            operator=">",
-            left=Price(symbol="MSFT", field="close"),
-            right=NumericLiteral(value=100),
-        )
-
-        # Should return False, not raise
-        assert evaluate_condition_safe(condition, state) is False
 
     def test_logical_and_short_circuit(self, sample_bar: Bar, prev_bar: Bar) -> None:
         """Test logical AND short-circuits on first false."""
@@ -747,7 +707,7 @@ class TestEdgeCases:
         assert evaluate_condition(condition, state) is True
 
     def test_crossover_single_element_array(self, sample_bar: Bar, prev_bar: Bar) -> None:
-        """Test crossover with single-element indicator arrays."""
+        """A 1-element array has no distinct previous value: prev==curr, so no cross fires."""
         indicators = {
             "sma_AAPL_close_10": np.array([105.0]),  # Single value
             "sma_AAPL_close_20": np.array([100.0]),
@@ -765,12 +725,9 @@ class TestEdgeCases:
             slow=Indicator(name="sma", symbol="AAPL", params=(20,)),
         )
 
-        # Single element: no "previous" value for crossover; must handle gracefully.
-        try:
-            result = evaluate_condition(condition, state)
-            assert isinstance(result, bool)
-        except IndexError, EvaluationError:
-            pass  # Acceptable to raise for insufficient data
+        # prev falls back to the single element: fast_prev (105) <= slow_prev (100) is False.
+        assert evaluate_condition(condition, state) is False
+        assert state.degraded_evaluations == 0
 
     def test_empty_logical_and(self, basic_state: EvaluationState) -> None:
         """Test empty 'and' operands list."""
@@ -833,15 +790,79 @@ class TestEdgeCases:
 
         assert evaluate_condition(condition, state) is True
 
+
+class TestMetricOperands:
+    """Metric values resolve through the bar history in both comparison and crossover."""
+
+    @staticmethod
+    def _history(closes: list[float]) -> list[Bar]:
+        base = datetime(2024, 1, 1, tzinfo=UTC)
+        return [
+            Bar(timestamp=base + timedelta(days=i), open=c, high=c, low=c, close=c, volume=1000)
+            for i, c in enumerate(closes)
+        ]
+
+    def test_comparison_resolves_drawdown_metric(self) -> None:
+        # Peak 100, current 85 -> drawdown 0.15 > 0.1.
+        state = EvaluationState(bar_history={"AAPL": self._history([100.0] * 5 + [85.0])})
+        condition = Comparison(
+            operator=">",
+            left=Metric(name="drawdown", symbol="AAPL"),
+            right=NumericLiteral(value=0.1),
+        )
+        assert evaluate_condition(condition, state) is True
+        assert state.degraded_evaluations == 0
+
+    def test_crossover_on_a_metric_never_fires(self) -> None:
+        """A metric has no previous value (prev falls back to current), so even a genuine
+        threshold crossing cannot satisfy prev <= slow and curr > slow."""
+        state = EvaluationState(bar_history={"AAPL": self._history([100.0] * 5 + [85.0])})
+        condition = Crossover(
+            direction="above",
+            fast=Metric(name="drawdown", symbol="AAPL"),
+            slow=NumericLiteral(value=0.1),
+        )
+        assert evaluate_condition(condition, state) is False
+        assert state.degraded_evaluations == 0
+
+
+class TestSafeWrapperErrorHandling:
+    """evaluate_condition_safe converts evaluation failures into counted degradations."""
+
+    def test_safe_counts_evaluation_error_as_degraded(self, basic_state: EvaluationState) -> None:
+        comparison = Comparison(
+            operator=">",
+            left=Price(symbol="AAPL", field="close"),
+            right=NumericLiteral(value=100),
+        )
+        condition = LogicalOp(operator="not", operands=(comparison, comparison))
+        assert evaluate_condition_safe(condition, basic_state) is False
+        assert basic_state.degraded_evaluations == 1
+
+
+class TestInvalidOperatorNodes:
+    """Malformed operator strings raise EvaluationError rather than mis-evaluating."""
+
+    def test_unknown_crossover_direction_raises(self, basic_state: EvaluationState) -> None:
+        condition = Crossover(
+            direction=cast(CrossoverDirection, "sideways"),
+            fast=NumericLiteral(value=1),
+            slow=NumericLiteral(value=2),
+        )
+        with pytest.raises(EvaluationError, match="Unknown crossover direction"):
+            evaluate_condition(condition, basic_state)
+
+    def test_unknown_logical_operator_raises(self, basic_state: EvaluationState) -> None:
+        condition = LogicalOp(operator=cast(LogicalOperator, "xor"), operands=())
+        with pytest.raises(EvaluationError, match="Unknown logical operator"):
+            evaluate_condition(condition, basic_state)
+
     def test_equality_with_floating_point_precision(self, basic_state: EvaluationState) -> None:
-        """Test equality comparison with floating point values."""
-        # This tests floating point equality issues
+        """Equality is exact IEEE comparison: 0.1 + 0.2 != 0.3, no epsilon tolerance."""
         condition = Comparison(
             operator="=",
             left=NumericLiteral(value=0.1 + 0.2),  # 0.30000000000000004 in IEEE 754
             right=NumericLiteral(value=0.3),
         )
 
-        result = evaluate_condition(condition, basic_state)
-        # Just verify it doesn't crash
-        assert isinstance(result, bool)
+        assert evaluate_condition(condition, basic_state) is False

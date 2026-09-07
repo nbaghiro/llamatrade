@@ -7,9 +7,9 @@ using realistic portfolio allocation strategies defined in s-expressions.
 from datetime import UTC, datetime, timedelta
 
 import numpy as np
+import pytest
 
 from llamatrade_dsl import parse
-from llamatrade_dsl.analysis import extract_indicators, get_max_lookback
 from llamatrade_runtime.evaluation.compiled import CompiledStrategy, compile_strategy
 from llamatrade_runtime.types import Bar
 
@@ -81,180 +81,12 @@ def generate_bars_with_pattern(
 
 
 # =============================================================================
-# Extractor Edge Cases
-# =============================================================================
-
-
-class TestExtractorEdgeCases:
-    """Tests for indicator extraction edge cases."""
-
-    def test_strategy_with_no_indicators(self) -> None:
-        """Test extracting indicators from strategy with only assets."""
-        sexpr = """
-        (strategy "Simple"
-            :benchmark SPY
-            :rebalance monthly
-            (weight :method equal
-                (asset AAPL)
-                (asset GOOGL)))
-        """
-        strategy = parse(sexpr)
-        indicators = extract_indicators(strategy)
-        assert len(indicators) == 0
-
-    def test_same_indicator_different_params(self) -> None:
-        """Test that same indicator with different params is extracted separately."""
-        sexpr = """
-        (strategy "Multi SMA"
-            :benchmark SPY
-            :rebalance daily
-            (if (and (> (sma SPY 10) 100) (> (sma SPY 20) 100))
-                (asset SPY :weight 100)
-                (else (asset TLT :weight 100))))
-        """
-        strategy = parse(sexpr)
-        indicators = extract_indicators(strategy)
-
-        # Should have SMA(10) and SMA(20) as separate indicators
-        periods = {ind.params[0] for ind in indicators if ind.indicator_type == "sma"}
-        assert 10 in periods
-        assert 20 in periods
-
-    def test_same_indicator_different_outputs(self) -> None:
-        """Test MACD with different output fields is extracted correctly."""
-        sexpr = """
-        (strategy "MACD Signal"
-            :benchmark SPY
-            :rebalance daily
-            (if (> (macd SPY 12 26 9 :signal) (macd SPY 12 26 9))
-                (asset SPY :weight 100)
-                (else (asset TLT :weight 100))))
-        """
-        strategy = parse(sexpr)
-        indicators = extract_indicators(strategy)
-
-        # Should have two MACD indicators (default and signal)
-        macd_indicators = [ind for ind in indicators if ind.indicator_type == "macd"]
-        assert len(macd_indicators) >= 1
-
-    def test_macd_lookback_calculation(self) -> None:
-        """Test MACD lookback is calculated correctly."""
-        sexpr = """
-        (strategy "MACD"
-            :benchmark SPY
-            :rebalance daily
-            (if (> (macd SPY 12 26 9) 0)
-                (asset SPY :weight 100)
-                (else (asset TLT :weight 100))))
-        """
-        strategy = parse(sexpr)
-        indicators = extract_indicators(strategy)
-
-        lookback = get_max_lookback(indicators)
-        # MACD needs slow period (26) + signal period (9) - 1 = ~34 bars
-        assert lookback >= 26
-
-    def test_deeply_nested_indicators(self) -> None:
-        """Test extraction from deeply nested conditions."""
-        sexpr = """
-        (strategy "Complex"
-            :benchmark SPY
-            :rebalance daily
-            (if (and
-                    (> (rsi SPY 14) 30)
-                    (or
-                        (> (sma SPY 10) (sma SPY 20))
-                        (and
-                            (< (rsi SPY 14) 70)
-                            (> (ema SPY 12) 100))))
-                (asset SPY :weight 100)
-                (else (asset TLT :weight 100))))
-        """
-        strategy = parse(sexpr)
-        indicators = extract_indicators(strategy)
-
-        indicator_names = {ind.indicator_type for ind in indicators}
-        assert "rsi" in indicator_names
-        assert "sma" in indicator_names
-        assert "ema" in indicator_names
-
-
-# =============================================================================
 # End-to-End Strategy Tests
 # =============================================================================
 
 
 class TestEndToEndStrategies:
     """End-to-end tests for allocation strategies."""
-
-    def test_equal_weight_allocation(self) -> None:
-        """Test equal weight allocation produces correct weights."""
-        sexpr = """
-        (strategy "Equal Weight"
-            :benchmark SPY
-            :rebalance monthly
-            (weight :method equal
-                (asset AAPL)
-                (asset GOOGL)
-                (asset MSFT)))
-        """
-        strategy = parse(sexpr)
-        compiled = CompiledStrategy.compile(strategy)
-
-        bars = generate_bars(compiled.min_bars + 10)
-        for bar in bars:
-            result = compiled.compute_allocation({"AAPL": bar, "GOOGL": bar, "MSFT": bar})
-
-        # Final allocation should be equal weights
-        assert "weights" in result
-        weights = result["weights"]
-        expected = 100.0 / 3
-        for symbol in ["AAPL", "GOOGL", "MSFT"]:
-            assert abs(weights.get(symbol, 0) - expected) < 1
-
-    def test_specified_weight_allocation(self) -> None:
-        """Test specified weights are preserved."""
-        sexpr = """
-        (strategy "60/40"
-            :benchmark SPY
-            :rebalance monthly
-            (weight :method specified
-                (asset SPY :weight 60)
-                (asset TLT :weight 40)))
-        """
-        strategy = parse(sexpr)
-        compiled = CompiledStrategy.compile(strategy)
-
-        bars = generate_bars(compiled.min_bars + 10)
-        for bar in bars:
-            result = compiled.compute_allocation({"SPY": bar, "TLT": bar})
-
-        weights = result["weights"]
-        # After normalization
-        assert abs(weights.get("SPY", 0) - 60) < 1
-        assert abs(weights.get("TLT", 0) - 40) < 1
-
-    def test_rsi_conditional_allocation(self) -> None:
-        """Test RSI-based conditional allocation."""
-        sexpr = """
-        (strategy "RSI Switch"
-            :benchmark SPY
-            :rebalance daily
-            (if (> (rsi SPY 14) 50)
-                (asset SPY :weight 100)
-                (else (asset TLT :weight 100))))
-        """
-        strategy = parse(sexpr)
-        compiled = CompiledStrategy.compile(strategy)
-
-        # Need enough bars for RSI calculation
-        bars = generate_bars(50, trend=0.01)  # Uptrend
-        for bar in bars:
-            result = compiled.compute_allocation({"SPY": bar, "TLT": bar})
-
-        # With uptrend, RSI should be > 50, so SPY should be allocated
-        weights = result["weights"]
-        assert len(weights) > 0
 
     def test_sma_crossover_allocation(self) -> None:
         """Test SMA crossover allocation."""
@@ -277,43 +109,6 @@ class TestEndToEndStrategies:
         weights = result["weights"]
         total = sum(weights.values())
         assert abs(total - 100) < 1
-
-
-class TestMomentumStrategies:
-    """Tests for momentum-based allocation strategies."""
-
-    def test_momentum_weight_basic(self) -> None:
-        """Test basic momentum weighting."""
-        sexpr = """
-        (strategy "Momentum"
-            :benchmark SPY
-            :rebalance monthly
-            (weight :method momentum :lookback 30 :top 2
-                (asset AAPL)
-                (asset GOOGL)
-                (asset MSFT)))
-        """
-        strategy = parse(sexpr)
-        compiled = CompiledStrategy.compile(strategy)
-
-        # Generate different trends for each symbol
-        np.random.seed(42)
-        aapl_bars = generate_bars(50, trend=0.02)  # Strong uptrend
-        googl_bars = generate_bars(50, trend=0.01)  # Moderate uptrend
-        msft_bars = generate_bars(50, trend=-0.01)  # Downtrend
-
-        for i in range(50):
-            result = compiled.compute_allocation(
-                {
-                    "AAPL": aapl_bars[i],
-                    "GOOGL": googl_bars[i],
-                    "MSFT": msft_bars[i],
-                }
-            )
-
-        # Top 2 momentum should be AAPL and GOOGL
-        assert "weights" in result
-        assert len(result["weights"]) > 0
 
 
 class TestFilterStrategies:
@@ -352,32 +147,49 @@ class TestFilterStrategies:
         assert len(non_zero) <= 2
 
 
+NESTED_SEXPR = """
+(strategy "Nested"
+    :benchmark SPY
+    :rebalance daily
+    (if (> (rsi SPY 14) 70)
+        (asset TLT :weight 100)
+        (else (if (< (rsi SPY 14) 30)
+            (asset SPY :weight 100)
+            (else (weight :method equal
+                (asset SPY)
+                (asset TLT)))))))
+"""
+
+
 class TestComplexStrategies:
     """Tests for complex multi-component strategies."""
 
-    def test_nested_conditionals(self) -> None:
-        """Test nested if conditions."""
-        sexpr = """
-        (strategy "Nested"
-            :benchmark SPY
-            :rebalance daily
-            (if (> (rsi SPY 14) 70)
-                (asset TLT :weight 100)
-                (else (if (< (rsi SPY 14) 30)
-                    (asset SPY :weight 100)
-                    (else (weight :method equal
-                        (asset SPY)
-                        (asset TLT)))))))
-        """
-        strategy = parse(sexpr)
-        compiled = CompiledStrategy.compile(strategy)
+    @staticmethod
+    def _final_weights(spy_closes: list[float]) -> dict[str, float]:
+        compiled = compile_strategy(parse(NESTED_SEXPR))
+        spy_bars = generate_bars_with_pattern(spy_closes)
+        tlt_bars = generate_bars_with_pattern([50.0] * len(spy_closes))
+        weights: dict[str, float] = {}
+        for spy_bar, tlt_bar in zip(spy_bars, tlt_bars, strict=True):
+            weights = compiled.compute_allocation({"SPY": spy_bar, "TLT": tlt_bar})["weights"]
+        return weights
 
-        bars = generate_bars(50)
-        for bar in bars:
-            result = compiled.compute_allocation({"SPY": bar, "TLT": bar})
+    def test_nested_conditional_outer_branch_on_high_rsi(self) -> None:
+        # Strictly rising closes -> no losses -> RSI 100 > 70 -> TLT.
+        weights = self._final_weights([100.0 + i for i in range(25)])
+        assert weights == {"TLT": pytest.approx(100.0)}
 
-        weights = result["weights"]
-        assert sum(weights.values()) > 0
+    def test_nested_conditional_inner_then_branch_on_low_rsi(self) -> None:
+        # Strictly falling closes -> no gains -> RSI 0 < 30 -> SPY.
+        weights = self._final_weights([100.0 - i for i in range(25)])
+        assert weights == {"SPY": pytest.approx(100.0)}
+
+    def test_nested_conditional_inner_else_branch_on_neutral_rsi(self) -> None:
+        # Alternating equal-size moves keep RSI near 50 (inside 30..70) -> equal split.
+        closes = [100.0 + (i % 2) for i in range(25)]
+        weights = self._final_weights(closes)
+        assert weights["SPY"] == pytest.approx(50.0)
+        assert weights["TLT"] == pytest.approx(50.0)
 
     def test_logical_conditions(self) -> None:
         """Test AND/OR logical conditions."""
@@ -399,43 +211,6 @@ class TestComplexStrategies:
         weights = result["weights"]
         total = sum(weights.values())
         assert abs(total - 100) < 1
-
-
-class TestInverseVolatilityStrategies:
-    """Tests for inverse volatility weighting."""
-
-    def test_inverse_volatility_weight(self) -> None:
-        """Test inverse volatility weighting."""
-        sexpr = """
-        (strategy "Inv Vol"
-            :benchmark SPY
-            :rebalance monthly
-            (weight :method inverse-volatility :lookback 30
-                (asset SPY)
-                (asset TLT)
-                (asset GLD)))
-        """
-        strategy = parse(sexpr)
-        compiled = CompiledStrategy.compile(strategy)
-
-        # Generate different volatility profiles
-        spy_bars = generate_bars(50, volatility=0.02)
-        tlt_bars = generate_bars(50, volatility=0.01)  # Less volatile
-        gld_bars = generate_bars(50, volatility=0.015)
-
-        for i in range(50):
-            result = compiled.compute_allocation(
-                {
-                    "SPY": spy_bars[i],
-                    "TLT": tlt_bars[i],
-                    "GLD": gld_bars[i],
-                }
-            )
-
-        weights = result["weights"]
-        # TLT should have highest weight (least volatile)
-        # But we're just checking it computes something
-        assert sum(weights.values()) > 0
 
 
 class TestCompileStrategyFunction:

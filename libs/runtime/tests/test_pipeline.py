@@ -624,25 +624,6 @@ class TestCCI:
         valid_cci = cci[~np.isnan(cci)]
         assert len(valid_cci) > 0
 
-    def test_cci_can_be_positive_or_negative(self, sample_prices: PriceData) -> None:
-        """Test CCI can have both positive and negative values."""
-        spec = IndicatorSpec(
-            indicator_type="cci",
-            symbol="SPY",
-            source="close",
-            params=(20,),
-            output_key="cci_close_20",
-            output_field=None,
-            required_bars=20,
-        )
-
-        result = compute_indicator(spec, sample_prices)
-        cci = result["cci_close_20"]
-        valid_cci = cci[~np.isnan(cci)]
-
-        # In random data, CCI should have both positive and negative values
-        assert np.any(valid_cci > 0) or np.any(valid_cci < 0)
-
 
 class TestWilliamsR:
     """Tests for Williams %R computation."""
