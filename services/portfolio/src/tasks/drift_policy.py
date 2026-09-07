@@ -143,6 +143,17 @@ async def apply_drift_action(
     if drift.kind is DriftKind.MISSING_IN_LEDGER:
         return await _adopt_external_trade(repo, store, broker, account, drift, orders, alerts)
     if drift.kind in _FREEZE_KINDS:
+        # A settling order is our own timing, not divergence; defer to the next
+        # pass rather than freeze (a freeze needs a manual unfreeze).
+        if orders is not None and await orders.has_recent_activity(
+            account.tenant_id, account.id, drift.symbol
+        ):
+            logger.info(
+                "deferring freeze for %s on account %s: order activity in flight",
+                drift.symbol,
+                account.id,
+            )
+            return "deferred"
         return await _freeze_holding_sleeves(repo, store, account, drift, alerts)
     return "observed"
 

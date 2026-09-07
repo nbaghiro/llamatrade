@@ -17,6 +17,7 @@ from llamatrade_events.testing import FakeTransport
 from llamatrade_proto.generated import events_pb2
 
 from src.alerts import (
+    IncidentKind,
     LedgerAlertDispatcher,
     LedgerIncident,
     get_ledger_alert_dispatcher,
@@ -127,3 +128,56 @@ async def test_contextless_incident_dedups_on_message(
 
 def test_get_ledger_alert_dispatcher_returns_singleton() -> None:
     assert get_ledger_alert_dispatcher() is get_ledger_alert_dispatcher()
+
+
+@pytest.mark.parametrize(
+    ("kind", "category", "severity"),
+    [
+        (
+            "sleeve_frozen",
+            _E.NOTIFICATION_CATEGORY_SLEEVE_FROZEN,
+            _E.NOTIFICATION_SEVERITY_CRITICAL,
+        ),
+        (
+            "fill_quarantined",
+            _E.NOTIFICATION_CATEGORY_FILL_QUARANTINED,
+            _E.NOTIFICATION_SEVERITY_CRITICAL,
+        ),
+        (
+            "dlq_backlog",
+            _E.NOTIFICATION_CATEGORY_FILL_QUARANTINED,
+            _E.NOTIFICATION_SEVERITY_CRITICAL,
+        ),
+        (
+            "external_trade_adopted",
+            _E.NOTIFICATION_CATEGORY_EXTERNAL_TRADE_ADOPTED,
+            _E.NOTIFICATION_SEVERITY_ACTIONABLE,
+        ),
+        (
+            "corporate_action_proposed",
+            _E.NOTIFICATION_CATEGORY_CORPORATE_ACTION_PROPOSED,
+            _E.NOTIFICATION_SEVERITY_ACTIONABLE,
+        ),
+        (
+            "corporate_action_applied",
+            _E.NOTIFICATION_CATEGORY_CORPORATE_ACTION_APPLIED,
+            _E.NOTIFICATION_SEVERITY_INFO,
+        ),
+    ],
+)
+async def test_every_incident_kind_publishes_its_category_and_severity(
+    dispatcher: LedgerAlertDispatcher,
+    transport: FakeTransport,
+    kind: IncidentKind,
+    category: int,
+    severity: int,
+) -> None:
+    """The published event (not the mapping table) carries the pinned pair per kind."""
+    await dispatcher.dispatch(
+        TENANT,
+        LedgerIncident(kind=kind, message="m", context={"account_id": "acct-1"}),
+    )
+    event = _events(transport)[0]
+    assert event.category == category
+    assert event.severity == severity
+    assert event.account_id == "acct-1"

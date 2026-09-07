@@ -8,9 +8,11 @@ never aborts the pass.
 import asyncio
 import logging
 from decimal import Decimal
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from llamatrade_db.models.ledger import Account
 
@@ -19,7 +21,10 @@ from src.ledger.reconciliation import Drift, DriftKind, cash_drift, ledger_cash
 from src.ports import BrokerUnavailableError
 from src.tasks.reconciliation import (
     AccountReconResult,
+    _freeze_sustained_cash_drift,
+    reconciliation_loop,
     run_reconciliation_pass,
+    update_cash_drift_streaks,
     update_staleness,
 )
 
@@ -42,11 +47,13 @@ class FakeBroker:
         cash: Decimal = Decimal("0"),
         fail: bool = False,
         unavailable: bool = False,
+        cash_fail: bool = False,
     ) -> None:
         self._positions = positions
         self._cash = cash
         self._fail = fail
         self._unavailable = unavailable
+        self._cash_fail = cash_fail
         self.calls: list = []
 
     async def positions(self, tenant_id, account) -> dict[str, Decimal]:
@@ -58,6 +65,8 @@ class FakeBroker:
         return self._positions
 
     async def cash(self, tenant_id, account) -> Decimal:
+        if self._cash_fail:
+            raise RuntimeError("cash endpoint down")
         return self._cash
 
 
@@ -360,3 +369,237 @@ async def test_handler_failure_never_aborts_pass() -> None:
     # Both accounts still reconciled despite the handler blowing up.
     assert [r.account_id for r in results] == [acct_one.id, acct_two.id]
     assert all(r.error is None for r in results)
+
+
+async def test_cash_read_failure_keeps_position_reconciliation() -> None:
+    """A broker cash-read fault reconciles positions anyway; cash check is skipped."""
+    acct = _account()
+    projector = FakeProjector([])
+    results = await run_reconciliation_pass(
+        projector=projector,
+        broker=FakeBroker({"AAPL": Decimal("10")}, cash_fail=True),
+        accounts=[acct],
+    )
+    assert results[0].ok is True
+    assert results[0].cash_drift is None
+    assert projector.seen == [(acct.id, {"AAPL": Decimal("10")})]
+    assert projector.cash_seen == [None]  # cash reconciliation skipped, not zeroed
+
+
+# --- cash-drift streaks ---
+
+
+def _cash_result(account_id: UUID, drift: Decimal | None) -> AccountReconResult:
+    return AccountReconResult(account_id=account_id, drifts=[], cash_drift=drift)
+
+
+def test_cash_streak_freezes_only_after_sustained_passes() -> None:
+    account_id = uuid4()
+    streaks: dict[UUID, int] = {}
+
+    for _ in range(2):
+        candidates = update_cash_drift_streaks(
+            [_cash_result(account_id, Decimal("5"))],
+            streaks,
+            threshold=Decimal("1"),
+            sustained_passes=3,
+        )
+        assert candidates == []
+    candidates = update_cash_drift_streaks(
+        [_cash_result(account_id, Decimal("5"))],
+        streaks,
+        threshold=Decimal("1"),
+        sustained_passes=3,
+    )
+    assert candidates == [account_id]
+    assert (
+        streaks[account_id] == 0
+    )  # reset: a still-persisting drift needs a human, not a re-freeze
+
+
+def test_cash_streak_resets_when_drift_subsides() -> None:
+    account_id = uuid4()
+    streaks: dict[UUID, int] = {account_id: 2}
+
+    candidates = update_cash_drift_streaks(
+        [_cash_result(account_id, Decimal("0.50"))],
+        streaks,
+        threshold=Decimal("1"),
+        sustained_passes=3,
+    )
+
+    assert candidates == []
+    assert streaks[account_id] == 0
+
+
+def test_cash_streak_at_threshold_does_not_count() -> None:
+    """Drift must EXCEED the dollar threshold; exactly-at-threshold resets."""
+    account_id = uuid4()
+    streaks: dict[UUID, int] = {account_id: 2}
+
+    update_cash_drift_streaks(
+        [_cash_result(account_id, Decimal("1"))],
+        streaks,
+        threshold=Decimal("1"),
+        sustained_passes=3,
+    )
+
+    assert streaks[account_id] == 0
+
+
+def test_cash_streak_counts_drift_magnitude() -> None:
+    """Negative drift (ledger above broker) counts the same as positive."""
+    account_id = uuid4()
+    streaks: dict[UUID, int] = {}
+
+    update_cash_drift_streaks(
+        [_cash_result(account_id, Decimal("-5"))],
+        streaks,
+        threshold=Decimal("1"),
+        sustained_passes=3,
+    )
+
+    assert streaks[account_id] == 1
+
+
+def test_unread_cash_leaves_streak_unchanged() -> None:
+    """A skip/error pass (cash_drift None) neither triggers nor clears the streak."""
+    account_id = uuid4()
+    streaks: dict[UUID, int] = {account_id: 2}
+
+    candidates = update_cash_drift_streaks(
+        [_cash_result(account_id, None)],
+        streaks,
+        threshold=Decimal("1"),
+        sustained_passes=3,
+    )
+
+    assert candidates == []
+    assert streaks[account_id] == 2
+
+
+def test_cash_streaks_prune_vanished_accounts() -> None:
+    gone_id, present_id = uuid4(), uuid4()
+    streaks: dict[UUID, int] = {gone_id: 2, present_id: 1}
+
+    update_cash_drift_streaks(
+        [_cash_result(present_id, Decimal("5"))],
+        streaks,
+        threshold=Decimal("1"),
+        sustained_passes=3,
+    )
+
+    assert gone_id not in streaks
+    assert streaks[present_id] == 2
+
+
+# --- sustained-cash-drift freeze orchestration ---
+
+
+class _FreezeRecorder:
+    def __init__(self, *, fail_for: set[UUID] | None = None) -> None:
+        self.calls: list[tuple[UUID, Decimal]] = []
+        self._fail_for = fail_for or set()
+
+    async def __call__(self, account: Account, cash_drift: Decimal) -> None:
+        self.calls.append((account.id, cash_drift))
+        if account.id in self._fail_for:
+            raise RuntimeError("freeze transaction failed")
+
+
+@pytest.fixture
+def _single_pass_freeze(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make one drifting pass a freeze candidate (threshold $1, 1 sustained pass)."""
+    import src.tasks.reconciliation as recon
+
+    monkeypatch.setattr(recon, "CASH_DRIFT_FREEZE_DOLLARS", Decimal("1"))
+    monkeypatch.setattr(recon, "CASH_DRIFT_FREEZE_PASSES", 1)
+
+
+async def test_sustained_cash_drift_invokes_freeze(_single_pass_freeze: None) -> None:
+    acct = _account()
+    freeze = _FreezeRecorder()
+
+    await _freeze_sustained_cash_drift([_cash_result(acct.id, Decimal("42"))], [acct], {}, freeze)
+
+    assert freeze.calls == [(acct.id, Decimal("42"))]
+
+
+async def test_freeze_below_threshold_is_not_invoked(_single_pass_freeze: None) -> None:
+    acct = _account()
+    freeze = _FreezeRecorder()
+
+    await _freeze_sustained_cash_drift([_cash_result(acct.id, Decimal("0.50"))], [acct], {}, freeze)
+
+    assert freeze.calls == []
+
+
+async def test_freeze_fault_never_aborts_the_pass(
+    _single_pass_freeze: None, caplog: pytest.LogCaptureFixture
+) -> None:
+    first, second = _account(), _account()
+    freeze = _FreezeRecorder(fail_for={first.id})
+
+    with caplog.at_level(logging.ERROR, logger="src.tasks.reconciliation"):
+        await _freeze_sustained_cash_drift(
+            [_cash_result(first.id, Decimal("10")), _cash_result(second.id, Decimal("20"))],
+            [first, second],
+            {},
+            freeze,
+        )
+
+    # The first freeze blew up, was logged, and the second still ran.
+    assert [account_id for account_id, _ in freeze.calls] == [first.id, second.id]
+    assert "cash-drift freeze failed" in caplog.text
+
+
+async def test_freeze_candidate_without_account_row_is_skipped(
+    _single_pass_freeze: None,
+) -> None:
+    """A result for an account deleted mid-pass cannot be frozen — skip, don't crash."""
+    freeze = _FreezeRecorder()
+
+    await _freeze_sustained_cash_drift([_cash_result(uuid4(), Decimal("10"))], [], {}, freeze)
+
+    assert freeze.calls == []
+
+
+# --- election loss ---
+
+
+def _poisoned_session_factory() -> async_sessionmaker[AsyncSession]:
+    def factory() -> AsyncSession:
+        raise AssertionError("session factory must not be touched after election loss")
+
+    return cast(async_sessionmaker[AsyncSession], factory)
+
+
+async def test_reconciliation_loop_exits_on_election_loss_before_pass() -> None:
+    """Top-of-loop leadership loss returns immediately — no session, no sweep."""
+
+    async def lost_leadership() -> bool:
+        return False
+
+    await asyncio.wait_for(
+        reconciliation_loop(
+            _poisoned_session_factory(),
+            interval_seconds=60.0,
+            stop_event=asyncio.Event(),
+            is_leader=lost_leadership,
+        ),
+        timeout=2.0,
+    )
+
+
+async def test_reconciliation_loop_exits_on_stop_event() -> None:
+    stop = asyncio.Event()
+    stop.set()
+
+    await asyncio.wait_for(
+        reconciliation_loop(
+            _poisoned_session_factory(),
+            interval_seconds=60.0,
+            stop_event=stop,
+        ),
+        timeout=2.0,
+    )

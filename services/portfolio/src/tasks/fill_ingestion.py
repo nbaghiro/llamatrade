@@ -35,6 +35,7 @@ from llamatrade_db import (
 )
 from llamatrade_db.models.ledger import LedgerEventType
 from llamatrade_events import (
+    CURSOR_BEGIN,
     ErrorDisposition,
     EventBus,
     EventEnvelope,
@@ -312,13 +313,11 @@ async def _reroute_if_sleeve_closed(db: AsyncSession, append: LedgerAppend) -> L
         append.tenant_id, append.account_id, SleeveType.UNMANAGED
     )
     if unmanaged is None:
-        logger.error(
-            "fill for closed sleeve %s but account %s has no Unmanaged sleeve; "
-            "applying to the closed sleeve",
-            append.sleeve_id,
-            append.account_id,
+        # Applying here would resurrect the sleeve and overdraw released cash.
+        raise FillQuarantineError(
+            f"fill targets closed sleeve {append.sleeve_id} and account "
+            f"{append.account_id} has no Unmanaged sleeve to re-home it to"
         )
-        return append
 
     logger.warning(
         "fill arrived for closed sleeve %s; re-homing to Unmanaged sleeve %s",
@@ -336,19 +335,25 @@ def make_fill_handler(session_factory: async_sessionmaker[AsyncSession]) -> Fill
     async def handle(append: LedgerAppend) -> None:
         async with tenant_session(append.tenant_id, session_factory) as db:
             await persist_append(db, append)
-        logger.debug(
-            "ingested fill into ledger (account=%s symbol=%s event_id=%s)",
-            append.account_id,
+        logger.info(
+            "Booked fill into ledger: %s %s %s",
+            append.data.get("side"),
+            append.data.get("qty"),
             append.data.get("symbol"),
-            append.event_id,
+            extra={
+                # The join key back to the trading-side submit line.
+                "client_order_id": append.data.get("client_order_id"),
+                "account_id": str(append.account_id),
+                "sleeve_id": str(append.sleeve_id),
+                "symbol": append.data.get("symbol"),
+                "price": append.data.get("price"),
+            },
         )
 
     return handle
 
 
-async def _interruptible_sleep(
-    stop_event: asyncio.Event, seconds: float
-) -> None:  # pragma: no cover - timing shell
+async def _interruptible_sleep(stop_event: asyncio.Event, seconds: float) -> None:
     """Sleep up to ``seconds``, waking early if ``stop_event`` is set."""
     try:
         await asyncio.wait_for(stop_event.wait(), timeout=seconds)
@@ -452,15 +457,8 @@ def make_fill_quarantine(bus: EventBus) -> QuarantineHandler:
     return quarantine
 
 
-# In-place retry backoff for a transient persistence failure. On Kafka an
-# uncommitted offset is NOT redelivered to a live consumer (only on
-# restart/rebalance), so the RetryForever policy retries a fill until it lands —
-# which is what "never skip a fill" requires. Handling is sequential, so the
-# retry stalls EVERY partition assigned to this pod, not just the account's: the
-# consumer pauses the record's partition so the fetcher stops prefetching it,
-# and the transport's max_poll_interval_ms is raised so a long DB outage can't
-# evict the member and trigger a rebalance storm. The writer is idempotent, so a
-# re-run is safe.
+# Kafka does not redeliver an uncommitted offset to a live consumer, so a fill
+# retries in place (partition paused) until it lands; the writer is idempotent.
 _RETRY_BASE_DELAY_SECONDS = 0.5
 _RETRY_MAX_DELAY_SECONDS = 30.0
 
@@ -504,6 +502,11 @@ async def consume_fill_stream(
     group never misses a published fill (the writer dedupes redelivery). Runs
     until cancelled (or ``stop_event`` is set).
     """
+    # A missing topic yields an empty assignment: green health, zero fills booked.
+    await fills.bus.transport.ensure_group(
+        LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP, start_id=CURSOR_BEGIN
+    )
+
     logger.info(
         "ledger fill consumer started (stream=%s group=%s consumer=%s)",
         LEDGER_FILLS_STREAM,
@@ -548,7 +551,7 @@ async def monitor_stream_lag(
     stop_event: asyncio.Event,
     interval_seconds: float = LAG_SAMPLE_INTERVAL_SECONDS,
     tracker: FillLagTracker | None = None,
-) -> None:  # pragma: no cover - timing shell over pending_count
+) -> None:
     """Sample the consumer group's uncommitted-entry count into a gauge (and tracker).
 
     Consumer-group lag is the signal: sustained growth means the group is down

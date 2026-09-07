@@ -64,13 +64,16 @@ async def test_fund_and_close_sleeve_roundtrip(
 
     # 2. deposit external cash into Unallocated
     await servicer.deposit_funds(
-        ledger_pb2.DepositFundsRequest(context=ctx, account_id=account_id, amount=_dec("100000")),
+        ledger_pb2.DepositFundsRequest(
+            request_id="itest-deposit-1", context=ctx, account_id=account_id, amount=_dec("100000")
+        ),
         _ctx(),
     )
 
     # 3. open + fund a strategy sleeve (open-and-fund)
     alloc = await servicer.allocate_capital(
         ledger_pb2.AllocateCapitalRequest(
+            request_id="itest-allocatecapital-1",
             context=ctx,
             account_id=account_id,
             to_sleeve_id="",
@@ -126,11 +129,14 @@ async def test_foreign_tenant_cannot_read_sleeve(
     # Fund Unallocated, then open-and-fund a strategy sleeve (allocate requires a
     # positive amount against available free cash).
     await servicer.deposit_funds(
-        ledger_pb2.DepositFundsRequest(context=owner, account_id=account_id, amount=_dec("1000")),
+        ledger_pb2.DepositFundsRequest(
+            request_id="itest-deposit-2", context=owner, account_id=account_id, amount=_dec("1000")
+        ),
         _ctx(),
     )
     alloc = await servicer.allocate_capital(
         ledger_pb2.AllocateCapitalRequest(
+            request_id="itest-allocatecapital-2",
             context=owner,
             account_id=account_id,
             to_sleeve_id="",
@@ -158,7 +164,9 @@ async def test_foreign_tenant_cannot_mutate_account(
     owner = _tenant_ctx(str(uuid4()))
     account_id = await _bootstrap_account(servicer, owner)
     await servicer.deposit_funds(
-        ledger_pb2.DepositFundsRequest(context=owner, account_id=account_id, amount=_dec("5000")),
+        ledger_pb2.DepositFundsRequest(
+            request_id="itest-deposit-3", context=owner, account_id=account_id, amount=_dec("5000")
+        ),
         _ctx(),
     )
 
@@ -166,20 +174,27 @@ async def test_foreign_tenant_cannot_mutate_account(
     with pytest.raises(ConnectError):
         await servicer.deposit_funds(
             ledger_pb2.DepositFundsRequest(
-                context=intruder, account_id=account_id, amount=_dec("100")
+                request_id="itest-depositfunds-3",
+                context=intruder,
+                account_id=account_id,
+                amount=_dec("100"),
             ),
             _ctx(),
         )
     with pytest.raises(ConnectError):
         await servicer.withdraw_funds(
             ledger_pb2.WithdrawFundsRequest(
-                context=intruder, account_id=account_id, amount=_dec("100")
+                request_id="itest-withdrawfunds-4",
+                context=intruder,
+                account_id=account_id,
+                amount=_dec("100"),
             ),
             _ctx(),
         )
     with pytest.raises(ConnectError):
         await servicer.allocate_capital(
             ledger_pb2.AllocateCapitalRequest(
+                request_id="itest-allocatecapital-5",
                 context=intruder,
                 account_id=account_id,
                 to_sleeve_id="",
@@ -203,12 +218,15 @@ async def test_cannot_allocate_to_sleeve_in_another_account(
 
     # Open a funded sleeve in account B.
     await servicer.deposit_funds(
-        ledger_pb2.DepositFundsRequest(context=owner, account_id=account_b, amount=_dec("1000")),
+        ledger_pb2.DepositFundsRequest(
+            request_id="itest-deposit-4", context=owner, account_id=account_b, amount=_dec("1000")
+        ),
         _ctx(),
     )
     sleeve_b = (
         await servicer.allocate_capital(
             ledger_pb2.AllocateCapitalRequest(
+                request_id="itest-allocatecapital-6",
                 context=owner,
                 account_id=account_b,
                 to_sleeve_id="",
@@ -222,12 +240,15 @@ async def test_cannot_allocate_to_sleeve_in_another_account(
 
     # Fund account A, then try to allocate A's cash into account B's sleeve.
     await servicer.deposit_funds(
-        ledger_pb2.DepositFundsRequest(context=owner, account_id=account_a, amount=_dec("1000")),
+        ledger_pb2.DepositFundsRequest(
+            request_id="itest-deposit-5", context=owner, account_id=account_a, amount=_dec("1000")
+        ),
         _ctx(),
     )
     with pytest.raises(ConnectError):
         await servicer.allocate_capital(
             ledger_pb2.AllocateCapitalRequest(
+                request_id="itest-allocatecapital-7",
                 context=owner,
                 account_id=account_a,
                 to_sleeve_id=sleeve_b,
@@ -255,12 +276,15 @@ async def test_oversell_fill_freezes_sleeve(
     ctx = _tenant_ctx(str(uuid4()))
     account_id = await _bootstrap_account(servicer, ctx)
     await servicer.deposit_funds(
-        ledger_pb2.DepositFundsRequest(context=ctx, account_id=account_id, amount=_dec("1000")),
+        ledger_pb2.DepositFundsRequest(
+            request_id="itest-deposit-6", context=ctx, account_id=account_id, amount=_dec("1000")
+        ),
         _ctx(),
     )
     sleeve_id = (
         await servicer.allocate_capital(
             ledger_pb2.AllocateCapitalRequest(
+                request_id="itest-allocatecapital-8",
                 context=ctx,
                 account_id=account_id,
                 to_sleeve_id="",
@@ -334,12 +358,18 @@ async def test_snapshot_pass_batches_prices_across_accounts(
         ctx = _tenant_ctx(str(uuid4()))
         account_id = await _bootstrap_account(servicer, ctx)
         await servicer.deposit_funds(
-            ledger_pb2.DepositFundsRequest(context=ctx, account_id=account_id, amount=_dec("1000")),
+            ledger_pb2.DepositFundsRequest(
+                request_id="itest-deposit-7",
+                context=ctx,
+                account_id=account_id,
+                amount=_dec("1000"),
+            ),
             _ctx(),
         )
         sleeve_id = (
             await servicer.allocate_capital(
                 ledger_pb2.AllocateCapitalRequest(
+                    request_id="itest-allocatecapital-9",
                     context=ctx,
                     account_id=account_id,
                     to_sleeve_id="",
@@ -401,12 +431,15 @@ async def test_dual_delivery_fill_is_deduped(
     ctx = _tenant_ctx(str(uuid4()))
     account_id = await _bootstrap_account(servicer, ctx)
     await servicer.deposit_funds(
-        ledger_pb2.DepositFundsRequest(context=ctx, account_id=account_id, amount=_dec("1000")),
+        ledger_pb2.DepositFundsRequest(
+            request_id="itest-deposit-8", context=ctx, account_id=account_id, amount=_dec("1000")
+        ),
         _ctx(),
     )
     sleeve_id = (
         await servicer.allocate_capital(
             ledger_pb2.AllocateCapitalRequest(
+                request_id="itest-allocatecapital-10",
                 context=ctx,
                 account_id=account_id,
                 to_sleeve_id="",
@@ -490,13 +523,16 @@ async def test_incremental_projection_matches_full_fold(
 
     await _assert_incremental_equals_full()  # fresh account
     await servicer.deposit_funds(
-        ledger_pb2.DepositFundsRequest(context=ctx, account_id=account_id, amount=_dec("1000")),
+        ledger_pb2.DepositFundsRequest(
+            request_id="itest-deposit-9", context=ctx, account_id=account_id, amount=_dec("1000")
+        ),
         _ctx(),
     )
     await _assert_incremental_equals_full()  # after deposit
     sleeve_id = (
         await servicer.allocate_capital(
             ledger_pb2.AllocateCapitalRequest(
+                request_id="itest-allocatecapital-11",
                 context=ctx,
                 account_id=account_id,
                 to_sleeve_id="",
@@ -547,7 +583,9 @@ async def test_portfolio_read_reflects_deposit(
     ctx = _tenant_ctx(str(uuid4()))
     account_id = await _bootstrap_account(ledger, ctx)
     await ledger.deposit_funds(
-        ledger_pb2.DepositFundsRequest(context=ctx, account_id=account_id, amount=_dec("100000")),
+        ledger_pb2.DepositFundsRequest(
+            request_id="itest-deposit-10", context=ctx, account_id=account_id, amount=_dec("100000")
+        ),
         _ctx(),
     )
 
@@ -558,3 +596,234 @@ async def test_portfolio_read_reflects_deposit(
     resp = await pf.get_portfolio(portfolio_pb2.GetPortfolioRequest(context=ctx), _ctx())
     assert Decimal(resp.portfolio.total_value.value) == Decimal("100000")
     assert list(resp.positions) == []
+
+
+async def test_transfer_capital_moves_cash_between_sleeves(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Transfer sleeve -> Unallocated through the servicer: both balances move."""
+    servicer = _ledger_servicer(session_factory)
+    ctx = _tenant_ctx(str(uuid4()))
+    account_resp = await servicer.get_or_create_account(
+        ledger_pb2.GetOrCreateAccountRequest(context=ctx, credentials_id=str(uuid4())),
+        _ctx(),
+    )
+    account_id = account_resp.account.id
+    unallocated_id = next(
+        s.id for s in account_resp.base_sleeves if s.type == ledger_pb2.SLEEVE_TYPE_UNALLOCATED
+    )
+    await servicer.deposit_funds(
+        ledger_pb2.DepositFundsRequest(
+            request_id="itest-deposit-11", context=ctx, account_id=account_id, amount=_dec("1000")
+        ),
+        _ctx(),
+    )
+    sleeve_id = (
+        await servicer.allocate_capital(
+            ledger_pb2.AllocateCapitalRequest(
+                request_id="itest-allocatecapital-12",
+                context=ctx,
+                account_id=account_id,
+                to_sleeve_id="",
+                strategy_execution_id=str(uuid4()),
+                amount=_dec("600"),
+                sleeve_name="A",
+            ),
+            _ctx(),
+        )
+    ).sleeve.id
+
+    resp = await servicer.transfer_capital(
+        ledger_pb2.TransferCapitalRequest(
+            request_id="itest-transfercapital-13",
+            context=ctx,
+            account_id=account_id,
+            from_sleeve_id=sleeve_id,
+            to_sleeve_id=unallocated_id,
+            amount=_dec("200"),
+        ),
+        _ctx(),
+    )
+
+    assert Decimal(resp.from_sleeve.cash.balance.value) == Decimal("400")
+    assert Decimal(resp.to_sleeve.cash.balance.value) == Decimal("600")  # 400 free + 200 back
+
+
+async def test_transfer_capital_insufficient_cash_is_invalid_argument(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    from connectrpc.code import Code
+
+    servicer = _ledger_servicer(session_factory)
+    ctx = _tenant_ctx(str(uuid4()))
+    account_resp = await servicer.get_or_create_account(
+        ledger_pb2.GetOrCreateAccountRequest(context=ctx, credentials_id=str(uuid4())),
+        _ctx(),
+    )
+    account_id = account_resp.account.id
+    unallocated_id = next(
+        s.id for s in account_resp.base_sleeves if s.type == ledger_pb2.SLEEVE_TYPE_UNALLOCATED
+    )
+    await servicer.deposit_funds(
+        ledger_pb2.DepositFundsRequest(
+            request_id="itest-deposit-12", context=ctx, account_id=account_id, amount=_dec("100")
+        ),
+        _ctx(),
+    )
+    sleeve_id = (
+        await servicer.allocate_capital(
+            ledger_pb2.AllocateCapitalRequest(
+                request_id="itest-allocatecapital-14",
+                context=ctx,
+                account_id=account_id,
+                to_sleeve_id="",
+                strategy_execution_id=str(uuid4()),
+                amount=_dec("100"),
+                sleeve_name="A",
+            ),
+            _ctx(),
+        )
+    ).sleeve.id
+
+    with pytest.raises(ConnectError) as exc_info:
+        await servicer.transfer_capital(
+            ledger_pb2.TransferCapitalRequest(
+                request_id="itest-transfercapital-15",
+                context=ctx,
+                account_id=account_id,
+                from_sleeve_id=sleeve_id,
+                to_sleeve_id=unallocated_id,
+                amount=_dec("5000"),
+            ),
+            _ctx(),
+        )
+    assert exc_info.value.code == Code.INVALID_ARGUMENT
+    assert "free-cash" in exc_info.value.message
+
+
+async def test_concurrent_allocations_cannot_double_spend_free_cash(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """Two concurrent allocates that each pass the free-cash check in isolation
+    must serialize on the account advisory lock (``lock_account_for_write``):
+    exactly one wins, the loser sees the reduced balance, and Unallocated can
+    never go negative under READ COMMITTED."""
+    import asyncio
+
+    from connectrpc.code import Code
+
+    servicer = _ledger_servicer(session_factory)
+    ctx = _tenant_ctx(str(uuid4()))
+    account_id = await _bootstrap_account(servicer, ctx)
+    await servicer.deposit_funds(
+        ledger_pb2.DepositFundsRequest(
+            request_id="itest-deposit-13", context=ctx, account_id=account_id, amount=_dec("1000")
+        ),
+        _ctx(),
+    )
+
+    async def _allocate(name: str) -> ledger_pb2.AllocateCapitalResponse:
+        return await servicer.allocate_capital(
+            ledger_pb2.AllocateCapitalRequest(
+                request_id="itest-allocatecapital-16",
+                context=ctx,
+                account_id=account_id,
+                to_sleeve_id="",
+                strategy_execution_id=str(uuid4()),
+                amount=_dec("700"),
+                sleeve_name=name,
+            ),
+            _ctx(),
+        )
+
+    outcomes = await asyncio.gather(_allocate("A"), _allocate("B"), return_exceptions=True)
+
+    winners = [o for o in outcomes if isinstance(o, ledger_pb2.AllocateCapitalResponse)]
+    losers = [o for o in outcomes if isinstance(o, ConnectError)]
+    assert len(winners) == 1, f"expected exactly one winner, got {outcomes!r}"
+    assert len(losers) == 1
+    assert losers[0].code == Code.INVALID_ARGUMENT
+    assert "insufficient" in losers[0].message
+
+    sleeves = await servicer.list_sleeves(
+        ledger_pb2.ListSleevesRequest(context=ctx, account_id=account_id), _ctx()
+    )
+    by_type = {s.type: Decimal(s.cash.balance.value) for s in sleeves.sleeves}
+    assert by_type[ledger_pb2.SLEEVE_TYPE_UNALLOCATED] == Decimal("300")  # never negative
+    total = sum((Decimal(s.cash.balance.value) for s in sleeves.sleeves), Decimal("0"))
+    assert total == Decimal("1000")  # no money created or destroyed
+
+
+async def test_holding_history_traces_buys_and_sells(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    """GetHoldingHistory returns the per-symbol provenance timeline from the log."""
+    import hashlib
+    from datetime import UTC, datetime
+    from uuid import UUID
+
+    from llamatrade_db.models.ledger import LedgerEventType
+
+    from src.ledger.ingestion import LedgerAppend
+    from src.tasks.fill_ingestion import persist_append
+
+    servicer = _ledger_servicer(session_factory)
+    ctx = _tenant_ctx(str(uuid4()))
+    account_id = await _bootstrap_account(servicer, ctx)
+    await servicer.deposit_funds(
+        ledger_pb2.DepositFundsRequest(
+            request_id="itest-deposit-14", context=ctx, account_id=account_id, amount=_dec("1000")
+        ),
+        _ctx(),
+    )
+    sleeve_id = (
+        await servicer.allocate_capital(
+            ledger_pb2.AllocateCapitalRequest(
+                request_id="itest-allocatecapital-17",
+                context=ctx,
+                account_id=account_id,
+                to_sleeve_id="",
+                strategy_execution_id=str(uuid4()),
+                amount=_dec("1000"),
+                sleeve_name="S",
+            ),
+            _ctx(),
+        )
+    ).sleeve.id
+
+    def _append(coid: str, side: str, qty: str, price: str, **extra: str) -> LedgerAppend:
+        data = {
+            "sleeve_id": sleeve_id,
+            "symbol": "SPY",
+            "side": side,
+            "qty": qty,
+            "price": price,
+            **extra,
+        }
+        return LedgerAppend(
+            tenant_id=UUID(ctx.tenant_id),
+            account_id=UUID(account_id),
+            sleeve_id=UUID(sleeve_id),
+            event_type=LedgerEventType.ORDER_FILLED,
+            data=data,
+            event_id=UUID(bytes=hashlib.sha256(coid.encode()).digest()[:16]),
+            occurred_at=datetime.now(UTC),
+        )
+
+    async with session_factory() as db:
+        await persist_append(db, _append("hist-buy", "buy", "5", "100"))
+    async with session_factory() as db:
+        await persist_append(db, _append("hist-sell", "sell", "2", "110"))
+
+    resp = await servicer.get_holding_history(
+        ledger_pb2.GetHoldingHistoryRequest(context=ctx, account_id=account_id, symbol="SPY"),
+        _ctx(),
+    )
+
+    assert [(e.side, e.qty.value, e.price.value) for e in resp.entries] == [
+        ("buy", "5", "100"),
+        ("sell", "2", "110"),
+    ]
+    assert all(e.sleeve_id == sleeve_id for e in resp.entries)
+    # FIFO: sold 2 of the 100-cost lot at 110 -> +20 realized.
+    assert Decimal(resp.entries[1].realized_pnl.value) == Decimal("20")

@@ -215,7 +215,7 @@ async def _freeze_sustained_cash_drift(
     accounts: list[Account],
     streaks: dict[UUID, int],
     freeze: Callable[[Account, Decimal], Awaitable[None]],
-) -> None:  # pragma: no cover - thin orchestration over update_cash_drift_streaks
+) -> None:
     """Freeze accounts whose cash drift has persisted past the sustained threshold."""
     candidates = update_cash_drift_streaks(
         results,
@@ -365,7 +365,7 @@ async def reconciliation_loop(
     stop_event: asyncio.Event,
     concurrency: int = DEFAULT_CONCURRENCY,
     is_leader: LeadershipProbe | None = None,
-) -> None:  # pragma: no cover - scheduler shell, logic covered via run_reconciliation_pass
+) -> None:
     """Run reconciliation passes until ``stop_event`` is set.
 
     Accounts are loaded in one session, then reconciled concurrently via

@@ -274,3 +274,100 @@ async def test_apply_corporate_action_bad_account_id_is_invalid_argument() -> No
     with pytest.raises(ConnectError) as exc_info:
         await servicer.apply_corporate_action(request, cast(Any, None))
     assert exc_info.value.code == Code.INVALID_ARGUMENT
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("field", "values"),
+    [
+        ("account_id", {"account_id": "bad"}),
+        ("from_sleeve_id", {"from_sleeve_id": "bad"}),
+        ("to_sleeve_id", {"to_sleeve_id": "bad"}),
+    ],
+)
+async def test_transfer_capital_bad_uuid_is_invalid_argument(
+    field: str, values: dict[str, str]
+) -> None:
+    """Each malformed transfer id is rejected as INVALID_ARGUMENT naming the field."""
+    from connectrpc.code import Code
+    from connectrpc.errors import ConnectError
+
+    args: dict[str, str] = {
+        "account_id": str(uuid4()),
+        "from_sleeve_id": str(uuid4()),
+        "to_sleeve_id": str(uuid4()),
+    }
+    args.update(values)
+    servicer = LedgerServicer()
+    servicer._session_factory = MagicMock()
+    request = ledger_pb2.TransferCapitalRequest(
+        context=common_pb2.TenantContext(tenant_id=str(uuid4()), user_id=str(uuid4())),
+        amount=common_pb2.Decimal(value="100"),
+        **args,
+    )
+    # Sleeve ids are parsed inside the transaction: fake the session and the
+    # account lock so the parse (the subject) is reached without a database.
+    with (
+        patch("src.grpc.ledger_servicer.tenant_session", _fake_tenant_session),
+        patch("src.grpc.ledger_servicer.lock_account_for_write", AsyncMock()),
+        pytest.raises(ConnectError) as exc_info,
+    ):
+        await servicer.transfer_capital(request, cast(Any, None))
+    assert exc_info.value.code == Code.INVALID_ARGUMENT
+    assert field in exc_info.value.message
+
+
+@pytest.mark.asyncio
+async def test_get_holding_history_bad_account_id_is_invalid_argument() -> None:
+    from connectrpc.code import Code
+    from connectrpc.errors import ConnectError
+
+    servicer = LedgerServicer()
+    request = ledger_pb2.GetHoldingHistoryRequest(
+        context=common_pb2.TenantContext(tenant_id=str(uuid4()), user_id=str(uuid4())),
+        account_id="bad",
+        symbol="SPY",
+    )
+    with pytest.raises(ConnectError) as exc_info:
+        await servicer.get_holding_history(request, cast(Any, None))
+    assert exc_info.value.code == Code.INVALID_ARGUMENT
+
+
+@pytest.mark.asyncio
+async def test_internal_error_withholds_detail_and_carries_a_reference() -> None:
+    """A DB fault surfaces as INTERNAL with a correlation reference; the exception
+    text (SQL, parameters) is logged, never returned to the client."""
+    from connectrpc.code import Code
+    from connectrpc.errors import ConnectError
+
+    servicer = LedgerServicer()
+    servicer._session_factory = cast(
+        Any, MagicMock(side_effect=RuntimeError("relation secret_table does not exist"))
+    )
+    request = ledger_pb2.TransferCapitalRequest(
+        context=common_pb2.TenantContext(tenant_id=str(uuid4()), user_id=str(uuid4())),
+        account_id=str(uuid4()),
+        from_sleeve_id=str(uuid4()),
+        to_sleeve_id=str(uuid4()),
+        amount=common_pb2.Decimal(value="100"),
+    )
+    with pytest.raises(ConnectError) as exc_info:
+        await servicer.transfer_capital(request, cast(Any, None))
+    assert exc_info.value.code == Code.INTERNAL
+    assert "secret_table" not in exc_info.value.message
+    assert "reference" in exc_info.value.message
+
+
+@pytest.mark.asyncio
+async def test_backfill_account_failure_degrades_to_none() -> None:
+    """A broker/onboarding fault during backfill logs and returns None so the
+    account is still created unseeded (reconciliation surfaces the gap)."""
+
+    exploding_sleeves = MagicMock()
+    exploding_sleeves.get_or_create_account = AsyncMock(
+        side_effect=RuntimeError("broker exploded mid-onboard")
+    )
+    result = await LedgerServicer._backfill_account(
+        cast(Any, MagicMock()), exploding_sleeves, uuid4(), uuid4()
+    )
+    assert result is None

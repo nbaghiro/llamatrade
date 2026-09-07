@@ -314,6 +314,28 @@ class TestNegativeCashFreeze:
         assert _events_of(db, LedgerEventType.SLEEVE_FROZEN) == []
         assert dispatcher.incidents == []
 
+    async def test_alert_dispatch_fault_never_undoes_the_freeze(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The freeze must stand (and commit) even when the alert publish blows up."""
+
+        class _ExplodingDispatcher:
+            async def dispatch(self, tenant_id: UUID, incident: LedgerIncident) -> None:
+                raise RuntimeError("notification stream down")
+
+        monkeypatch.setattr(
+            alerts_module, "get_ledger_alert_dispatcher", lambda: _ExplodingDispatcher()
+        )
+        db = FakeLedgerSession()
+        sleeve = _sleeve()
+        db.add_sleeve(sleeve)
+
+        await self._overdraw(db, sleeve)
+
+        assert sleeve.status == SleeveStatus.FROZEN.value
+        assert len(_events_of(db, LedgerEventType.SLEEVE_FROZEN)) == 1
+        assert db.commits == 1
+
 
 class TestDualPathDeliveryFoldsOnce:
     """Stream-shape and REST-shape fills for one order → exactly one ledger row."""

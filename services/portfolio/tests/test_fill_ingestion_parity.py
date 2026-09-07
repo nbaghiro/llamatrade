@@ -13,7 +13,13 @@ quarantine-not-DLQ for poison) fails here first.
 The handler folds through an in-memory writer with the production writer's
 event-id dedup and the REAL pure ingestion/projection functions
 (``enrich_sell_fill`` / ``open_lots`` / ``fold``), so the scenarios exercise
-FIFO cost-basis enrichment and quarantine exactly as ``persist_append`` does.
+FIFO cost-basis enrichment and quarantine over ``persist_append``'s pure core.
+The DB-coupled parts of ``persist_append`` are outside this golden contract and
+covered elsewhere: closed-sleeve re-home in ``test_fill_ingestion.py`` and
+``tests/integration/test_fill_e2e.py``, the invariant-freeze guard in
+``test_invariant_freeze_e2e.py`` and ``tests/integration/test_servicer_integration.py``,
+and checkpoint-seeded incremental lot resolution in
+``tests/integration/test_servicer_integration.py`` / ``test_fill_e2e.py``.
 """
 
 from __future__ import annotations

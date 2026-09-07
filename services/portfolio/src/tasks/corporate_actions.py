@@ -554,7 +554,7 @@ async def corporate_actions_loop(
     lookback_days: int = DEFAULT_LOOKBACK_DAYS,
     concurrency: int = DEFAULT_CONCURRENCY,
     is_leader: LeadershipProbe | None = None,
-) -> None:  # pragma: no cover - scheduler shell, logic covered via run_detection_pass
+) -> None:
     """Run detection passes until ``stop_event`` is set.
 
     Proposals are recorded, never applied — an operator applies them through

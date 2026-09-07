@@ -64,10 +64,12 @@ def mock_db() -> AsyncMock:
 
 @pytest.fixture
 def mock_market_data_client() -> AsyncMock:
-    """Create a mock market data client."""
+    """Create a mock market data client (Decimal prices, matching PriceProvider)."""
     client = AsyncMock()
-    client.get_latest_price = AsyncMock(return_value=150.0)
-    client.get_prices = AsyncMock(return_value={"AAPL": 150.0, "GOOGL": 140.0})
+    client.get_latest_price = AsyncMock(return_value=Decimal("150.0"))
+    client.get_prices = AsyncMock(
+        return_value={"AAPL": Decimal("150.0"), "GOOGL": Decimal("140.0")}
+    )
     client.close = AsyncMock()
     return client
 

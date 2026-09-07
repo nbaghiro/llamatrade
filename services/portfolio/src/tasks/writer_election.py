@@ -50,7 +50,7 @@ async def ledger_writer_loop(
     corporate_actions_interval_seconds: float,
     election_interval_seconds: float = DEFAULT_ELECTION_INTERVAL_SECONDS,
     on_leadership: Callable[[bool], None] | None = None,
-) -> None:  # pragma: no cover - election shell, fencing covered by the failover suite
+) -> None:
     """Lead the ledger writes while this pod holds the lock; re-elect when it doesn't.
 
     ``on_leadership`` reports each transition so the health surface can say

@@ -3,8 +3,9 @@
 These exercise the full ledger stack — ``LedgerWriter`` (real unique/idempotency
 constraint + balance check), the projector folding real rows, the fund/lifecycle
 services, and the servicers — against real SQL (JSONB, BigInteger sequences,
-UUID). They require Docker; when it's unavailable the fixtures ``skip`` (rather
-than fail) so the fast unit suite still runs in constrained environments.
+UUID). They require Docker; when it's unavailable the fixtures ``skip`` so the
+fast unit suite still runs in constrained environments, except under
+``CI_REQUIRE_DOCKER=1`` (set in CI) where the guard fails loudly instead.
 
 Run them with: ``pytest -m integration`` (or the repo's ``ci-local.sh --integration``).
 """
@@ -13,15 +14,22 @@ from __future__ import annotations
 
 import os
 from collections.abc import AsyncIterator, Iterator
+from typing import NoReturn
 
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-# Every test in this package needs Docker.
-pytestmark = pytest.mark.integration
-
 POSTGRES_IMAGE = "postgres:16-alpine"
+
+_REQUIRE_DOCKER = os.environ.get("CI_REQUIRE_DOCKER") == "1"
+
+
+def _skip_or_fail(reason: str) -> NoReturn:
+    """Skip locally; fail when CI_REQUIRE_DOCKER=1 demands the Docker-gated tests run."""
+    if _REQUIRE_DOCKER:
+        pytest.fail(f"CI_REQUIRE_DOCKER=1: {reason}", pytrace=False)
+    pytest.skip(reason)
 
 
 @pytest.fixture(scope="session")
@@ -29,20 +37,23 @@ def kafka_bootstrap() -> Iterator[str]:
     """Bootstrap servers for a real Kafka broker (env-provided or a throwaway container).
 
     Honors ``KAFKA_BOOTSTRAP_SERVERS`` when set (CI points it at a shared broker);
-    otherwise spins a throwaway ``KafkaContainer``. Skips — rather than fails —
-    when Docker / the container image is unavailable, so the fast suite stays green.
+    otherwise spins a throwaway ``KafkaContainer``, skipping (or failing under
+    ``CI_REQUIRE_DOCKER=1``) when Docker / the container image is unavailable.
     """
     env_bootstrap = os.getenv("KAFKA_BOOTSTRAP_SERVERS")
     if env_bootstrap:
         yield env_bootstrap
         return
 
-    kafka_mod = pytest.importorskip("testcontainers.kafka")
+    if _REQUIRE_DOCKER:
+        import testcontainers.kafka as kafka_mod
+    else:
+        kafka_mod = pytest.importorskip("testcontainers.kafka")
     try:
         container = kafka_mod.KafkaContainer()
         container.start()
     except Exception as exc:  # Docker down / image pull blocked
-        pytest.skip(f"Kafka container unavailable: {exc}")
+        _skip_or_fail(f"Kafka container unavailable: {exc}")
     try:
         yield container.get_bootstrap_server()
     finally:
@@ -52,7 +63,10 @@ def kafka_bootstrap() -> Iterator[str]:
 @pytest.fixture(scope="session")
 def postgres_url() -> Iterator[str]:
     """Start a throwaway Postgres and yield an asyncpg URL, or skip."""
-    postgres_mod = pytest.importorskip("testcontainers.postgres")
+    if _REQUIRE_DOCKER:
+        import testcontainers.postgres as postgres_mod
+    else:
+        postgres_mod = pytest.importorskip("testcontainers.postgres")
     try:
         # Construction itself opens a Docker client, so guard it too.
         container = postgres_mod.PostgresContainer(
@@ -60,7 +74,7 @@ def postgres_url() -> Iterator[str]:
         )
         container.start()
     except Exception as exc:  # Docker not reachable / image pull blocked
-        pytest.skip(f"Postgres container unavailable: {exc}")
+        _skip_or_fail(f"Postgres container unavailable: {exc}")
     try:
         raw_url = container.get_connection_url()  # postgresql+psycopg2://...
         yield raw_url.replace("+psycopg2", "+asyncpg").replace(

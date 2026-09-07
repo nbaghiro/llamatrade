@@ -436,3 +436,53 @@ async def test_reservation_release_returns_reserved_to_zero_e2e(
     sleeve = projection.sleeve(str(sleeve_id))
     assert sleeve.reserved == D("0")
     assert sleeve.cash == D("40000")  # reservations never move value
+
+
+async def test_late_fill_for_closed_sleeve_rehomes_to_unmanaged(
+    session_factory: async_sessionmaker, kafka_bootstrap: str
+) -> None:
+    """(f) A fill arriving after its sleeve closed must not resurrect the sleeve:
+    the real consumer re-homes it to Unmanaged (the same destination the close
+    moved the sleeve's positions to)."""
+    from llamatrade_db.models.ledger import SleeveType
+
+    from src.services.sleeve_lifecycle_service import SleeveLifecycleService
+
+    tenant_id = uuid4()
+    account_id, sleeve_id = await _fund_genesis(session_factory, tenant_id)
+
+    async with tenant_session(tenant_id, session_factory) as db:
+        repo = SqlSleeveRepository(db)
+        store = SqlLedgerStore(db)
+        await SleeveLifecycleService(repo, store, store).close_sleeve(
+            tenant_id=tenant_id, account_id=account_id, sleeve_id=sleeve_id, reason="stopped"
+        )
+        unmanaged = await repo.get_sleeve_by_type(tenant_id, account_id, SleeveType.UNMANAGED)
+        assert unmanaged is not None
+        unmanaged_id = unmanaged.id
+        await db.commit()
+
+    async with _running_consumer(kafka_bootstrap, session_factory) as fills:
+        await fills.publish_fill(
+            _fill(
+                tenant_id,
+                account_id,
+                sleeve_id,  # targets the CLOSED sleeve
+                client_order_id="e2e-late-1",
+                side="buy",
+                qty="5",
+                price="100",
+            )
+        )
+        projection = await _poll_projection(
+            session_factory,
+            tenant_id,
+            account_id,
+            lambda p: _held_qty(p, unmanaged_id, SYMBOL) == D("5"),
+        )
+
+    assert projection.sleeve(str(unmanaged_id)).positions[SYMBOL].qty == D("5")
+    # The closed sleeve was not resurrected: no position landed on it.
+    closed = projection.sleeve(str(sleeve_id)).positions.get(SYMBOL)
+    assert closed is None or closed.qty == D("0")
+    assert await _sleeve_status(session_factory, tenant_id, sleeve_id) == SleeveStatus.CLOSED.value

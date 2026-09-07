@@ -607,51 +607,25 @@ async def test_proposal_log_carries_the_apply_arguments(
 # Leader election
 
 
-def _writer_election_calls() -> list[ast.Call]:
-    """Every call inside ``ledger_writer_loop``, the leader-only runtime."""
-    source = Path(__file__).resolve().parents[1] / "src" / "tasks" / "writer_election.py"
-    tree = ast.parse(source.read_text())
-    loop = next(
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.AsyncFunctionDef) and node.name == "ledger_writer_loop"
-    )
-    return [node for node in ast.walk(loop) if isinstance(node, ast.Call)]
+def test_main_starts_the_election_not_the_sweeps_directly() -> None:
+    """Only the election runtime may start a sweep.
 
-
-def test_detection_loop_runs_only_on_the_ledger_writer_pod() -> None:
-    """The loop is started only inside the election runtime, like the other
-    writer-gated loops — every replica running it would spam operators."""
-    started = [
-        call.func.id
-        for call in _writer_election_calls()
-        if isinstance(call.func, ast.Name) and call.func.id.endswith("_loop")
-    ]
-    assert started.count("corporate_actions_loop") == 1  # started exactly once
-    assert "reconciliation_loop" in started  # the branch we mirrored
-
+    The runtime behaviour (who leads, what stops when the lease is lost) is
+    driven for real in ``test_writer_election.py``; what that cannot see is a
+    future edit to ``main.py`` starting a sweep alongside the election, which
+    would put every replica on the same loop.
+    """
     main_source = Path(__file__).resolve().parents[1] / "src" / "main.py"
     main_tree = ast.parse(main_source.read_text())
-    assert not [
-        child
+
+    started = {
+        child.id
         for child in ast.walk(main_tree)
-        if isinstance(child, ast.Name) and child.id == "corporate_actions_loop"
-    ]  # main.py starts the election, never a sweep directly
-
-
-def test_writer_gated_loops_all_take_the_leadership_probe() -> None:
-    """Each sweep must be handed ``is_leader`` — a loop started without it would
-    keep sweeping after the pod lost the lock, which is the failure the election
-    exists to prevent."""
-    gated = {"reconciliation_loop", "snapshot_loop", "corporate_actions_loop"}
-    probed = {
-        call.func.id
-        for call in _writer_election_calls()
-        if isinstance(call.func, ast.Name)
-        and call.func.id in gated
-        and any(kw.arg == "is_leader" for kw in call.keywords)
+        if isinstance(child, ast.Name) and child.id.endswith("_loop")
     }
-    assert probed == gated
+
+    assert started.isdisjoint({"reconciliation_loop", "snapshot_loop", "corporate_actions_loop"})
+    assert "ledger_writer_loop" in started
 
 
 # Broker adapter
@@ -725,3 +699,47 @@ async def test_announcement_adapter_skips_broker_call_without_symbols(
     adapter = AlpacaCorporateAnnouncements(cast(Any, object()))
 
     assert await adapter.announcements(TENANT, _account(), [], since=SINCE, until=UNTIL) == []
+
+
+# Election loss
+
+
+def _poisoned_session_factory() -> Any:
+    def factory() -> Any:
+        raise AssertionError("session factory must not be touched after election loss")
+
+    return factory
+
+
+async def test_detection_loop_exits_on_election_loss_before_pass() -> None:
+    """Top-of-loop leadership loss returns immediately — no session, no sweep."""
+    from src.tasks.corporate_actions import corporate_actions_loop
+
+    async def lost_leadership() -> bool:
+        return False
+
+    await asyncio.wait_for(
+        corporate_actions_loop(
+            _poisoned_session_factory(),
+            stop_event=asyncio.Event(),
+            interval_seconds=60.0,
+            is_leader=lost_leadership,
+        ),
+        timeout=2.0,
+    )
+
+
+async def test_detection_loop_exits_on_stop_event() -> None:
+    from src.tasks.corporate_actions import corporate_actions_loop
+
+    stop = asyncio.Event()
+    stop.set()
+
+    await asyncio.wait_for(
+        corporate_actions_loop(
+            _poisoned_session_factory(),
+            stop_event=stop,
+            interval_seconds=60.0,
+        ),
+        timeout=2.0,
+    )

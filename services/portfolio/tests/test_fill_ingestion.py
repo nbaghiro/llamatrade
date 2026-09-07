@@ -9,7 +9,8 @@ exercised by the integration suite; loop-vs-legacy equivalence is pinned by
 ``test_fill_ingestion_parity.py``.
 """
 
-from typing import cast
+import asyncio
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -17,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from llamatrade_db.models.ledger import LedgerEventType
 from llamatrade_events import (
+    CURSOR_NEW,
     EventBus,
     EventEnvelope,
     FillEvents,
@@ -413,6 +415,31 @@ async def test_reroute_closed_sleeve_to_unmanaged() -> None:
     assert result.data["sleeve_id"] == str(unmanaged.id)
 
 
+async def test_reroute_quarantines_when_no_unmanaged_sleeve_exists() -> None:
+    """A closed target with nowhere to re-home must quarantine, never apply.
+
+    Applying would resurrect the retired sleeve and overdraw cash the close
+    already released, and the negative-cash invariant would only surface on the
+    next close, wedging capital release in the meantime.
+    """
+    from unittest.mock import AsyncMock
+
+    from llamatrade_db.models.ledger import SleeveStatus, SleeveType
+
+    from src.ledger.ingestion import FillQuarantineError
+    from src.tasks.fill_ingestion import _reroute_if_sleeve_closed
+
+    tenant, account = uuid4(), uuid4()
+    closed = _ledger_sleeve(
+        SleeveType.STRATEGY, SleeveStatus.CLOSED, tenant=tenant, account=account
+    )
+    db = AsyncMock()
+    db.scalar = AsyncMock(side_effect=[closed, None])  # get_sleeve, no Unmanaged
+
+    with pytest.raises(FillQuarantineError, match="no Unmanaged sleeve"):
+        await _reroute_if_sleeve_closed(db, _fill_append(closed.id, tenant, account))
+
+
 async def test_reroute_noop_for_active_sleeve() -> None:
     from unittest.mock import AsyncMock
 
@@ -432,26 +459,6 @@ async def test_reroute_noop_for_active_sleeve() -> None:
 
     assert result is append  # unchanged, no Unmanaged lookup
     assert db.scalar.await_count == 1
-
-
-async def test_reroute_noop_when_no_unmanaged_sleeve() -> None:
-    from unittest.mock import AsyncMock
-
-    from llamatrade_db.models.ledger import SleeveStatus, SleeveType
-
-    from src.tasks.fill_ingestion import _reroute_if_sleeve_closed
-
-    tenant, account = uuid4(), uuid4()
-    closed = _ledger_sleeve(
-        SleeveType.STRATEGY, SleeveStatus.CLOSED, tenant=tenant, account=account
-    )
-    db = AsyncMock()
-    db.scalar = AsyncMock(side_effect=[closed, None])  # account missing Unmanaged
-    append = _fill_append(closed.id, tenant, account)
-
-    result = await _reroute_if_sleeve_closed(db, append)
-
-    assert result.sleeve_id == closed.id  # left untouched for reconciliation
 
 
 # --------------------------------------------------------------------------- #
@@ -532,3 +539,242 @@ async def test_releasing_the_writer_lock_absorbs_a_torn_connection() -> None:
 
     assert session.unlocked is True
     assert session.closed is True
+
+
+# --- error classification -----------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [RuntimeError("db down"), ConnectionError("pool exhausted"), TimeoutError(), OSError("io")],
+    ids=lambda e: type(e).__name__,
+)
+def test_classify_fill_error_treats_every_failure_as_transient(exc: BaseException) -> None:
+    """A fill is money: any undeclared failure redelivers forever, never dead-letters."""
+    from src.tasks.fill_ingestion import classify_fill_error
+
+    assert classify_fill_error(exc) == "transient"
+
+
+# --- quarantine alert dispatch ------------------------------------------------
+
+
+class _RecordingDispatcher:
+    def __init__(self, *, fail: bool = False) -> None:
+        self.calls: list[tuple[UUID, object]] = []
+        self._fail = fail
+
+    async def dispatch(self, tenant_id: UUID, incident: object) -> None:
+        self.calls.append((tenant_id, incident))
+        if self._fail:
+            raise RuntimeError("notification stream down")
+
+
+async def test_quarantine_alert_reaches_the_tenant(monkeypatch: pytest.MonkeyPatch) -> None:
+    import src.alerts as alerts_module
+    from src.tasks.fill_ingestion import _dispatch_quarantine_alert
+
+    recorder = _RecordingDispatcher()
+    monkeypatch.setattr(alerts_module, "_dispatcher", recorder)
+
+    await _dispatch_quarantine_alert(_fill(client_order_id="lt-q-1"), "no cost basis")
+
+    assert len(recorder.calls) == 1
+    tenant_id, incident = recorder.calls[0]
+    assert tenant_id == UUID(TENANT)
+    assert getattr(incident, "kind") == "fill_quarantined"
+    assert getattr(incident, "context")["client_order_id"] == "lt-q-1"
+
+
+async def test_quarantine_alert_with_unparseable_tenant_is_dropped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A quarantined fill whose tenant_id is garbage cannot be attributed — no publish."""
+    import src.alerts as alerts_module
+    from src.tasks.fill_ingestion import _dispatch_quarantine_alert
+
+    recorder = _RecordingDispatcher()
+    monkeypatch.setattr(alerts_module, "_dispatcher", recorder)
+
+    await _dispatch_quarantine_alert(_fill(tenant_id="not-a-uuid"), "no cost basis")
+
+    assert recorder.calls == []
+
+
+async def test_quarantine_alert_dispatch_fault_is_swallowed(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+
+    import src.alerts as alerts_module
+    from src.tasks.fill_ingestion import _dispatch_quarantine_alert
+
+    monkeypatch.setattr(alerts_module, "_dispatcher", _RecordingDispatcher(fail=True))
+
+    with caplog.at_level(logging.ERROR, logger="src.tasks.fill_ingestion"):
+        await _dispatch_quarantine_alert(_fill(), "no cost basis")
+
+    assert "quarantine alert dispatch failed" in caplog.text
+
+
+# --- writer-lock acquisition faults -------------------------------------------
+
+
+class _ExplodingLockSession:
+    """Session whose advisory-lock read dies (torn backend at election time)."""
+
+    def __init__(self) -> None:
+        self.closed = False
+
+    async def scalar(self, *args: object, **kwargs: object) -> bool:
+        raise ConnectionError("backend torn during election")
+
+    async def close(self) -> None:
+        self.closed = True
+
+
+async def test_acquire_writer_lock_fault_closes_the_session_and_raises() -> None:
+    """An election-time DB fault must not leak the candidate session."""
+    from src.tasks.fill_ingestion import acquire_ledger_writer_lock
+
+    session = _ExplodingLockSession()
+    with pytest.raises(ConnectionError):
+        await acquire_ledger_writer_lock(cast("Any", lambda: session))
+    assert session.closed is True
+
+
+async def test_lease_exposes_its_lock_holding_session() -> None:
+    from src.tasks.fill_ingestion import LedgerWriterLease
+
+    session = _ExplodingLockSession()
+    lease = LedgerWriterLease(cast(AsyncSession, session))
+    assert lease.db is session
+
+
+# --- stream-lag monitor -------------------------------------------------------
+
+
+async def test_monitor_samples_lag_and_warns_once_on_dlq_growth(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import logging
+
+    from llamatrade_telemetry import get_metrics
+    from tests.test_metrics import _sample
+
+    from src.tasks.fill_ingestion import FillLagTracker, monitor_stream_lag
+
+    stop = asyncio.Event()
+
+    class _Bus:
+        def __init__(self) -> None:
+            self.length_calls = 0
+
+        async def pending(self, stream: str, group: str) -> int:
+            assert (stream, group) == (LEDGER_FILLS_STREAM, PORTFOLIO_LEDGER_GROUP)
+            return 7
+
+        async def length(self, stream: str) -> int:
+            assert stream == LEDGER_FILLS_DLQ_STREAM
+            self.length_calls += 1
+            if self.length_calls == 2:
+                stop.set()
+            return 3
+
+    tracker = FillLagTracker()
+    with caplog.at_level(logging.WARNING, logger="src.tasks.fill_ingestion"):
+        await asyncio.wait_for(
+            monitor_stream_lag(
+                cast("Any", _Bus()), stop_event=stop, interval_seconds=0.0, tracker=tracker
+            ),
+            timeout=5.0,
+        )
+
+    assert tracker.pending == 7
+    text = get_metrics().decode()
+    assert _sample(text, "llamatrade_events_consumer_lag", 'stream="ledger:fills"') == 7.0
+    assert _sample(text, "llamatrade_ledger_fill_dlq_depth", "") == 3.0
+    # Depth 0 -> 3 warned once; the unchanged second sample did not re-warn.
+    assert caplog.text.count("parked on the ledger DLQ") == 1
+
+
+async def test_monitor_swallows_pending_sample_failure() -> None:
+    from src.tasks.fill_ingestion import FillLagTracker, monitor_stream_lag
+
+    stop = asyncio.Event()
+
+    class _Bus:
+        async def pending(self, stream: str, group: str) -> int:
+            raise ConnectionError("broker down")
+
+        async def length(self, stream: str) -> int:
+            stop.set()
+            return 0
+
+    tracker = FillLagTracker()
+    await asyncio.wait_for(
+        monitor_stream_lag(
+            cast("Any", _Bus()), stop_event=stop, interval_seconds=0.0, tracker=tracker
+        ),
+        timeout=5.0,
+    )
+
+    assert tracker.pending == 0  # sample failed; tracker untouched
+
+
+async def test_monitor_swallows_dlq_sample_failure() -> None:
+    from src.tasks.fill_ingestion import monitor_stream_lag
+
+    stop = asyncio.Event()
+
+    class _Bus:
+        async def pending(self, stream: str, group: str) -> int:
+            return 1
+
+        async def length(self, stream: str) -> int:
+            stop.set()
+            raise ConnectionError("broker down")
+
+    await asyncio.wait_for(
+        monitor_stream_lag(cast("Any", _Bus()), stop_event=stop, interval_seconds=0.0),
+        timeout=5.0,
+    )
+
+
+async def test_monitor_exits_without_sampling_when_already_stopped() -> None:
+    from src.tasks.fill_ingestion import monitor_stream_lag
+
+    class _Bus:
+        async def pending(self, stream: str, group: str) -> int:
+            raise AssertionError("must not sample after stop")
+
+        async def length(self, stream: str) -> int:
+            raise AssertionError("must not sample after stop")
+
+    stop = asyncio.Event()
+    stop.set()
+    await asyncio.wait_for(
+        monitor_stream_lag(cast("Any", _Bus()), stop_event=stop, interval_seconds=60.0),
+        timeout=2.0,
+    )
+
+
+async def test_consume_refuses_to_start_when_the_topic_is_missing() -> None:
+    """A missing topic must fail loudly, not idle green.
+
+    Subscribing to a topic that does not exist yields an empty assignment: the
+    member idles, lag reads 0 (no partitions to measure), and every health signal
+    stays green while no fill is ever booked. The startup guard is the only thing
+    that turns that into a visible failure.
+    """
+
+    class _MissingTopicTransport(FakeTransport):
+        async def ensure_group(
+            self, stream: str, group: str, *, start_id: str = CURSOR_NEW
+        ) -> None:
+            raise RuntimeError(f"Kafka topic {stream!r} does not exist")
+
+    fills = FillEvents(bus=EventBus(_MissingTopicTransport()))
+
+    with pytest.raises(RuntimeError, match="does not exist"):
+        await consume_fill_stream(fills, _Recorder(), consumer_name="c1")

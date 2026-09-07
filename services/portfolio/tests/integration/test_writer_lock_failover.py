@@ -15,13 +15,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import socket
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -66,6 +67,16 @@ from src.tasks.fill_ingestion import (
 pytestmark = pytest.mark.integration
 
 POSTGRES_IMAGE = "postgres:16-alpine"
+
+_REQUIRE_DOCKER = os.environ.get("CI_REQUIRE_DOCKER") == "1"
+
+
+def _skip_or_fail(reason: str) -> NoReturn:
+    """Skip locally; fail when CI_REQUIRE_DOCKER=1 demands the Docker-gated tests run."""
+    if _REQUIRE_DOCKER:
+        pytest.fail(f"CI_REQUIRE_DOCKER=1: {reason}", pytrace=False)
+    pytest.skip(reason)
+
 
 # The ledger tables plus the two the account bootstrap reads through
 # (credentials, and the tenants they hang off): a minimal schema for the sweeps.
@@ -119,12 +130,15 @@ def _start_container(postgres_mod: Any, dbname: str) -> Any:
             last = exc
             continue
         return container
-    pytest.skip(f"Postgres container unavailable: {last}")
+    _skip_or_fail(f"Postgres container unavailable: {last}")
 
 
 @pytest.fixture(scope="module")
 def pg_container() -> Iterator[Any]:
-    postgres_mod = pytest.importorskip("testcontainers.postgres")
+    if _REQUIRE_DOCKER:
+        import testcontainers.postgres as postgres_mod
+    else:
+        postgres_mod = pytest.importorskip("testcontainers.postgres")
     container = _start_container(postgres_mod, "writer_failover")
     try:
         yield container
@@ -302,7 +316,12 @@ async def _bootstrap_funded_account(factory: async_sessionmaker[AsyncSession]) -
     )
     account_id = str(account.account.id)
     await servicer.deposit_funds(
-        ledger_pb2.DepositFundsRequest(context=ctx, account_id=account_id, amount=_dec("100000")),
+        ledger_pb2.DepositFundsRequest(
+            context=ctx,
+            account_id=account_id,
+            amount=_dec("100000"),
+            request_id=f"seed-deposit-{account_id}",
+        ),
         _rpc_ctx(),
     )
     allocated = await servicer.allocate_capital(
@@ -313,6 +332,7 @@ async def _bootstrap_funded_account(factory: async_sessionmaker[AsyncSession]) -
             strategy_execution_id=str(uuid4()),
             amount=_dec("40000"),
             sleeve_name="Failover",
+            request_id=f"seed-allocate-{account_id}",
         ),
         _rpc_ctx(),
     )

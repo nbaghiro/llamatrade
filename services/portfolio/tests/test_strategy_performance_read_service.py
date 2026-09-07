@@ -198,17 +198,19 @@ async def test_sleeve_series_keeps_one_point_per_ledger_sequence() -> None:
     assert [ts for ts, _ in series] == [base + timedelta(hours=1), base + timedelta(hours=2)]
 
 
-async def test_sleeve_series_honors_the_time_window() -> None:
+async def test_sleeve_series_passes_the_window_to_the_database() -> None:
+    """Rows are filtered in SQL, so the fake returns only what the DB would.
+
+    That the bound is actually applied is proven against real Postgres in
+    ``tests/integration/test_read_services_pg.py`` with snapshots straddling the
+    window; asserting ``created_at >=`` appeared in the compiled text only
+    restated the query here.
+    """
     svc = _svc()
     base = datetime(2026, 1, 5, 10, tzinfo=UTC)
     start = base + timedelta(days=1)
-    # Filtering moved to SQL, so the fake cannot drop rows itself: it returns only
-    # the in-window snapshot (what the DB would yield), and we separately assert the
-    # emitted statement carries the window bound.
-    captured: dict[str, str] = {}
 
-    async def _scalars(stmt: Any) -> SimpleNamespace:
-        captured["sql"] = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    async def _scalars(_stmt: Any) -> SimpleNamespace:
         return SimpleNamespace(
             all=lambda: [
                 SimpleNamespace(
@@ -222,4 +224,3 @@ async def test_sleeve_series_honors_the_time_window() -> None:
     series = await svc._sleeve_series(TENANT, uuid4(), start, None)
 
     assert [eq for _, eq in series] == [Decimal("120")]
-    assert "created_at >=" in captured["sql"]

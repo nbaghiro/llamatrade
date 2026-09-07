@@ -21,6 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from llamatrade_db.models.ledger import Account, Sleeve, SleeveStatus, SleeveType
 
+pytestmark = pytest.mark.integration
+
 
 def _account(tenant_id: UUID, broker_account_id: str | None, credentials_id: UUID) -> Account:
     return Account(

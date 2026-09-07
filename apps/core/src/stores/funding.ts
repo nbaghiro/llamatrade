@@ -122,6 +122,8 @@ export const useFundingStore = create<FundingState>((set, get) => ({
         context,
         accountId,
         amount: toDecimal(amount),
+        // Idempotency key: a retried deposit must be a no-op, not a second credit.
+        requestId: crypto.randomUUID(),
       });
       const free = freeOf(res.unallocated);
       set({ submitting: false, unallocatedCash: free });

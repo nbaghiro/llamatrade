@@ -330,7 +330,10 @@ async def test_adoption_proceeds_when_no_order_activity(account: Account) -> Non
     assert orders.calls == [(TENANT, account.id, "SPY")]
 
 
-async def test_freeze_does_not_consult_order_activity(account: Account) -> None:
+async def test_freeze_defers_while_an_order_is_in_flight(account: Account) -> None:
+    """An order still settling shows at one side and not the other; that is this
+    system's own timing, and a freeze halts trading until a manual unfreeze, so
+    the drift is deferred to the next pass rather than acted on."""
     holder = _sleeve(account, SleeveType.STRATEGY, "Strategy A")
     repo = FakeRepo([holder])
     store = FakeStore(
@@ -359,8 +362,42 @@ async def test_freeze_does_not_consult_order_activity(account: Account) -> None:
         orders=orders,
     )
 
+    assert action == "deferred"
+    assert orders.calls == [(TENANT, account.id, "SPY")]
+    assert holder.status == SleeveStatus.ACTIVE.value  # never frozen over our own timing
+
+
+async def test_freeze_applies_when_the_book_is_settled(account: Account) -> None:
+    """With no order in flight the mismatch is real divergence, so it freezes."""
+    holder = _sleeve(account, SleeveType.STRATEGY, "Strategy A")
+    repo = FakeRepo([holder])
+    store = FakeStore(
+        [
+            SimpleNamespace(
+                event_id=uuid4(),
+                event_type=LedgerEventType.ORDER_FILLED,
+                data={
+                    "sleeve_id": str(holder.id),
+                    "symbol": "SPY",
+                    "side": "buy",
+                    "qty": "60",
+                    "price": "480",
+                },
+            )
+        ]
+    )
+    orders = FakeOrderActivity(active=False)
+
+    action = await apply_drift_action(
+        repo=cast(Any, repo),
+        store=store,
+        broker=FakeBroker([]),
+        account=account,
+        drift=_drift(DriftKind.QTY_MISMATCH, ledger="60", broker="59"),
+        orders=orders,
+    )
+
     assert action == "froze:1"
-    assert orders.calls == []
 
 
 class _ScalarDB:
@@ -469,3 +506,124 @@ async def test_already_frozen_sleeve_not_refrozen(account: Account) -> None:
 
     assert action == "froze:0"
     assert repo.status_changes == []
+
+
+# Cash-drift account freeze
+
+
+async def test_cash_drift_freeze_freezes_every_active_sleeve(account: Account) -> None:
+    from src.tasks.drift_policy import freeze_account_for_cash_drift
+
+    strategy = _sleeve(account, SleeveType.STRATEGY, "Strat")
+    manual = _sleeve(account, SleeveType.MANUAL, "Manual")
+    already_frozen = _sleeve(account, SleeveType.STRATEGY, "Cold")
+    already_frozen.status = SleeveStatus.FROZEN.value
+    repo = FakeRepo([strategy, manual, already_frozen])
+    store = FakeStore()
+    alerts = FakeAlertSink()
+
+    frozen = await freeze_account_for_cash_drift(
+        repo=cast(Any, repo),
+        store=store,
+        account=account,
+        cash_drift=D("-123.45"),
+        alerts=alerts,
+    )
+
+    assert frozen == 2
+    assert strategy.status == SleeveStatus.FROZEN.value
+    assert manual.status == SleeveStatus.FROZEN.value
+    events = store.appended
+    assert [e.event_type for e in events] == [LedgerEventType.SLEEVE_FROZEN] * 2
+    assert {e.data["sleeve_id"] for e in events} == {str(strategy.id), str(manual.id)}
+    assert all("sustained cash drift" in e.data["reason"] for e in events)
+    assert all("-123.45" in e.data["reason"] for e in events)
+
+
+async def test_cash_drift_freeze_dispatches_one_account_alert(account: Account) -> None:
+    from src.tasks.drift_policy import freeze_account_for_cash_drift
+
+    repo = FakeRepo([_sleeve(account, SleeveType.STRATEGY, "Strat")])
+    alerts = FakeAlertSink()
+
+    await freeze_account_for_cash_drift(
+        repo=cast(Any, repo),
+        store=FakeStore(),
+        account=account,
+        cash_drift=D("50"),
+        alerts=alerts,
+    )
+
+    assert len(alerts.dispatched) == 1
+    tenant_id, incident = alerts.dispatched[0]
+    assert tenant_id == account.tenant_id
+    assert incident.kind == "sleeve_frozen"
+    assert incident.context["account_id"] == str(account.id)
+    assert incident.context["cash_drift"] == "50"
+
+
+async def test_cash_drift_refreeze_is_a_noop(account: Account) -> None:
+    """A second freeze the same day finds everything frozen: 0 frozen, no events,
+    no repeat alert."""
+    from src.tasks.drift_policy import freeze_account_for_cash_drift
+
+    repo = FakeRepo([_sleeve(account, SleeveType.STRATEGY, "Strat")])
+    store = FakeStore()
+    alerts = FakeAlertSink()
+
+    first = await freeze_account_for_cash_drift(
+        repo=cast(Any, repo), store=store, account=account, cash_drift=D("50"), alerts=alerts
+    )
+    second = await freeze_account_for_cash_drift(
+        repo=cast(Any, repo), store=store, account=account, cash_drift=D("50"), alerts=alerts
+    )
+
+    assert (first, second) == (1, 0)
+    assert len(store.appended) == 1
+    assert len(alerts.dispatched) == 1
+
+
+async def test_cash_drift_freeze_without_sleeves_skips_alert(account: Account) -> None:
+    from src.tasks.drift_policy import freeze_account_for_cash_drift
+
+    alerts = FakeAlertSink()
+    frozen = await freeze_account_for_cash_drift(
+        repo=cast(Any, FakeRepo([])),
+        store=FakeStore(),
+        account=account,
+        cash_drift=D("50"),
+        alerts=alerts,
+    )
+
+    assert frozen == 0
+    assert alerts.dispatched == []
+
+
+async def test_cash_drift_alert_sink_fault_never_blocks_the_freeze(account: Account) -> None:
+    from src.tasks.drift_policy import freeze_account_for_cash_drift
+
+    repo = FakeRepo([_sleeve(account, SleeveType.STRATEGY, "Strat")])
+    frozen = await freeze_account_for_cash_drift(
+        repo=cast(Any, repo),
+        store=FakeStore(),
+        account=account,
+        cash_drift=D("50"),
+        alerts=FakeAlertSink(fail=True),
+    )
+
+    assert frozen == 1  # the freeze stands; the alert fault was swallowed
+
+
+async def test_dispatch_cash_drift_alert_swallows_sink_fault(
+    account: Account, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+
+    from src.tasks.drift_policy import _dispatch_cash_drift_alert
+
+    with caplog.at_level(logging.ERROR, logger="src.tasks.drift_policy"):
+        await _dispatch_cash_drift_alert(
+            cast(Any, FakeAlertSink(fail=True)), account, D("50"), "sustained cash drift"
+        )
+
+    assert "cash-drift freeze alert dispatch failed" in caplog.text

@@ -50,7 +50,9 @@ def _internal_error(operation: str, exc: Exception) -> ConnectError:
     operator can find the log line.
     """
     correlation_id = uuid4()
-    logger.error("%s failed (ref=%s): %s", operation, correlation_id, exc, exc_info=True)
+    # Explicit exc_info: this helper is called from a handler, but relying on the
+    # ambient sys.exc_info() would log "NoneType: None" from anywhere else.
+    logger.error("%s failed (ref=%s): %s", operation, correlation_id, exc, exc_info=exc)
     return ConnectError(Code.INTERNAL, f"{operation} failed; reference {correlation_id}")
 
 
@@ -73,6 +75,17 @@ def _dec(value: object) -> common_pb2.Decimal:
 
 def _amount(value: common_pb2.Decimal) -> Decimal:
     return Decimal(value.value or "0")
+
+
+def _require_request_id(request_id: str, op: str) -> str:
+    """The idempotency key for a fund op; an un-keyed op would double-book on retry."""
+    if not request_id.strip():
+        raise ConnectError(
+            Code.INVALID_ARGUMENT,
+            f"request_id is required for {op}: it is the idempotency key that makes a "
+            "retried money movement a no-op",
+        )
+    return request_id
 
 
 def _sleeve_to_proto(
@@ -209,7 +222,7 @@ class LedgerServicer:
                     tenant_id=tenant_id,
                     account_id=account_id,
                     amount=_amount(request.amount),
-                    request_id=request.request_id,
+                    request_id=_require_request_id(request.request_id, "DepositFunds"),
                 )
                 await db.commit()
                 return ledger_pb2.DepositFundsResponse(unallocated=_view_to_proto(view))
@@ -233,7 +246,7 @@ class LedgerServicer:
                     tenant_id=tenant_id,
                     account_id=account_id,
                     amount=_amount(request.amount),
-                    request_id=request.request_id,
+                    request_id=_require_request_id(request.request_id, "WithdrawFunds"),
                 )
                 await db.commit()
                 return ledger_pb2.WithdrawFundsResponse(unallocated=_view_to_proto(view))
@@ -270,7 +283,7 @@ class LedgerServicer:
                     account_id=account_id,
                     to_sleeve_id=to_sleeve_id,
                     amount=_amount(request.amount),
-                    request_id=request.request_id,
+                    request_id=_require_request_id(request.request_id, "AllocateCapital"),
                 )
                 await db.commit()
                 return ledger_pb2.AllocateCapitalResponse(sleeve=_view_to_proto(view))
@@ -315,7 +328,7 @@ class LedgerServicer:
                     from_sleeve_id=parse_uuid(request.from_sleeve_id, "from_sleeve_id"),
                     to_sleeve_id=parse_uuid(request.to_sleeve_id, "to_sleeve_id"),
                     amount=_amount(request.amount),
-                    request_id=request.request_id,
+                    request_id=_require_request_id(request.request_id, "TransferCapital"),
                 )
                 await db.commit()
                 return ledger_pb2.TransferCapitalResponse(
