@@ -1,6 +1,6 @@
 """Streaming infrastructure for real-time trading updates.
 
-This module provides Redis Streams based tail fan-out for order and position
+This module provides Kafka-backed tail fan-out for order and position
 updates, enabling real-time notifications to connected clients. Updates are the
 proto ``trading_pb2.OrderUpdate`` / ``trading_pb2.PositionUpdate`` messages,
 carried on the bus via ``OrderEvents`` / ``PositionEvents``.

@@ -9,29 +9,12 @@ import pytest
 from llamatrade_common.utils import (
     decrypt_value,
     encrypt_value,
-    generate_uuid,
-    paginate,
     pagination_response,
     require_secret,
     resolve_pagination,
     utc_now,
     verify_api_key,
 )
-
-
-class TestGenerateUUID:
-    """Tests for generate_uuid function."""
-
-    def test_generates_valid_uuid(self):
-        """Test that generate_uuid returns a valid UUID."""
-        uuid = generate_uuid()
-        assert uuid is not None
-        assert len(str(uuid)) == 36  # UUID string format
-
-    def test_generates_unique_uuids(self):
-        """Test that each call generates a unique UUID."""
-        uuids = [generate_uuid() for _ in range(100)]
-        assert len(set(uuids)) == 100
 
 
 class TestUtcNow:
@@ -211,50 +194,6 @@ class TestRequireSecret:
         monkeypatch.setenv("ENVIRONMENT", environment)
         with pytest.raises(RuntimeError):
             require_secret("MY_SECRET", "dev-default")
-
-
-class TestPaginate:
-    """Tests for pagination function."""
-
-    def test_paginate_first_page(self):
-        """Test getting first page."""
-        items = list(range(25))
-        result = paginate(items, page=1, page_size=10)
-
-        assert result["items"] == list(range(10))
-        assert result["total"] == 25
-        assert result["page"] == 1
-        assert result["page_size"] == 10
-        assert result["total_pages"] == 3
-
-    def test_paginate_middle_page(self):
-        """Test getting middle page."""
-        items = list(range(25))
-        result = paginate(items, page=2, page_size=10)
-
-        assert result["items"] == list(range(10, 20))
-
-    def test_paginate_last_page(self):
-        """Test getting last page with partial results."""
-        items = list(range(25))
-        result = paginate(items, page=3, page_size=10)
-
-        assert result["items"] == list(range(20, 25))
-
-    def test_paginate_empty_list(self):
-        """Test paginating empty list."""
-        result = paginate([], page=1, page_size=10)
-
-        assert result["items"] == []
-        assert result["total"] == 0
-        assert result["total_pages"] == 0
-
-    def test_paginate_beyond_last_page(self):
-        """Test requesting page beyond available data."""
-        items = list(range(5))
-        result = paginate(items, page=10, page_size=10)
-
-        assert result["items"] == []
 
 
 class _PageReq:

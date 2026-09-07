@@ -2,9 +2,7 @@
 
 Self-contained math for the ledger read path: position P&L, and the
 return/risk metrics (Sharpe, Sortino, max drawdown, benchmark alpha/beta) the
-performance API exposes. Kept dependency-free of the legacy ``domain.py`` /
-``performance_service.py`` so those can be deleted later without touching
-the ledger reads. Inputs are plain values (no DB/IO) so every metric is
+performance API exposes. Inputs are plain values (no DB/IO) so every metric is
 directly unit-testable.
 """
 

@@ -263,8 +263,6 @@ services:
       - /app/node_modules
       - /app/apps/web/node_modules
       - /app/apps/core/node_modules
-    # !override empties the base port list (Compose would otherwise concatenate); the web dev server is reached only via the proxy on :8802.
-    ports: !override []
     environment:
       # Browser talks to the agent directly; its host port is remapped to 8990 (see docker-compose.yml).
       VITE_AGENT_URL: http://localhost:8990

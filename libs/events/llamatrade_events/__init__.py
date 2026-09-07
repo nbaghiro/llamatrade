@@ -12,7 +12,6 @@ Layers, bottom to top:
   (``OrderEvents``, ``PositionEvents``, ``ProgressEvents``, ``FillEvents``,
   ``BarEvents``).
 - **runtime**: :class:`StreamConsumer` (durable consume + dedupe + DLQ + lag) and
-  :class:`StreamFanout` (one stream → many gRPC client streams).
 - **idempotency**: :func:`derive_event_id` + :class:`DedupStore` for effective-once.
 
 Services import from here and nothing else for events.
@@ -65,7 +64,6 @@ from llamatrade_events.consumer import (
     RetryPolicy,
     StreamConsumer,
 )
-from llamatrade_events.fanout import StreamFanout
 from llamatrade_events.idempotency import (
     DedupStore,
     InMemoryDedupStore,
@@ -133,7 +131,6 @@ __all__ = [
     "RetryForever",
     "RetryPolicy",
     "StreamConsumer",
-    "StreamFanout",
     # codec / idempotency
     "decode_envelope",
     "derive_event_id",

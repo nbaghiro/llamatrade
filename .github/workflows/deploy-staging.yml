@@ -58,7 +58,7 @@ jobs:
           done
 
           # Migration runner image (Alembic upgrade head).
-          docker build -f infrastructure/docker/Dockerfile.migrate -t ${REGISTRY_PATH}/migrate:${{ github.sha }} .
+          docker build -f libs/db/Dockerfile -t ${REGISTRY_PATH}/migrate:${{ github.sha }} .
           docker push ${REGISTRY_PATH}/migrate:${{ github.sha }}
 
           # Build and push frontend

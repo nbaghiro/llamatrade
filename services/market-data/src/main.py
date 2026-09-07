@@ -15,15 +15,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp
 
-from llamatrade_alpaca import close_all_clients
 from llamatrade_alpaca import (
-    close_market_data_stream as close_alpaca_stream,
-)
-from llamatrade_alpaca import (
-    get_market_data_stream as get_alpaca_stream,
-)
-from llamatrade_alpaca import (
-    init_market_data_stream as init_alpaca_stream,
+    close_all_clients,
+    close_market_data_stream,
+    get_market_data_stream,
+    init_market_data_stream,
 )
 from llamatrade_common import AuthMiddleware, HealthChecker, check_redis
 from llamatrade_common.health import check_kafka
@@ -31,7 +27,6 @@ from llamatrade_db import close_db, get_pool_stats
 from llamatrade_db.session import verify_rls_enforcement
 from llamatrade_events import EventBus, KafkaTransport
 from llamatrade_telemetry import init_telemetry
-from llamatrade_telemetry.config import TelemetrySettings
 
 from src.cache import close_cache, init_cache
 from src.error_handlers import register_error_handlers
@@ -55,7 +50,6 @@ def _bars_from_bus() -> bool:
 SERVICE_NAME = "market-data"
 SERVICE_VERSION = "0.1.0"
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 CORS_ORIGINS = os.getenv(
     "CORS_ORIGINS", "http://localhost:8800,http://localhost:3000,http://localhost:47333"
@@ -77,10 +71,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     """Application lifespan handler."""
     global _stream_connected
 
-    # Fail-closed RLS guard on the shared llamatrade_db role (dev-tolerant,
-    # prod-strict). The dedicated bar store is a separate, non-tenant-scoped
-    # TimescaleDB (MARKET_DATA_DB_URL), so RLS does not apply there; this asserts
-    # the platform DB role the ingest universe reads through.
+    # Guards the platform DB role only; the bar store is a separate,
+    # non-tenant-scoped TimescaleDB.
     await verify_rls_enforcement()
 
     cache = await init_cache()
@@ -100,7 +92,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         _stream_connected = True
         logger.info("Live bars sourced from internal bus (consolidated mode)")
     else:
-        alpaca_stream = await init_alpaca_stream()
+        alpaca_stream = await init_market_data_stream()
         if alpaca_stream:
             _stream_connected = True
             await init_stream_bridge(alpaca_stream, stream_manager)
@@ -135,7 +127,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         await _event_bus.close()
     _kafka_transport = None
     await close_stream_bridge()
-    await close_alpaca_stream()
+    await close_market_data_stream()
     await close_all_clients()
     await close_cache()
     await close_db()
@@ -167,11 +159,6 @@ init_telemetry(
     service=SERVICE_NAME,
     version=SERVICE_VERSION,
     pool_stats_provider=get_pool_stats,
-    settings=TelemetrySettings(
-        ENVIRONMENT=ENVIRONMENT,
-        LOG_LEVEL=LOG_LEVEL,
-        LOG_FORMAT="json" if ENVIRONMENT != "development" else "text",
-    ),
 )
 
 
@@ -179,7 +166,7 @@ async def _check_live_bars() -> bool:
     """Live-bar fan-out health: bus-bridge state in bus mode, else the Alpaca stream."""
     if _bars_from_bus():
         return _stream_connected
-    alpaca_stream = get_alpaca_stream()
+    alpaca_stream = get_market_data_stream()
     return alpaca_stream.connected if alpaca_stream else False
 
 

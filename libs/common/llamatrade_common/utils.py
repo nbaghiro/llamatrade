@@ -7,22 +7,16 @@ import base64
 import hashlib
 import os
 import secrets
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from datetime import UTC, datetime
 from functools import lru_cache
 from importlib import import_module
 from types import ModuleType
 from typing import NamedTuple, Protocol, TypedDict, cast
-from uuid import UUID, uuid4
 
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-
-
-def generate_uuid() -> UUID:
-    """Generate a new UUID4."""
-    return uuid4()
 
 
 def utc_now() -> datetime:
@@ -448,46 +442,6 @@ async def async_reencrypt_value(encrypted_value: str, encryption_key: str | None
     error contract as the sync function.
     """
     return await asyncio.to_thread(reencrypt_value, encrypted_value, encryption_key)
-
-
-class PaginatedResult[T](TypedDict):
-    """Result of paginating a list."""
-
-    items: Sequence[T]
-    total: int
-    page: int
-    page_size: int
-    total_pages: int
-
-
-def paginate[T](
-    items: Sequence[T],
-    page: int = 1,
-    page_size: int = 20,
-) -> PaginatedResult[T]:
-    """Paginate a list of items.
-
-    Args:
-        items: List of items to paginate
-        page: Page number (1-indexed)
-        page_size: Number of items per page
-
-    Returns:
-        Dict with paginated items and metadata
-    """
-    total = len(items)
-    total_pages = (total + page_size - 1) // page_size if page_size > 0 else 0
-
-    start = (page - 1) * page_size
-    end = start + page_size
-
-    return PaginatedResult(
-        items=items[start:end],
-        total=total,
-        page=page,
-        page_size=page_size,
-        total_pages=total_pages,
-    )
 
 
 _DEFAULT_PAGE_SIZE = 20

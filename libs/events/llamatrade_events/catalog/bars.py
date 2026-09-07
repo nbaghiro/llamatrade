@@ -3,7 +3,7 @@
 The highest-volume channel, so it skips the envelope: the value is a serialized
 ``Bar`` message directly (one field, ~80 bytes, no envelope overhead). Producer:
 market-data's bar streamer. Consumers: trading's live runner and the market-data
-gRPC bar stream, which routes per-symbol through a :class:`StreamFanout`.
+gRPC bar stream, which routes per-symbol to subscribers.
 """
 
 from __future__ import annotations

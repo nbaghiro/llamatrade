@@ -2,8 +2,7 @@
 
 Turns one-or-more ``AccountProjection``s (a tenant may own several accounts, one
 per broker credential set) plus a price map into the summary / positions /
-transaction views the read API serves. The legacy float/JSONB path computed
-these from a per-tenant summary row; here they derive from the event-sourced
+transaction views the read API serves. The views derive from the event-sourced
 projection, so they are consistent with sleeves/funds by construction.
 
 Pure (no DB/IO): the DB-backed ``PortfolioReadService`` supplies projections,

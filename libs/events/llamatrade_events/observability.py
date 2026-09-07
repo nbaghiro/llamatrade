@@ -69,13 +69,3 @@ EVENTS_DLQ_DEPTH = gauge(
 )
 
 # --- gRPC fan-out ---
-EVENTS_FANOUT_DROPPED_TOTAL = counter(
-    "llamatrade_events_fanout_dropped_total",
-    ["fanout"],
-    "Items dropped because a client's fan-out queue was full (slow consumer)",
-)
-EVENTS_FANOUT_CLIENTS = gauge(
-    "llamatrade_events_fanout_clients",
-    ["fanout"],
-    "Connected gRPC clients on a fan-out",
-)
