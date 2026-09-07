@@ -1,4 +1,4 @@
-.PHONY: dev dev-up dev-down dev-infra dev-setup build test test-e2e lint clean ci migrate migrate-status migrate-history seed-demo emails emails-preview
+.PHONY: dev dev-up dev-down dev-infra dev-setup build test test-e2e lint clean ci migrate migrate-status migrate-history seed-demo emails emails-preview docs-docx
 
 # Helper to load .env file
 ifneq (,$(wildcard ./.env))
@@ -284,6 +284,15 @@ emails:
 # Open the rendered-shell gallery (writes tools/email_preview.html, gitignored).
 emails-preview:
 	.venv/bin/python services/notification/tools/preview_emails.py --open
+
+# ===================
+# Review Documents
+# ===================
+# Convert the .docs/*.html review documents to .docx for import into Google Docs
+# (upload to Drive, then Open with > Google Docs). Output lands in .docs/build/,
+# which is gitignored. Requires pandoc: brew install pandoc.
+docs-docx:
+	python3 scripts/docs-to-docx.py
 
 # ===================
 # Secrets / Keys

@@ -214,6 +214,7 @@ Full documentation lives in [`.docs/`](.docs/). New here? Start with the [Archit
 | Document | Covers |
 | -------- | ------ |
 | [Telemetry & Observability](.docs/telemetry.md) | `llamatrade_telemetry` — metrics, structured logs, traces, conventions, and the metric catalog |
+| [Testing](.docs/testing.md) | The test architecture — unit/integration/golden/e2e layers, fakes and seams, coverage gates, CI enforcement, and how to write tests here |
 
 ### Services
 

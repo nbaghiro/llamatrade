@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LlamaTrade backend: implementation deep-dive</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --ink: #1a1f29;
+    --ink-strong: #0f172a;
+    --muted: #64748b;
+    --accent: #2563eb;
+    --line: #e2e8f0;
+    --table-line: #d7dde5;
+    --table-head: #eef2f8;
+    --row-alt: #f8fafc;
+    --code-bg: #f1f5f9;
+    --code-ink: #0b3a63;
+    --pre-bg: #0f172a;
+    --pre-ink: #e2e8f0;
+    --figure-bg: #f8fafc;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1520;
+      --ink: #d6dde8;
+      --ink-strong: #f1f5f9;
+      --muted: #8b98ab;
+      --accent: #6d9bf5;
+      --line: #273245;
+      --table-line: #2c3950;
+      --table-head: #1a2334;
+      --row-alt: #141c2b;
+      --code-bg: #1a2334;
+      --code-ink: #a8c7f0;
+      --pre-bg: #0b101a;
+      --pre-ink: #d6dde8;
+      --figure-bg: #141c2b;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { font-size: 16px; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+  }
+  main { max-width: 46rem; margin: 0 auto; padding: 3rem 1.25rem 6rem; }
+  h1 { font-size: 1.9rem; font-weight: 700; color: var(--ink-strong); line-height: 1.2; margin: 0 0 1rem; text-wrap: balance; }
+  h2 { font-size: 1.35rem; color: var(--ink-strong); border-bottom: 2px solid var(--accent); padding-bottom: .2rem; margin: 2.6rem 0 .8rem; }
+  h3 { font-size: 1.1rem; color: var(--ink-strong); margin: 1.9rem 0 .55rem; }
+  h4 { font-size: 1rem; color: var(--ink-strong); margin: 1.5rem 0 .4rem; }
+  p { margin: .65rem 0; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  ul, ol { margin: .65rem 0; padding-left: 1.5rem; }
+  li { margin: .35rem 0; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: .88rem; }
+  th, td { border: 1px solid var(--table-line); padding: .4rem .6rem; text-align: left; vertical-align: top; }
+  thead th { background: var(--table-head); color: var(--ink-strong); font-weight: 600; }
+  tbody tr:nth-child(even) { background: var(--row-alt); }
+  .tablewrap { overflow-x: auto; }
+  code {
+    font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: .85em; background: var(--code-bg); color: var(--code-ink);
+    padding: .1em .3em; border-radius: 3px;
+  }
+  pre {
+    background: var(--pre-bg); color: var(--pre-ink);
+    padding: .9rem 1rem; border-radius: 6px; overflow-x: auto;
+    font-size: .84rem; line-height: 1.45;
+  }
+  pre code { background: none; color: inherit; padding: 0; }
+  .figure {
+    border: 1px solid var(--line); border-radius: 8px; background: var(--figure-bg);
+    padding: .9rem 1rem; margin: 1rem 0; font-size: .85rem;
+  }
+  .figure .chips { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+  .figure .chip { border: 1px solid var(--table-line); border-radius: 5px; background: var(--bg); padding: .25rem .55rem; }
+  .figure .chip small { display: block; color: var(--muted); }
+  .figure .edge { color: var(--muted); font-size: .8rem; margin-top: .5rem; }
+  .figure .arrow { color: var(--accent); font-weight: 700; }
+  nav.toc { border: 1px solid var(--line); border-radius: 8px; padding: 1rem 1.25rem; margin: 1.5rem 0 2rem; font-size: .92rem; }
+  nav.toc strong { display: block; color: var(--ink-strong); margin-bottom: .4rem; }
+  nav.toc ol { margin: 0; padding-left: 1.3rem; }
+  nav.toc li { margin: .2rem 0; }
+  strong { color: var(--ink-strong); }
+</style>
+</head>
+<body>
+<main>
+
+<h1>LlamaTrade backend: implementation deep-dive</h1>
+
+<table>
+  <tbody>
+    <tr><td>Status</td><td>Reference document, generated from a full code read on 2026-07-30 and re-verified against the code on 2026-08-03.</td></tr>
+    <tr><td>Scope</td><td>Every backend service and shared library: implementation mechanics, interconnections, scalability settings and limits, reliability of trading, duplicate-trade defenses, and what-if answers per section.</td></tr>
+    <tr><td>Relationship to the architecture spec</td><td>The architecture specification records decisions and alternatives. This document records how the system is actually built: exact configuration values, the mechanism at every seam, and the behavior under each failure, all grounded in the code with file references. Where the two documents disagree, the code wins and the disagreement is listed in the gap register at the end.</td></tr>
+    <tr><td>Reading guide</td><td>The end-to-end flow section is the map; each service and library section stands alone; every section ends with what-if questions answered from the code, including the simple ones. File references are path:line at the time of writing and will drift with edits.</td></tr>
+  </tbody>
+</table>
+
+<p>A note on the runtime: the codebase requires Python 3.14 and uses PEP 758 unparenthesized <code>except A, B:</code> clauses in production code (<code>libs/common/llamatrade_common/auth.py:272</code>, <code>services/portfolio/src/ledger/projection.py:168</code>). This is valid 3.14 syntax, verified by execution, but it hard-pins every environment and tool to Python 3.14 or later.</p>
+
+<nav class="toc">
+  <strong>Contents</strong>
+  <ol>
+    <li><a href="#flow">The full flow, end to end</a></li>
+    <li><a href="#trading">Trading service (8850)</a></li>
+    <li><a href="#portfolio">Portfolio service (8860), the ledger</a></li>
+    <li><a href="#strategy">Strategy service (8820)</a></li>
+    <li><a href="#backtest">Backtest service (8830)</a></li>
+    <li><a href="#market-data">Market-data service (8840)</a></li>
+    <li><a href="#auth">Auth service (8810)</a></li>
+    <li><a href="#billing">Billing service (8880, webhooks on 8881)</a></li>
+    <li><a href="#notification">Notification service (8870)</a></li>
+    <li><a href="#agent">Agent service (8890, the copilot)</a></li>
+    <li><a href="#libraries">Shared libraries</a></li>
+    <li><a href="#deployment">Deployment topology</a></li>
+    <li><a href="#scalability">Scalability reference</a></li>
+    <li><a href="#reliability">Reliability of trading and the duplicate-trade defense</a></li>
+    <li><a href="#gap-register">Gap register</a></li>
+  </ol>
+</nav>
+
+<h2 id="flow">The full flow, end to end</h2>
+
+<p>This section walks one user through the whole system and names the mechanism at every hop. Later sections expand each stop.</p>
+
+<p><strong>Identity.</strong> The browser calls AuthService/Register then Login (two separate RPCs; register does not auto-login). Login is rate-limited per email and per IP (10/min and 30/15min, fail-closed on Redis errors), burns a bcrypt check even on a user miss to remove the enumeration oracle, and returns a 30-minute access token and a 7-day refresh token. Tokens are RS256 when the AUTH_JWT_PRIVATE_KEY/AUTH_JWT_PUBLIC_KEY pair is configured, HS256 over JWT_SECRET otherwise; the verifying algorithm is pinned by configured key material, never by the token header. Every other service verifies locally with the public key from its environment; no service calls auth on the request path. Service-to-service calls mint their own 5-minute HS256 tokens (<code>mint_service_token</code>).</p>
+
+<p><strong>Request admission, every service.</strong> A pure-ASGI AuthMiddleware (pure ASGI so ContextVars propagate) rejects anything without a valid bearer token, closes WebSockets outright, and checks a Redis revocation denylist for user tokens. The servicer then calls <code>resolve_identity_connect</code>, which reconciles the verified token identity with the untrusted context field in the request body: for user tokens the token always wins and a mismatched wire tenant is rejected; for service tokens the wire is trusted (that is the delegation mechanism, gated by the AUTH_ACCEPTED_SERVICES allowlist where set). The database layer then sets the tenant GUC inside the transaction, and Postgres row-level security (33 tables, FORCE, fail-closed predicate) is the backstop behind the application filters.</p>
+
+<p><strong>Authoring.</strong> All three authoring surfaces (visual builder, code editor, copilot) produce the same S-expression. Save goes to StrategyService/CreateStrategy: parse (nesting capped at 150 by a token pre-scan, source capped at 100k chars), validate (all errors accumulated, weight sums checked), then an immutable version row inside a savepoint. Edits take <code>SELECT ... FOR UPDATE</code> on the strategy row and mint version N+1; nothing ever mutates a stored version.</p>
+
+<p><strong>Backtest.</strong> BacktestService/RunBacktest validates, rejects config the engine cannot honor, checks the monthly plan quota, writes a PENDING row, commits, then enqueues to Celery (Redis broker). A worker materializes a content-addressed Parquet dataset (single-flight lock, warm hits skip market-data entirely), replays the shared StrategyRuntime over it, and finishes with a guarded terminal write (<code>UPDATE ... WHERE status = RUNNING</code>) so a concurrent cancel wins. Progress streams over a replayable Kafka topic tailed from the beginning so a late-joining browser sees the history.</p>
+
+<p><strong>Deploy and funding.</strong> The client creates an execution and starts it. StartExecution checks the live_strategies plan limit, then funds before flipping state: LedgerService/GetOrCreateAccount, then AllocateCapital with the execution id (which opens and funds the sleeve in one call), then persists the sleeve identity on the execution row and only then flips to RUNNING, all in one commit. The sleeve_id column doubles as the idempotency key: a restart that finds it set never funds again. The client then calls TradingService/StartSession, whose preflight runs five gates in order: active subscription, credential resolution, mode/credential match, broker account checks (active, margin account, buying power for live), and per-symbol tradability, using the tenant's own decrypted Alpaca keys.</p>
+
+<p><strong>Live trading.</strong> One StrategyRunner per session, five asyncio tasks on the pod's single event loop: the bar loop, an equity sync (60s), a position reconciliation (300s), a fill-stream supervisor, and a ledger republish drain (120s). The session is owned through a Postgres advisory lock held on a dedicated autocommit connection; a 30-second rehydration pass on every pod sweeps dead leases, adopts orphaned RUNNING sessions and executions, and re-runs crash recovery on adoption. Bars arrive per-tenant from Alpaca by default (or from market-data's shared fan-out behind TRADING_BARS_FROM_SERVICE), fold into a forming period bar, and evaluate only when every subscribed symbol has the period's bar. Evaluation runs off the event loop, sizing sorts sells before buys, and every intended order passes a six-layer risk gate that includes a live sleeve check (frozen or closed sleeve, insufficient free cash, or an unfetchable sleeve all reject).</p>
+
+<p><strong>The order.</strong> The executor derives <code>client_order_id = "lt-" + sha256(session, symbol, side, signal_timestamp)[:16]</code>, checks the intent table, writes a PENDING intent row and commits before touching the broker, then submits to Alpaca carrying that id. Every layer after this point dedups on it: the intent table's global unique constraint, the broker probe on retry (<code>get_order_by_client_id</code>, adopt rather than resubmit), Alpaca's own per-account uniqueness, and finally the ledger's event_id derivation.</p>
+
+<p><strong>The fill.</strong> Fills arrive on the per-tenant trade_updates WebSocket. Trading publishes exactly one LedgerFill per order at terminal state (never per partial) onto <code>lt.ledger.fills</code>, keyed by account_id, from three redundant emission paths (live stream, REST sync, periodic republish drain) that all derive the same envelope id. The portfolio consumer group processes each account's partition serially: FIFO cost-basis enrichment for sells, balanced-postings assertion, <code>INSERT ... ON CONFLICT (event_id) DO NOTHING</code>, an inline invariant check that freezes the sleeve on violation, commit, and only then the Kafka offset commit. An uncoverable sell quarantines to the DLQ rather than fabricating a basis; a transient database failure retries in place forever (with the partition paused) rather than dead-lettering money.</p>
+
+<p><strong>Reads.</strong> The UI reads positions, equity curves, and transactions from portfolio, which folds projections from the event log (incrementally, from persisted checkpoints keyed by ledger sequence). Trading reads sleeve equity and free cash through a 10-second cache invalidated on terminal fills. Market data serves bars read-through: stored bars first, edge gaps fetched from Alpaca with the correct adjustment, only closed bars persisted.</p>
+
+<p><strong>Watching for drift.</strong> A leader-elected reconciliation pass (300s) compares projections against the broker: unknown broker holdings are adopted into Unmanaged (deferred while an order for that symbol is in flight), ledger-side mismatches freeze every sleeve holding the symbol, cash drift is surfaced and freezes only after three sustained passes. A broker read failure skips the account rather than reconciling against emptiness, with a staleness gauge alerting after three missed intervals. Equity snapshots (hourly, leader-only, idempotent per sleeve/sequence/day) feed the equity curves; a nightly corporate-action pass proposes splits, renames, and dividends for an operator to apply.</p>
+
+<p><strong>Stop.</strong> StopExecution marks the execution stopped, commits, then makes a best-effort sleeve close (positions re-home to Unmanaged at cost, free cash returns to Unallocated, the close refuses while reserved cash is nonzero). On failure the sleeve id stays on the row as a needs-release marker and an elected sweeper retries every 5 minutes. Trading's risk gate independently blocks the closed sleeve, the runner stops itself on its next equity sync, and a stray late fill re-routes to Unmanaged at ingestion.</p>
+
+<div class="figure">
+  <div class="chips">
+    <span class="chip">auth<small>login, tokens, creds</small></span>
+    <span class="chip">strategy<small>versions, executions</small></span>
+    <span class="chip">backtest<small>Celery replay</small></span>
+    <span class="chip">trading<small>runner, orders</small></span>
+    <span class="arrow">&rarr;</span>
+    <span class="chip">Kafka <code>lt.ledger.fills</code><small>keyed by account</small></span>
+    <span class="arrow">&rarr;</span>
+    <span class="chip">portfolio<small>ledger fold, reconcile</small></span>
+    <span class="chip">market-data<small>bars, snapshots</small></span>
+    <span class="chip">Alpaca<small>REST + WS</small></span>
+  </div>
+  <div class="edge">Synchronous read edges: trading &rarr; portfolio (sleeve reads, 10s cache) &middot; portfolio &rarr; Alpaca (reconciliation reads) &middot; trading and market-data &rarr; Alpaca (REST + WS).</div>
+</div>
+
+<h2 id="trading">Trading service (8850)</h2>
+
+<p>Trading owns broker submission, order-time risk, session lifecycle, and fill emission. It does no accounting. About 13k lines across the servicer (15 RPCs), a services layer (session lifecycle, alerts, audit, positions), the runner, the executor, risk, recovery, and streaming.</p>
+
+<p><strong>Session model.</strong> One StrategyRunner per session, held in a process-global RunnerManager. Each session costs: five asyncio tasks (bar loop, equity sync at 60s, position reconciliation at 300s, fill-stream supervisor, ledger republish drain at 120s), one long-lived executor DB session, one pinned autocommit connection for the ownership lease, one Alpaca REST client, and two WebSockets (bars and trade_updates) unless TRADING_BARS_FROM_SERVICE routes bars through market-data's shared fan-out. Strategy evaluation is the only thread hop (<code>asyncio.to_thread</code>); everything else shares the pod's single event loop.</p>
+
+<p><strong>Preflight (StartSession), in order:</strong> active subscription with <code>current_period_end &gt; now</code> (live mode additionally rejects the free tier); credential resolution (tenant-scoped, active); mode/credential match (live mode rejects paper keys); broker account checks (status ACTIVE, margin account required via <code>multiplier != "1"</code>, live requires $500 buying power); per-symbol active-and-tradable using the session's own credentials. Ledger identity resolution requires an unambiguous funded execution: two candidates raise rather than guess. One active session per sleeve is enforced before the runner starts, and the advisory lease is acquired before any loop runs.</p>
+
+<p><strong>The risk gate (per order, in order):</strong> market hours; price resolution (limit price, then reference, then market-data, then cache, then DB; failure rejects); max order value ($5,000 default); the sleeve gate (frozen rejects, non-active rejects, buys must fit free cash, sells must be covered by open lots, and a failed sleeve fetch rejects); symbol whitelist; max position size ($10,000); daily loss ($1,000); rate limit (10 orders/min/session). A per-session circuit breaker (5 consecutive losses, 5% daily loss, 10% drawdown, 5 order errors or 10 API errors in 300s) pauses the runner and does not auto-reset.</p>
+
+<p><strong>Ownership and recovery.</strong> The session lease is <code>pg_try_advisory_lock</code> on a dedicated autocommit connection (autocommit so the idle-in-transaction timeout cannot revoke it). <code>holds_advisory_lock</code> returns false on any exception: a torn backend and a revoked lock are the same verdict. Every 30 seconds each pod runs a rehydration pass: sweep dead leases (stop the local runner, log critical, count <code>session_leases_lost_total</code>), drop leases for sessions stopped elsewhere, claim and rebuild runners for live sessions nobody owns, and adopt RUNNING executions that have no session (skipping unfunded ones and anything inside a 120-second deploy grace window). Rehydration re-runs the normal start path, which includes the stranded-order sweep and the ledger republish drain.</p>
+
+<p><strong>Fill emission, three paths, one id.</strong> The live stream handler publishes a LedgerFill when an order reaches terminal state; the REST sync (<code>sync_all_pending_orders</code>) covers orders whose stream event was missed, and runs at session start, after every trade-stream reconnect, and as the first phase of the periodic drain; the republish drain then re-emits terminal orders from the last hour every 120 seconds (and the last day at boot). The sync is what makes the other two whole: the stream replays no gap on reconnect and delivers nothing while the pod is down, so an order that terminalized in that window would otherwise stay non-terminal forever, invisible to both the stranded sweep (it carries a broker id) and the republish drain (it is not terminal). Because it keys on status rather than a timestamp, no outage is long enough to strand a fill past it. All three derive the same envelope id from client_order_id, so the ledger folds them to one row. Partial fills never publish: per-partial publishing would dedup all but the first against the same id, which is why the one-event-per-order rule is stated in the emitter, the contract, and the ingester.</p>
+
+<p><strong>Scalability.</strong> Base 2 replicas, HPA 2 to 10 at 60% CPU, production overlay 3 replicas with a PDB of 2. DB_POOL_SIZE=5, DB_MAX_OVERFLOW=5; each held lease pins one connection outside that budget, so roughly ten concurrent sessions saturate a pod's pool. This is the effective per-pod session ceiling; nothing else caps sessions or symbols (memory grows with symbols x warmup history, and preflight probes symbols serially). <code>AUTH_ACCEPTED_SERVICES="__none__"</code> rejects all inbound service tokens on the order path. The Alpaca REST budget is a 200/min token bucket per credential; the Redis-shared cluster bucket exists but is off by default, so each replica otherwise holds a full budget.</p>
+
+<h4>What if the same order is submitted twice concurrently?</h4>
+<p>Both derive the same client_order_id. The intent table's global unique constraint rejects the second insert; if both somehow reach the broker, Alpaca rejects the second id. The concurrency test asserts five identical concurrent submits produce exactly one broker order, with losers surfacing as errors.</p>
+
+<h4>What if the pod crashes mid-order?</h4>
+<p>Depends on where. Before the intent commit: the signal is lost and re-emits next period if the condition holds. After the commit but before the broker call: the stranded-order sweep probes the broker by client_order_id on restart, finds nothing, and marks the row rejected. After the broker call but before the response persists: the same probe finds the live order and adopts it, never resubmitting. The one gap: a REST failure marks the row REJECTED, which removes it from the sweep's PENDING scan, so an order the broker actually accepted while the response was lost is not re-adopted by that sweep (the deterministic id still prevents duplication on any retry).</p>
+
+<h4>What if the trade_updates stream delivers a duplicate or out-of-order fill?</h4>
+<p>The runner tracks cumulative applied quantity per order id plus a 512-entry terminal ring buffer; a duplicate yields a non-positive delta and is skipped. The ledger is safe independently through event_id dedup. If the ring buffer wraps (over 512 terminal orders), a very late replay could re-apply to the in-memory book only, and the 300-second broker reconciliation corrects it.</p>
+
+<h4>What if a fill arrives for an order this session never placed?</h4>
+<p>A fill for a symbol outside the session's set is dropped entirely. For a known symbol with an unknown id, the full quantity books into the local position and, for a sleeve session, a LedgerFill is still published, so a manual trade in the same symbol can book to the strategy's sleeve until reconciliation adopts the drift. This is a known sharp edge, listed in the gap register.</p>
+
+<h4>What if two pods end up owning the same session?</h4>
+<p>They cannot hold the lock simultaneously. The dangerous window is a torn lease: pod A's backend dies, the lock silently frees, pod B adopts. Pod A's next heartbeat (at most 30 seconds) finds the lock gone, logs critical, and stops its runner. During the overlap, duplicate orders are still prevented because both pods derive the same client_order_id for the same signal.</p>
+
+<h4>What if StopSession races an in-flight order?</h4>
+<p>Stop does not cancel broker orders. An already-dispatched order fills at the broker with no runner listening; the DB row is reconciled by the next REST sync and the ledger by the republish drain or REST sync on a later session start. If cancellation lands inside <code>submit_order</code> itself, the row can be left PENDING while the order is live at Alpaca; the stranded-order sweep adopts it on the session's next start, but a session never restarted leaves that order at the broker.</p>
+
+<h4>What if the sleeve freezes mid-flight?</h4>
+<p>Every new order rejects at the sleeve gate. Already-submitted orders still fill and their fills still publish (the fill path never re-checks sleeve status; the ledger accepts them and reconciliation sees a consistent book). Only a closed sleeve stops the runner.</p>
+
+<h4>What if the broker WebSocket dies?</h4>
+<p>The library reconnects with exponential backoff (1s doubling to 60s, 10 attempts, roughly five minutes) and replays subscriptions; on exhaustion the generator ends silently, which the runner's supervisor treats as a fault: it alerts, rebuilds a fresh client from the factory with a zeroed attempt counter, and backs off 1 to 60 seconds. During the outage the bar loop keeps trading (a documented tradeoff: reconnection latency rather than trading blind), and missed fill events are covered by the REST sync.</p>
+
+<h4>What if Kafka is down when a fill should publish?</h4>
+<p>The publish raises, every caller catches and logs, and the republish drain re-emits within its one-hour window keyed on the order's terminal updated_at. An outage longer than that window is covered by the REST sync, which keys on order status rather than a timestamp and so is not bounded by any window. Kafka is a non-critical health check, so order submission stays available throughout.</p>
+
+<h4>What if the equity sync fails?</h4>
+<p>The sleeve fetch failure is logged and counted against the circuit breaker, and the runner deliberately does not fall back to whole-account equity (that would double-count across strategies on one account). Sizing continues against stale equity; the overdraft protection is the sleeve gate, which rejects when it cannot verify.</p>
+
+<h2 id="portfolio">Portfolio service (8860), the ledger</h2>
+
+<p>Portfolio hosts two Connect services in one process: LedgerService (money-path RPCs) and PortfolioService (dashboard reads). It runs three supervised background roles: the fill consumer (every pod), the writer election (one leader running reconciliation, snapshots, and corporate actions), and a read-only lag monitor.</p>
+
+<p><strong>The posting kernel.</strong> Four buckets: CASH, POSITION (signed shares and dollar cost), PNL, EXTERNAL (the account boundary). Every event expands into postings that must sum to zero, checked before insert, plus a cost-direction check (a POSITION leg cannot move shares against its cost sign) that catches average-cost corruption the dollar checksum cannot see. A sell without a cost basis is refused at the postings layer even if enrichment is bypassed. Sleeve realized P&amp;L is the negated sum of PNL legs.</p>
+
+<p><strong>Deterministic ids, per event family.</strong> One primitive, <code>UUID(sha256(key)[:16])</code>, keyed per family: fills by client_order_id; reservations by client_order_id:kind; fund ops by account:op:request_id:index; sleeve close by sleeve:close; drift adoption by account, symbol, both quantities, and the pass date; freezes by sleeve and date; genesis backfill by account:backfill:...; corporate actions by symbol, external announcement id, and sleeve. The writer inserts with <code>ON CONFLICT (event_id) DO NOTHING RETURNING</code>, avoiding IntegrityError so the surrounding transaction is never poisoned, and a conflict returns the existing row with <code>inserted=False</code>.</p>
+
+<p><strong>Projection and checkpoints.</strong> The fold is a pure function computing per-sleeve cash, realized P&amp;L, reserved cash, positions, and FIFO lots. A malformed event is skipped as poison (counted, alerted, reads still served and flagged) rather than wedging the account. Checkpointing is two-level: a process-local LRU of 2,048 accounts plus a persisted row per account (as_of_sequence and full state as JSONB, Decimals as strings, forward-only upsert). Because ledger sequences are assigned at insert but commit later, the checkpoint never advances past a safety window (LEDGER_CHECKPOINT_SAFETY_WINDOW_SECONDS, default 120s, deliberately not below the 120s idle-in-transaction timeout); the tail inside the window is re-folded each pass. A lost or corrupt checkpoint costs a full re-fold, never an error, and a poisoned projection is never persisted. Note the read RPCs and snapshot/corporate sweeps still use the non-incremental full fold per call; only reconciliation and the fill path are incremental.</p>
+
+<p><strong>Fill ingestion.</strong> Consumer group portfolio-ledger on <code>lt.ledger.fills</code> (24 partitions, 90-day retention), manual commit strictly after the DB write. Startup verifies the topic exists before subscribing: an absent topic yields an empty assignment, and the member would otherwise idle with lag reading zero (no partitions to measure) while every health signal stayed green and no fill was ever booked. Per fill, one short transaction: re-route to Unmanaged if the sleeve is closed, FIFO enrichment for basis-less sells from checkpointed lots, append, inline invariant check with automatic freeze, commit, ack. Failure classes: undecodable bytes dead-letter unkeyed and ack; a proto that decodes but cannot translate dead-letters keyed by account and acks; an uncoverable sell quarantines (tenant alert, DLQ keyed by account, ack); any other exception retries in place with 0.5s-to-30s backoff, pausing the partition so the fetcher stops prefetching, forever, because dead-lettering money on a database blip is worse than waiting. <code>max_poll_interval_ms</code> is 30 minutes so a long retry never evicts the member. Lag over 1,000 for three 30-second samples degrades the health probe so Kubernetes recycles the pod and Kafka reassigns.</p>
+
+<p><strong>Reconciliation, adoption, freezing.</strong> The leader sweep (300s, concurrency 8, 30s per-account timeout, fresh session per call) diffs projections against broker positions with a dust tolerance of 0.0001 shares. Unknown broker holdings adopt into Unmanaged at the broker's average price, deferred while the symbol has open or recently terminal (10 minutes) orders, idempotent per pass day. Ledger-side mismatches freeze every sleeve holding the symbol and never auto-correct. Cash drift is a gauge with a warning above one dollar; three consecutive drifting passes freeze the whole account's sleeves. A broker read failure marks the account skipped, never reconciled-against-empty, and a staleness gauge fires after three missed intervals. Sync write paths (deposits, closes, corporate applies) assert the same invariants and roll back instead of freezing.</p>
+
+<p><strong>Election and snapshots.</strong> The writer lease is a session-level advisory lock probed on its own connection before every sweep pass; loss latches an event that wakes the sweeps out of their sleeps immediately. Equity snapshots re-check leadership immediately before the first write, price the whole pass with one batched market-data call, skip any sleeve with an unpriced symbol (a cost-valued point would permanently distort the immutable curve), and upsert on (sleeve, sequence, UTC day) with last-mark-wins. Corporate actions are proposal-only: the nightly pass logs operator-ready proposals with deterministic ids and never appends to the ledger itself.</p>
+
+<p><strong>Scalability.</strong> 2 replicas, HPA 2 to 5 at 70% CPU (so at most 5 of the 24 fill partitions' worth of parallelism is used; the topic is provisioned for growth). Pool 5+5 per pod. Fund RPCs serialize per account with a transaction-level advisory lock so two allocates cannot both pass the free-cash check. The statement tool reads an account's entire history in one shot (operator-only). Portfolio has no PodDisruptionBudget in the production overlay; that is in the gap register.</p>
+
+<h4>What if the same fill is delivered twice?</h4>
+<p>The append hits the event_id conflict, returns the existing row, the handler commits and acks. A no-op at every layer.</p>
+
+<h4>What if the writer crashes between the ledger insert and the offset commit?</h4>
+<p>The insert committed, the offset did not; redelivery re-appends, conflicts, and acks. If the crash was before the DB commit, the transaction rolled back and the redelivery genuinely books the fill. Exactly-once effect from at-least-once delivery.</p>
+
+<h4>What if a reservation arrives after its fill?</h4>
+<p>The fold ignores a reservation whose order id is already terminal (the release already happened; honoring it would understate free cash forever with no future release). The terminal set is bounded at 4,096 per account and survives checkpoint restarts.</p>
+
+<h4>What if two group members briefly own a partition during a rebalance?</h4>
+<p>The duplicate append is a no-op; the outgoing member's commit on a revoked partition raises, the supervisor restarts the consumer with backoff, and the new owner redelivers and dedups.</p>
+
+<h4>What if a deposit RPC is retried?</h4>
+<p>With a request_id, the derived event id makes the retry a no-op returning the same balance. With an empty request_id the event id falls back to a random UUID and the deposit double-books; the RPC layer does not currently require the field. In the gap register.</p>
+
+<h4>What if the broker shows a position the ledger has never seen?</h4>
+<p>Classified missing-in-ledger, valued at zero in the mismatch gauge (there is no ledger cost to value it), adopted into Unmanaged at the broker's average entry price unless an order for the symbol is in flight (deferred) or the snapshot cannot be fetched after three attempts (skipped). The same machinery seeds genesis on account onboarding.</p>
+
+<h4>What if checkpoint data is lost or corrupted?</h4>
+<p>Checkpoints are purely derived; a missing or undecodable row triggers a full fold with a warning, and the next pass re-persists. The upsert deliberately allows an equal-sequence write so a corrupt state row can be repaired in place.</p>
+
+<h4>What if the fold hits a malformed event?</h4>
+<p>Postings are validated before any mutation, so the projection is untouched; the event is skipped as poison, counted, and alerted; reads are served flagged as incomplete; the poisoned projection is never checkpointed, so a corrected event is picked up after restart.</p>
+
+<h2 id="strategy">Strategy service (8820)</h2>
+
+<p>Strategy owns the DSL surface (compile, validate, templates), copy-on-write versioning, the lifecycle state machine, and the execution lifecycle where strategy touches money.</p>
+
+<p><strong>Versioning.</strong> Create parses, validates, and writes the strategy plus version 1 inside a savepoint. Update takes <code>SELECT ... FOR UPDATE</code> on the strategy row (serializing concurrent saves), mints version N+1, and bumps current_version; versions are immutable and (strategy_id, version) is unique. Names are unique per tenant, with an automatic (N) suffix on collision. The status machine is draft to active, active to paused and back, any of those to archived, archived terminal; same-state transitions are idempotent no-ops.</p>
+
+<p><strong>Input bounds.</strong> Source capped at 100k characters before parsing; parser nesting capped at 150 by a token pre-scan (so a parenthesis bomb raises a clean ParseError, not RecursionError); symbols capped at 100 per strategy (STRATEGY_MAX_SYMBOLS, read at import) with a warning at 20. CompileStrategy requires auth (parser capacity is not free) and offloads to a thread; ValidateStrategy and the create/update parses run inline on the event loop, which is in the gap register. Template parameters are constrained to a symbols-array regex so caller input cannot inject S-expression text.</p>
+
+<p><strong>Execution lifecycle.</strong> CreateExecution writes a PENDING row (no quota check, and notably no strategy-status check: an execution can be created against a draft). StartExecution checks the live_strategies quota (running executions vs the plan limit, free-tier fallback 1), then funds before flipping: get-or-create account, allocate capital (which opens the sleeve, keyed by execution id), persist sleeve identity, flip RUNNING, one commit. sleeve_id being set is the restart-idempotency key. A funding failure surfaces as failed-precondition and the execution stays PENDING. StopExecution marks stopped and commits first, then best-effort closes the sleeve; a close failure logs and leaves sleeve_id set as the needs-release marker. The stranded-sleeve sweeper runs on every pod every STRATEGY_RECONCILE_INTERVAL_SECONDS (300s), electing a per-pass leader with an advisory lock, scanning stopped-or-errored executions with a sleeve id (limit 100, cross-tenant under an audited system session), and retrying the close forever. Archive refuses while RUNNING or PAUSED executions exist (the strategy row is locked while counting) and silently cancels PENDING ones.</p>
+
+<p><strong>Scalability.</strong> Stateless apart from the template catalog (loaded once at import; a malformed catalog is a boot failure) and the sweeper. 2 replicas, HPA 2 to 5 at 70%, pool 3+2.</p>
+
+<h4>What if two users start the same execution concurrently?</h4>
+<p>This is the known race: the execution row is read without a lock, both see PENDING with no sleeve, both fund, and capital allocates twice into the same sleeve (the ledger reuses the sleeve keyed by execution id, but the amount books twice). The plan-quota check has the same window. The archive path takes a row lock; the start path does not. In the gap register with a recommended FOR UPDATE.</p>
+
+<h4>What if funding succeeds but the commit fails?</h4>
+<p>The ledger sleeve is funded but the execution row rolls back with sleeve_id NULL, so neither the sweeper (which requires a sleeve id) nor trading's identity resolution can find it. A StartExecution retry re-funds a second sleeve. This is the one funding path with no compensating sweep; in the gap register.</p>
+
+<h4>What if the close fails repeatedly?</h4>
+<p>Capital is never lost, but release is unbounded in time: no backoff, no attempt counter, no alert, and a stranded population over 100 can starve the tail because the sweep is an unordered LIMIT 100.</p>
+
+<h4>What if a version is minted while a runner is live?</h4>
+<p>The runner pins its own version column and keeps trading the old definition; the UI shows the new current version. Nothing warns at mint time.</p>
+
+<h4>What if the strategy is archived while an execution runs?</h4>
+<p>Blocked for RUNNING and PAUSED. Two side doors: an execution in ERROR is not counted as active, so its strategy can be archived while trading may still hold state; and the same guard surfaces as invalid-argument via UpdateStrategyStatus but failed-precondition via DeleteStrategy, an inconsistent code for the identical condition.</p>
+
+<h2 id="backtest">Backtest service (8830)</h2>
+
+<p>Backtest is Celery-only execution over the shared runtime, with the design weight on failure modes: at-least-once delivery with compensations, cooperative cancellation, and a content-addressed dataset store.</p>
+
+<p><strong>Celery configuration.</strong> Soft/hard task limits 1800s/3600s; acks_late with task_reject_on_worker_lost; visibility timeout pinned to twice the hard limit (7200s) because Kombu's default equals the hard limit, and with late acks a still-running task at the hour mark would be redelivered and run twice; prefetch 1; worker concurrency 2, matched to the pod's 2-CPU limit; JSON serialization only. Two queues: backtest for runs, backtest_maintenance for the reaper and dataset janitor so maintenance is never starved behind long runs. Beat runs embedded on a single Recreate replica.</p>
+
+<p><strong>The reaper (300s).</strong> RUNNING rows older than the hard limit plus 300s grace fail with a worker-lost message; PENDING older than 300s re-enqueue; PENDING older than 3600s fail. Status writes commit before any re-enqueue so a broker failure cannot lose a requeued row, and duplicate execution is tolerated because <code>backtest_results.backtest_id</code> is unique, so the second writer loses.</p>
+
+<p><strong>Datasets.</strong> The spec hashes canonical JSON of symbols, timeframe, the warm-up-padded window, adjustment, and a vintage (the materialization date, but only while the window's end is inside the 10-day corporate-action rewrite window; older windows get a stable empty vintage). Storage is atomic-replace Parquet (zstd); a missing price raises rather than building an incomplete dataset. Concurrent identical runs coalesce on a Redis lock (SET NX EX 300); the loser polls every 0.5s up to 300s and then materializes directly rather than hanging on a dead producer. The janitor evicts by mtime after 7 days. Warm hits touch neither market-data nor Alpaca, which makes backtest load independent of market-data capacity.</p>
+
+<p><strong>Completion and cancellation.</strong> The terminal write is guarded: refresh and abort if already CANCELLED, then <code>UPDATE ... WHERE status = RUNNING</code>; zero rows means a concurrent cancel committed between the refresh and the finalize, and the result is rolled back and discarded. Cancellation is three independent mechanisms: the DB status (authoritative), a Redis flag polled between trading dates that fails open (a broken Redis must never abort or hang runs), and the guarded write.</p>
+
+<p><strong>Metrics discipline.</strong> Every annualized number is computed on a daily-resampled curve (annualizing raw intraday bars inflates Sharpe by roughly the square root of bars per day); mathematically undefined values (profit factor with no losses, alpha/beta on degenerate variance) are None to the wire, never a fabricated zero; the benchmark is date-joined, not positionally aligned; beta uses a single covariance matrix so numerator and denominator share the same degrees of freedom.</p>
+
+<p><strong>Scalability.</strong> API: 2 replicas, HPA 2 to 20 (CPU 60% plus memory 70%), pool 2+2 (it only enqueues and reads). Worker: KEDA ScaledObject (opt-in, not in the default kustomization): min 1, max 10, Prometheus trigger on max(queue depth) with threshold 2, instant scale-up (+4 pods/min), 30-minute scale-down stabilization (-1 pod/5min) because a run can occupy the full hard limit; termination grace 3660s so a SIGTERM'd worker finishes in flight. The queue-depth gauge is sampled in the API process (a saturated worker cannot report its own backlog), backlog only, in-flight excluded.</p>
+
+<h4>What if a worker dies mid-run?</h4>
+<p>The message is unacked but deliberately not redelivered inside the visibility window; the row sticks at RUNNING until the reaper fails it (about 65 minutes worst case). This is the only automatic recovery path, and the grace exists so a legitimately long run alive at the limit is killed by Celery, not the reaper.</p>
+
+<h4>What if the same run executes twice?</h4>
+<p>The run refuses anything not PENDING and flips to RUNNING before work; a race where both pass the check resolves at the unique result constraint, where the loser's insert fails harmlessly.</p>
+
+<h4>What if Redis is down?</h4>
+<p>Split by use: cancel flag fails open both ways (never aborts, never hangs; the DB status still blocks a late COMPLETED overwrite); the dataset lock fails open to direct materialization (coalescing is an optimization); progress degrades to a counter with capped logging; the broker itself is a hard failure, where a failed enqueue triggers the compensating FAILED write and readiness fails because Redis is a critical check here.</p>
+
+<h4>What if the janitor evicts a dataset mid-read?</h4>
+<p>A reader between exists and read raises and the run fails with a clear message (retry rebuilds); a reader already inside the file keeps its POSIX fd. Writes are atomic replaces, so no partial file is ever visible: eviction can cost a refetch, never a wrong result.</p>
+
+<h4>What if the strategy is pathological?</h4>
+<p>Wall clock is bounded by the hard limit; data volume by 100k bars per symbol (market-data independently rejects rather than truncates above its own ceiling, and the Alpaca client caps pagination at roughly a million bars); result size by a 5,000-point equity-curve cap that always preserves the final point; memory by the 2Gi limit with the raw bar list dropped after conversion. There is no explicit AST node-count cap; depth is capped at 150 in the parser, and degradation (NaN conditions, sub-notional skips) is counted and logged per run rather than prevented.</p>
+
+<h2 id="market-data">Market-data service (8840)</h2>
+
+<p>One image, two roles. The serving role handles Connect RPCs and touches Alpaca REST only for gap fills and snapshots; the ingest role is the platform's sole Alpaca WebSocket consumer, writing minute bars to a dedicated TimescaleDB and republishing them onto the bars topic. The bar store is deliberately a separate engine (own URL, own pool, no RLS: bars are global, not tenant data).</p>
+
+<p><strong>Storage.</strong> bars_1m hypertable (1-day chunks, compressed after 7 days, retained 90 days) and bars_daily (30-day chunks, compressed after 90 days, retained forever, split-adjusted). Intermediate timeframes are continuous aggregates behind a hard whitelist; writing to an aggregate is a typed error. Adjustment lives in exactly one function: daily is split-adjusted, intraday is raw, and gap fetches pass the same adjustment so a daily hole cannot be filled with mislabeled raw bars. All writes are idempotent upserts on (symbol, time).</p>
+
+<p><strong>The read path.</strong> Store-first: read stored bars, compute the uncovered gaps by interval subtraction (with a one-step extension so a complete range does not report a phantom trailing gap), fetch only the gaps from Alpaca, persist only closed bars (the forming bar is served but never stored), merge, dedupe, serve. A failed gap fetch serves what is stored; a failed store read falls back entirely to the cache-then-Alpaca path; a missing store URL degrades the whole service to Alpaca pass-through. Request bounds reject rather than truncate: 100 symbols, 100k bars. Cache TTLs: historical bars 24h, today's bars 5m, latest bar 2m, quote 10s, snapshot 15s (single-flighted per symbol), assets 24h; every Redis error degrades to a miss. If Alpaca's clock API is down, a full server-side NYSE calendar (holidays, early closes, computed Easter) answers market status; if no live snapshot is available, one is synthesized from the last two stored daily bars so positions mark to the last close instead of cost.</p>
+
+<p><strong>Streaming.</strong> Bus mode (explicit MARKET_DATA_BARS_FROM_BUS opt-in) tails the Kafka bars topic and holds no Alpaca connection in serving; legacy mode bridges a per-process Alpaca stream with ref-counted subscriptions. Fan-out is per-client bounded queues of 1,000 with drop-newest on overflow (correct for market data, wrong for anything else, and documented as such). Live trading sessions still hold per-tenant Alpaca sockets by default; the shared fan-out is the opt-in path that lifts Alpaca's one-stream-per-key limit.</p>
+
+<p><strong>Ingest.</strong> Single replica, Recreate, no lock: correctness relies on the deployment shape because writes are idempotent but the Alpaca stream is exclusive per key. The universe is the configured baseline union live-session symbols, refreshed every 60 seconds; a failed refresh keeps current subscriptions, and newly added symbols get a targeted backfill immediately. Interior holes are repaired hourly (holes wider than one step and up to 4 hours; wider is assumed to be a session boundary); a daily backfill and a nightly corporate-action re-pull complete the loop. The stream supervisor re-establishes an exhausted connection after 15 seconds and re-subscribes the whole universe. Bars buffer up to 1,000 rows and flush once per second as one upsert plus one batched publish.</p>
+
+<p><strong>Scalability.</strong> Serving: 2 replicas, HPA 2 to 8 at 70%, platform-DB pool 3+3 (the Timescale pool is a separate 5+5, and the k8s manifests never set the MARKET_DATA_DB_* variables, so in-cluster it runs at the library default). The Alpaca REST budget is the same 200/min per-credential bucket as trading, cluster-shared only when the Redis limiter is enabled. The bars topic is 12 partitions, 7-day retention, keyed by symbol.</p>
+
+<h4>What if the Alpaca WebSocket drops mid-day?</h4>
+<p>The client backs off and reconnects (up to 10 attempts) and replays subscriptions; on exhaustion the ingest supervisor rebuilds the client entirely. Bars missed during the outage are recovered by the hourly gap repair, and the serving read path edge-fills on demand in the meantime. Live sessions' own sockets reconnect independently; bars missed there are simply not evaluated (the all-symbols gate holds), with no per-session backfill.</p>
+
+<h4>What if a duplicate bar arrives?</h4>
+<p>Harmless at every layer: the store upserts on (symbol, time), the read path dedupes by timestamp, the backtest dataset merge keeps the existing row, and the runtime's forming feed suppresses re-evaluation for a repeated source timestamp. Only the UI fan-out re-broadcasts it.</p>
+
+<h4>What if a symbol is added to a live session mid-day?</h4>
+<p>The universe refresh subscribes it within 60 seconds and schedules an immediate targeted backfill; the serving-side subscription registers instantly, so the worst case is about a minute of no live bars for that symbol. Historical reads work immediately via edge-fill.</p>
+
+<h4>What if TimescaleDB is down?</h4>
+<p>Serving falls back to cache-then-Alpaca per request and snapshots lose only their store fallback. Ingest has no fallback: every loop iteration logs and retries, and bars beyond the 1,000-row buffer are lost from the buffer (they are recovered later by gap repair once the store returns). Kafka and Redis are non-critical health checks, so the pod stays Ready.</p>
+
+<h4>What if two ingestors run?</h4>
+<p>Data stays correct (idempotent upserts), but the two connections fight over Alpaca's one-stream-per-key limit and flap, each holds a full REST budget unless the shared limiter is on, and serving clients see duplicate bars. Recreate plus replicas 1 is the only guard; there is no lease in the ingest code.</p>
+
+<h2 id="auth">Auth service (8810)</h2>
+
+<p>Auth issues and rotates tokens, manages Alpaca credentials (BYO keys and OAuth), and enforces the credential-surface rate limits. It runs its own DB session with an audited RLS bypass because it is pre-tenant (login by email) and cross-tenant (service lookups); tenant scoping there is application-layer.</p>
+
+<p><strong>Tokens.</strong> Access 30 minutes, refresh 7 days, service 5 minutes. Signing is RS256 when the PEM pair is configured (a half-configured pair refuses to boot, as does a prod/staging deployment with no pair), else HS256 over JWT_SECRET. Verification pins the algorithm from configured key material, never the token header: with a public key present, user tokens must be RS256, HS256 is accepted only for service tokens with the internal audience, and an HS256 user token is rejected outright. Refresh rotation is single-use: the presented token's jti is revoked before the replacement is minted. Rotation is not reuse-detecting (a replayed rotated token gets a plain 401, with no family-wide revoke).</p>
+
+<p>There is no JWKS endpoint. The verify key is distributed by environment variable from a Kubernetes Secret, and key material is read once at import. Rotation therefore means updating the Secret and restarting every pod, and invalidates every outstanding access and refresh token, with a mixed-key window during the rolling restart. Listed in the gap register.</p>
+
+<p><strong>Revocation and rate limiting have opposite failure postures, deliberately.</strong> The Redis denylist (per-jti keys plus a per-user cutoff) fails open: a Redis outage means logged-out tokens keep working until natural expiry, and logout reports success while revoking nothing. The credential rate limits fail closed: login (10/min and 30/15min per email and per trusted IP), register (5/min, 20/hr), OAuth exchange and signup, and credential validation all return resource-exhausted when Redis is down. So a Redis outage locks out new logins while un-revoking old sessions; the middleware refuses to start at all in prod/staging if revocation is unconfigured. validate_token, refresh_token, and change_password carry no rate limit.</p>
+
+<p><strong>Credentials.</strong> Stored envelope-encrypted with a per-value cipher seam: the default is the local Fernet cipher (PBKDF2, 100k iterations, per-value salt, derivation LRU-cached so decrypts skip the KDF); the GCP KMS cipher (fresh data key per credential, KMS-wrapped, envelope pinned to the configured key so a tampered row cannot redirect the unwrap) is built and tested but not enabled anywhere, and no Terraform provisions a key ring. An 8-character api_key_prefix column serves list/display with zero decrypts. Deletion is refused while live sessions, funded sleeves, or executions depend on the credential, naming every blocker. Validation calls the broker with a 10-second timeout and, on an auth failure, probes the other environment to tell the user their keys are for paper when they selected live (or the reverse).</p>
+
+<h4>What if Redis is down at login time?</h4>
+<p>Every login and register fails closed with resource-exhausted, while already-issued tokens keep working (revocation fails open) and the pod stays Ready because the Redis health check is non-critical. There is no bypass flag.</p>
+
+<h4>What if KMS is unavailable while trading needs credentials?</h4>
+<p>Only reachable if the KMS cipher is enabled. Then credential resolution performs two KMS round trips per order placement (deliberately uncached), each with a 10-second timeout and no retry, so order placement fails while the credential list UI keeps working off the prefix column.</p>
+
+<h4>What if clocks skew between services?</h4>
+<p>Every JWT decode uses zero leeway. Service tokens live 300 seconds and refresh 60 seconds early, so more than roughly four minutes of skew between caller and callee fails every service-to-service call closed with 401. The per-user revocation cutoff compares raw issued-at floats across pods, so skew there can miss a revocation at the boundary.</p>
+
+<h4>What if a service token is stolen?</h4>
+<p>It carries no jti and the middleware skips the denylist for service contexts, so it cannot be revoked; the 300-second TTL is the only bound on the token, though the holder of the shared secret can mint indefinitely. A service token's wire tenant is trusted, so containment is the AUTH_ACCEPTED_SERVICES allowlist, currently set on exactly two deployments (portfolio accepts strategy/trading/agent; trading accepts none). Rotating JWT_SECRET also invalidates HS256 user tokens and every OAuth state token.</p>
+
+<h2 id="billing">Billing service (8880, webhooks on 8881)</h2>
+
+<p>Billing wraps Stripe (checkout, portal, setup intents, webhooks with signature verification) and stores plans, subscriptions, invoices, and payment methods, with Stripe as the source of truth and local rows as a fast cache. The webhook path is public by suffix; its authentication is the Stripe signature, which is required in prod/staging via the same require_secret guard the crypto keys use.</p>
+
+<p><strong>Webhooks.</strong> Signature failure is a 400. Dedup is a per-process 4,096-entry LRU (best-effort and per-replica; cross-replica duplicates rely on per-row guards: invoice upserts on stripe_invoice_id, payment-method attach returns early on an existing row). Transient errors (DB operational, connection, timeout) return 500 so Stripe retries; anything else returns 200 so a poison event is not retried forever. Subscription updates are last-write-wins field assignment with unknown Stripe statuses leaving the stored status unchanged.</p>
+
+<p><strong>Plan enforcement is not billing's job.</strong> Strategy and backtest read plans joined to the newest entitled subscription (active or trialing; past-due is not entitled) directly from the shared database, so trading availability never depends on billing being up. Exactly two limits are enforced anywhere: live_strategies at StartExecution and backtests_per_month at backtest creation (calendar month). The no-subscription fallback is stricter than the catalog: only the two enforced keys exist in it, so any other key resolves to zero. api_calls_per_day exists in the catalog and is enforced nowhere.</p>
+
+<h4>What if Stripe is down during checkout?</h4>
+<p>The customer lookup/create step is outside the guarded block and surfaces as a generic internal error; the checkout call itself is guarded with a clearer message. There is no retry, no circuit breaker, and no idempotency key on any Stripe write, and the customer search-then-create is non-atomic, so two concurrent first-time checkouts can create duplicate Stripe customers. The Stripe SDK calls are also synchronous inside async handlers and block the event loop. All in the gap register.</p>
+
+<h4>What if a webhook is replayed or arrives out of order?</h4>
+<p>Replays are bounded by the signature timestamp, the LRU, and the per-row guards; the genuinely non-idempotent case is payment_method.detached, whose unconditional delete would remove a re-attached card. Out-of-order updates are not defended: no event-timestamp comparison, so an older subscription update arriving late overwrites a newer status.</p>
+
+<h4>What if a subscription lapses while a live session is running?</h4>
+<p>Nothing stops the session. Payment failure sets past-due, deletion sets canceled, and neither touches trading or the ledger. The tenant simply cannot start new executions (the entitlement check falls back to the free tier's limit of one, which the running execution already consumes). Running money is never interrupted by billing state; only starting is.</p>
+
+<h2 id="notification">Notification service (8870)</h2>
+
+<p>All user-directed messaging is one subsystem. Producers publish typed NotificationEvents onto <code>lt.notifications</code> (keyed by tenant, so one tenant's notifications stay ordered) through a shared fire-and-forget catalog helper: a publish failure is logged and never raised into the producing path, so messaging can never fail a fill, a login, or a webhook handler. Trading's alert surface and portfolio's ledger-incident dispatcher are thin publishers over this contract; neither delivers anything itself, so a slow endpoint cannot stall fill ingestion or the runner loops. Auth's email flows (welcome, verification, password reset, password-changed, lockout) and billing's payment events publish the same way, with links carried in the event's extra fields.</p>
+
+<p>The service (16 RPCs) is the sole durable consumer: group <code>notification-delivery</code>, manual commit. Per event it renders per-category copy (one template per NotificationCategory, ~45 categories), applies the per-category channel preference matrix (critical and security categories pinned on), persists the in-app row, and only then commits the offset; email and webhook delivery follow with per-delivery tracking. The consumer retries a bounded number of times and then dead-letters the event, undecodable bytes included, so one poison event never stalls a tenant's feed. Bounded-retry-then-DLQ is deliberately the opposite policy from the fills fold, where transient failures retry forever; a notification is not money.</p>
+
+<p><strong>Channels.</strong> Email is aiosmtplib over committed React-Email HTML shells: the templates live in <code>services/notification/emails</code> (a standalone build-only package), a build step renders one shell per severity-and-CTA variant into <code>src/email_html/</code>, and <code>build_html</code> substitutes escaped content at send time, so no Node runs at runtime. The header logo is a hosted PNG resolved from EMAIL_ASSET_BASE_URL, because inline SVG is stripped by major mail clients; a CI drift job re-renders the shells from source and fails if the committed output differs. Webhooks sign the exact transmitted bytes (HMAC), do not retry 4xx, retry transient failures, and a persistently failing endpoint is disabled automatically with the disable surfaced to the tenant as a notification of its own. SMS (Twilio) and Slack channels are implemented but not wired into the delivery dispatcher.</p>
+
+<p><strong>Price alerts</strong> run in the same service: event-driven conditions match inside the consumer, and market-driven conditions (price, volume, RSI) are evaluated by a leader-elected loop tailing the bars topic, with cooldowns and deterministic trigger ids so a torn leader cannot double-notify. Recipients are tenant-scoped while tenants are single-user; cross-tenant infrastructure signals (DLQ depth, consumer lag, lease loss) stay on operator metrics rather than user notifications.</p>
+
+<h4>What if delivery fails?</h4>
+<p>The in-app row persists before the offset commits, so the record of the notification survives any channel failure. Email and webhook deliveries are tracked per delivery; webhook transient failures retry, 4xx does not, and persistent failure disables the endpoint with a tenant-visible notification.</p>
+
+<h4>What if a webhook endpoint is slow?</h4>
+<p>Delivery is isolated in the notification service with timeouts; no money-path task ever waits on a tenant's endpoint, because producers only publish to Kafka.</p>
+
+<h4>What if Kafka is down when a producer has a notification?</h4>
+<p>The publish helper logs and returns; the producing operation is never failed by messaging. Delivery converges when the broker returns, since the durable consumer resumes from committed offsets.</p>
+
+<h2 id="agent">Agent service (8890, the copilot)</h2>
+
+<p>The copilot is architecturally a client: it generates DSL that flows through the same validation, versioning, and execution gates as a human edit. The loop allows up to 10 tool iterations per turn plus one final tool-free turn, with a 4,096-token cap per LLM call and the prior 40 messages replayed.</p>
+
+<p><strong>Draft-and-confirm.</strong> run_backtest is the only confirmation-gated tool. When the model proposes it, the stream halts with a confirmation id, the proposal is persisted into the assistant message's tool_calls JSON, and ConfirmToolCall executes the stored proposal, never the client's echo: the lookup is scoped to the caller's session and tenant, taken under <code>SELECT ... FOR UPDATE</code>, marked consumed in the same transaction (replays rejected), a mismatched echoed tool name is rejected, and the post-approval LLM turn runs with tools disabled so one approval cannot chain into another unconfirmed action. A denial short-circuits without an LLM call, and a second gate refuses to drive any non-gated tool through the confirm path. A durable CONFIRMATION_PENDING notification, deduplicated per confirmation id, points at the pending proposal.</p>
+
+<p><strong>Safety and cost.</strong> DSL validation happens in-process against the real parser/validator (a parse failure is returned to the model as data so it can self-correct); real enforcement is at save time in the strategy service, which re-parses and applies the symbol cap the agent does not. LLM rate limiting is 30 requests per 60 seconds per tenant, which can mean up to 11 LLM calls per token; the limiter exists only when Redis is configured and fails open. Memory extraction is regex-only (no LLM on the write path); facts dedupe exactly and only risk tolerance supersedes. Providers are Gemini (default) and Anthropic; the LLM is deliberately absent from health checks so an upstream outage does not recycle pods that still serve history.</p>
+
+<h4>What if a client forges a confirmation id?</h4>
+<p>It must exist, be unconsumed, and live in the caller's own session; anything else is invalid-argument. Arguments cannot be tampered with because the stored proposal is executed. The Gemini path mints guessable synthetic ids, but guessing gains nothing given the scoping.</p>
+
+<h4>What if the LLM returns invalid DSL?</h4>
+<p>The validator reports it as a tool result and the model retries within its iteration budget; no artifact is created for invalid DSL. Gaps: nothing forces a validation call for DSL pasted as plain chat text, and a strategy that validates in the agent can still exceed the strategy service's symbol cap at save, where the commit failure currently surfaces as a misleading not-found.</p>
+
+<h4>What if the stream drops mid-turn?</h4>
+<p>The user message was committed up front. The assistant message, with any pending proposal in its tool_calls, persists when the relay completes; from that point a drop is recoverable: the client reloads the session, finds the proposal and its confirmation id, and confirms the stored proposal. A disconnect that cancels the relay before the turn persists loses that turn, proposal included; an id emitted but never persisted is unconfirmable, and any tool side effects that already ran stand. The fire-and-forget memory task also holds no reference and can be garbage-collected mid-flight. The narrowed residual is in the gap register.</p>
+
+<h4>What if two browsers stream the same session?</h4>
+<p>Nothing serializes a session: both streams pass the ownership check, interleave turns, and race the session's message-count update (no row lock). The proposal path is safe; the rest is last-write-wins.</p>
+
+<h2 id="libraries">Shared libraries</h2>
+
+<p>The eight libraries carry the architectural weight; their layering is strict.</p>
+
+<p><strong>llamatrade_db.</strong> One async engine per service (pool_pre_ping always on, default pool 10+20, per-service overrides in the manifests), plus a connect-time idle_in_transaction_session_timeout of 120 seconds and an opt-in transaction_timeout (PG17 only, unused on PG16). Tenant scoping has three GUC paths: <code>set_tenant_guc</code> (one-shot, transaction-local, cleared by commit), <code>bind_tenant_guc</code> (durable via an after-begin hook, required by any handler that commits mid-request), and <code>system_session</code> / <code>set_rls_bypass</code> (audited RLS bypass with a structured log line and a counter). RLS is 33 tables with FORCE and a fail-closed predicate (unset GUC yields zero rows, not an error); a startup assert refuses to boot in prod/staging if the role can bypass RLS, and a CI test asserts exact-set equality between tenant-scoped models and RLS tables so a new tenant table cannot ship uncovered. Advisory-lock helpers back every leader election; <code>holds_advisory_lock</code> returns false on any exception, the fencing primitive. The Alembic chain is 39 linear revisions, id length guarded against the 32-char alembic_version column.</p>
+
+<p><strong>llamatrade_common.</strong> The pure-ASGI AuthMiddleware (ContextVar-safe), the resolve_identity reconciliation point, mint_service_token, the HealthChecker (concurrent checks, critical vs non-critical, /health /health/live /health/ready, DEGRADED is still ready), the fixed-window RateLimiter (fail-open by default, fail-closed on auth surfaces), the crypto seam, and handle_service_errors (the single Connect error mapper: only ConnectError and ValueError text reaches the client, IntegrityError becomes failed-precondition, OperationalError becomes unavailable).</p>
+
+<p><strong>llamatrade_events.</strong> Five layers over Kafka: envelope proto (id, type discriminator not Any, tenant, W3C traceparent in metadata), the single broker-aware transport, a codec with a type registry that raises on unknown types so a consumer can dead-letter schema skew, the bus (publish/tail/consume), and typed catalogs. The producer is idempotent with acks=all and lz4; the money publish flushes (no linger), the batch publish does not. Delivery is exactly two shapes: tail (own-group, offset seek, key filter, used for UI streams) and consume (shared group, manual commit-after-write, used for money and notifications). A bounded-start liveness probe defeats the KIP-255 trap where a rejected OAUTHBEARER token authenticates silently. Publish raises on a broker outage (no buffering); the fail-soft is in the domain callers.</p>
+
+<p><strong>llamatrade_alpaca.</strong> The only code allowed to touch Alpaca. REST composes rate limiter (200/min token bucket, waits without a timeout, cluster-shared via Redis only when enabled and fixed-window so it can admit 2x at a boundary), then circuit breaker (trading 3 failures / 30s, market-data 5 / 60s), then HTTP, then typed errors; retry with backoff (3 retries, 1/2/4s times 0.5-1.5x jitter) wraps the whole thing. WebSocket clients share reconnect-with-backoff (1s to 60s, 10 attempts) and replay subscriptions but not missed data; there is no sequence numbering or gap detection, so a reconnect silently loses the gap and downstream ordering rests entirely on the runner's cumulative-quantity check and Kafka's per-key ordering. Credentials resolve per-tenant in the service, falling back to env at the platform level; OAuth has no automatic token refresh, so a stale bearer surfaces as a non-retryable 401.</p>
+
+<p><strong>llamatrade_runtime.</strong> StrategySession holds portfolio-level state (one rebalance clock, current weights). History is capped per symbol at max_lookback + 10 for bounded reads and 2,000 bars (about 8 trading years) for unbounded reads (period-less metrics, and OBV/VWAP which read the whole retained series). Evaluation offloads to a thread only in the live path, never in backtest. Four adapter Protocols (bar feed, execution, portfolio view, observer) let one loop serve both. Sizing sorts sells before buys, trims buys proportionally to a cash budget, drops sub-notional orders (default $1 floor), and rounds fractional shares down. The rebalance gate is portfolio-level, keyed on ISO week/month/quarter so a holiday Monday does not skip a week.</p>
+
+<p><strong>llamatrade_dsl.</strong> Zero-dependency parser (recursive descent, nesting capped at 150 by a token pre-scan), a validator that accumulates all errors and checks weight sums, and static analysis producing the indicator set, the true warm-up lookback per indicator (ADX needs 2x period, MACD slow+signal-1, and so on), the required symbol set, and the history window.</p>
+
+<p><strong>llamatrade_telemetry.</strong> OTel-native with a Prometheus reader, one init_telemetry per service, 10% trace sampling. The cardinality contract is enforced: a 44-key label allow-list, an 18-key forbidden list (tenant, user, symbol, order, and every other identifier), and mandatory central bucket registration (an undeclared histogram raises at creation). Enforcement is environment-aware: dev raises, prod logs and drops the sample. Per-entity questions go to logs, traces, and the ledger, never to metric labels.</p>
+
+<p><strong>llamatrade_proto.</strong> Hand-written wrappers over generated Connect clients. LedgerClient bounds reads at 5 seconds and leaves fund mutations unbounded, with no retry logic; every fund mutation now carries an idempotency key (required by the RPC, derived from the funded target for allocation), so a retry is a no-op at the ledger rather than a second booking; MarketDataClient bounds snapshot reads at 5 seconds and bulk bar reads at 30. Both mint a fresh service token per call. <code>to_proto_timestamp</code> raises on a naive datetime.</p>
+
+<h2 id="deployment">Deployment topology</h2>
+
+<p>GKE Autopilot, private nodes. Every backend service is 2 base replicas with the same probe shape (/health/live 10s/10s, /health/ready 5s/5s, no startup probe). HPAs and resources vary by workload; the money-path and CPU-heavy services get the widest ranges.</p>
+
+<p>Terraform provisions GCP Managed Kafka (3 vCPU, 12 GiB, replication 3), Cloud SQL Postgres 16 (production db-custom-2-7680 with max_connections=500, private IP, PITR), Memorystore Redis 7 (BASIC by default, 1 GiB), the Artifact Registry, storage buckets, and Secret Manager containers (JWT and encryption keys generated in Terraform; the RS256 private key and all vendor keys are placeholders uploaded out of band). There is no KMS resource in Terraform; the KMS cipher seam is application-only and unprovisioned. TimescaleDB runs as an in-cluster StatefulSet, not a managed instance.</p>
+
+<p>The staging overlay forces every backend to one replica and every HPA to a floor of one; the production overlay bumps trading and frontend to three and widens backtest resources, and adds PodDisruptionBudgets for auth, trading, market-data, and frontend only. The KEDA worker autoscaler and External Secrets are present but commented out in both overlays. The compose stack is the topology reference for local development (remapped host ports, a Caddy single origin, a real Redpanda broker, stripe-mock and the full Prometheus/Grafana stack in the dev overlay); it diverges from Kubernetes in Kafka security (PLAINTEXT vs SASL_SSL), pool sizes (larger locally), and worker concurrency (unpinned locally).</p>
+
+<h2 id="scalability">Scalability reference</h2>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Workload</th><th>Replicas (base / prod)</th><th>HPA</th><th>DB pool/pod</th><th>First bottleneck</th></tr></thead>
+  <tbody>
+    <tr><td>auth</td><td>2 / 2</td><td>none</td><td>5+5</td><td>bcrypt at cost 12 on 500m CPU; Redis (fail-closed rate limits)</td></tr>
+    <tr><td>strategy</td><td>2 / 2</td><td>2-5 @ 70%</td><td>3+2</td><td>inline DSL parse on the event loop</td></tr>
+    <tr><td>backtest API</td><td>2 / 2</td><td>2-20 @ 60% CPU + 70% mem</td><td>2+2</td><td>enqueue-only; Redis broker</td></tr>
+    <tr><td>backtest worker</td><td>1</td><td>KEDA 1-10 (opt-in)</td><td>(worker)</td><td>CPU (concurrency 2, 2-CPU limit)</td></tr>
+    <tr><td>market-data serving</td><td>2 / 2</td><td>2-8 @ 70%</td><td>3+3 main, 5+5 Timescale</td><td>Alpaca 200/min per key; Timescale writes</td></tr>
+    <tr><td>market-data ingest</td><td>1 (Recreate)</td><td>none</td><td>5+5 Timescale</td><td>Alpaca one-stream-per-key (singleton by design)</td></tr>
+    <tr><td>trading</td><td>2 / 3</td><td>2-10 @ 60%</td><td>5+5 (+1 lease conn/session)</td><td>~10 sessions/pod (pool + lease pins); Alpaca budget</td></tr>
+    <tr><td>portfolio</td><td>2 / 2</td><td>2-5 @ 70%</td><td>5+5</td><td>5 of 24 fill partitions used at HPA max; full-fold reads</td></tr>
+    <tr><td>notification</td><td>2 / 2</td><td>none</td><td>2+2</td><td>delivery I/O (email, webhooks) behind the single durable consumer group</td></tr>
+    <tr><td>billing</td><td>2 / 2</td><td>none</td><td>3+2</td><td>synchronous Stripe SDK blocking the loop</td></tr>
+    <tr><td>agent</td><td>2 / 2</td><td>2-5 @ 70%</td><td>3+2</td><td>one pooled conn held per active stream</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Platform connection budget is roughly 400 at HPA maxima against a 500-connection Cloud SQL. The single-writer constraints (ingest singleton, portfolio writer election, the various leader-elected sweepers) are the deliberate horizontal-scaling limits; everything else scales on the stateless request path.</p>
+
+<h2 id="reliability">Reliability of trading and the duplicate-trade defense</h2>
+
+<p>The property the system must guarantee is that one strategy signal produces at most one broker order and at most one ledger fill, across crashes, retries, reconnects, and failovers. It is enforced by a chain of independent layers, each of which catches what the previous one might miss.</p>
+
+<ol>
+  <li><strong>Deterministic order id.</strong> <code>client_order_id = sha256(session, symbol, side, signal_timestamp)</code>. The same signal always derives the same id, so a replay, a retry, or a pod restart re-derives it rather than creating a new order. This fails safe toward under-trading: two legitimate signals at the same period timestamp would collapse to one, never duplicate.</li>
+  <li><strong>Intent table unique constraint.</strong> The id is globally unique in the orders table (not per-tenant, because it seeds the global ledger id). Two concurrent submits race to insert; the second gets an IntegrityError before any broker call.</li>
+  <li><strong>Broker probe and adopt.</strong> On any retry, the executor looks the id up at Alpaca (<code>get_order_by_client_id</code>) and adopts an existing order rather than resubmitting.</li>
+  <li><strong>Alpaca per-account uniqueness.</strong> If a duplicate still reaches the broker, Alpaca rejects the reused id. The concurrency test proves five identical concurrent submits yield exactly one broker order.</li>
+  <li><strong>Ledger event id.</strong> The fill's event_id derives from the same client_order_id, and the writer inserts <code>ON CONFLICT DO NOTHING</code>. The three emission paths and any Kafka redelivery all fold to one row. Partial fills never publish, so per-partial redelivery cannot fragment a fill.</li>
+</ol>
+
+<p>Around this core sit the recovery mechanisms that keep it whole: the stranded-order sweep (adopt or reject a PENDING order after a crash), the session ownership lease with a 30-second heartbeat (at most one runner per session, with a bounded overlap window that the deterministic id still covers), the REST sync (catch fills whose stream event was lost), the republish drain (re-emit fills whose publish failed), and reconciliation (catch anything that still diverged from the broker, freezing rather than guessing). The honest residual risks are listed below: the REST-failure-marks-rejected gap, the unknown-order fill booking to a sleeve, the concurrent-StartExecution double allocation, and the empty-request_id deposit double-book.</p>
+
+<h2 id="gap-register">Gap register</h2>
+
+<p>Findings surfaced by the code read, grouped by severity. None are asserted to be exploited; each is a place where the built behavior diverges from the intended contract. Items closed since the original read have been folded into the sections above and removed from this register.</p>
+
+<p><strong>Correctness, money path.</strong></p>
+<ol>
+  <li>Funding-then-commit-failure orphans a funded sleeve that no sweeper can find (the execution row rolls back with a null sleeve id). The one funding path with no compensating sweep.</li>
+  <li>A trading fill for a known symbol but an unknown order id books into the strategy's sleeve; only reconciliation corrects it.</li>
+  <li>An Alpaca REST failure marks the order REJECTED, removing it from the stranded-order sweep's PENDING scan, so a lost-response-but-accepted order is not re-adopted by that sweep. The REST sync does not cover it either, since REJECTED is terminal.</li>
+</ol>
+
+<p><strong>Configuration and deployment.</strong></p>
+<ol start="4">
+  <li>The RS256 keypair is generated by <code>make gen-jwt-keys</code>, but loading it into Secret Manager remains a manual pre-deploy step, and the runbook the Makefile points at does not exist in the repository.</li>
+  <li>Portfolio has no PodDisruptionBudget in the production overlay despite hosting the money-path LedgerService and the writer lock.</li>
+  <li>The checkpoint safety-window default (120s) exactly equals the idle-in-transaction timeout; lowering one without the other breaks the checkpoint-soundness argument.</li>
+  <li>Only 5 of the 24 <code>lt.ledger.fills</code> partitions are usable at the portfolio HPA max of 5.</li>
+  <li>There is no JWKS endpoint: the verify key is distributed by environment variable, and rotation requires a full restart with a mixed-key window that invalidates outstanding tokens.</li>
+  <li>KMS envelope encryption is built and tested but not enabled (the default is the local Fernet cipher), and no Terraform provisions a key.</li>
+</ol>
+
+<p><strong>Robustness and cost.</strong></p>
+<ol start="10">
+  <li>Billing's Stripe SDK calls are synchronous inside async handlers (event-loop blocking); Stripe writes have no idempotency key, and the customer create is non-atomic.</li>
+  <li>A disconnect that cancels the copilot relay before the turn persists loses that turn, proposal included; a persisted proposal survives the drop and remains confirmable.</li>
+  <li>The agent's LLM rate limit is per-tenant and permits up to 11 LLM calls per token; both it and several other rate limiters silently disappear when Redis is unset.</li>
+  <li>Strategy ValidateStrategy and the create/update parses run on the event loop rather than a thread.</li>
+</ol>
+
+<p><strong>Minor and hygiene.</strong></p>
+<ol start="14">
+  <li>Several deterministic-id derivations are copied rather than shared (three copies of the same sha256 contract in portfolio).</li>
+  <li>resume_execution, delete_artifact, and tool_call_logs are complete implementations or schemas with no RPC or writer.</li>
+  <li>The agent's local-dev service-port defaults are stale/swapped (undetected because k8s and compose set them explicitly), and its Connect clients do not normalize scheme-less targets the way LedgerClient does.</li>
+  <li>Migration 038's docstring says the snapshot writer uses ON CONFLICT DO NOTHING; it actually does last-mark-wins. A handful of stale comments still reference Redis Streams (trading's order/position stream docstrings, portfolio's ingestion module docstring).</li>
+</ol>
+
+</main>
+</body>
+</html>
