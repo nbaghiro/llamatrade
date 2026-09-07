@@ -51,3 +51,43 @@ class TestIngestConfig:
     def test_universe_refresh_interval_defaults_to_a_minute(self, monkeypatch) -> None:
         monkeypatch.delenv("MARKET_DATA_UNIVERSE_REFRESH_INTERVAL_S", raising=False)
         assert IngestConfig.from_env().universe_refresh_interval_s == 60.0
+
+    def test_from_env_reads_every_tunable(self, monkeypatch) -> None:
+        env = {
+            "MARKET_DATA_DAILY_LOOKBACK_DAYS": "30",
+            "MARKET_DATA_MINUTE_LOOKBACK_DAYS": "7",
+            "MARKET_DATA_INGEST_CONCURRENCY": "8",
+            "MARKET_DATA_FETCH_LIMIT": "5000",
+            "MARKET_DATA_BACKFILL_INTERVAL_S": "1800",
+            "MARKET_DATA_GAP_REPAIR_INTERVAL_S": "600",
+            "MARKET_DATA_CORPORATE_ACTION_INTERVAL_S": "43200",
+            "MARKET_DATA_UNIVERSE_REFRESH_INTERVAL_S": "5.5",
+            "MARKET_DATA_CORPORATE_ACTION_WINDOW_DAYS": "3",
+        }
+        for name, value in env.items():
+            monkeypatch.setenv(name, value)
+        cfg = IngestConfig.from_env()
+        assert cfg.daily_lookback_days == 30
+        assert cfg.minute_lookback_days == 7
+        assert cfg.max_concurrency == 8
+        assert cfg.fetch_limit == 5000
+        assert cfg.backfill_interval_s == 1800.0
+        assert cfg.gap_repair_interval_s == 600.0
+        assert cfg.corporate_action_interval_s == 43200.0
+        assert cfg.universe_refresh_interval_s == 5.5
+        assert cfg.corporate_action_window_days == 3
+
+    def test_from_env_defaults_when_unset(self, monkeypatch) -> None:
+        for name in (
+            "MARKET_DATA_DAILY_LOOKBACK_DAYS",
+            "MARKET_DATA_MINUTE_LOOKBACK_DAYS",
+            "MARKET_DATA_INGEST_CONCURRENCY",
+            "MARKET_DATA_FETCH_LIMIT",
+            "MARKET_DATA_BACKFILL_INTERVAL_S",
+            "MARKET_DATA_GAP_REPAIR_INTERVAL_S",
+            "MARKET_DATA_CORPORATE_ACTION_INTERVAL_S",
+            "MARKET_DATA_UNIVERSE_REFRESH_INTERVAL_S",
+            "MARKET_DATA_CORPORATE_ACTION_WINDOW_DAYS",
+        ):
+            monkeypatch.delenv(name, raising=False)
+        assert IngestConfig.from_env() == IngestConfig()

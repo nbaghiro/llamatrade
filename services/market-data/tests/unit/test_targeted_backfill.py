@@ -11,7 +11,7 @@ import pytest
 
 from llamatrade_telemetry import get_metrics
 
-from src.ingest.backfill import BackfillController, TargetedBackfill
+from src.ingest.backfill import BackfillController, BackfillRunResult, TargetedBackfill
 
 _NOW = datetime(2026, 7, 29, 15, 30, tzinfo=UTC)
 
@@ -28,18 +28,20 @@ def _counter(outcome: str) -> float:
 class FakeController:
     """Records the symbol sets a pass was asked to backfill."""
 
-    def __init__(self, *, fails: bool = False) -> None:
+    def __init__(self, *, fails: bool = False, partial_fail_for: set[str] | None = None) -> None:
         self.runs: list[list[str]] = []
         self.gate: asyncio.Event | None = None
         self.fails = fails
+        self.partial_fail_for = partial_fail_for or set()
 
-    async def run(self, symbols: list[str], now: datetime) -> dict[str, int]:
+    async def run(self, symbols: list[str], now: datetime) -> BackfillRunResult:
         self.runs.append(list(symbols))
         if self.gate is not None:
             await self.gate.wait()
         if self.fails:
             raise RuntimeError("Alpaca is down")
-        return dict.fromkeys(symbols, 0)
+        failures = tuple((s, "1Min") for s in symbols if s in self.partial_fail_for)
+        return BackfillRunResult(rows_by_symbol=dict.fromkeys(symbols, 0), failures=failures)
 
 
 def _targeted(controller: FakeController) -> TargetedBackfill:
@@ -103,7 +105,7 @@ class TestSchedule:
         stamps: list[datetime] = []
 
         class StampingController(FakeController):
-            async def run(self, symbols: list[str], now: datetime) -> dict[str, int]:
+            async def run(self, symbols: list[str], now: datetime) -> BackfillRunResult:
                 stamps.append(now)
                 return await super().run(symbols, now)
 
@@ -143,6 +145,23 @@ class TestFailureIsolation:
         await _settle(targeted)
 
         assert controller.runs == [["BADSYM"], ["TSLA"]]
+
+    async def test_partial_failure_is_reported_as_error_not_ok(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A pass where some symbols failed must not count as success."""
+        controller = FakeController(partial_fail_for={"BADSYM"})
+        targeted = _targeted(controller)
+        errors_before = _counter("error")
+        ok_before = _counter("ok")
+
+        with caplog.at_level(logging.ERROR, logger="src.ingest.backfill"):
+            targeted.schedule(("BADSYM", "TSLA"))
+            await _settle(targeted)
+
+        assert _counter("error") == errors_before + 1
+        assert _counter("ok") == ok_before
+        assert "BADSYM" in caplog.text
 
 
 class TestClose:

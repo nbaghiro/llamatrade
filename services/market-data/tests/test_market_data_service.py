@@ -1,13 +1,20 @@
 """Tests for MarketDataService with caching."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+from typing import cast
 from unittest.mock import AsyncMock
 
 import pytest
 
+from llamatrade_alpaca import MarketDataClient
+from tests.fakes import FakeMarketDataClient
+
 from src.cache import MarketDataCache
-from src.models import Snapshot, Timeframe
+from src.models import Snapshot, Timeframe, Trade
 from src.services.market_data_service import MarketDataService
+from src.store.models import BarRow
+from src.store.repository import BarStore
 
 
 class TestGetBars:
@@ -302,6 +309,158 @@ class TestGetMultiSnapshots:
 
         # Should use mget (batch) instead of individual get calls
         mock_redis.mget.assert_called_once()
+
+
+def _daily_row(symbol: str, day: int, close: float) -> BarRow:
+    return BarRow(
+        symbol=symbol,
+        time=datetime.now(UTC) - timedelta(days=day),
+        open=Decimal("100"),
+        high=Decimal("101"),
+        low=Decimal("99"),
+        close=Decimal(str(close)),
+        volume=1000,
+        vwap=None,
+        trade_count=None,
+    )
+
+
+class SnapshotStore:
+    """Store double serving canned daily rows for the snapshot fallback path."""
+
+    def __init__(
+        self, rows_by_symbol: dict[str, list[BarRow]] | None = None, *, fails: bool = False
+    ) -> None:
+        self.rows_by_symbol = rows_by_symbol or {}
+        self.fails = fails
+        self.selects: list[str] = []
+
+    async def select_bars(
+        self, symbol: str, timeframe: str, start: datetime, end: datetime
+    ) -> list[BarRow]:
+        self.selects.append(symbol)
+        if self.fails:
+            raise RuntimeError("store down")
+        return list(self.rows_by_symbol.get(symbol, []))
+
+
+def _service(
+    alpaca: FakeMarketDataClient, store: SnapshotStore, cache: MarketDataCache | None = None
+) -> MarketDataService:
+    return MarketDataService(
+        alpaca=cast(MarketDataClient, alpaca), cache=cache, store=cast(BarStore, store)
+    )
+
+
+class TestSnapshotStoreFallback:
+    """Alpaca-failure tier: snapshots degrade to the last stored daily bars."""
+
+    async def test_alpaca_failure_falls_back_to_store(self) -> None:
+        alpaca = FakeMarketDataClient(fail_snapshot_symbols={"AAPL"})
+        store = SnapshotStore(
+            {"AAPL": [_daily_row("AAPL", 2, 150.0), _daily_row("AAPL", 1, 151.0)]}
+        )
+
+        result = await _service(alpaca, store).get_snapshot("AAPL")
+
+        assert result is not None
+        assert result.symbol == "AAPL"
+        assert result.latest_trade is not None
+        assert result.latest_trade.price == 151.0  # last stored close
+        assert result.daily_bar is not None and result.daily_bar.close == 151.0
+        assert result.prev_daily_bar is not None and result.prev_daily_bar.close == 150.0
+        assert store.selects == ["AAPL"]
+
+    async def test_alpaca_none_result_also_falls_back_to_store(self) -> None:
+        alpaca = FakeMarketDataClient()  # no snapshots configured -> returns None
+        store = SnapshotStore({"AAPL": [_daily_row("AAPL", 1, 151.0)]})
+
+        result = await _service(alpaca, store).get_snapshot("AAPL")
+
+        assert result is not None
+        assert result.latest_trade is not None and result.latest_trade.price == 151.0
+        assert result.prev_daily_bar is None  # single stored row
+
+    async def test_empty_store_yields_none(self) -> None:
+        alpaca = FakeMarketDataClient(fail_snapshot_symbols={"AAPL"})
+        result = await _service(alpaca, SnapshotStore()).get_snapshot("AAPL")
+        assert result is None
+
+    async def test_store_failure_yields_none_not_exception(self) -> None:
+        alpaca = FakeMarketDataClient(fail_snapshot_symbols={"AAPL"})
+        result = await _service(alpaca, SnapshotStore(fails=True)).get_snapshot("AAPL")
+        assert result is None
+
+    async def test_no_store_configured_yields_none_on_alpaca_failure(self) -> None:
+        alpaca = FakeMarketDataClient(fail_snapshot_symbols={"AAPL"})
+        service = MarketDataService(alpaca=cast(MarketDataClient, alpaca), cache=None, store=None)
+        assert await service.get_snapshot("AAPL") is None
+
+    async def test_store_snapshot_is_cached(self, mock_cache, mock_redis) -> None:
+        alpaca = FakeMarketDataClient(fail_snapshot_symbols={"AAPL"})
+        store = SnapshotStore({"AAPL": [_daily_row("AAPL", 1, 151.0)]})
+
+        result = await _service(alpaca, store, cache=mock_cache).get_snapshot("AAPL")
+
+        assert result is not None
+        mock_redis.setex.assert_called_once()
+        assert "market:snapshot:AAPL" in mock_redis.setex.call_args.args[0]
+
+
+class TestMultiSnapshotDegradation:
+    """get_multi_snapshots: per-symbol store fallback when the live feed degrades."""
+
+    async def test_multi_fetch_failure_serves_all_from_store(self) -> None:
+        alpaca = FakeMarketDataClient(fail_multi_snapshots=True)
+        store = SnapshotStore(
+            {
+                "AAPL": [_daily_row("AAPL", 1, 151.0)],
+                "MSFT": [_daily_row("MSFT", 1, 320.0)],
+            }
+        )
+
+        result = await _service(alpaca, store).get_multi_snapshots(["AAPL", "MSFT"])
+
+        assert set(result) == {"AAPL", "MSFT"}
+        assert result["AAPL"].latest_trade is not None
+        assert result["AAPL"].latest_trade.price == 151.0
+        assert result["MSFT"].latest_trade is not None
+        assert result["MSFT"].latest_trade.price == 320.0
+
+    async def test_symbols_missing_from_live_feed_come_from_store(self) -> None:
+        live = Snapshot(
+            symbol="AAPL",
+            latest_trade=Trade(symbol="AAPL", price=200.0, size=1, timestamp=datetime.now(UTC)),
+        )
+        alpaca = FakeMarketDataClient(snapshots={"AAPL": live})
+        store = SnapshotStore({"MSFT": [_daily_row("MSFT", 1, 320.0)]})
+
+        result = await _service(alpaca, store).get_multi_snapshots(["AAPL", "MSFT"])
+
+        assert result["AAPL"] is live  # live feed wins where it answered
+        assert result["MSFT"].latest_trade is not None
+        assert result["MSFT"].latest_trade.price == 320.0
+        assert store.selects == ["MSFT"]  # store consulted only for the gap
+
+    async def test_symbol_absent_everywhere_is_omitted(self) -> None:
+        alpaca = FakeMarketDataClient(fail_multi_snapshots=True)
+        store = SnapshotStore({"AAPL": [_daily_row("AAPL", 1, 151.0)]})
+
+        result = await _service(alpaca, store).get_multi_snapshots(["AAPL", "UNKNOWN"])
+
+        assert set(result) == {"AAPL"}
+
+    async def test_store_fallback_snapshots_are_cached(self, mock_cache, mock_redis) -> None:
+        alpaca = FakeMarketDataClient(fail_multi_snapshots=True)
+        store = SnapshotStore({"AAPL": [_daily_row("AAPL", 1, 151.0)]})
+        service = _service(alpaca, store, cache=mock_cache)
+        mock_redis.mget = AsyncMock(return_value=[None])
+
+        result = await service.get_multi_snapshots(["AAPL"])
+
+        assert set(result) == {"AAPL"}
+        mock_redis.setex.assert_called_once()
+        assert "market:snapshot:AAPL" in mock_redis.setex.call_args.args[0]
 
 
 class TestStoreLimitSemantics:

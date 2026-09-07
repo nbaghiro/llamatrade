@@ -38,7 +38,7 @@ from src.ingest.corporate_actions import CorporateActionRefresher
 from src.ingest.gaps import GapRepairer
 from src.ingest.stream import BarIngestor
 from src.ingest.universe import IngestUniverse
-from src.metrics import record_stream_reconnect
+from src.metrics import record_ingest_universe_refresh_failure, record_stream_reconnect
 from src.store.config import close_engine
 from src.store.repository import BarStore
 
@@ -47,6 +47,7 @@ logger = logging.getLogger(__name__)
 SERVICE_NAME = "market-data-ingest"
 SERVICE_VERSION = "0.1.0"
 DEFAULT_ADMIN_PORT = 8841
+_ADMIN_SHUTDOWN_TIMEOUT_S = 5.0
 
 
 def _now() -> datetime:
@@ -130,6 +131,24 @@ def _install_reconnect_hook(stream: MarketDataStreamClient) -> None:
     setattr(stream, "_on_reconnect", record_stream_reconnect)
 
 
+async def _subscribe_bars(stream: MarketDataStreamClient, symbols: list[str]) -> bool:
+    """Subscribe the universe's bars; ``False`` means the stream refused.
+
+    The real client returns ``False`` when unauthenticated or when Alpaca
+    rejects the subscription — silently ignoring it would leave a connected
+    stream delivering nothing until a restart.
+    """
+    if not symbols:
+        return True
+    if await stream.subscribe(bars=symbols):
+        return True
+    record_ingest_universe_refresh_failure("subscribe")
+    logger.error(
+        "Bar subscription refused for %d symbols; recycling the stream to retry", len(symbols)
+    )
+    return False
+
+
 async def run() -> None:
     stop = asyncio.Event()
     _install_signal_handlers(stop)
@@ -190,8 +209,12 @@ async def run() -> None:
         _install_reconnect_hook(stream)
         ingestor.attach(stream)
         universe.attach(stream)
-        if universe.symbols:
-            await stream.subscribe(bars=list(universe.symbols))
+        if not await _subscribe_bars(stream, list(universe.symbols)):
+            # Hand the refused stream to the supervisor as "down" so it recycles
+            # and re-subscribes on the normal re-establish path.
+            await close_market_data_stream()
+            universe.attach(None)
+            stream = None
 
         async def _supervise_stream(md_stream: MarketDataStreamClient | None) -> None:
             """Keep the singleton Alpaca stream alive: ``run()`` returns when the
@@ -209,8 +232,11 @@ async def run() -> None:
                     _install_reconnect_hook(md_stream)
                     ingestor.attach(md_stream)
                     universe.attach(md_stream)
-                    if universe.symbols:
-                        await md_stream.subscribe(bars=list(universe.symbols))
+                    if not await _subscribe_bars(md_stream, list(universe.symbols)):
+                        await close_market_data_stream()
+                        universe.attach(None)
+                        md_stream = None
+                        continue
                     logger.info("market-data stream re-established")
                 try:
                     await md_stream.run()
@@ -291,7 +317,7 @@ async def run() -> None:
     await bus.close()
     await close_engine()
     try:
-        await asyncio.wait_for(admin_task, timeout=5.0)
+        await asyncio.wait_for(admin_task, timeout=_ADMIN_SHUTDOWN_TIMEOUT_S)
     except TimeoutError:
         admin_task.cancel()
         await asyncio.gather(admin_task, return_exceptions=True)

@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from src.ingest._types import AlpacaBars
@@ -26,6 +27,19 @@ logger = logging.getLogger(__name__)
 def backfill_window(now: datetime, lookback_days: float) -> tuple[datetime, datetime]:
     """Target ``[now - lookback, now)`` window for a backfill pass (pure)."""
     return (now - timedelta(days=lookback_days), now)
+
+
+@dataclass(frozen=True)
+class BackfillRunResult:
+    """Outcome of one backfill pass: rows written per symbol plus what failed."""
+
+    rows_by_symbol: dict[str, int]
+    failures: tuple[tuple[str, str], ...]
+
+    @property
+    def ok(self) -> bool:
+        """Whether every (symbol, timeframe) pair completed without raising."""
+        return not self.failures
 
 
 class BackfillController:
@@ -79,8 +93,14 @@ class BackfillController:
             logger.info("Backfilled %s %s: %d bars", symbol, timeframe, written)
         return written
 
-    async def run(self, symbols: list[str], now: datetime) -> dict[str, int]:
-        """Backfill all (symbol, timeframe) pairs concurrently; rows-per-symbol."""
+    async def run(self, symbols: list[str], now: datetime) -> BackfillRunResult:
+        """Backfill all (symbol, timeframe) pairs concurrently.
+
+        Per-pair failures are contained (one bad symbol cannot abort the pass)
+        but reported in the result so callers cannot mistake a partial or fully
+        failed pass for success.
+        """
+        failures: list[tuple[str, str]] = []
 
         async def _one(symbol: str) -> tuple[str, int]:
             async with self._semaphore:
@@ -89,11 +109,12 @@ class BackfillController:
                     try:
                         total += await self.backfill_symbol_timeframe(symbol, timeframe, now)
                     except Exception:
+                        failures.append((symbol, timeframe))
                         logger.exception("Backfill failed for %s %s", symbol, timeframe)
                 return symbol, total
 
         results = await asyncio.gather(*(_one(s) for s in symbols))
-        return dict(results)
+        return BackfillRunResult(rows_by_symbol=dict(results), failures=tuple(failures))
 
 
 class TargetedBackfill:
@@ -130,13 +151,20 @@ class TargetedBackfill:
             symbols = sorted(self._queued)
             self._queued.clear()
             try:
-                await self._controller.run(symbols, self._now())
+                result = await self._controller.run(symbols, self._now())
             except Exception:
                 record_targeted_backfill("error")
                 logger.exception("Targeted backfill failed for %s", symbols)
-            else:
+                continue
+            if result.ok:
                 record_targeted_backfill("ok")
                 logger.info("Targeted backfill completed for %s", symbols)
+            else:
+                record_targeted_backfill("error")
+                logger.error(
+                    "Targeted backfill failed for %s",
+                    sorted({symbol for symbol, _ in result.failures}),
+                )
 
     async def aclose(self) -> None:
         """Cancel an in-flight pass (shutdown)."""

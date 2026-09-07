@@ -27,6 +27,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Bound on rows retained across failed flushes (a multiple of the flush batch
+# size); beyond it the oldest rows are dropped and left to REST gap repair.
+_RETAINED_BUFFER_MULTIPLIER = 10
+
 
 def bar_row_from_stream(symbol: str, bar_data: Mapping[str, object]) -> BarRow:
     """Convert an Alpaca streaming ``BarData`` payload into a ``BarRow``."""
@@ -51,6 +55,7 @@ class BarIngestor:
         self._bus = event_bus
         self._bars = BarEvents(bus=event_bus)
         self._max_buffer = max_buffer
+        self._max_retained = max_buffer * _RETAINED_BUFFER_MULTIPLIER
         self._buffer: list[BarRow] = []
         self._lock = asyncio.Lock()
 
@@ -72,7 +77,11 @@ class BarIngestor:
             return 0
         rows = self._buffer
         self._buffer = []
-        await self._store.upsert_bars(rows, "1Min")
+        try:
+            await self._store.upsert_bars(rows, "1Min")
+        except Exception:
+            self._requeue(rows)
+            raise
         # One produce round trip for the whole flush instead of one per bar;
         # keyed by symbol, so publishing in buffer order preserves per-symbol order.
         records = [
@@ -84,6 +93,24 @@ class BarIngestor:
             record_bar_publish_lag(row.time)
         logger.debug("Flushed %d live bars to store + bus", len(rows))
         return len(rows)
+
+    def _requeue(self, rows: list[BarRow]) -> None:
+        """Restore rows after a failed store write for the next flush to retry.
+
+        ``upsert_bars`` is a single atomic statement, so a failure means no row
+        was written and the whole batch is safe to re-queue without duplicates.
+        The retained buffer is bounded; overflow drops the oldest rows, which
+        REST gap repair later refetches from Alpaca.
+        """
+        restored = rows + self._buffer
+        dropped = len(restored) - self._max_retained
+        if dropped > 0:
+            del restored[:dropped]
+            logger.warning(
+                "Flush retry buffer overflowed; dropped %d oldest bars (gap repair refetches them)",
+                dropped,
+            )
+        self._buffer = restored
 
     def attach(self, alpaca_stream: MarketDataStreamClient) -> None:
         """Wire this ingestor as the bar callback of an Alpaca stream client."""

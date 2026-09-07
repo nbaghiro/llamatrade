@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable, Iterable
+from datetime import datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from tests.test_metrics import _exposition, _sample
 
 from llamatrade_telemetry import init_telemetry
 
 from src.ingest import main as ingest_main
+from src.ingest.backfill import BackfillRunResult
 from src.ingest.universe import IngestUniverse
 
 _REAL_SLEEP = asyncio.sleep
@@ -70,24 +74,51 @@ class TestPeriodic:
 
 
 class FakeStream:
-    """Scripted stand-in for MarketDataStreamClient."""
+    """Scripted stand-in for MarketDataStreamClient.
 
-    def __init__(self, run_forever: bool) -> None:
+    ``subscribe``/``unsubscribe`` mirror the real client's signature
+    (trades/quotes/bars keyword args, bool return). ``subscribe_results``
+    scripts consecutive return values (the last one repeats); ``run_error``
+    makes ``run()`` raise instead of returning.
+    """
+
+    def __init__(
+        self,
+        run_forever: bool,
+        *,
+        subscribe_results: list[bool] | None = None,
+        run_error: Exception | None = None,
+    ) -> None:
         self.subscribed: list[list[str]] = []
         self.unsubscribed: list[list[str]] = []
         self.run_calls = 0
         self._run_forever = run_forever
+        self._subscribe_results = subscribe_results or [True]
+        self._run_error = run_error
 
-    async def subscribe(self, bars: list[str]) -> bool:
-        self.subscribed.append(list(bars))
-        return True
+    async def subscribe(
+        self,
+        trades: list[str] | None = None,
+        quotes: list[str] | None = None,
+        bars: list[str] | None = None,
+    ) -> bool:
+        self.subscribed.append(list(bars or []))
+        index = min(len(self.subscribed), len(self._subscribe_results)) - 1
+        return self._subscribe_results[index]
 
-    async def unsubscribe(self, bars: list[str]) -> bool:
-        self.unsubscribed.append(list(bars))
+    async def unsubscribe(
+        self,
+        trades: list[str] | None = None,
+        quotes: list[str] | None = None,
+        bars: list[str] | None = None,
+    ) -> bool:
+        self.unsubscribed.append(list(bars or []))
         return True
 
     async def run(self) -> None:
         self.run_calls += 1
+        if self._run_error is not None:
+            raise self._run_error
         if self._run_forever:
             await asyncio.Event().wait()
 
@@ -110,10 +141,11 @@ class FakeController:
         self.runs: list[list[str]] = []
         self.fail_for: str | None = None
 
-    async def run(self, universe: list[str], now: object) -> None:
+    async def run(self, universe: list[str], now: datetime) -> BackfillRunResult:
         self.runs.append(list(universe))
         if self.fail_for is not None and self.fail_for in universe:
             raise RuntimeError(f"backfill failed for {self.fail_for}")
+        return BackfillRunResult(rows_by_symbol=dict.fromkeys(universe, 0), failures=())
 
 
 class FakeRepairer:
@@ -160,7 +192,14 @@ class FakeAdminServer:
 class SupervisorHarness:
     """Patches every collaborator of run() and captures its internal stop event."""
 
-    def __init__(self, monkeypatch: pytest.MonkeyPatch, streams: list[FakeStream | None]) -> None:
+    def __init__(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        streams: list[FakeStream | None],
+        *,
+        baseline: list[str] | None = None,
+        admin_server: FakeAdminServer | None = None,
+    ) -> None:
         self.streams = streams
         self.init_calls = 0
         self.close_stream_calls = 0
@@ -171,8 +210,9 @@ class SupervisorHarness:
         self.ingestor = FakeIngestor()
         self.bus = FakeBus()
         self.live_symbols = FakeSymbolSource()
-        self.admin_server = FakeAdminServer()
+        self.admin_server = admin_server or FakeAdminServer()
         self.telemetry_apps: list[object] = []
+        self.baseline = ["AAPL"] if baseline is None else baseline
 
         def fake_universe(baseline: Iterable[str]) -> IngestUniverse:
             return IngestUniverse(baseline, source=self.live_symbols)
@@ -202,7 +242,7 @@ class SupervisorHarness:
         mp = monkeypatch
         mp.setattr(ingest_main, "init_telemetry", fake_init_telemetry)
         mp.setattr(ingest_main, "_build_admin_server", lambda app: self.admin_server)
-        mp.setattr(ingest_main, "get_universe", lambda: ["AAPL"])
+        mp.setattr(ingest_main, "get_universe", lambda: list(self.baseline))
         mp.setattr(ingest_main, "IngestUniverse", fake_universe)
         mp.setattr(ingest_main, "BarStore", lambda: object())
         mp.setattr(ingest_main, "get_market_data_client_async", fake_get_client)
@@ -394,6 +434,145 @@ class TestAdminServer:
 
         harness.stop()
         await asyncio.wait_for(run_task, timeout=2.0)
+
+
+_SUBSCRIBE_FAILURES = "llamatrade_marketdata_ingest_universe_refresh_failures_total"
+
+
+class TestSubscribeRefused:
+    async def test_initial_subscribe_refused_recycles_stream_and_resubscribes(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A False from subscribe() (e.g. unauthenticated) must not leave a
+        connected stream silently delivering nothing."""
+        stream1 = FakeStream(run_forever=True, subscribe_results=[False])
+        stream2 = FakeStream(run_forever=True)
+        harness = SupervisorHarness(monkeypatch, streams=[stream1, stream2])
+        before = _sample(_exposition(), _SUBSCRIBE_FAILURES, reason="subscribe") or 0.0
+
+        run_task = asyncio.create_task(ingest_main.run())
+        await _wait_until(lambda: bool(stream2.subscribed))
+
+        assert stream1.subscribed == [["AAPL"]]  # refused
+        assert stream1.run_calls == 0  # never run: recycled instead
+        assert harness.close_stream_calls >= 1
+        assert harness.init_calls == 2
+        assert stream2.subscribed == [["AAPL"]]
+        assert (
+            _sample(_exposition(), _SUBSCRIBE_FAILURES, reason="subscribe") or 0.0
+        ) >= before + 1.0
+
+        harness.stop()
+        await asyncio.wait_for(run_task, timeout=2.0)
+
+    async def test_reestablish_subscribe_refused_retries_until_accepted(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        stream1 = FakeStream(run_forever=False)  # run() returns: reconnects exhausted
+        stream2 = FakeStream(run_forever=True, subscribe_results=[False])
+        stream3 = FakeStream(run_forever=True)
+        harness = SupervisorHarness(monkeypatch, streams=[stream1, stream2, stream3])
+
+        run_task = asyncio.create_task(ingest_main.run())
+        await _wait_until(lambda: bool(stream3.subscribed))
+
+        assert stream2.subscribed == [["AAPL"]]  # refused, recycled
+        assert stream2.run_calls == 0
+        assert stream3.subscribed == [["AAPL"]]
+        assert harness.init_calls == 3
+
+        harness.stop()
+        await asyncio.wait_for(run_task, timeout=2.0)
+
+
+class TestSupervisorBranches:
+    async def test_reinit_none_then_recovers(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        stream1 = FakeStream(run_forever=False)
+        stream2 = FakeStream(run_forever=True)
+        harness = SupervisorHarness(monkeypatch, streams=[stream1, None, stream2])
+
+        run_task = asyncio.create_task(ingest_main.run())
+        await _wait_until(lambda: bool(stream2.subscribed))
+
+        assert harness.init_calls == 3  # initial, failed re-init, successful re-init
+        assert stream2.subscribed == [["AAPL"]]
+
+        harness.stop()
+        await asyncio.wait_for(run_task, timeout=2.0)
+
+    async def test_stream_loop_crash_reestablishes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        stream1 = FakeStream(run_forever=False, run_error=RuntimeError("ws exploded"))
+        stream2 = FakeStream(run_forever=True)
+        harness = SupervisorHarness(monkeypatch, streams=[stream1, stream2])
+
+        run_task = asyncio.create_task(ingest_main.run())
+        await _wait_until(lambda: bool(stream2.subscribed))
+
+        assert stream1.run_calls == 1
+        assert harness.close_stream_calls >= 1
+        assert stream2.subscribed == [["AAPL"]]
+
+        harness.stop()
+        await asyncio.wait_for(run_task, timeout=2.0)
+
+    async def test_empty_universe_warns_and_subscribes_nothing(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        stream = FakeStream(run_forever=True)
+        harness = SupervisorHarness(monkeypatch, streams=[stream], baseline=[])
+
+        with caplog.at_level(logging.WARNING, logger="src.ingest.main"):
+            run_task = asyncio.create_task(ingest_main.run())
+            await _wait_until(lambda: harness.ingestor.flush_started.is_set())
+
+            assert stream.subscribed == []
+            # No initial backfill; the periodic loop may run with an empty set.
+            assert all(run == [] for run in harness.controller.runs)
+            assert "Ingest universe is empty" in caplog.text
+
+            harness.stop()
+            await asyncio.wait_for(run_task, timeout=2.0)
+
+    async def test_admin_server_failure_does_not_kill_ingest(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        class CrashingAdminServer(FakeAdminServer):
+            async def serve(self) -> None:
+                self.serving.set()
+                raise OSError("address already in use")
+
+        stream = FakeStream(run_forever=True)
+        harness = SupervisorHarness(
+            monkeypatch, streams=[stream], admin_server=CrashingAdminServer()
+        )
+
+        run_task = asyncio.create_task(ingest_main.run())
+        await _wait_until(lambda: harness.ingestor.flush_started.is_set())
+        assert stream.subscribed == [["AAPL"]]  # ingest still came up
+
+        harness.stop()
+        await asyncio.wait_for(run_task, timeout=2.0)
+        assert harness.close_all_calls == 1
+
+    async def test_admin_shutdown_timeout_cancels_the_task(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        class StuckAdminServer(FakeAdminServer):
+            """Ignores should_exit; only cancellation ends it."""
+
+            async def serve(self) -> None:
+                self.serving.set()
+                await asyncio.Event().wait()
+
+        monkeypatch.setattr(ingest_main, "_ADMIN_SHUTDOWN_TIMEOUT_S", 0.05)
+        stream = FakeStream(run_forever=True)
+        harness = SupervisorHarness(monkeypatch, streams=[stream], admin_server=StuckAdminServer())
+
+        run_task = asyncio.create_task(ingest_main.run())
+        await _wait_until(lambda: harness.admin_server.serving.is_set())
+
+        harness.stop()
+        await asyncio.wait_for(run_task, timeout=2.0)  # must not hang on the stuck server
 
 
 class TestAdminApp:

@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
+
 from tests.fakes import FakeMarketDataClient
 
 from src.ingest.backfill import BackfillController

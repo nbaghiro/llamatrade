@@ -5,13 +5,19 @@ Alpaca WebSocket -> MarketDataStreamClient -> StreamBridge -> StreamManager -> C
 """
 
 import asyncio
+import time
 from datetime import UTC, datetime
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.models import BarData
+from tests.test_metrics import _exposition, _sample
+
+from src.models import BarData, QuoteData, TradeData
 from src.streaming.bridge import (
+    CIRCUIT_BREAKER_RESET_TIMEOUT,
+    CIRCUIT_BREAKER_THRESHOLD,
     BroadcastCircuitBreaker,
     StreamBridge,
     init_stream_bridge,
@@ -262,6 +268,128 @@ class TestCircuitBreaker:
         # Broadcast should succeed and record success
         await bridge._broadcast_bar("AAPL", bar_data)
         assert bridge._circuit_breaker.total_successes == 1
+
+
+class _FlakyBroadcastManager:
+    """StreamManager stand-in whose broadcasts fail while ``failing`` is set."""
+
+    def __init__(self) -> None:
+        self.failing = True
+        self.delivered = 0
+
+    async def broadcast_bar(self, symbol: str, data: BarData) -> None:
+        if self.failing:
+            raise RuntimeError("manager down")
+        self.delivered += 1
+
+    async def broadcast_trade(self, symbol: str, data: TradeData) -> None:
+        if self.failing:
+            raise RuntimeError("manager down")
+        self.delivered += 1
+
+    async def broadcast_quote(self, symbol: str, data: QuoteData) -> None:
+        if self.failing:
+            raise RuntimeError("manager down")
+        self.delivered += 1
+
+
+def _bar_data() -> BarData:
+    return {
+        "open": 150.0,
+        "high": 152.0,
+        "low": 149.0,
+        "close": 151.5,
+        "volume": 1000000,
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
+
+
+class TestCircuitBreakerThroughBridge:
+    """The breaker driven by real bridge broadcasts, not by poking the dataclass."""
+
+    _TRANSITIONS = "llamatrade_marketdata_broadcast_circuit_breaker_transitions_total"
+
+    @pytest.fixture
+    def flaky_bridge(self, mock_alpaca_stream) -> tuple[StreamBridge, _FlakyBroadcastManager]:
+        manager = _FlakyBroadcastManager()
+        bridge = StreamBridge(mock_alpaca_stream, cast(StreamManager, manager))
+        return bridge, manager
+
+    async def test_repeated_broadcast_failures_open_the_circuit(self, flaky_bridge) -> None:
+        bridge, _ = flaky_bridge
+        open_before = _sample(_exposition(), self._TRANSITIONS, state="open") or 0.0
+
+        for _ in range(CIRCUIT_BREAKER_THRESHOLD):
+            await bridge._broadcast_bar("AAPL", _bar_data())
+
+        assert bridge._circuit_breaker.is_open
+        assert bridge._circuit_breaker.consecutive_failures == CIRCUIT_BREAKER_THRESHOLD
+        assert _sample(_exposition(), self._TRANSITIONS, state="open") == open_before + 1.0
+
+    async def test_open_circuit_skips_the_manager(self, flaky_bridge) -> None:
+        bridge, manager = flaky_bridge
+        for _ in range(CIRCUIT_BREAKER_THRESHOLD):
+            await bridge._broadcast_bar("AAPL", _bar_data())
+        failures_at_open = bridge._circuit_breaker.total_failures
+
+        manager.failing = False  # even a healthy manager is not attempted while open
+        await bridge._broadcast_bar("AAPL", _bar_data())
+
+        assert manager.delivered == 0
+        assert bridge._circuit_breaker.total_failures == failures_at_open
+
+    async def test_half_open_after_timeout_recovers_and_closes(self, flaky_bridge) -> None:
+        bridge, manager = flaky_bridge
+        for _ in range(CIRCUIT_BREAKER_THRESHOLD):
+            await bridge._broadcast_bar("AAPL", _bar_data())
+        closed_before = _sample(_exposition(), self._TRANSITIONS, state="closed") or 0.0
+
+        # Age the last failure past the reset timeout instead of sleeping 30s.
+        bridge._circuit_breaker.last_failure_time = (
+            time.monotonic() - CIRCUIT_BREAKER_RESET_TIMEOUT - 1.0
+        )
+        manager.failing = False
+        await bridge._broadcast_bar("AAPL", _bar_data())
+
+        assert manager.delivered == 1  # half-open attempt reached the manager
+        assert not bridge._circuit_breaker.is_open
+        assert bridge._circuit_breaker.consecutive_failures == 0
+        assert _sample(_exposition(), self._TRANSITIONS, state="closed") == closed_before + 1.0
+
+    async def test_half_open_failure_keeps_the_circuit_open(self, flaky_bridge) -> None:
+        bridge, manager = flaky_bridge
+        for _ in range(CIRCUIT_BREAKER_THRESHOLD):
+            await bridge._broadcast_bar("AAPL", _bar_data())
+
+        bridge._circuit_breaker.last_failure_time = (
+            time.monotonic() - CIRCUIT_BREAKER_RESET_TIMEOUT - 1.0
+        )
+        await bridge._broadcast_bar("AAPL", _bar_data())  # still failing
+
+        assert manager.delivered == 0
+        assert bridge._circuit_breaker.is_open
+
+    async def test_trade_and_quote_paths_share_the_breaker(self, flaky_bridge) -> None:
+        bridge, _ = flaky_bridge
+        trade: TradeData = {
+            "price": 150.0,
+            "size": 10,
+            "exchange": "IEX",
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+        quote: QuoteData = {
+            "bid_price": 149.9,
+            "bid_size": 1,
+            "ask_price": 150.1,
+            "ask_size": 1,
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+
+        await bridge._broadcast_trade("AAPL", trade)
+        await bridge._broadcast_quote("AAPL", quote)
+
+        assert bridge._circuit_breaker.total_failures == 2
+        assert bridge._circuit_breaker.consecutive_failures == 2
 
 
 class TestMultipleClients:

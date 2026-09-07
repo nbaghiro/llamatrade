@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 
 from src.ingest.backfill import BackfillController, backfill_window
 from src.ingest.config import adjustment_for
+from src.metrics import record_gap_repair_failure
 from src.models import Timeframe
 from src.store.intervals import Interval
 from src.store.models import bar_row_from_alpaca
@@ -54,29 +55,56 @@ class GapRepairer:
         self._recent_lookback_days = recent_lookback_days
 
     async def repair(self, symbols: list[str], timeframe: str, now: datetime) -> int:
-        """Fill recent edge + interior gaps. Returns rows written."""
-        store = self._controller.store
-        alpaca = self._controller.alpaca
+        """Fill recent edge + interior gaps, isolating failures per symbol.
+
+        One symbol raising (a bad ticker, a transient Alpaca error) must not
+        abort the pass for the rest of the universe. Returns rows written.
+        """
         start, end = backfill_window(now, self._recent_lookback_days)
         written = 0
+        failed: list[str] = []
 
         for symbol in symbols:
-            stored = await store.select_bars(symbol, timeframe, start, end)
-            times = [b.time for b in stored]
-            interior = find_interior_gaps(times, self._step, self._max_gap)
-            edges = await store.missing_ranges(symbol, timeframe, start, end)
-            for gap_start, gap_end in [*edges, *interior]:
-                bars = await alpaca.get_bars(
-                    symbol=symbol,
-                    timeframe=Timeframe(timeframe),
-                    start=gap_start,
-                    end=gap_end,
-                    adjustment=adjustment_for(timeframe),
-                )
-                if bars:
-                    written += await store.upsert_bars(
-                        [bar_row_from_alpaca(symbol, b) for b in bars], timeframe
-                    )
+            try:
+                written += await self._repair_symbol(symbol, timeframe, start, end)
+            except Exception:
+                failed.append(symbol)
+                record_gap_repair_failure()
+                logger.exception("Gap repair failed for %s %s", symbol, timeframe)
         if written:
             logger.info("Gap repair wrote %d bars for %s", written, timeframe)
+        if failed:
+            logger.warning(
+                "Gap repair failed for %d of %d symbols (%s): %s",
+                len(failed),
+                len(symbols),
+                timeframe,
+                failed,
+            )
+        return written
+
+    async def _repair_symbol(
+        self, symbol: str, timeframe: str, start: datetime, end: datetime
+    ) -> int:
+        """Refetch edge + interior gaps for one symbol. Returns rows written."""
+        store = self._controller.store
+        alpaca = self._controller.alpaca
+        written = 0
+
+        stored = await store.select_bars(symbol, timeframe, start, end)
+        times = [b.time for b in stored]
+        interior = find_interior_gaps(times, self._step, self._max_gap)
+        edges = await store.missing_ranges(symbol, timeframe, start, end)
+        for gap_start, gap_end in [*edges, *interior]:
+            bars = await alpaca.get_bars(
+                symbol=symbol,
+                timeframe=Timeframe(timeframe),
+                start=gap_start,
+                end=gap_end,
+                adjustment=adjustment_for(timeframe),
+            )
+            if bars:
+                written += await store.upsert_bars(
+                    [bar_row_from_alpaca(symbol, b) for b in bars], timeframe
+                )
         return written

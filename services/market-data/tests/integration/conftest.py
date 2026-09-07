@@ -2,14 +2,15 @@
 
 These tests exercise real SQL / hypertables / continuous aggregates with no
 mocking of the store. They require Docker; when it's unavailable the fixtures
-``skip`` (rather than fail) so the unit suite still runs in constrained
-environments.
+``skip`` so the unit suite still runs in constrained environments, except under
+``CI_REQUIRE_DOCKER=1`` (set in CI) where the guard fails loudly instead.
 """
 
 from __future__ import annotations
 
 import os
 from collections.abc import AsyncIterator, Iterator
+from typing import NoReturn
 
 import pytest
 import pytest_asyncio
@@ -23,18 +24,30 @@ from src.store.repository import BarStore
 # Community Timescale on pg16 (matches the deployed image).
 TIMESCALE_IMAGE = "timescale/timescaledb:2.17.2-pg16"
 
+_REQUIRE_DOCKER = os.environ.get("CI_REQUIRE_DOCKER") == "1"
+
+
+def _skip_or_fail(reason: str) -> NoReturn:
+    """Skip locally; fail when CI_REQUIRE_DOCKER=1 demands the Docker-gated tests run."""
+    if _REQUIRE_DOCKER:
+        pytest.fail(f"CI_REQUIRE_DOCKER=1: {reason}", pytrace=False)
+    pytest.skip(reason)
+
 
 @pytest.fixture(scope="session")
 def timescale_url() -> Iterator[str]:
     """Start a throwaway TimescaleDB and yield an asyncpg URL, or skip."""
-    postgres_mod = pytest.importorskip("testcontainers.postgres")
+    if _REQUIRE_DOCKER:
+        import testcontainers.postgres as postgres_mod
+    else:
+        postgres_mod = pytest.importorskip("testcontainers.postgres")
     container = postgres_mod.PostgresContainer(
         TIMESCALE_IMAGE, username="test", password="test", dbname="market_data"
     )
     try:
         container.start()
     except Exception as exc:  # Docker not reachable, image pull blocked, etc.
-        pytest.skip(f"TimescaleDB container unavailable: {exc}")
+        _skip_or_fail(f"TimescaleDB container unavailable: {exc}")
 
     try:
         raw_url = container.get_connection_url()  # postgresql+psycopg2://...
@@ -71,6 +84,26 @@ async def bar_store(timescale_engine) -> AsyncIterator[BarStore]:
 
 
 @pytest.fixture(scope="session")
+def redis_url() -> Iterator[str]:
+    """Start a throwaway Redis and yield its URL, or skip (fail under CI_REQUIRE_DOCKER)."""
+    if _REQUIRE_DOCKER:
+        import testcontainers.redis as redis_mod
+    else:
+        redis_mod = pytest.importorskip("testcontainers.redis")
+    container = redis_mod.RedisContainer("redis:7-alpine")
+    try:
+        container.start()
+    except Exception as exc:
+        _skip_or_fail(f"Redis container unavailable: {exc}")
+    try:
+        host = container.get_container_host_ip()
+        port = container.get_exposed_port(6379)
+        yield f"redis://{host}:{port}/0"
+    finally:
+        container.stop()
+
+
+@pytest.fixture(scope="session")
 def kafka_bootstrap() -> Iterator[str]:
     """A Kafka bootstrap server: a provided broker (CI) or a throwaway container.
 
@@ -82,12 +115,15 @@ def kafka_bootstrap() -> Iterator[str]:
     if provided:
         yield provided
         return
-    kafka_mod = pytest.importorskip("testcontainers.kafka")
+    if _REQUIRE_DOCKER:
+        import testcontainers.kafka as kafka_mod
+    else:
+        kafka_mod = pytest.importorskip("testcontainers.kafka")
     try:
         container = kafka_mod.KafkaContainer()
         container.start()
     except Exception as exc:
-        pytest.skip(f"Kafka container unavailable: {exc}")
+        _skip_or_fail(f"Kafka container unavailable: {exc}")
     try:
         yield container.get_bootstrap_server()
     finally:

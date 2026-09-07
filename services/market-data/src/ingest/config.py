@@ -53,8 +53,19 @@ class IngestConfig:
             daily_lookback_days=_int("MARKET_DATA_DAILY_LOOKBACK_DAYS", cls.daily_lookback_days),
             minute_lookback_days=_int("MARKET_DATA_MINUTE_LOOKBACK_DAYS", cls.minute_lookback_days),
             max_concurrency=_int("MARKET_DATA_INGEST_CONCURRENCY", cls.max_concurrency),
+            fetch_limit=_int("MARKET_DATA_FETCH_LIMIT", cls.fetch_limit),
+            backfill_interval_s=_float("MARKET_DATA_BACKFILL_INTERVAL_S", cls.backfill_interval_s),
+            gap_repair_interval_s=_float(
+                "MARKET_DATA_GAP_REPAIR_INTERVAL_S", cls.gap_repair_interval_s
+            ),
+            corporate_action_interval_s=_float(
+                "MARKET_DATA_CORPORATE_ACTION_INTERVAL_S", cls.corporate_action_interval_s
+            ),
             universe_refresh_interval_s=_float(
                 "MARKET_DATA_UNIVERSE_REFRESH_INTERVAL_S", cls.universe_refresh_interval_s
+            ),
+            corporate_action_window_days=_int(
+                "MARKET_DATA_CORPORATE_ACTION_WINDOW_DAYS", cls.corporate_action_window_days
             ),
         )
 

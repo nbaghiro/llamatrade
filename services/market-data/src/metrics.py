@@ -66,6 +66,14 @@ _INGEST_TARGETED_BACKFILLS = counter(
     "Catch-up backfill passes for symbols that just entered the ingest universe",
 )
 
+# Aggregate only (no per-symbol labels, cardinality contract); the repair logs
+# name the failing symbols.
+_INGEST_GAP_REPAIR_FAILURES = counter(
+    "llamatrade_marketdata_ingest_gap_repair_failures_total",
+    (),
+    "Symbols whose gap-repair pass raised and was skipped for this cycle",
+)
+
 # Nominal bar duration per timeframe. Used only to spot *interior* holes in a
 # served bar series (a missing bar => an inter-bar gap wider than one step). A
 # small tolerance below avoids flagging the normal one-step cadence as a gap.
@@ -215,3 +223,8 @@ def record_ingest_universe_refresh_failure(reason: str) -> None:
 def record_targeted_backfill(outcome: str) -> None:
     """Count a catch-up backfill pass for newly added symbols (``ok`` or ``error``)."""
     _INGEST_TARGETED_BACKFILLS.labels(outcome=outcome).inc()
+
+
+def record_gap_repair_failure() -> None:
+    """Count one symbol whose gap-repair pass raised (the pass continues)."""
+    _INGEST_GAP_REPAIR_FAILURES.inc()

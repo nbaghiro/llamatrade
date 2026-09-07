@@ -10,9 +10,9 @@ from datetime import UTC, datetime, timedelta
 from typing import cast
 
 import pytest
-from tests.fakes import FakeMarketDataClient
 
 from llamatrade_alpaca import MarketDataClient
+from tests.fakes import FakeMarketDataClient
 
 from src.models import Timeframe
 from src.services.market_data_service import MarketDataService

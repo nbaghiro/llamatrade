@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+
 from tests.fakes import FakeMarketDataClient
 
 from src.ingest.backfill import BackfillController
@@ -40,7 +41,8 @@ class TestBackfill:
         controller = _controller(bar_store, alpaca)
 
         result = await controller.run(["AAPL"], NOW)
-        assert result["AAPL"] > 0
+        assert result.ok
+        assert result.rows_by_symbol["AAPL"] > 0
 
         start, end = _window_bounds()
         stored = await bar_store.select_bars("AAPL", "1Min", start, end)
@@ -82,7 +84,22 @@ class TestBackfill:
         alpaca = FakeMarketDataClient()
         controller = _controller(bar_store, alpaca)
         result = await controller.run(["AAPL", "MSFT", "TSLA"], NOW)
-        assert set(result) == {"AAPL", "MSFT", "TSLA"}
+        assert set(result.rows_by_symbol) == {"AAPL", "MSFT", "TSLA"}
         for sym in ("AAPL", "MSFT", "TSLA"):
             start, end = _window_bounds()
             assert len(await bar_store.select_bars(sym, "1Min", start, end)) == _SIX_HOURS_MIN
+
+    async def test_partial_failure_is_reported_not_swallowed(self, bar_store: BarStore) -> None:
+        """One failing symbol is isolated, but the run must not look successful."""
+        alpaca = FakeMarketDataClient(fail_symbols={"BAD"})
+        controller = _controller(bar_store, alpaca)
+
+        result = await controller.run(["AAPL", "BAD"], NOW)
+
+        assert not result.ok
+        assert result.failures == (("BAD", "1Min"),)
+        assert result.rows_by_symbol["AAPL"] == _SIX_HOURS_MIN
+        assert result.rows_by_symbol["BAD"] == 0
+        start, end = _window_bounds()
+        assert len(await bar_store.select_bars("AAPL", "1Min", start, end)) == _SIX_HOURS_MIN
+        assert await bar_store.select_bars("BAD", "1Min", start, end) == []
