@@ -112,3 +112,24 @@ async def test_exchange_code_raises_on_missing_access_token() -> None:
     respx.post(TOKEN_URL).mock(return_value=httpx.Response(200, json={"token_type": "bearer"}))
     with pytest.raises(ValueError, match="missing access_token"):
         await exchange_code(code="c", client_id="c", client_secret="s", redirect_uri="r")
+
+
+@respx.mock
+async def test_exchange_code_raises_on_http_error() -> None:
+    respx.post(TOKEN_URL).mock(return_value=httpx.Response(400, json={"error": "invalid_grant"}))
+    with pytest.raises(httpx.HTTPStatusError):
+        await exchange_code(code="bad", client_id="c", client_secret="s", redirect_uri="r")
+
+
+@respx.mock
+async def test_refresh_access_token_raises_on_http_error() -> None:
+    respx.post(TOKEN_URL).mock(return_value=httpx.Response(401, json={"error": "unauthorized"}))
+    with pytest.raises(httpx.HTTPStatusError):
+        await refresh_access_token(refresh_token="r1", client_id="c", client_secret="s")
+
+
+@respx.mock
+async def test_exchange_code_rejects_non_object_response() -> None:
+    respx.post(TOKEN_URL).mock(return_value=httpx.Response(200, json=["not", "a", "dict"]))
+    with pytest.raises(ValueError, match="Unexpected Alpaca OAuth token response"):
+        await exchange_code(code="c", client_id="c", client_secret="s", redirect_uri="r")

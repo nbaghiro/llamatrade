@@ -24,6 +24,7 @@ from typing import Any
 
 import websockets
 from websockets.asyncio.client import ClientConnection
+from websockets.exceptions import ConnectionClosed
 from websockets.protocol import State
 
 from ..config import AlpacaCredentials
@@ -106,7 +107,7 @@ class AlpacaWebSocketBase(abc.ABC):
         """
         try:
             self._ws = await websockets.connect(self.url)
-            logger.info(f"Connected to Alpaca stream: {self.url}")
+            logger.info("Connected to Alpaca stream: %s", self.url)
 
             if not await self._authenticate():
                 self._authenticated = False
@@ -115,10 +116,10 @@ class AlpacaWebSocketBase(abc.ABC):
             self._authenticated = True
             self._reconnect_attempts = 0
             self._set_connected(True)
-            logger.info(f"Authenticated with Alpaca stream: {self.url}")
+            logger.info("Authenticated with Alpaca stream: %s", self.url)
             return True
         except Exception as e:
-            logger.error(f"Failed to connect to Alpaca stream {self.url}: {e}")
+            logger.error("Failed to connect to Alpaca stream %s: %s", self.url, e)
             self._set_connected(False)
             return False
 
@@ -136,7 +137,7 @@ class AlpacaWebSocketBase(abc.ABC):
 
         self._on_disconnect()
         self._set_connected(False)
-        logger.info(f"Disconnected from Alpaca stream: {self.url}")
+        logger.info("Disconnected from Alpaca stream: %s", self.url)
 
     # --------------------------------------------------------------- transport
 
@@ -154,6 +155,10 @@ class AlpacaWebSocketBase(abc.ABC):
 
         Returns the parsed JSON (a ``list`` for the data stream, a ``dict`` for
         the trading stream), or ``None`` on timeout / error.
+
+        Raises:
+            ConnectionClosed: When the transport closes, so run loops can clear
+                connection state and reconnect explicitly.
         """
         if not self._ws:
             return None
@@ -162,8 +167,10 @@ class AlpacaWebSocketBase(abc.ABC):
             return json.loads(raw)
         except TimeoutError:
             return None
+        except ConnectionClosed:
+            raise
         except Exception as e:
-            logger.error(f"Error receiving message from {self.url}: {e}")
+            logger.error("Error receiving message from %s: %s", self.url, e)
             return None
 
     # -------------------------------------------------------------- reconnect
@@ -171,7 +178,7 @@ class AlpacaWebSocketBase(abc.ABC):
     async def _reconnect(self) -> bool:
         """Reconnect with exponential backoff + jitter, then resubscribe."""
         if self._reconnect_attempts >= self.max_reconnect_attempts:
-            logger.error(f"Max reconnection attempts reached for {self.url}")
+            logger.error("Max reconnection attempts reached for %s", self.url)
             self._running = False
             return False
 
@@ -184,8 +191,11 @@ class AlpacaWebSocketBase(abc.ABC):
         delay = min(base_delay + jitter, self.max_reconnect_delay)
 
         logger.info(
-            f"Reconnecting to {self.url} in {delay:.2f}s "
-            f"(attempt {self._reconnect_attempts}/{self.max_reconnect_attempts})"
+            "Reconnecting to %s in %.2fs (attempt %s/%s)",
+            self.url,
+            delay,
+            self._reconnect_attempts,
+            self.max_reconnect_attempts,
         )
         await self._sleep(delay)
 

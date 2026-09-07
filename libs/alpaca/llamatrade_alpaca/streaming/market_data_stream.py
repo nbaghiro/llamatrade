@@ -48,12 +48,12 @@ class _DataStreamClient(AlpacaWebSocketBase):
     async def _authenticate(self) -> bool:
         welcome = await self._recv()
         if not welcome or welcome[0].get("T") != MessageType.SUCCESS:
-            logger.error(f"Unexpected welcome message: {welcome}")
+            logger.error("Unexpected welcome message: %s", welcome)
             return False
         await self._send(self._auth_payload())
         auth = await self._recv()
         if not auth or auth[0].get("T") != MessageType.SUCCESS:
-            logger.error(f"Authentication failed: {auth}")
+            logger.error("Authentication failed: %s", auth)
             return False
         return True
 
@@ -168,12 +168,12 @@ class MarketDataStreamClient(_DataStreamClient):
                 self._subscribed_trades.update(msg[0].get("trades", []))
                 self._subscribed_quotes.update(msg[0].get("quotes", []))
                 self._subscribed_bars.update(msg[0].get("bars", []))
-                logger.info(f"Subscribed: trades={trades}, quotes={quotes}, bars={bars}")
+                logger.info("Subscribed: trades=%s, quotes=%s, bars=%s", trades, quotes, bars)
                 return True
-            logger.error(f"Subscription failed: {msg}")
+            logger.error("Subscription failed: %s", msg)
             return False
         except Exception as e:
-            logger.error(f"Failed to subscribe: {e}")
+            logger.error("Failed to subscribe: %s", e)
             return False
 
     async def unsubscribe(
@@ -211,11 +211,11 @@ class MarketDataStreamClient(_DataStreamClient):
                     self._subscribed_quotes.discard(s)
                 for s in bars:
                     self._subscribed_bars.discard(s)
-                logger.info(f"Unsubscribed: trades={trades}, quotes={quotes}, bars={bars}")
+                logger.info("Unsubscribed: trades=%s, quotes=%s, bars=%s", trades, quotes, bars)
                 return True
             return False
         except Exception as e:
-            logger.error(f"Failed to unsubscribe: {e}")
+            logger.error("Failed to unsubscribe: %s", e)
             return False
 
     # -------------------------------------------------------------- run loop
@@ -243,8 +243,9 @@ class MarketDataStreamClient(_DataStreamClient):
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Market data stream error: {e}")
-                await asyncio.sleep(1)
+                logger.error("Market data stream error: %s", e)
+                # A persistently raising callback loops here; the pacing sleep bounds it to 1/s.
+                await self._sleep(1.0)
 
     async def _dispatch_message(self, item: dict[str, Any]) -> None:
         msg_type: str | None = item.get("T")
@@ -259,7 +260,7 @@ class MarketDataStreamClient(_DataStreamClient):
             if self._on_bar and (bar := self._parse_bar(item)) is not None:
                 await self._on_bar(item.get("S", ""), bar)
         elif msg_type == MessageType.ERROR:
-            logger.error(f"Stream error message: {item.get('msg')}")
+            logger.error("Stream error message: %s", item.get("msg"))
 
     # --------------------------------------------------------------- parsers
 
@@ -272,7 +273,7 @@ class MarketDataStreamClient(_DataStreamClient):
                 timestamp=str(data.get("t", "")),
             )
         except Exception as e:
-            logger.error(f"Failed to parse trade: {e}")
+            logger.error("Failed to parse trade: %s", e)
             return None
 
     def _parse_quote(self, data: dict[str, Any]) -> QuoteData | None:
@@ -285,7 +286,7 @@ class MarketDataStreamClient(_DataStreamClient):
                 timestamp=str(data.get("t", "")),
             )
         except Exception as e:
-            logger.error(f"Failed to parse quote: {e}")
+            logger.error("Failed to parse quote: %s", e)
             return None
 
     def _parse_bar(self, data: dict[str, Any]) -> BarData | None:
@@ -304,7 +305,7 @@ class MarketDataStreamClient(_DataStreamClient):
                 bar["trade_count"] = int(data["n"])
             return bar
         except Exception as e:
-            logger.error(f"Failed to parse bar: {e}")
+            logger.error("Failed to parse bar: %s", e)
             return None
 
 
@@ -425,12 +426,12 @@ class BarStreamClient(_DataStreamClient):
             msg = await self._recv()
             if msg and msg[0].get("T") == MessageType.SUBSCRIPTION:
                 self._subscribed_symbols.update(msg[0].get("bars", []))
-                logger.info(f"Subscribed to bars: {new}")
+                logger.info("Subscribed to bars: %s", new)
                 return True
-            logger.error(f"Bar subscription failed: {msg}")
+            logger.error("Bar subscription failed: %s", msg)
             return False
         except Exception as e:
-            logger.error(f"Failed to subscribe to bars: {e}")
+            logger.error("Failed to subscribe to bars: %s", e)
             return False
 
     async def unsubscribe(self, symbols: list[str] | None = None) -> bool:
@@ -448,11 +449,11 @@ class BarStreamClient(_DataStreamClient):
             if msg and msg[0].get("T") == MessageType.SUBSCRIPTION:
                 for s in targets:
                     self._subscribed_symbols.discard(s)
-                logger.info(f"Unsubscribed from bars: {targets}")
+                logger.info("Unsubscribed from bars: %s", targets)
                 return True
             return False
         except Exception as e:
-            logger.error(f"Failed to unsubscribe from bars: {e}")
+            logger.error("Failed to unsubscribe from bars: %s", e)
             return False
 
     async def stream(self) -> AsyncGenerator[StreamBar]:
@@ -476,7 +477,7 @@ class BarStreamClient(_DataStreamClient):
                         if bar:
                             yield bar
                     elif msg_type == MessageType.ERROR:
-                        logger.error(f"Stream error message: {item.get('msg')}")
+                        logger.error("Stream error message: %s", item.get("msg"))
             except ConnectionClosed:
                 logger.warning("Bar stream closed, reconnecting...")
                 self._ws = None
@@ -484,8 +485,9 @@ class BarStreamClient(_DataStreamClient):
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Bar stream error: {e}")
-                await asyncio.sleep(1)
+                logger.error("Bar stream error: %s", e)
+                # A persistently malformed feed loops here; the pacing sleep bounds it to 1/s.
+                await self._sleep(1.0)
 
     def _parse_bar(self, data: dict[str, Any]) -> StreamBar | None:
         try:
@@ -507,37 +509,68 @@ class BarStreamClient(_DataStreamClient):
                 trade_count=int(data["n"]) if data.get("n") else None,
             )
         except Exception as e:
-            logger.error(f"Failed to parse bar: {e}")
+            logger.error("Failed to parse bar: %s", e)
             return None
 
 
 class MockBarStream:
-    """In-memory bar stream for tests (no network)."""
+    """In-memory bar stream for tests (no network).
+
+    Mirrors ``BarStreamClient``'s lifecycle honestly: ``connected`` /
+    ``authenticated`` track ``connect()`` / ``disconnect()``, ``subscribe``
+    fails while disconnected, and ``give_up()`` reproduces the real client's
+    reconnect give-up — the active ``stream()`` generator exhausts with the
+    connection state cleared. A subsequent ``connect()`` clears the given-up
+    state so a supervisor's rebuild path can stream again.
+    """
 
     def __init__(self, bars: dict[str, list[StreamBar]] | None = None) -> None:
         self._bars = bars or {}
         self._subscribed_symbols: set[str] = set()
         self._running = False
+        self._connected = False
+        self._authenticated = False
+        self._gave_up = False
 
     @property
     def connected(self) -> bool:
-        return True
+        return self._connected
 
     @property
     def authenticated(self) -> bool:
-        return True
+        return self._authenticated
 
     @property
     def subscribed_symbols(self) -> set[str]:
         return self._subscribed_symbols.copy()
 
+    @property
+    def gave_up(self) -> bool:
+        """Whether the stream ended via a simulated reconnect give-up."""
+        return self._gave_up
+
+    def give_up(self) -> None:
+        """Simulate the real client exhausting its reconnect attempts."""
+        self._gave_up = True
+        self._running = False
+        self._connected = False
+        self._authenticated = False
+        self._subscribed_symbols.clear()
+
     async def connect(self) -> bool:
+        self._gave_up = False
+        self._connected = True
+        self._authenticated = True
         return True
 
     async def disconnect(self) -> None:
         self._running = False
+        self._connected = False
+        self._authenticated = False
 
     async def subscribe(self, symbols: list[str]) -> bool:
+        if not self._connected:
+            return False
         self._subscribed_symbols.update(s.upper() for s in symbols)
         return True
 
@@ -550,10 +583,11 @@ class MockBarStream:
         return True
 
     async def stream(self) -> AsyncGenerator[StreamBar]:
-        self._running = True
-        for symbol in self._subscribed_symbols:
+        self._running = not self._gave_up
+        for symbol in sorted(self._subscribed_symbols):
             for bar in self._bars.get(symbol, []):
-                if not self._running:
+                if not self._running or self._gave_up:
                     return
                 yield bar
                 await asyncio.sleep(0.01)
+        self._running = False

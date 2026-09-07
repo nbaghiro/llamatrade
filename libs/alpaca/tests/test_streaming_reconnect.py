@@ -1,17 +1,17 @@
 """Tests for AlpacaWebSocketBase._reconnect (backoff, give-up, hooks, resubscribe)."""
 
-import json
+import asyncio
 from collections import deque
 from collections.abc import Callable
-from typing import cast
 
 import pytest
 from websockets.exceptions import ConnectionClosed
-from websockets.protocol import State
 
-from llamatrade_alpaca import AlpacaCredentials, MarketDataStreamClient
+from llamatrade_alpaca import AlpacaCredentials, BarData, MarketDataStreamClient
 from llamatrade_alpaca.streaming import base as streaming_base
 from llamatrade_alpaca.streaming.base import AlpacaWebSocketBase
+from llamatrade_alpaca.streaming.market_data_stream import MessageType
+from tests.streaming_fakes import FakeWebSocket, SleepRecorder, attach_ws, make_connect
 
 
 class StubStream(AlpacaWebSocketBase):
@@ -140,42 +140,42 @@ class TestReconnectBackoff:
         assert stream.sleeps[0] <= stream.reconnect_delay * (1 + stream.jitter_factor)
 
 
-class ClosingWebSocket:
-    """Fake ClientConnection whose recv closes the connection."""
-
-    def __init__(self) -> None:
-        self.state = State.OPEN
-
-    async def send(self, raw: str) -> None:
-        json.loads(raw)
-
-    async def recv(self) -> str:
-        self.state = State.CLOSED
-        raise ConnectionClosed(None, None)
-
-    async def close(self) -> None:
-        self.state = State.CLOSED
-
-
 class TestRunLoopReconnects:
-    async def test_receive_loop_calls_reconnect_on_connection_loss(
+    async def test_run_reconnects_resubscribes_and_redispatches_after_drop(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        from websockets.asyncio.client import ClientConnection
-
-        client = MarketDataStreamClient(api_key="k", api_secret="s")
-        client._ws = cast(ClientConnection, ClosingWebSocket())
+        """A dropped connection is rebuilt by run(): auth, resubscribe, dispatch."""
+        client = MarketDataStreamClient(api_key="k", api_secret="s", reconnect_delay=0.0)
+        sleeper = SleepRecorder()
+        client._sleep = sleeper
+        attach_ws(client, FakeWebSocket([ConnectionClosed(None, None)]))
         client._authenticated = True
+        client._subscribed_bars = {"AAPL"}
 
-        reconnect_calls = 0
+        received: list[tuple[str, float]] = []
+        resubscribed: list[set[str]] = []
 
-        async def fake_reconnect() -> bool:
-            nonlocal reconnect_calls
-            reconnect_calls += 1
-            return False  # give up so run() exits
+        async def on_bar(symbol: str, bar: BarData) -> None:
+            received.append((symbol, bar["close"]))
+            resubscribed.append(client.subscribed_symbols["bars"])
+            await client.disconnect()
 
-        monkeypatch.setattr(client, "_reconnect", fake_reconnect)
+        client.set_callbacks(on_bar=on_bar)
 
-        await client.run()
+        fresh = FakeWebSocket(
+            [
+                [{"T": MessageType.SUCCESS, "msg": "connected"}],
+                [{"T": MessageType.SUCCESS}],
+                [{"T": MessageType.SUBSCRIPTION, "bars": ["AAPL"]}],
+                [{"T": "b", "S": "AAPL", "o": 1, "h": 2, "l": 1, "c": 3.0, "v": 5, "t": "ts"}],
+            ]
+        )
+        monkeypatch.setattr(streaming_base.websockets, "connect", make_connect(fresh))
 
-        assert reconnect_calls == 1
+        await asyncio.wait_for(client.run(), timeout=1.0)
+
+        assert received == [("AAPL", 3.0)]
+        assert resubscribed == [{"AAPL"}]
+        assert fresh.sent[0]["action"] == "auth"
+        assert fresh.sent[1] == {"action": "subscribe", "bars": ["AAPL"]}
+        assert len(sleeper.delays) == 1  # one backoff sleep for the one reconnect

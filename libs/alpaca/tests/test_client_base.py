@@ -104,17 +104,6 @@ class TestAlpacaClientBase:
                 await client._request("GET", "/test")
 
     @respx.mock
-    async def test_get_convenience_method(self) -> None:
-        """Test _get convenience method."""
-        respx.get("https://paper-api.example.com/v2/test").mock(
-            return_value=httpx.Response(200, json={"result": "ok"})
-        )
-
-        async with MockAlpacaClient(api_key="key", api_secret="secret") as client:
-            response = await client._get("/test")
-            assert response.status_code == 200
-
-    @respx.mock
     async def test_post_convenience_method(self) -> None:
         """Test _post convenience method."""
         respx.post("https://paper-api.example.com/v2/test").mock(

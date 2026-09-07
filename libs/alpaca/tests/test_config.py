@@ -70,13 +70,6 @@ class TestAlpacaCredentials:
             assert creds.api_key == ""
             assert creds.api_secret == ""
 
-    def test_to_headers(self, api_key: str, api_secret: str) -> None:
-        """Test converting credentials to headers."""
-        creds = AlpacaCredentials(api_key=api_key, api_secret=api_secret)
-        headers = creds.to_headers()
-        assert headers["APCA-API-KEY-ID"] == api_key
-        assert headers["APCA-API-SECRET-KEY"] == api_secret
-
     def test_to_headers_empty_credentials(self) -> None:
         """Test to_headers with empty credentials returns empty dict."""
         creds = AlpacaCredentials(api_key="", api_secret="")

@@ -379,6 +379,108 @@ class TestGetLatestBar:
         await market_client.close()
 
 
+class TestGetLatestBars:
+    """Tests for get_latest_bars (multi-symbol)."""
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_get_latest_bars_maps_symbols(self, market_client: MarketDataClient) -> None:
+        route = respx.get(f"{BASE_URL}/stocks/bars/latest").mock(
+            return_value=Response(
+                200,
+                json={
+                    "bars": {
+                        "AAPL": {
+                            "t": "2024-01-15T14:30:00Z",
+                            "o": 150.0,
+                            "h": 151.0,
+                            "l": 149.5,
+                            "c": 150.75,
+                            "v": 500,
+                        },
+                        "MSFT": {
+                            "t": "2024-01-15T14:30:00Z",
+                            "o": 350.0,
+                            "h": 351.0,
+                            "l": 349.0,
+                            "c": 350.5,
+                            "v": 300,
+                        },
+                    }
+                },
+            )
+        )
+
+        bars = await market_client.get_latest_bars(["aapl", "msft"])
+
+        assert set(bars) == {"AAPL", "MSFT"}
+        assert isinstance(bars["AAPL"], Bar)
+        assert bars["AAPL"].close == 150.75
+        assert bars["MSFT"].close == 350.5
+        assert route.calls[0].request.url.params["symbols"] == "AAPL,MSFT"
+
+        await market_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_get_latest_bars_empty_response(self, market_client: MarketDataClient) -> None:
+        respx.get(f"{BASE_URL}/stocks/bars/latest").mock(return_value=Response(200, json={}))
+
+        assert await market_client.get_latest_bars(["AAPL"]) == {}
+
+        await market_client.close()
+
+
+class TestGetLatestQuotes:
+    """Tests for get_latest_quotes (multi-symbol)."""
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_get_latest_quotes_maps_symbols(self, market_client: MarketDataClient) -> None:
+        route = respx.get(f"{BASE_URL}/stocks/quotes/latest").mock(
+            return_value=Response(
+                200,
+                json={
+                    "quotes": {
+                        "AAPL": {
+                            "t": "2024-01-15T14:30:00Z",
+                            "bp": 150.0,
+                            "bs": 100,
+                            "ap": 150.1,
+                            "as": 200,
+                        },
+                        "MSFT": {
+                            "t": "2024-01-15T14:30:00Z",
+                            "bp": 350.0,
+                            "bs": 50,
+                            "ap": 350.25,
+                            "as": 75,
+                        },
+                    }
+                },
+            )
+        )
+
+        quotes = await market_client.get_latest_quotes(["aapl", "msft"])
+
+        assert set(quotes) == {"AAPL", "MSFT"}
+        assert isinstance(quotes["AAPL"], Quote)
+        assert quotes["AAPL"].bid_price == 150.0
+        assert quotes["MSFT"].ask_price == 350.25
+        assert route.calls[0].request.url.params["symbols"] == "AAPL,MSFT"
+
+        await market_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_get_latest_quotes_empty_response(self, market_client: MarketDataClient) -> None:
+        respx.get(f"{BASE_URL}/stocks/quotes/latest").mock(return_value=Response(200, json={}))
+
+        assert await market_client.get_latest_quotes(["AAPL"]) == {}
+
+        await market_client.close()
+
+
 class TestGetLatestQuote:
     """Tests for get_latest_quote method."""
 

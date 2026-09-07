@@ -83,10 +83,10 @@ class TradingStreamClient(AlpacaWebSocketBase):
             )
             if auth_data.get("status") == "authorized":
                 return True
-            logger.error(f"Auth failed: {auth_data}")
+            logger.error("Auth failed: %s", auth_data)
             return False
 
-        logger.error(f"Unexpected auth response: {msg}")
+        logger.error("Unexpected auth response: %s", msg)
         return False
 
     def _on_disconnect(self) -> None:
@@ -120,10 +120,10 @@ class TradingStreamClient(AlpacaWebSocketBase):
                     self._subscribed = True
                     logger.info("Subscribed to trade_updates stream")
                     return True
-            logger.error(f"Subscription failed: {msg}")
+            logger.error("Subscription failed: %s", msg)
             return False
         except Exception as e:
-            logger.error(f"Failed to subscribe to trade updates: {e}")
+            logger.error("Failed to subscribe to trade updates: %s", e)
             return False
 
     # -------------------------------------------------------------- run loop
@@ -159,8 +159,9 @@ class TradingStreamClient(AlpacaWebSocketBase):
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error(f"Trade stream error: {e}")
-                await asyncio.sleep(1)
+                logger.error("Trade stream error: %s", e)
+                # A persistently malformed feed loops here; the pacing sleep bounds it to 1/s.
+                await self._sleep(1.0)
 
     # --------------------------------------------------------------- parser
 
@@ -170,7 +171,7 @@ class TradingStreamClient(AlpacaWebSocketBase):
             try:
                 event_type = TradeEventType(event_str)
             except ValueError:
-                logger.warning(f"Unknown trade event type: {event_str}")
+                logger.warning("Unknown trade event type: %s", event_str)
                 return None
 
             order_data = data.get("order")
@@ -228,19 +229,36 @@ class TradingStreamClient(AlpacaWebSocketBase):
                 fill=fill,
             )
         except Exception as e:
-            logger.error(f"Failed to parse trade event: {e}")
+            logger.error("Failed to parse trade event: %s", e)
             return None
 
 
+class _StreamEnd:
+    """Queue sentinel: promptly ends the active ``MockTradeStream.stream()`` generator."""
+
+
+_STREAM_END = _StreamEnd()
+
+
 class MockTradeStream:
-    """In-memory trade stream for tests (no network)."""
+    """In-memory trade stream for tests (no network).
+
+    ``give_up()`` reproduces the real client's reconnect give-up: the active
+    ``stream()`` generator exhausts (the ``async for`` ends) with ``_running``
+    false and the connection state cleared, exactly as ``TradingStreamClient``
+    behaves once ``_reconnect`` fails or runs out of attempts. A subsequent
+    ``connect()`` clears the given-up state so a supervisor's rebuild path can
+    stream again.
+    """
 
     def __init__(self, events: list[TradeEvent] | None = None) -> None:
         self._events = events or []
         self._running = False
         self._connected = False
+        self._authenticated = False
         self._subscribed = False
-        self._event_queue: asyncio.Queue[TradeEvent] = asyncio.Queue()
+        self._gave_up = False
+        self._event_queue: asyncio.Queue[TradeEvent | _StreamEnd] = asyncio.Queue()
 
     @property
     def connected(self) -> bool:
@@ -248,18 +266,36 @@ class MockTradeStream:
 
     @property
     def authenticated(self) -> bool:
-        return self._connected
+        """Distinct from ``connected``: tests can model connected-but-unauthenticated."""
+        return self._authenticated
 
     @property
     def subscribed(self) -> bool:
         return self._subscribed
 
+    @property
+    def gave_up(self) -> bool:
+        """Whether the stream ended via a simulated reconnect give-up."""
+        return self._gave_up
+
+    def give_up(self) -> None:
+        """Simulate the real client exhausting its reconnect attempts."""
+        self._gave_up = True
+        self._running = False
+        self._connected = False
+        self._authenticated = False
+        self._subscribed = False
+        self._event_queue.put_nowait(_STREAM_END)
+
     async def connect(self) -> bool:
+        self._gave_up = False
         self._connected = True
+        self._authenticated = True
         return True
 
     async def disconnect(self) -> None:
         self._connected = False
+        self._authenticated = False
         self._subscribed = False
         self._running = False
 
@@ -308,16 +344,21 @@ class MockTradeStream:
         )
 
     async def stream(self) -> AsyncGenerator[TradeEvent]:
-        self._running = True
+        self._running = not self._gave_up
         for event in self._events:
-            if not self._running:
+            if not self._running or self._gave_up:
                 break
             yield event
-        while self._running:
+        while self._running and not self._gave_up:
             try:
-                event = await asyncio.wait_for(self._event_queue.get(), timeout=0.1)
-                yield event
+                item = await asyncio.wait_for(self._event_queue.get(), timeout=0.1)
             except TimeoutError:
                 continue
             except asyncio.CancelledError:
                 break
+            if isinstance(item, _StreamEnd):
+                if self._gave_up:
+                    break
+                continue  # stale sentinel from a give-up before this stream started
+            yield item
+        self._running = False

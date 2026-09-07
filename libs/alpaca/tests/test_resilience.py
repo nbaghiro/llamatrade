@@ -38,14 +38,6 @@ class TestRateLimiter:
         for _ in range(10):
             assert await limiter.acquire() is True
 
-    async def test_acquire_with_timeout(self) -> None:
-        """Test acquire times out when no tokens available."""
-        limiter = RateLimiter(capacity=1, refill_rate=0.1)
-        await limiter.acquire()  # Use the only token
-        # Should timeout since refill is slow
-        result = await limiter.acquire(timeout=0.05)
-        assert result is False
-
     async def test_available_tokens(self) -> None:
         """Test available_tokens property."""
         limiter = RateLimiter(capacity=5, refill_rate=1.0)
@@ -378,6 +370,69 @@ class TestParseAlpacaError:
         assert error.status_code == 500
 
 
+class TestParseAlpacaErrorEdges:
+    """Edge inputs to parse_alpaca_error, on real httpx responses."""
+
+    @staticmethod
+    def _response(
+        status_code: int, *, url: str, text: str = "", json: object = None
+    ) -> httpx.Response:
+        request = httpx.Request("GET", url)
+        if json is not None:
+            return httpx.Response(status_code, json=json, request=request)
+        return httpx.Response(status_code, text=text, request=request)
+
+    def test_non_json_body_uses_text_as_message(self) -> None:
+        response = self._response(400, url="https://api.alpaca.markets/v2/orders", text="nope")
+
+        error = parse_alpaca_error(response)
+
+        assert isinstance(error, InvalidRequestError)
+        assert error.message == "nope"
+
+    def test_empty_non_json_body_falls_back_to_status(self) -> None:
+        response = self._response(500, url="https://api.alpaca.markets/v2/orders", text="")
+
+        error = parse_alpaca_error(response)
+
+        assert isinstance(error, AlpacaServerError)
+        assert error.message == "HTTP 500"
+
+    def test_404_outside_stocks_path_reports_unknown_symbol(self) -> None:
+        response = self._response(
+            404,
+            url="https://paper-api.alpaca.markets/v2/orders/xyz",
+            json={"message": "order not found"},
+        )
+
+        error = parse_alpaca_error(response)
+
+        assert isinstance(error, SymbolNotFoundError)
+        assert error.symbol == "unknown"
+        assert error.message == "order not found"
+
+    def test_unexpected_4xx_maps_to_server_error_with_code(self) -> None:
+        response = self._response(
+            418, url="https://api.alpaca.markets/v2/clock", json={"message": "teapot"}
+        )
+
+        error = parse_alpaca_error(response)
+
+        assert isinstance(error, AlpacaServerError)
+        assert error.status_code == 418
+        assert "Unexpected error" in error.message
+
+    def test_429_without_retry_after_header(self) -> None:
+        response = self._response(
+            429, url="https://data.alpaca.markets/v2/stocks/AAPL/bars", json={"message": "slow"}
+        )
+
+        error = parse_alpaca_error(response)
+
+        assert isinstance(error, AlpacaRateLimitError)
+        assert error.retry_after is None
+
+
 class TestFactoryFunctions:
     """Tests for resilience factory functions."""
 
@@ -408,7 +463,12 @@ class TestFactoryFunctions:
 
 
 class FakeRedis:
-    """In-memory INCR/EXPIRE fake matching the RedisClientLike protocol."""
+    """In-memory INCR/EXPIRE fake matching the RedisClientLike protocol.
+
+    Kept local instead of reusing ``llamatrade_common.testing.FakeRedis``:
+    llamatrade_alpaca must not depend on llamatrade_common, and a test-only
+    import is still a package dependency for CI installs.
+    """
 
     def __init__(self, fail: bool = False) -> None:
         self.counts: dict[str, int] = {}

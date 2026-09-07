@@ -1,5 +1,6 @@
 """Tests for TradingClient."""
 
+import json
 from datetime import date
 from decimal import Decimal
 from unittest.mock import AsyncMock, patch
@@ -316,6 +317,216 @@ class TestGetOrder:
         await trading_client.close()
 
 
+_ORDER_JSON: dict[str, object] = {
+    "id": "order-123",
+    "client_order_id": "coid-1",
+    "symbol": "AAPL",
+    "side": "buy",
+    "qty": "10",
+    "type": "market",
+    "status": "filled",
+    "time_in_force": "day",
+    "filled_qty": "10",
+    "filled_avg_price": "150.00",
+    "created_at": "2024-01-15T09:30:00Z",
+}
+
+_BY_CLIENT_ID_URL = "https://paper-api.alpaca.markets/v2/orders:by_client_order_id"
+
+
+class TestGetOrderByClientId:
+    """Tests for get_order_by_client_id (the crash-recovery seam)."""
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_found_returns_parsed_order_with_param(
+        self, trading_client: TradingClient
+    ) -> None:
+        route = respx.get(_BY_CLIENT_ID_URL).mock(return_value=Response(200, json=_ORDER_JSON))
+
+        order = await trading_client.get_order_by_client_id("coid-1")
+
+        assert order is not None
+        assert order.id == "order-123"
+        assert order.client_order_id == "coid-1"
+        assert order.status == OrderStatus.FILLED
+        assert route.calls[0].request.url.params["client_order_id"] == "coid-1"
+        await trading_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_not_found_returns_none(self, trading_client: TradingClient) -> None:
+        route = respx.get(_BY_CLIENT_ID_URL).mock(
+            return_value=Response(404, json={"message": "order not found"})
+        )
+
+        assert await trading_client.get_order_by_client_id("missing") is None
+        assert route.call_count == 1
+        await trading_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_auth_error_propagates(self, trading_client: TradingClient) -> None:
+        route = respx.get(_BY_CLIENT_ID_URL).mock(
+            return_value=Response(401, json={"message": "unauthorized"})
+        )
+
+        with pytest.raises(AuthenticationError):
+            await trading_client.get_order_by_client_id("coid-1")
+
+        assert route.call_count == 1
+        await trading_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_server_error_retried_then_recovers(self, trading_client: TradingClient) -> None:
+        route = respx.get(_BY_CLIENT_ID_URL)
+        route.side_effect = [
+            Response(500, json={"message": "boom"}),
+            Response(200, json=_ORDER_JSON),
+        ]
+
+        with patch("asyncio.sleep", new=AsyncMock()):
+            order = await trading_client.get_order_by_client_id("coid-1")
+
+        assert order is not None
+        assert route.call_count == 2
+        await trading_client.close()
+
+
+class TestCancelAllOrders:
+    """Tests for cancel_all_orders wrapped/plain response parsing."""
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_parses_wrapped_and_plain_entries(self, trading_client: TradingClient) -> None:
+        respx.delete("https://paper-api.alpaca.markets/v2/orders").mock(
+            return_value=Response(
+                207,
+                json=[
+                    {
+                        "id": "o1",
+                        "status": 200,
+                        "body": {**_ORDER_JSON, "id": "o1", "status": "canceled"},
+                    },
+                    {**_ORDER_JSON, "id": "o2", "status": "canceled"},
+                ],
+            )
+        )
+
+        orders = await trading_client.cancel_all_orders()
+
+        assert [o.id for o in orders] == ["o1", "o2"]
+        assert all(o.status == OrderStatus.CANCELED for o in orders)
+        await trading_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_empty_list_when_nothing_open(self, trading_client: TradingClient) -> None:
+        respx.delete("https://paper-api.alpaca.markets/v2/orders").mock(
+            return_value=Response(207, json=[])
+        )
+
+        assert await trading_client.cancel_all_orders() == []
+        await trading_client.close()
+
+
+class TestCloseAllPositions:
+    """Tests for close_all_positions wrapped-body parsing and params."""
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_parses_wrapped_body_and_sends_cancel_orders_param(
+        self, trading_client: TradingClient
+    ) -> None:
+        route = respx.delete("https://paper-api.alpaca.markets/v2/positions").mock(
+            return_value=Response(
+                207,
+                json=[
+                    {
+                        "symbol": "AAPL",
+                        "status": 200,
+                        "body": {**_ORDER_JSON, "id": "liq-1", "side": "sell"},
+                    },
+                    {**_ORDER_JSON, "id": "liq-2", "symbol": "MSFT", "side": "sell"},
+                ],
+            )
+        )
+
+        orders = await trading_client.close_all_positions()
+
+        assert [o.id for o in orders] == ["liq-1", "liq-2"]
+        assert all(o.side == OrderSide.SELL for o in orders)
+        assert route.calls[0].request.url.params["cancel_orders"] == "true"
+        await trading_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_cancel_orders_false_sent_as_param(self, trading_client: TradingClient) -> None:
+        route = respx.delete("https://paper-api.alpaca.markets/v2/positions").mock(
+            return_value=Response(207, json=[])
+        )
+
+        assert await trading_client.close_all_positions(cancel_orders=False) == []
+        assert route.calls[0].request.url.params["cancel_orders"] == "false"
+        await trading_client.close()
+
+
+class TestSubmitOrderOptionalParams:
+    """Optional submit_order fields are sent only when provided."""
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_optional_fields_sent_when_provided(self, trading_client: TradingClient) -> None:
+        route = respx.post("https://paper-api.alpaca.markets/v2/orders").mock(
+            return_value=Response(200, json={**_ORDER_JSON, "type": "stop_limit"})
+        )
+
+        await trading_client.submit_order(
+            symbol="aapl",
+            qty=Decimal("10"),
+            side="buy",
+            order_type="stop_limit",
+            limit_price=Decimal("150.50"),
+            stop_price=Decimal("149.00"),
+            client_order_id="my-key-1",
+            extended_hours=True,
+        )
+
+        body = json.loads(route.calls[0].request.content)
+        assert body == {
+            "symbol": "AAPL",
+            "qty": "10",
+            "side": "buy",
+            "type": "stop_limit",
+            "time_in_force": "day",
+            "limit_price": "150.50",
+            "stop_price": "149.00",
+            "client_order_id": "my-key-1",
+            "extended_hours": True,
+        }
+        await trading_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_optional_fields_omitted_by_default(self, trading_client: TradingClient) -> None:
+        route = respx.post("https://paper-api.alpaca.markets/v2/orders").mock(
+            return_value=Response(200, json=_ORDER_JSON)
+        )
+
+        await trading_client.submit_order(symbol="AAPL", qty=Decimal("1"), side="buy")
+
+        body = json.loads(route.calls[0].request.content)
+        assert body == {
+            "symbol": "AAPL",
+            "qty": "1",
+            "side": "buy",
+            "type": "market",
+            "time_in_force": "day",
+        }
+        await trading_client.close()
+
+
 class TestCancelOrder:
     """Tests for cancel_order method."""
 
@@ -405,6 +616,19 @@ class TestGetPositions:
 
         assert position is not None
         assert position.symbol == "AAPL"
+
+        await trading_client.close()
+
+    @pytest.mark.asyncio
+    @respx.mock
+    async def test_get_position_missing_returns_none(self, trading_client: TradingClient) -> None:
+        """A 404 for a symbol with no open position maps to None, not an error."""
+        route = respx.get("https://paper-api.alpaca.markets/v2/positions/NOPE").mock(
+            return_value=Response(404, json={"message": "position does not exist"})
+        )
+
+        assert await trading_client.get_position("nope") is None
+        assert route.call_count == 1
 
         await trading_client.close()
 
