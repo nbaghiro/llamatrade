@@ -1,7 +1,8 @@
 """Servicer unit tests: validation and error paths that resolve before the DB.
 
-DB-backed behavior is covered by tests/integration/; these tests pin the
-argument validation, the UNIMPLEMENTED alert surface, and channel-test gating.
+DB-backed behavior (notifications, webhooks, preferences, channels, and the
+alert CRUD surface) is covered by tests/integration/; these tests pin the
+argument validation and channel-test gating.
 """
 
 from __future__ import annotations

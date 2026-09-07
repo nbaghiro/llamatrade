@@ -254,6 +254,71 @@ async def test_preferences_round_trip(session_factory: async_sessionmaker) -> No
     assert list(email_pref.categories) == [_E.NOTIFICATION_CATEGORY_PAYMENT_FAILED]
 
 
+async def test_channels_list_and_update_round_trip(session_factory: async_sessionmaker) -> None:
+    await _seed(session_factory)
+    servicer = NotificationServicer(session_maker=session_factory)
+
+    listed = await servicer.list_channels(
+        notification_pb2.ListChannelsRequest(context=_ctx()), MockRequestContext()
+    )
+    assert {c.type for c in listed.channels} == {
+        notification_pb2.CHANNEL_TYPE_EMAIL,
+        notification_pb2.CHANNEL_TYPE_WEBHOOK,
+    }
+    assert all(c.is_enabled for c in listed.channels)
+    assert all(c.tenant_id == str(TENANT_ID) for c in listed.channels)
+    by_type = {c.type: c for c in listed.channels}
+    assert by_type[notification_pb2.CHANNEL_TYPE_EMAIL].is_verified
+    assert not by_type[notification_pb2.CHANNEL_TYPE_WEBHOOK].is_verified
+
+    updated = await servicer.update_channel(
+        notification_pb2.UpdateChannelRequest(
+            context=_ctx(), type=notification_pb2.CHANNEL_TYPE_EMAIL, is_enabled=False
+        ),
+        MockRequestContext(),
+    )
+    assert updated.channel.type == notification_pb2.CHANNEL_TYPE_EMAIL
+    assert not updated.channel.is_enabled
+
+    relisted = await servicer.list_channels(
+        notification_pb2.ListChannelsRequest(context=_ctx()), MockRequestContext()
+    )
+    by_type = {c.type: c for c in relisted.channels}
+    assert not by_type[notification_pb2.CHANNEL_TYPE_EMAIL].is_enabled
+    assert by_type[notification_pb2.CHANNEL_TYPE_WEBHOOK].is_enabled
+
+    reenabled = await servicer.update_channel(
+        notification_pb2.UpdateChannelRequest(
+            context=_ctx(), type=notification_pb2.CHANNEL_TYPE_EMAIL, is_enabled=True
+        ),
+        MockRequestContext(),
+    )
+    assert reenabled.channel.is_enabled
+
+
+async def test_update_channel_is_tenant_scoped(session_factory: async_sessionmaker) -> None:
+    await _seed(session_factory)
+    other_tenant = uuid4()
+    async with session_factory() as db:
+        db.add(Tenant(id=other_tenant, name="o", slug="other2"))
+        await db.commit()
+    servicer = NotificationServicer(session_maker=session_factory)
+
+    await servicer.update_channel(
+        notification_pb2.UpdateChannelRequest(
+            context=_ctx(), type=notification_pb2.CHANNEL_TYPE_EMAIL, is_enabled=False
+        ),
+        MockRequestContext(),
+    )
+
+    other_ctx = common_pb2.TenantContext(tenant_id=str(other_tenant), user_id=str(uuid4()))
+    listed = await servicer.list_channels(
+        notification_pb2.ListChannelsRequest(context=other_ctx), MockRequestContext()
+    )
+    by_type = {c.type: c for c in listed.channels}
+    assert by_type[notification_pb2.CHANNEL_TYPE_EMAIL].is_enabled
+
+
 async def test_tenant_isolation_on_lists(session_factory: async_sessionmaker) -> None:
     await _seed(session_factory, notifications=2)
     other_tenant = uuid4()

@@ -8,7 +8,9 @@ straight from the TypeDecorator impls to stay in lockstep with the models.
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator, Iterator
+from typing import NoReturn
 
 import pytest
 import pytest_asyncio
@@ -18,6 +20,15 @@ from sqlalchemy.ext.asyncio import AsyncConnection, async_sessionmaker, create_a
 pytestmark = pytest.mark.integration
 
 POSTGRES_IMAGE = "postgres:16-alpine"
+
+_REQUIRE_DOCKER = os.environ.get("CI_REQUIRE_DOCKER") == "1"
+
+
+def _skip_or_fail(reason: str) -> NoReturn:
+    """Skip locally; fail when CI_REQUIRE_DOCKER=1 demands the Docker-gated tests run."""
+    if _REQUIRE_DOCKER:
+        pytest.fail(f"CI_REQUIRE_DOCKER=1: {reason}", pytrace=False)
+    pytest.skip(reason)
 
 
 def _docker_available() -> bool:
@@ -33,16 +44,19 @@ def _docker_available() -> bool:
 @pytest.fixture(scope="session")
 def postgres_url() -> Iterator[str]:
     """Start a throwaway Postgres and yield an asyncpg URL, or skip."""
-    postgres_mod = pytest.importorskip("testcontainers.postgres")
+    if _REQUIRE_DOCKER:
+        import testcontainers.postgres as postgres_mod
+    else:
+        postgres_mod = pytest.importorskip("testcontainers.postgres")
     if not _docker_available():
-        pytest.skip("Docker unavailable")
+        _skip_or_fail("Docker unavailable")
     try:
         container = postgres_mod.PostgresContainer(
             POSTGRES_IMAGE, username="test", password="test", dbname="notification"
         )
         container.start()
     except Exception as exc:
-        pytest.skip(f"Postgres container unavailable: {exc}")
+        _skip_or_fail(f"Postgres container unavailable: {exc}")
     try:
         raw_url = container.get_connection_url()
         yield raw_url.replace("+psycopg2", "+asyncpg").replace(
