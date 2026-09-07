@@ -23,11 +23,6 @@ from llamatrade_proto.clients import (
     MarketDataClient,
 )
 
-# Re-export interceptors
-from llamatrade_proto.interceptors import (
-    LoggingInterceptor,
-)
-
 # Re-export timestamp helpers
 from llamatrade_proto.timestamps import (
     date_from_proto_timestamp,
@@ -40,8 +35,6 @@ __all__ = [
     # Clients
     "AuthClient",
     "MarketDataClient",
-    # Interceptors
-    "LoggingInterceptor",
     # Timestamp helpers
     "date_from_proto_timestamp",
     "date_to_proto_timestamp",

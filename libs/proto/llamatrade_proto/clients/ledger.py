@@ -29,7 +29,8 @@ logger = logging.getLogger(__name__)
 
 # Read RPCs get a short deadline so a wedged portfolio pod can't hang a caller's
 # order path. Fund mutations (allocate/transfer/deposit/withdraw) and close_sleeve
-# are left unbounded until they carry idempotency keys, so a retry can't double-book.
+# are left unbounded: they carry idempotency keys, so the risk of a timeout racing
+# a committed write outweighs the wait.
 DEFAULT_READ_TIMEOUT_MS = 5000
 
 
@@ -229,15 +230,21 @@ class LedgerClient:
         *,
         strategy_execution_id: str = "",
         sleeve_name: str = "",
+        request_id: str = "",
     ) -> SleeveInfo:
         """Move free cash from the Unallocated sleeve into a target sleeve.
 
         Open-and-fund: with an empty ``to_sleeve_id`` and a
         ``strategy_execution_id``, the portfolio opens (or reuses) the strategy
         sleeve linked to that execution and funds it in one call.
+
+        ``request_id`` is the idempotency key the ledger derives its event id
+        from; it defaults to the funded target so a retried funding call for the
+        same execution (or sleeve) is a no-op rather than a second allocation.
         """
         from llamatrade_proto.generated import common_pb2, ledger_pb2
 
+        key = request_id or f"allocate:{strategy_execution_id or to_sleeve_id}"
         request = ledger_pb2.AllocateCapitalRequest(
             context=common_pb2.TenantContext(tenant_id=tenant_id, user_id=user_id),
             account_id=account_id,
@@ -245,6 +252,7 @@ class LedgerClient:
             amount=common_pb2.Decimal(value=str(amount)),
             strategy_execution_id=strategy_execution_id,
             sleeve_name=sleeve_name,
+            request_id=key,
         )
         response = await self._get_client().allocate_capital(request, headers=self._headers())
         return self._to_sleeve(response.sleeve)
@@ -257,8 +265,14 @@ class LedgerClient:
         from_sleeve_id: str,
         to_sleeve_id: str,
         amount: Decimal,
+        *,
+        request_id: str,
     ) -> tuple[SleeveInfo, SleeveInfo]:
-        """Move free cash between two sleeves; returns (from_sleeve, to_sleeve)."""
+        """Move free cash between two sleeves; returns (from_sleeve, to_sleeve).
+
+        ``request_id`` is the ledger's idempotency key: a retry with the same
+        value is a no-op rather than a second transfer.
+        """
         from llamatrade_proto.generated import common_pb2, ledger_pb2
 
         request = ledger_pb2.TransferCapitalRequest(
@@ -267,6 +281,7 @@ class LedgerClient:
             from_sleeve_id=from_sleeve_id,
             to_sleeve_id=to_sleeve_id,
             amount=common_pb2.Decimal(value=str(amount)),
+            request_id=request_id,
         )
         response = await self._get_client().transfer_capital(request, headers=self._headers())
         return self._to_sleeve(response.from_sleeve), self._to_sleeve(response.to_sleeve)
@@ -303,29 +318,51 @@ class LedgerClient:
         )
 
     async def deposit_funds(
-        self, tenant_id: str, user_id: str, account_id: str, amount: Decimal
+        self,
+        tenant_id: str,
+        user_id: str,
+        account_id: str,
+        amount: Decimal,
+        *,
+        request_id: str,
     ) -> SleeveInfo:
-        """Record external cash entering the account (credited to Unallocated)."""
+        """Record external cash entering the account (credited to Unallocated).
+
+        ``request_id`` is the ledger's idempotency key: a retry carrying the same
+        value is a no-op rather than a second deposit.
+        """
         from llamatrade_proto.generated import common_pb2, ledger_pb2
 
         request = ledger_pb2.DepositFundsRequest(
             context=common_pb2.TenantContext(tenant_id=tenant_id, user_id=user_id),
             account_id=account_id,
             amount=common_pb2.Decimal(value=str(amount)),
+            request_id=request_id,
         )
         response = await self._get_client().deposit_funds(request, headers=self._headers())
         return self._to_sleeve(response.unallocated)
 
     async def withdraw_funds(
-        self, tenant_id: str, user_id: str, account_id: str, amount: Decimal
+        self,
+        tenant_id: str,
+        user_id: str,
+        account_id: str,
+        amount: Decimal,
+        *,
+        request_id: str,
     ) -> SleeveInfo:
-        """Record external cash leaving the account (debited from Unallocated)."""
+        """Record external cash leaving the account (debited from Unallocated).
+
+        ``request_id`` is the ledger's idempotency key: a retry carrying the same
+        value is a no-op rather than a second withdrawal.
+        """
         from llamatrade_proto.generated import common_pb2, ledger_pb2
 
         request = ledger_pb2.WithdrawFundsRequest(
             context=common_pb2.TenantContext(tenant_id=tenant_id, user_id=user_id),
             account_id=account_id,
             amount=common_pb2.Decimal(value=str(amount)),
+            request_id=request_id,
         )
         response = await self._get_client().withdraw_funds(request, headers=self._headers())
         return self._to_sleeve(response.unallocated)

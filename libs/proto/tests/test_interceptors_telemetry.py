@@ -119,3 +119,34 @@ async def test_grpc_client_metric_recorded() -> None:
         )
         == 1.0
     )
+
+
+@pytest.mark.asyncio
+async def test_aborting_handler_records_error_status() -> None:
+    async def deny(request: bytes, context: grpc.aio.ServicerContext) -> bytes:
+        await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "market closed")
+        return request
+
+    server, port = await _serve("err.Svc", "Deny", deny)
+    try:
+        channel = grpc.aio.insecure_channel(
+            f"127.0.0.1:{port}", interceptors=[TelemetryClientInterceptor()]
+        )
+        call = channel.unary_unary(
+            "/err.Svc/Deny", request_serializer=_identity, response_deserializer=_identity
+        )
+        with pytest.raises(grpc.aio.AioRpcError) as excinfo:
+            await call(b"x")
+        await channel.close()
+    finally:
+        await server.stop(None)
+
+    assert excinfo.value.code() == grpc.StatusCode.FAILED_PRECONDITION
+    assert (
+        _sample(
+            get_metrics().decode(),
+            "llamatrade_grpc_requests_total",
+            'method="/err.Svc/Deny",status="FAILED_PRECONDITION"',
+        )
+        == 1.0
+    )

@@ -1,226 +1,77 @@
-"""Tests for llamatrade_proto.interceptors.logging module."""
+"""Tests for the client-side gRPC logging interceptor."""
 
 import logging
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
+import grpc
+import grpc.aio
 import pytest
 
-from llamatrade_proto.interceptors.logging import (
-    ClientLoggingInterceptor,
-    LoggingInterceptor,
-)
+from llamatrade_proto.interceptors.logging import ClientLoggingInterceptor
+
+LOGGER_NAME = "llamatrade_proto.interceptors.logging"
+METHOD = "/llamatrade.AuthService/Login"
 
 
-class TestLoggingInterceptorInit:
-    """Tests for LoggingInterceptor initialization."""
-
-    def test_init_with_defaults(self) -> None:
-        """Test LoggingInterceptor initialization with defaults."""
-        interceptor = LoggingInterceptor()
-
-        assert interceptor._log_level == logging.DEBUG
-        assert interceptor._log_request_metadata is False
-
-    def test_init_with_custom_log_level(self) -> None:
-        """Test LoggingInterceptor with custom log level."""
-        interceptor = LoggingInterceptor(log_level=logging.INFO)
-
-        assert interceptor._log_level == logging.INFO
-
-    def test_init_with_metadata_logging(self) -> None:
-        """Test LoggingInterceptor with metadata logging enabled."""
-        interceptor = LoggingInterceptor(log_request_metadata=True)
-
-        assert interceptor._log_request_metadata is True
+def _call_details(method: str = METHOD) -> grpc.aio.ClientCallDetails:
+    return grpc.aio.ClientCallDetails(
+        method=method, timeout=None, metadata=None, credentials=None, wait_for_ready=None
+    )
 
 
-class TestLoggingInterceptorInterceptService:
-    """Tests for LoggingInterceptor.intercept_service method."""
+class TestClientLoggingInterceptor:
+    """Behavioral tests driven through intercept_unary_unary with caplog."""
 
-    @pytest.mark.asyncio
-    async def test_logs_request_and_response(self) -> None:
-        """Test interceptor logs request and response."""
-        interceptor = LoggingInterceptor(log_level=logging.INFO)
-
-        mock_handler_details = MagicMock()
-        mock_handler_details.method = "/llamatrade.v1.StrategyService/CreateStrategy"
-        mock_handler_details.invocation_metadata = []
-
-        mock_continuation = AsyncMock(return_value="response")
-
-        with patch.object(
-            logging.getLogger("llamatrade_proto.interceptors.logging"), "log"
-        ) as mock_log:
-            result = await interceptor.intercept_service(mock_continuation, mock_handler_details)
-
-            # Should log at least request and response
-            assert mock_log.call_count >= 2
-            assert result == "response"
-
-    @pytest.mark.asyncio
-    async def test_logs_metadata_when_enabled(self) -> None:
-        """Test interceptor logs metadata when enabled."""
-        interceptor = LoggingInterceptor(log_level=logging.DEBUG, log_request_metadata=True)
-
-        mock_handler_details = MagicMock()
-        mock_handler_details.method = "/test"
-        mock_handler_details.invocation_metadata = [
-            ("x-request-id", "req-123"),
-            ("authorization", "Bearer secret"),  # Should be redacted
-        ]
-
-        mock_continuation = AsyncMock(return_value="response")
-
-        with patch.object(
-            logging.getLogger("llamatrade_proto.interceptors.logging"), "log"
-        ) as mock_log:
-            await interceptor.intercept_service(mock_continuation, mock_handler_details)
-
-            # Check that authorization was redacted in logged message
-            log_calls = [str(call) for call in mock_log.call_args_list]
-            log_messages = " ".join(log_calls)
-            # Authorization should be redacted
-            assert "Bearer secret" not in log_messages or "REDACTED" in log_messages
-
-    @pytest.mark.asyncio
-    async def test_logs_grpc_error(self) -> None:
-        """Test interceptor logs gRPC errors."""
-        interceptor = LoggingInterceptor()
-
-        mock_handler_details = MagicMock()
-        mock_handler_details.method = "/test"
-        mock_handler_details.invocation_metadata = []
-
-        # Use a real exception class
-        class MockRpcError(Exception):
-            def code(self):
-                return MagicMock(name="NOT_FOUND")
-
-            def details(self):
-                return "Resource not found"
-
-        mock_continuation = AsyncMock(side_effect=MockRpcError())
-
-        with pytest.raises(MockRpcError):
-            await interceptor.intercept_service(mock_continuation, mock_handler_details)
-
-    @pytest.mark.asyncio
-    async def test_logs_generic_exception(self) -> None:
-        """Test interceptor logs generic exceptions."""
-        interceptor = LoggingInterceptor()
-
-        mock_handler_details = MagicMock()
-        mock_handler_details.method = "/test"
-        mock_handler_details.invocation_metadata = []
-
-        mock_continuation = AsyncMock(side_effect=ValueError("Something went wrong"))
-
-        with pytest.raises(ValueError):
-            await interceptor.intercept_service(mock_continuation, mock_handler_details)
-
-
-class TestClientLoggingInterceptorInit:
-    """Tests for ClientLoggingInterceptor initialization."""
-
-    def test_init_with_defaults(self) -> None:
-        """Test ClientLoggingInterceptor initialization with defaults."""
-        interceptor = ClientLoggingInterceptor()
-
-        assert interceptor._log_level == logging.DEBUG
-
-    def test_init_with_custom_log_level(self) -> None:
-        """Test ClientLoggingInterceptor with custom log level."""
-        interceptor = ClientLoggingInterceptor(log_level=logging.WARNING)
-
-        assert interceptor._log_level == logging.WARNING
-
-
-class TestClientLoggingInterceptorInterceptUnaryUnary:
-    """Tests for ClientLoggingInterceptor.intercept_unary_unary method."""
-
-    @pytest.mark.asyncio
-    async def test_logs_request_and_response(self) -> None:
-        """Test client interceptor logs request and response."""
+    async def test_success_logs_call_and_response_at_configured_level(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         interceptor = ClientLoggingInterceptor(log_level=logging.INFO)
+        continuation = AsyncMock(return_value="response")
 
-        mock_client_call_details = MagicMock()
-        mock_client_call_details.method = "/llamatrade.v1.StrategyService/CreateStrategy"
-
-        mock_continuation = AsyncMock(return_value="response")
-        mock_request = MagicMock()
-
-        with patch.object(
-            logging.getLogger("llamatrade_proto.interceptors.logging"), "log"
-        ) as mock_log:
+        with caplog.at_level(logging.INFO, logger=LOGGER_NAME):
             result = await interceptor.intercept_unary_unary(
-                mock_continuation,
-                mock_client_call_details,
-                mock_request,
+                continuation, _call_details(), object()
             )
 
-            # Should log at least request and response
-            assert mock_log.call_count >= 2
-            assert result == "response"
+        assert result == "response"
+        messages = [record.getMessage() for record in caplog.records]
+        assert f"gRPC client call: {METHOD}" in messages
+        assert any(
+            message.startswith(f"gRPC client response: {METHOD} status=OK") for message in messages
+        )
+        assert all(record.levelno == logging.INFO for record in caplog.records)
 
-    @pytest.mark.asyncio
-    async def test_logs_grpc_client_error(self) -> None:
-        """Test client interceptor logs gRPC errors."""
+    async def test_default_level_is_debug(self, caplog: pytest.LogCaptureFixture) -> None:
         interceptor = ClientLoggingInterceptor()
+        continuation = AsyncMock(return_value="response")
 
-        mock_client_call_details = MagicMock()
-        mock_client_call_details.method = "/test"
+        with caplog.at_level(logging.DEBUG, logger=LOGGER_NAME):
+            await interceptor.intercept_unary_unary(continuation, _call_details(), object())
 
-        # Use a real exception class
-        class MockRpcError(Exception):
-            def code(self):
-                return MagicMock(name="UNAVAILABLE")
+        assert caplog.records
+        assert all(record.levelno == logging.DEBUG for record in caplog.records)
 
-            def details(self):
-                return "Service unavailable"
+    async def test_rpc_error_logs_warning_and_reraises(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        interceptor = ClientLoggingInterceptor()
+        error = grpc.aio.AioRpcError(
+            code=grpc.StatusCode.UNAVAILABLE,
+            initial_metadata=grpc.aio.Metadata(),
+            trailing_metadata=grpc.aio.Metadata(),
+            details="connection refused",
+            debug_error_string="debug",
+        )
+        continuation = AsyncMock(side_effect=error)
 
-        mock_continuation = AsyncMock(side_effect=MockRpcError())
-        mock_request = MagicMock()
+        with caplog.at_level(logging.DEBUG, logger=LOGGER_NAME):
+            with pytest.raises(grpc.aio.AioRpcError) as excinfo:
+                await interceptor.intercept_unary_unary(continuation, _call_details(), object())
 
-        with pytest.raises(MockRpcError):
-            await interceptor.intercept_unary_unary(
-                mock_continuation,
-                mock_client_call_details,
-                mock_request,
-            )
-
-
-class TestLoggingInterceptorMetadataRedaction:
-    """Tests for metadata redaction in LoggingInterceptor."""
-
-    @pytest.mark.asyncio
-    async def test_redacts_authorization_header(self) -> None:
-        """Test authorization header is redacted."""
-        interceptor = LoggingInterceptor(log_request_metadata=True)
-
-        mock_handler_details = MagicMock()
-        mock_handler_details.method = "/test"
-        mock_handler_details.invocation_metadata = [
-            ("authorization", "Bearer super-secret-token"),
-        ]
-
-        mock_continuation = AsyncMock(return_value="response")
-
-        # The interceptor should redact sensitive headers
-        await interceptor.intercept_service(mock_continuation, mock_handler_details)
-
-        # Test passes if no exception - actual redaction verified by log output
-
-    @pytest.mark.asyncio
-    async def test_redacts_api_key_header(self) -> None:
-        """Test x-api-key header is redacted."""
-        interceptor = LoggingInterceptor(log_request_metadata=True)
-
-        mock_handler_details = MagicMock()
-        mock_handler_details.method = "/test"
-        mock_handler_details.invocation_metadata = [
-            ("x-api-key", "secret-api-key-12345"),
-        ]
-
-        mock_continuation = AsyncMock(return_value="response")
-
-        await interceptor.intercept_service(mock_continuation, mock_handler_details)
+        assert excinfo.value is error
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert len(warnings) == 1
+        message = warnings[0].getMessage()
+        assert METHOD in message
+        assert "status=UNAVAILABLE" in message
+        assert "details=connection refused" in message

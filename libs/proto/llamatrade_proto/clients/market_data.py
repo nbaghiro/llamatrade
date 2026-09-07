@@ -20,10 +20,11 @@ from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from llamatrade_proto.generated.market_data_connect import MarketDataServiceClient
+from llamatrade_proto.timestamps import to_proto_timestamp
 from llamatrade_telemetry import inject_headers
 
 if TYPE_CHECKING:
-    from llamatrade_proto.generated import market_data_pb2
+    from llamatrade_proto.generated import common_pb2, market_data_pb2
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,11 @@ def _normalize_target(target: str) -> str:
     if target.startswith(("http://", "https://")):
         return target
     return f"http://{target}"
+
+
+def _window_bound(value: datetime) -> common_pb2.Timestamp:
+    """Encode a bar-window bound; naive values are host-local wall time (datetime.now() callers)."""
+    return to_proto_timestamp(value if value.tzinfo is not None else value.astimezone())
 
 
 def _timeframe_to_proto(timeframe: str) -> market_data_pb2.Timeframe.ValueType:
@@ -181,8 +187,8 @@ class MarketDataClient:
 
         request = market_data_pb2.GetHistoricalBarsRequest(
             symbol=symbol,
-            start=common_pb2.Timestamp(seconds=int(start.timestamp())),
-            end=common_pb2.Timestamp(seconds=int(end.timestamp())),
+            start=_window_bound(start),
+            end=_window_bound(end),
             timeframe=_timeframe_to_proto(timeframe),
             adjust_for_splits=adjust_for_splits,
             pagination=common_pb2.PaginationRequest(page=1, page_size=page_size),
@@ -206,12 +212,12 @@ class MarketDataClient:
         The server fans out across symbols; a symbol with no data maps to an
         empty list (or is omitted from the map).
         """
-        from llamatrade_proto.generated import common_pb2, market_data_pb2
+        from llamatrade_proto.generated import market_data_pb2
 
         request = market_data_pb2.GetMultiBarsRequest(
             symbols=symbols,
-            start=common_pb2.Timestamp(seconds=int(start.timestamp())),
-            end=common_pb2.Timestamp(seconds=int(end.timestamp())),
+            start=_window_bound(start),
+            end=_window_bound(end),
             timeframe=_timeframe_to_proto(timeframe),
             limit=limit,
         )
@@ -237,12 +243,12 @@ class MarketDataClient:
         Yields bars incrementally so the consumer never buffers the whole dataset
         as a single response.
         """
-        from llamatrade_proto.generated import common_pb2, market_data_pb2
+        from llamatrade_proto.generated import market_data_pb2
 
         request = market_data_pb2.StreamHistoricalBarsRequest(
             symbols=symbols,
-            start=common_pb2.Timestamp(seconds=int(start.timestamp())),
-            end=common_pb2.Timestamp(seconds=int(end.timestamp())),
+            start=_window_bound(start),
+            end=_window_bound(end),
             timeframe=_timeframe_to_proto(timeframe),
             limit=limit,
         )

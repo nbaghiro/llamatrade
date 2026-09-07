@@ -1,10 +1,16 @@
 """Tests for llamatrade_proto.clients.base module."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
+import grpc.aio
 import pytest
 
 from llamatrade_proto.clients.base import BaseGRPCClient
+
+
+def _channel_mock() -> MagicMock:
+    """A channel double with the real grpc.aio.Channel surface (async methods)."""
+    return MagicMock(spec=grpc.aio.Channel)
 
 
 class TestBaseGRPCClientInit:
@@ -80,7 +86,7 @@ class TestBaseGRPCClientChannel:
         client = BaseGRPCClient("localhost:8810")
 
         with patch("grpc.aio.insecure_channel") as mock_insecure:
-            mock_channel = MagicMock()
+            mock_channel = _channel_mock()
             mock_insecure.return_value = mock_channel
 
             channel = client.channel
@@ -93,7 +99,7 @@ class TestBaseGRPCClientChannel:
         client = BaseGRPCClient("localhost:8810")
 
         with patch("grpc.aio.insecure_channel") as mock_insecure:
-            mock_channel = MagicMock()
+            mock_channel = _channel_mock()
             mock_insecure.return_value = mock_channel
 
             channel1 = client.channel
@@ -108,8 +114,7 @@ class TestBaseGRPCClientChannel:
         client = BaseGRPCClient("localhost:8810", secure=False)
 
         with patch("grpc.aio.insecure_channel") as mock_insecure:
-            mock_channel = MagicMock()
-            mock_insecure.return_value = mock_channel
+            mock_insecure.return_value = _channel_mock()
 
             client._create_channel()
 
@@ -127,8 +132,7 @@ class TestBaseGRPCClientChannel:
             with patch("grpc.ssl_channel_credentials") as mock_ssl_creds:
                 mock_creds = MagicMock()
                 mock_ssl_creds.return_value = mock_creds
-                mock_channel = MagicMock()
-                mock_secure.return_value = mock_channel
+                mock_secure.return_value = _channel_mock()
 
                 client._create_channel()
 
@@ -146,8 +150,7 @@ class TestBaseGRPCClientChannel:
         client = BaseGRPCClient("localhost:8810", secure=True, credentials=custom_creds)
 
         with patch("grpc.aio.secure_channel") as mock_secure:
-            mock_channel = MagicMock()
-            mock_secure.return_value = mock_channel
+            mock_secure.return_value = _channel_mock()
 
             client._create_channel()
 
@@ -167,13 +170,12 @@ class TestBaseGRPCClientClose:
         """Test close() closes the channel."""
         client = BaseGRPCClient("localhost:8810")
 
-        mock_channel = MagicMock()
-        mock_channel.close = AsyncMock()
+        mock_channel = _channel_mock()
         client._channel = mock_channel
 
         await client.close()
 
-        mock_channel.close.assert_called_once()
+        mock_channel.close.assert_awaited_once()
         assert client._channel is None
 
     @pytest.mark.asyncio
@@ -199,21 +201,10 @@ class TestBaseGRPCClientContextManager:
         assert result is client
 
     @pytest.mark.asyncio
-    async def test_aexit_calls_close(self) -> None:
-        """Test __aexit__ calls close."""
-        client = BaseGRPCClient("localhost:8810")
-        client.close = AsyncMock()
-
-        await client.__aexit__(None, None, None)
-
-        client.close.assert_called_once()
-
-    @pytest.mark.asyncio
     async def test_context_manager_usage(self) -> None:
         """Test using client as async context manager."""
         with patch("grpc.aio.insecure_channel") as mock_insecure:
-            mock_channel = MagicMock()
-            mock_channel.close = AsyncMock()
+            mock_channel = _channel_mock()
             mock_insecure.return_value = mock_channel
 
             async with BaseGRPCClient("localhost:8810") as client:
@@ -221,7 +212,7 @@ class TestBaseGRPCClientContextManager:
                 _ = client.channel
 
             # Channel should be closed after context
-            mock_channel.close.assert_called_once()
+            mock_channel.close.assert_awaited_once()
 
 
 class TestBaseGRPCClientWaitForReady:
@@ -233,32 +224,27 @@ class TestBaseGRPCClientWaitForReady:
         client = BaseGRPCClient("localhost:8810")
 
         with patch("grpc.aio.insecure_channel") as mock_insecure:
-            mock_channel = MagicMock()
-            mock_channel.channel_ready = AsyncMock()
+            mock_channel = _channel_mock()
             mock_insecure.return_value = mock_channel
 
             result = await client.wait_for_ready(timeout=5.0)
 
             assert result is True
-            mock_channel.channel_ready.assert_called_once()
+            mock_channel.channel_ready.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_wait_for_ready_failure(self) -> None:
         """Test wait_for_ready returns False on error."""
-        import grpc.aio
-
         client = BaseGRPCClient("localhost:8810")
 
         with patch("grpc.aio.insecure_channel") as mock_insecure:
-            mock_channel = MagicMock()
-            mock_channel.channel_ready = AsyncMock(
-                side_effect=grpc.aio.AioRpcError(
-                    code=MagicMock(),
-                    initial_metadata=MagicMock(),
-                    trailing_metadata=MagicMock(),
-                    details="Connection failed",
-                    debug_error_string="debug",
-                )
+            mock_channel = _channel_mock()
+            mock_channel.channel_ready.side_effect = grpc.aio.AioRpcError(
+                code=grpc.StatusCode.UNAVAILABLE,
+                initial_metadata=grpc.aio.Metadata(),
+                trailing_metadata=grpc.aio.Metadata(),
+                details="Connection failed",
+                debug_error_string="debug",
             )
             mock_insecure.return_value = mock_channel
 

@@ -166,6 +166,128 @@ class TestAllocateCapital:
             await client.allocate_capital(TENANT, USER, "account-1", "sleeve-1", Decimal("1"))
 
 
+class TestAllocateCapitalIdempotencyKey:
+    """The request_id derivation makes retried funding calls no-ops on the ledger."""
+
+    @staticmethod
+    def _client() -> tuple[LedgerClient, AsyncMock]:
+        client = LedgerClient()
+        mock_client = MagicMock()
+        mock_client.allocate_capital = AsyncMock(
+            return_value=ledger_pb2.AllocateCapitalResponse(sleeve=_pb_sleeve())
+        )
+        client._client = mock_client
+        return client, mock_client.allocate_capital
+
+    @pytest.mark.asyncio
+    async def test_explicit_request_id_passes_through(self) -> None:
+        client, rpc = self._client()
+
+        await client.allocate_capital(
+            TENANT, USER, "account-1", "sleeve-1", Decimal("100"), request_id="fund-42"
+        )
+
+        assert rpc.call_args[0][0].request_id == "fund-42"
+
+    @pytest.mark.asyncio
+    async def test_derives_key_from_strategy_execution_id(self) -> None:
+        client, rpc = self._client()
+
+        await client.allocate_capital(
+            TENANT, USER, "account-1", "", Decimal("100"), strategy_execution_id="exec-1"
+        )
+
+        assert rpc.call_args[0][0].request_id == "allocate:exec-1"
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_sleeve_id(self) -> None:
+        client, rpc = self._client()
+
+        await client.allocate_capital(TENANT, USER, "account-1", "sleeve-1", Decimal("100"))
+
+        assert rpc.call_args[0][0].request_id == "allocate:sleeve-1"
+
+    @pytest.mark.asyncio
+    async def test_funding_retry_reuses_the_same_key(self) -> None:
+        client, rpc = self._client()
+
+        for _ in range(2):
+            await client.allocate_capital(
+                TENANT, USER, "account-1", "", Decimal("100"), strategy_execution_id="exec-1"
+            )
+
+        keys = [call[0][0].request_id for call in rpc.call_args_list]
+        assert keys == ["allocate:exec-1", "allocate:exec-1"]
+
+
+class TestCloseSleeve:
+    """Tests for LedgerClient.close_sleeve."""
+
+    @pytest.mark.asyncio
+    async def test_parses_rehomed_cash_and_positions(self) -> None:
+        client = LedgerClient()
+        response = ledger_pb2.CloseSleeveResponse(
+            sleeve=_pb_sleeve("sleeve-1", balance="0"),
+            already_closed=False,
+            rehomed_cash=common_pb2.Decimal(value="12500.50"),
+            rehomed_positions=[
+                ledger_pb2.RehomedPosition(
+                    symbol="SPY",
+                    qty=common_pb2.Decimal(value="83"),
+                    cost_basis=common_pb2.Decimal(value="39840"),
+                )
+            ],
+        )
+        mock_client = MagicMock()
+        mock_client.close_sleeve = AsyncMock(return_value=response)
+        client._client = mock_client
+
+        result = await client.close_sleeve(
+            TENANT, USER, "account-1", "sleeve-1", reason="execution stopped"
+        )
+
+        assert result.sleeve.id == "sleeve-1"
+        assert result.already_closed is False
+        assert result.rehomed_cash == Decimal("12500.50")
+        assert len(result.rehomed_positions) == 1
+        position = result.rehomed_positions[0]
+        assert position.symbol == "SPY"
+        assert position.qty == Decimal("83")
+        assert position.cost_basis == Decimal("39840")
+        request = mock_client.close_sleeve.call_args[0][0]
+        assert request.account_id == "account-1"
+        assert request.sleeve_id == "sleeve-1"
+        assert request.reason == "execution stopped"
+        assert request.context.tenant_id == TENANT
+        assert request.context.user_id == USER
+
+    @pytest.mark.asyncio
+    async def test_reclose_is_a_noop(self) -> None:
+        client = LedgerClient()
+        response = ledger_pb2.CloseSleeveResponse(
+            sleeve=_pb_sleeve("sleeve-1", balance="0"), already_closed=True
+        )
+        mock_client = MagicMock()
+        mock_client.close_sleeve = AsyncMock(return_value=response)
+        client._client = mock_client
+
+        result = await client.close_sleeve(TENANT, USER, "account-1", "sleeve-1")
+
+        assert result.already_closed is True
+        assert result.rehomed_cash == Decimal("0")
+        assert result.rehomed_positions == []
+
+    @pytest.mark.asyncio
+    async def test_rpc_error_propagates(self) -> None:
+        client = LedgerClient()
+        mock_client = MagicMock()
+        mock_client.close_sleeve = AsyncMock(side_effect=RuntimeError("unavailable"))
+        client._client = mock_client
+
+        with pytest.raises(RuntimeError, match="unavailable"):
+            await client.close_sleeve(TENANT, USER, "account-1", "sleeve-1")
+
+
 class TestTransferCapital:
     """Tests for LedgerClient.transfer_capital."""
 
@@ -181,7 +303,13 @@ class TestTransferCapital:
         client._client = mock_client
 
         from_sleeve, to_sleeve = await client.transfer_capital(
-            TENANT, USER, "account-1", "sleeve-from", "sleeve-to", Decimal("30000")
+            TENANT,
+            USER,
+            "account-1",
+            "sleeve-from",
+            "sleeve-to",
+            Decimal("30000"),
+            request_id="transfer-1",
         )
 
         assert from_sleeve.id == "sleeve-from"
@@ -203,10 +331,13 @@ class TestFundOps:
         mock_client.deposit_funds = AsyncMock(return_value=response)
         client._client = mock_client
 
-        sleeve = await client.deposit_funds(TENANT, USER, "account-1", Decimal("100000"))
+        sleeve = await client.deposit_funds(
+            TENANT, USER, "account-1", Decimal("100000"), request_id="dep-1"
+        )
 
         assert sleeve.cash.balance == Decimal("100000")
         assert mock_client.deposit_funds.call_args[0][0].amount.value == "100000"
+        assert mock_client.deposit_funds.call_args[0][0].request_id == "dep-1"
 
     @pytest.mark.asyncio
     async def test_withdraw_returns_unallocated(self) -> None:
@@ -218,7 +349,9 @@ class TestFundOps:
         mock_client.withdraw_funds = AsyncMock(return_value=response)
         client._client = mock_client
 
-        sleeve = await client.withdraw_funds(TENANT, USER, "account-1", Decimal("40000"))
+        sleeve = await client.withdraw_funds(
+            TENANT, USER, "account-1", Decimal("40000"), request_id="wd-1"
+        )
 
         assert sleeve.cash.balance == Decimal("60000")
 

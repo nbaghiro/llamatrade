@@ -11,9 +11,10 @@ import grpc
 import grpc.aio
 
 from llamatrade_proto.clients.base import BaseGRPCClient
+from llamatrade_proto.timestamps import from_proto_timestamp
 
 if TYPE_CHECKING:
-    from llamatrade_proto.generated import auth_pb2_grpc
+    from llamatrade_proto.generated import auth_pb2, auth_pb2_grpc
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,21 @@ class User:
     is_active: bool
     created_at: datetime | None = None
     last_login: datetime | None = None
+
+
+def _proto_to_user(pb: auth_pb2.User) -> User:
+    """Decode a proto User; timestamps come back UTC-aware."""
+    return User(
+        id=pb.id,
+        tenant_id=pb.tenant_id,
+        email=pb.email,
+        first_name=pb.first_name,
+        last_name=pb.last_name,
+        roles=list(pb.roles),
+        is_active=pb.is_active,
+        created_at=from_proto_timestamp(pb.created_at) if pb.HasField("created_at") else None,
+        last_login=from_proto_timestamp(pb.last_login) if pb.HasField("last_login") else None,
+    )
 
 
 @dataclass
@@ -187,7 +203,7 @@ class AuthClient(BaseGRPCClient):
 
             expires_at = None
             if response.HasField("expires_at"):
-                expires_at = datetime.fromtimestamp(response.expires_at.seconds)
+                expires_at = from_proto_timestamp(response.expires_at)
 
             return TokenValidationResult(
                 valid=response.valid,
@@ -319,23 +335,7 @@ class AuthClient(BaseGRPCClient):
 
         response = await self.stub.Register(request, timeout=self._timeout)
 
-        user = User(
-            id=response.user.id,
-            tenant_id=response.user.tenant_id,
-            email=response.user.email,
-            first_name=response.user.first_name,
-            last_name=response.user.last_name,
-            roles=list(response.user.roles),
-            is_active=response.user.is_active,
-            created_at=datetime.fromtimestamp(response.user.created_at.seconds)
-            if response.user.HasField("created_at")
-            else None,
-            last_login=datetime.fromtimestamp(response.user.last_login.seconds)
-            if response.user.HasField("last_login")
-            else None,
-        )
-
-        return RegisterResult(user=user, tenant_id=response.tenant_id)
+        return RegisterResult(user=_proto_to_user(response.user), tenant_id=response.tenant.id)
 
     async def login(self, email: str, password: str) -> LoginResult:
         """Login with email and password.
@@ -356,32 +356,12 @@ class AuthClient(BaseGRPCClient):
 
         response = await self.stub.Login(request, timeout=self._timeout)
 
-        user = User(
-            id=response.user.id,
-            tenant_id=response.user.tenant_id,
-            email=response.user.email,
-            first_name=response.user.first_name,
-            last_name=response.user.last_name,
-            roles=list(response.user.roles),
-            is_active=response.user.is_active,
-            created_at=datetime.fromtimestamp(response.user.created_at.seconds)
-            if response.user.HasField("created_at")
-            else None,
-            last_login=datetime.fromtimestamp(response.user.last_login.seconds)
-            if response.user.HasField("last_login")
-            else None,
-        )
-
         return LoginResult(
             access_token=response.access_token,
             refresh_token=response.refresh_token,
-            access_token_expires_at=datetime.fromtimestamp(
-                response.access_token_expires_at.seconds
-            ),
-            refresh_token_expires_at=datetime.fromtimestamp(
-                response.refresh_token_expires_at.seconds
-            ),
-            user=user,
+            access_token_expires_at=from_proto_timestamp(response.access_token_expires_at),
+            refresh_token_expires_at=from_proto_timestamp(response.refresh_token_expires_at),
+            user=_proto_to_user(response.user),
         )
 
     async def refresh_token(self, refresh_token: str) -> RefreshResult:
@@ -405,12 +385,8 @@ class AuthClient(BaseGRPCClient):
         return RefreshResult(
             access_token=response.access_token,
             refresh_token=response.refresh_token,
-            access_token_expires_at=datetime.fromtimestamp(
-                response.access_token_expires_at.seconds
-            ),
-            refresh_token_expires_at=datetime.fromtimestamp(
-                response.refresh_token_expires_at.seconds
-            ),
+            access_token_expires_at=from_proto_timestamp(response.access_token_expires_at),
+            refresh_token_expires_at=from_proto_timestamp(response.refresh_token_expires_at),
         )
 
     async def change_password(
@@ -464,18 +440,4 @@ class AuthClient(BaseGRPCClient):
         metadata = [("authorization", f"Bearer {token}")]
         response = await self.stub.GetCurrentUser(request, metadata=metadata, timeout=self._timeout)
 
-        return User(
-            id=response.user.id,
-            tenant_id=response.user.tenant_id,
-            email=response.user.email,
-            first_name=response.user.first_name,
-            last_name=response.user.last_name,
-            roles=list(response.user.roles),
-            is_active=response.user.is_active,
-            created_at=datetime.fromtimestamp(response.user.created_at.seconds)
-            if response.user.HasField("created_at")
-            else None,
-            last_login=datetime.fromtimestamp(response.user.last_login.seconds)
-            if response.user.HasField("last_login")
-            else None,
-        )
+        return _proto_to_user(response.user)
