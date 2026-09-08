@@ -359,12 +359,18 @@ jobs:
       KAFKA_BOOTSTRAP_SERVERS: localhost:9092
       KAFKA_SECURITY_PROTOCOL: PLAINTEXT
       E2E_KAFKA_BOOTSTRAP: localhost:9092
+      # StreamBars fan-out consumes from the bus, matching the compose mesh; the
+      # StreamBars e2e test publishes onto the topic and expects delivery.
+      MARKET_DATA_BARS_FROM_BUS: "true"
       # Notification email channel + auth reset links land in mailpit.
       SMTP_HOST: localhost
       SMTP_PORT: "1025"
       FROM_EMAIL: noreply@llamatrade.test
       APP_BASE_URL: http://localhost:8800
       E2E_MAILPIT_URL: http://localhost:8025
+      # The honcho mesh runs on the host, so the webhook tests' in-test listener
+      # is plain localhost (the docker-mesh default is host.docker.internal).
+      E2E_WEBHOOK_CALLBACK_HOST: localhost
       # Service-to-service targets default to docker-compose hostnames, which do
       # not resolve in the honcho mesh; point every hop at the local ports.
       PORTFOLIO_GRPC_TARGET: localhost:8860
