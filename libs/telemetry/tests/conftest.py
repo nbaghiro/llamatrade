@@ -7,6 +7,7 @@ unique label values to avoid cross-test interference.
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Iterator
 
 import pytest
@@ -24,6 +25,14 @@ def _telemetry() -> Iterator[None]:
     yield
 
 
+# Exporters >=0.64b0 stamp every series with otel_scope_* labels; version-dependent noise.
+_SCOPE_LABELS = re.compile(r'otel_scope_(?:name|version|schema_url)="[^"]*",?')
+
+
 def scrape() -> str:
-    """Current Prometheus exposition as text."""
-    return registry.get_metrics().decode()
+    """Current Prometheus exposition as text, minus the otel_scope_* labels."""
+    lines = (
+        _SCOPE_LABELS.sub("", line).replace(",}", "}").replace("{}", "")
+        for line in registry.get_metrics().decode().splitlines()
+    )
+    return "\n".join(lines) + "\n"
