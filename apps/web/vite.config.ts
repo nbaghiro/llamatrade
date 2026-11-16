@@ -1,5 +1,14 @@
-import { defineConfig } from 'vitest/config';
+import { existsSync } from 'node:fs';
+
 import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vitest/config';
+
+// Behind the Caddy proxy (Docker) the HMR socket goes through :8800; a bare host run on :8802 uses its own port.
+const hmrClientPort = process.env.HMR_CLIENT_PORT
+  ? Number(process.env.HMR_CLIENT_PORT)
+  : existsSync('/.dockerenv')
+    ? 8800
+    : undefined;
 
 export default defineConfig({
   plugins: [react()],
@@ -16,10 +25,7 @@ export default defineConfig({
     strictPort: true,
     // Allow the proxy Host (localhost:8800) and the in-network name so Vite's host check doesn't 403.
     allowedHosts: ['localhost', 'web'],
-    // HMR runs through the proxy on :8800 (ws upgrades on "/").
-    hmr: {
-      clientPort: 8800,
-    },
+    hmr: hmrClientPort ? { clientPort: hmrClientPort } : undefined,
     // Poll: the bind-mounted app source (macOS→Linux Docker) emits no native fs events.
     watch: {
       usePolling: true,

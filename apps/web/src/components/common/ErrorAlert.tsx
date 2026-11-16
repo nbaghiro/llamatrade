@@ -30,18 +30,18 @@ export function ErrorAlert({
 
   return (
     <div
-      className={`border-2 border-red-500 bg-red-50 dark:bg-red-900/20 dark:border-red-800 p-4 ${className}`}
+      className={`rounded-[8px] border border-risk-line bg-risk-soft p-3 ${className}`}
       role="alert"
     >
       <div className="flex items-start gap-3">
-        <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
+        <AlertCircle className="w-4 h-4 text-risk mt-0.5 shrink-0" />
         <div className="flex-1 min-w-0">
-          <p className="text-sm text-red-700 dark:text-red-300">{message}</p>
+          <p className="text-[13px] text-fg">{message}</p>
         </div>
         {onDismiss && !hasActions && (
           <button
             onClick={onDismiss}
-            className="shrink-0 p-1 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 rounded-md hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
+            className="shrink-0 p-1 text-fg-3 hover:text-fg rounded-md transition-colors"
             aria-label="Dismiss error"
           >
             <X className="w-4 h-4" />
@@ -52,19 +52,13 @@ export function ErrorAlert({
       {hasActions && (
         <div className="mt-3 flex gap-2">
           {showRetry && onRetry && (
-            <button
-              onClick={onRetry}
-              className="inline-flex items-center px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wide rounded-md text-red-700 bg-red-100 hover:bg-red-200 dark:text-red-200 dark:bg-red-900/40 dark:hover:bg-red-900/60 transition-colors"
-            >
-              <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+            <button onClick={onRetry} className="btn btn-secondary btn-sm">
+              <RefreshCw className="w-3.5 h-3.5" />
               Try Again
             </button>
           )}
           {onDismiss && (
-            <button
-              onClick={onDismiss}
-              className="inline-flex items-center px-3 py-1.5 text-xs font-mono font-bold uppercase tracking-wide rounded-md text-red-600 hover:text-red-700 hover:bg-red-100 dark:text-red-300 dark:hover:text-red-200 dark:hover:bg-red-900/40 transition-colors"
-            >
+            <button onClick={onDismiss} className="btn btn-ghost btn-sm">
               Dismiss
             </button>
           )}
@@ -84,10 +78,7 @@ interface InlineErrorProps {
 
 export function InlineError({ message, className = '' }: InlineErrorProps) {
   return (
-    <div
-      className={`flex items-center gap-2 text-sm text-red-600 dark:text-red-400 ${className}`}
-      role="alert"
-    >
+    <div className={`flex items-center gap-2 text-[13px] text-risk ${className}`} role="alert">
       <AlertCircle className="w-4 h-4 shrink-0" />
       <span>{message}</span>
     </div>

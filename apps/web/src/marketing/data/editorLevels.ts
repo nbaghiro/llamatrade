@@ -1,320 +1,231 @@
-import type { RawNode } from '../../components/common/StrategyTree';
-import { k, p, s, type CodeLine } from '../components/codeTokens';
+/** The three strategies behind the Build tabs: Starter, Tactical and Advanced. */
 
-/**
- * The three strategy-complexity levels shown in the "01 BUILD" block editor.
- * Each level carries a `tree` (rendered by the shared <StrategyTree>) and the
- * equivalent `code` view (the same strategy as valid libs/dsl S-expressions,
- * copied verbatim from the original static page).
- *
- * Group/wgroup nodes from the original tree mockup have no equivalent in the
- * shared StrategyTree kinds, so the Advanced tree folds the group label into its
- * WEIGHT block and renders the weighted sub-sleeves as badged weight blocks —
- * the code view keeps the exact `(group …)` DSL.
- */
-export interface EditorLevelTab {
-  lv: string;
-  dots: [boolean, boolean, boolean];
-  sub: string;
+/** Bar shades from the chart ramp; hacc is the accent and hfree the hatched unallocated share. */
+export type Shade = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'hacc' | 'hfree';
+
+export interface TreeAsset {
+  kind: 'asset';
+  sym: string;
+  name: string;
+  shade: Shade;
+  weight: number;
+  /** Not held: ranked out, or under a branch that doesn't apply today. */
+  muted?: boolean;
 }
 
-export interface EditorLevelFoot {
-  pre: string;
-  bold: string;
-  post: string;
+export interface TreeBlock {
+  kind: 'block';
+  keyword: string;
+  label: string;
+  note: string;
+  noteStyle: 'text' | 'chip' | 'chip-ok';
+  /** on: applies today; off: a branch that doesn't. */
+  state?: 'on' | 'off';
+  children?: { on: boolean; items: TreeItem[] };
 }
+
+export type TreeItem = TreeAsset | TreeBlock;
 
 export interface EditorLevel {
   id: 'starter' | 'tactical' | 'advanced';
-  tab: EditorLevelTab;
+  tab: string;
   name: string;
-  tree: RawNode;
-  code: CodeLine[];
-  addLabel: string;
-  foot: EditorLevelFoot;
+  meta: string;
+  tree: TreeItem[];
+  code: string[];
+  hold: { shade: Shade; weight: number; sym: string }[];
+  needs: [string, string][];
 }
 
-const asset = (label: string): RawNode => ({ kind: 'asset', kw: '', label });
+const asset = (
+  sym: string,
+  name: string,
+  shade: Shade,
+  weight: number,
+  muted = false
+): TreeAsset => ({
+  kind: 'asset',
+  sym,
+  name,
+  shade,
+  weight,
+  muted,
+});
 
-const ADD_FULL = '＋ Add a Block  ·  Stocks or Securities, Weights, Conditions…';
-const ADD_SHORT = '＋ Add a Block …';
-
-// ── 01 · Starter · Core Four ────────────────────────────────────────────────
 const starter: EditorLevel = {
   id: 'starter',
-  tab: { lv: '01 · Starter', dots: [true, false, false], sub: 'Buy & hold' },
+  tab: 'Starter',
   name: 'Core Four',
-  tree: {
-    kind: 'weight',
-    kw: 'WEIGHT',
-    label: '· Equal',
-    children: [
-      asset('VTI · Total US Market'),
-      asset('VXUS · Total International'),
-      asset('BND · Total Bond Market'),
-      asset('GLD · Gold'),
-    ],
-  },
-  code: [
-    [k('(strategy'), p(' '), s('"Core Four"')],
-    [p('  '), k(':rebalance'), p(' quarterly')],
-    [p('  '), k(':benchmark'), p(' '), s('SPY')],
-    [p('  '), k('(weight'), p(' '), k(':method'), p(' equal')],
-    [p('    ('), k('asset'), p(' '), s('VTI'), p(')')],
-    [p('    ('), k('asset'), p(' '), s('VXUS'), p(')')],
-    [p('    ('), k('asset'), p(' '), s('BND'), p(')')],
-    [p('    ('), k('asset'), p(' '), s('GLD'), p(')))')],
-  ],
-  addLabel: ADD_FULL,
-  foot: { pre: '1 sleeve · ', bold: '4 tickers', post: ' · equal-weight · compiled ✓' },
-};
-
-// ── 02 · Tactical · Tech Momentum Rotation ──────────────────────────────────
-const tactical: EditorLevel = {
-  id: 'tactical',
-  tab: { lv: '02 · Tactical', dots: [true, true, false], sub: 'Rank & rotate' },
-  name: 'Tech Momentum Rotation',
-  tree: {
-    kind: 'filter',
-    kw: 'FILTER',
-    label: '· by momentum · select top 2 · lookback 90',
-    children: [
-      {
-        kind: 'weight',
-        kw: 'WEIGHT',
-        label: '· Equal',
-        children: [
-          asset('QQQ · Nasdaq 100'),
-          asset('XLK · Tech Sector'),
-          asset('SMH · Semiconductors'),
-          asset('SOXX · Chip Makers'),
-          asset('VGT · Info Tech'),
+  meta: 'Version 1 · quarterly · benchmark SPY',
+  tree: [
+    {
+      kind: 'block',
+      keyword: 'Weight',
+      label: 'Equal',
+      note: '4 assets',
+      noteStyle: 'text',
+      state: 'on',
+      children: {
+        on: true,
+        items: [
+          asset('VTI', 'Vanguard Total Stock Market', 'h1', 25),
+          asset('VXUS', 'Vanguard Total International', 'h2', 25),
+          asset('BND', 'Vanguard Total Bond Market', 'h3', 25),
+          asset('GLD', 'SPDR Gold Shares', 'h4', 25),
         ],
       },
-    ],
-  },
-  code: [
-    [k('(strategy'), p(' '), s('"Tech Momentum Rotation"')],
-    [p('  '), k(':rebalance'), p(' monthly')],
-    [p('  '), k(':benchmark'), p(' '), s('QQQ')],
-    [
-      p('  '),
-      k('(filter'),
-      p(' '),
-      k(':by'),
-      p(' momentum '),
-      k(':select'),
-      p(' (top 2) '),
-      k(':lookback'),
-      p(' 90'),
-    ],
-    [p('    '), k('(weight'), p(' '), k(':method'), p(' equal')],
-    [p('      ('), k('asset'), p(' '), s('QQQ'), p(')')],
-    [p('      ('), k('asset'), p(' '), s('XLK'), p(')')],
-    [p('      ('), k('asset'), p(' '), s('SMH'), p(')')],
-    [p('      ('), k('asset'), p(' '), s('SOXX'), p(')')],
-    [p('      ('), k('asset'), p(' '), s('VGT'), p('))))')],
+    },
   ],
-  addLabel: ADD_SHORT,
-  foot: { pre: '1 filter · ', bold: 'select top 2 of 5', post: ' · 1 sleeve · compiled ✓' },
+  code: [
+    '(strategy "Core Four"',
+    '  :rebalance quarterly :benchmark SPY',
+    '  (weight :method equal',
+    '    (asset VTI) (asset VXUS)',
+    '    (asset BND) (asset GLD)))',
+  ],
+  hold: [
+    { shade: 'h1', weight: 25, sym: 'VTI' },
+    { shade: 'h2', weight: 25, sym: 'VXUS' },
+    { shade: 'h3', weight: 25, sym: 'BND' },
+    { shade: 'h4', weight: 25, sym: 'GLD' },
+  ],
+  needs: [
+    ['Symbols', '4'],
+    ['History', '1 bar'],
+    ['Rebalance', 'Quarterly'],
+  ],
 };
 
-// ── 03 · Advanced · Income Regime Switch ────────────────────────────────────
-const advanced: EditorLevel = {
-  id: 'advanced',
-  tab: { lv: '03 · Advanced', dots: [true, true, true], sub: 'Regime switch' },
-  name: 'Income Regime Switch',
-  tree: {
-    kind: 'if',
-    kw: 'IF',
-    label: 'close of TLT is greater than the 50-day moving average of close of TLT',
-    children: [
-      {
-        kind: 'if',
-        kw: 'IF',
-        label: 'the 60-day moving average of close of SCHD is greater than 0',
-        children: [
+const tactical: EditorLevel = {
+  id: 'tactical',
+  tab: 'Tactical',
+  name: 'Tech Momentum Rotation',
+  meta: 'Version 2 · monthly · benchmark QQQ',
+  tree: [
+    {
+      kind: 'block',
+      keyword: 'Filter',
+      label: 'Momentum · top 2 of 3 · 90 days',
+      note: 'ranks by return',
+      noteStyle: 'text',
+      children: {
+        on: true,
+        items: [
           {
-            kind: 'weight',
-            kw: 'WEIGHT',
-            label: '· Specified · Falling Rates + Strong Dividends',
-            children: [
-              { kind: 'weight', kw: '', label: 'Duration', weight: '35%' },
-              { kind: 'weight', kw: '', label: 'Corporate Bonds', weight: '25%' },
-              { kind: 'weight', kw: '', label: 'Dividend Equity', weight: '40%' },
-            ],
+            kind: 'block',
+            keyword: 'Weight',
+            label: 'Equal',
+            note: '2 held',
+            noteStyle: 'text',
+            state: 'on',
+            children: {
+              on: true,
+              items: [
+                asset('SMH', 'VanEck Semiconductor', 'h1', 50),
+                asset('QQQ', 'Invesco QQQ Trust', 'h3', 50),
+                asset('XLK', 'Technology Select · third', 'h5', 0, true),
+              ],
+            },
           },
         ],
       },
-      {
-        kind: 'else',
-        kw: 'ELSE',
-        label: '',
-        children: [
-          { kind: 'weight', kw: 'WEIGHT', label: '· Equal', children: [asset('BIL · US T-Bills')] },
-        ],
-      },
-    ],
-  },
-  code: [
-    [k('(strategy'), p(' '), s('"Income Regime Switch"')],
-    [p('  '), k(':rebalance'), p(' monthly')],
-    [p('  '), k(':benchmark'), p(' '), s('AGG')],
-    [
-      p('  '),
-      k('(if'),
-      p(' (> ('),
-      k('price'),
-      p(' '),
-      s('TLT'),
-      p(') ('),
-      k('sma'),
-      p(' '),
-      s('TLT'),
-      p(' 50))'),
-    ],
-    [p('    '), k('(if'), p(' (> ('), k('sma'), p(' '), s('SCHD'), p(' 60) 0)')],
-    [p('      '), k('(group'), p(' '), s('"Falling Rates + Strong Dividends"')],
-    [p('        '), k('(weight'), p(' '), k(':method'), p(' specified')],
-    [p('          '), k('(group'), p(' '), s('"Duration"'), p(' '), k(':weight'), p(' 35')],
-    [
-      p('            '),
-      k('(weight'),
-      p(' '),
-      k(':method'),
-      p(' equal ('),
-      k('asset'),
-      p(' '),
-      s('TLT'),
-      p(') ('),
-      k('asset'),
-      p(' '),
-      s('EDV'),
-      p(')))'),
-    ],
-    [p('          '), k('(group'), p(' '), s('"Corporate Bonds"'), p(' '), k(':weight'), p(' 25')],
-    [
-      p('            '),
-      k('(weight'),
-      p(' '),
-      k(':method'),
-      p(' equal ('),
-      k('asset'),
-      p(' '),
-      s('LQD'),
-      p(') ('),
-      k('asset'),
-      p(' '),
-      s('VCIT'),
-      p(')))'),
-    ],
-    [p('          '), k('(group'), p(' '), s('"Dividend Equity"'), p(' '), k(':weight'), p(' 40')],
-    [
-      p('            '),
-      k('(weight'),
-      p(' '),
-      k(':method'),
-      p(' equal ('),
-      k('asset'),
-      p(' '),
-      s('SCHD'),
-      p(') ('),
-      k('asset'),
-      p(' '),
-      s('VYM'),
-      p('))))))'),
-    ],
-    [p('    '), k('(else')],
-    [
-      p('      '),
-      k('(weight'),
-      p(' '),
-      k(':method'),
-      p(' equal ('),
-      k('asset'),
-      p(' '),
-      s('BIL'),
-      p(')))))'),
-    ],
+    },
   ],
-  addLabel: ADD_SHORT,
-  foot: { pre: '2 branches · 3 sleeves · ', bold: '7 tickers', post: ' · compiled ✓' },
+  code: [
+    '(strategy "Tech Momentum Rotation"',
+    '  :rebalance monthly :benchmark QQQ',
+    '  (filter :by momentum :select (top 2)',
+    '          :lookback 90',
+    '    (weight :method equal',
+    '      (asset QQQ) (asset XLK)',
+    '      (asset SMH))))',
+  ],
+  hold: [
+    { shade: 'h1', weight: 50, sym: 'SMH' },
+    { shade: 'h3', weight: 50, sym: 'QQQ' },
+  ],
+  needs: [
+    ['Symbols', '3'],
+    ['History', '90 bars'],
+    ['Rebalance', 'Monthly'],
+  ],
 };
 
-export const EDITOR_LEVELS: EditorLevel[] = [starter, tactical, advanced];
+const advanced: EditorLevel = {
+  id: 'advanced',
+  tab: 'Advanced',
+  name: 'Recession Radar',
+  meta: 'Version 3 · monthly · benchmark SPY',
+  tree: [
+    {
+      kind: 'block',
+      keyword: 'If',
+      label: 'RSI(SPY, 14) above 70',
+      note: '58.4 today · false',
+      noteStyle: 'chip',
+      children: {
+        on: false,
+        items: [
+          {
+            kind: 'block',
+            keyword: 'Weight',
+            label: 'Specified',
+            note: 'not applied',
+            noteStyle: 'text',
+            state: 'off',
+            children: {
+              on: false,
+              items: [
+                asset('TLT', 'iShares 20+ Year Treasury', 'h1', 60, true),
+                asset('GLD', 'SPDR Gold Shares', 'h3', 40, true),
+              ],
+            },
+          },
+        ],
+      },
+    },
+    {
+      kind: 'block',
+      keyword: 'Else',
+      label: 'Momentum · top 2 of 3 · 90 days',
+      note: 'Applies today',
+      noteStyle: 'chip-ok',
+      state: 'on',
+      children: {
+        on: true,
+        items: [
+          asset('QQQ', 'Invesco QQQ Trust', 'hacc', 54.3),
+          asset('VTI', 'Vanguard Total Stock Market', 'h2', 45.7),
+          asset('IWM', 'iShares Russell 2000 · third', 'h5', 0, true),
+        ],
+      },
+    },
+  ],
+  code: [
+    '(strategy "Recession Radar"',
+    '  :rebalance monthly :benchmark SPY',
+    '  (if (> (rsi SPY 14) 70)',
+    '      (weight :method specified',
+    '        (asset TLT :weight 60)',
+    '        (asset GLD :weight 40))',
+    '      (else',
+    '        (weight :method momentum',
+    '          :lookback 90 :top 2',
+    '          (asset VTI) (asset QQQ)',
+    '          (asset IWM)))))',
+  ],
+  hold: [
+    { shade: 'hacc', weight: 54.3, sym: 'QQQ' },
+    { shade: 'h2', weight: 45.7, sym: 'VTI' },
+  ],
+  needs: [
+    ['Symbols', '6 · SPY as signal'],
+    ['History', '90 bars'],
+    ['Rebalance', 'Monthly'],
+  ],
+};
 
-// ── Extra DSL example · Dual Momentum + Crash Guard ─────────────────────────
-export const DSL_EXAMPLE: CodeLine[] = [
-  [k('(strategy'), p(' '), s('"Dual Momentum + Crash Guard"')],
-  [p('  '), k(':rebalance'), p(' monthly')],
-  [p('  '), k(':benchmark'), p(' '), s('SPY')],
-  [
-    p('  '),
-    k('(if'),
-    p(' (> ('),
-    k('price'),
-    p(' '),
-    s('SPY'),
-    p(') ('),
-    k('sma'),
-    p(' '),
-    s('SPY'),
-    p(' 200))'),
-  ],
-  [p('    '), k('(group'), p(' '), s('"Risk-On"')],
-  [
-    p('      '),
-    k('(filter'),
-    p(' '),
-    k(':by'),
-    p(' momentum '),
-    k(':select'),
-    p(' (top 3) '),
-    k(':lookback'),
-    p(' 120'),
-  ],
-  [
-    p('        '),
-    k('(weight'),
-    p(' '),
-    k(':method'),
-    p(' inverse-volatility '),
-    k(':lookback'),
-    p(' 60'),
-  ],
-  [
-    p('          ('),
-    k('asset'),
-    p(' '),
-    s('QQQ'),
-    p(') ('),
-    k('asset'),
-    p(' '),
-    s('XLK'),
-    p(') ('),
-    k('asset'),
-    p(' '),
-    s('SMH'),
-    p(')'),
-  ],
-  [
-    p('          ('),
-    k('asset'),
-    p(' '),
-    s('XLF'),
-    p(') ('),
-    k('asset'),
-    p(' '),
-    s('XLE'),
-    p(') ('),
-    k('asset'),
-    p(' '),
-    s('XLV'),
-    p(')))'),
-  ],
-  [p('    '), k('(else')],
-  [p('      '), k('(group'), p(' '), s('"Risk-Off"')],
-  [p('        '), k('(weight'), p(' '), k(':method'), p(' specified')],
-  [p('          ('), k('asset'), p(' '), s('IEF'), p(' '), k(':weight'), p(' 60)')],
-  [p('          ('), k('asset'), p(' '), s('GLD'), p(' '), k(':weight'), p(' 40))))))')],
-];
+export const EDITOR_LEVELS: readonly EditorLevel[] = [starter, tactical, advanced];
+
+/** The level the Build tabs and the screen art open on. */
+export const DEFAULT_LEVEL = 2;

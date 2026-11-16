@@ -1,4 +1,3 @@
-
 import type { StrategyTree } from '@llamatrade/core/strategy/types';
 import {
   validateStrategy,
@@ -57,7 +56,7 @@ describe('validateStrategy', () => {
   it('should return all defined validation rules', () => {
     // Ensure rules are defined
     expect(VALIDATION_RULES.length).toBeGreaterThan(0);
-    expect(VALIDATION_RULES.every(r => r.id && r.name && r.validate)).toBe(true);
+    expect(VALIDATION_RULES.every((r) => r.id && r.name && r.validate)).toBe(true);
   });
 });
 
@@ -78,14 +77,14 @@ describe('structure.has-assets rule', () => {
 
     const result = validateStrategy(tree);
     expect(result.valid).toBe(false);
-    expect(result.errors.some(e => e.ruleId === 'structure.has-assets')).toBe(true);
+    expect(result.errors.some((e) => e.ruleId === 'structure.has-assets')).toBe(true);
   });
 
   it('should pass when strategy has at least one asset', () => {
     const tree = createBaseTree();
     const result = validateStrategy(tree);
 
-    expect(result.errors.some(e => e.ruleId === 'structure.has-assets')).toBe(false);
+    expect(result.errors.some((e) => e.ruleId === 'structure.has-assets')).toBe(false);
   });
 });
 
@@ -133,8 +132,8 @@ describe('weight.sum rule', () => {
 
     const result = validateStrategy(tree);
     // weight.sum is now a warning (to support patterns like pairs trading, core-satellite)
-    expect(result.warnings.some(w => w.ruleId === 'weight.sum')).toBe(true);
-    expect(result.warnings.find(w => w.ruleId === 'weight.sum')?.message).toContain('90');
+    expect(result.warnings.some((w) => w.ruleId === 'weight.sum')).toBe(true);
+    expect(result.warnings.find((w) => w.ruleId === 'weight.sum')?.message).toContain('90');
   });
 
   it('should pass when specified weights sum to 100', () => {
@@ -179,14 +178,14 @@ describe('weight.sum rule', () => {
     };
 
     const result = validateStrategy(tree);
-    expect(result.errors.some(e => e.ruleId === 'weight.sum')).toBe(false);
+    expect(result.errors.some((e) => e.ruleId === 'weight.sum')).toBe(false);
   });
 
   it('should not apply to equal weight method', () => {
     const tree = createBaseTree();
     const result = validateStrategy(tree);
 
-    expect(result.errors.some(e => e.ruleId === 'weight.sum')).toBe(false);
+    expect(result.errors.some((e) => e.ruleId === 'weight.sum')).toBe(false);
   });
 });
 
@@ -234,7 +233,7 @@ describe('weight.positive rule', () => {
 
     const result = validateStrategy(tree);
     // weight.positive is now a warning (to support pairs trading with negative weights for shorts)
-    expect(result.warnings.some(w => w.ruleId === 'weight.positive')).toBe(true);
+    expect(result.warnings.some((w) => w.ruleId === 'weight.positive')).toBe(true);
   });
 });
 
@@ -281,8 +280,10 @@ describe('weight.specified-missing rule', () => {
     };
 
     const result = validateStrategy(tree);
-    expect(result.errors.some(e => e.ruleId === 'weight.specified-missing')).toBe(true);
-    expect(result.errors.find(e => e.ruleId === 'weight.specified-missing')?.message).toContain('BND');
+    expect(result.errors.some((e) => e.ruleId === 'weight.specified-missing')).toBe(true);
+    expect(result.errors.find((e) => e.ruleId === 'weight.specified-missing')?.message).toContain(
+      'BND'
+    );
   });
 });
 
@@ -318,7 +319,7 @@ describe('condition.required rule', () => {
     };
 
     const result = validateStrategy(tree);
-    expect(result.errors.some(e => e.ruleId === 'condition.required')).toBe(true);
+    expect(result.errors.some((e) => e.ruleId === 'condition.required')).toBe(true);
   });
 });
 
@@ -342,7 +343,7 @@ describe('structure.no-orphans rule', () => {
           exchange: 'NYSE',
           displayName: 'SPY',
         },
-        'orphan': {
+        orphan: {
           id: 'orphan',
           type: 'asset',
           parentId: 'nonexistent', // Not connected
@@ -354,8 +355,10 @@ describe('structure.no-orphans rule', () => {
     };
 
     const result = validateStrategy(tree);
-    expect(result.warnings.some(w => w.ruleId === 'structure.no-orphans')).toBe(true);
-    expect(result.warnings.find(w => w.ruleId === 'structure.no-orphans')?.blockId).toBe('orphan');
+    expect(result.warnings.some((w) => w.ruleId === 'structure.no-orphans')).toBe(true);
+    expect(result.warnings.find((w) => w.ruleId === 'structure.no-orphans')?.blockId).toBe(
+      'orphan'
+    );
   });
 });
 
@@ -390,7 +393,7 @@ describe('structure.group-not-empty rule', () => {
     };
 
     const result = validateStrategy(tree);
-    expect(result.warnings.some(w => w.ruleId === 'structure.group-not-empty')).toBe(true);
+    expect(result.warnings.some((w) => w.ruleId === 'structure.group-not-empty')).toBe(true);
   });
 });
 
@@ -432,7 +435,7 @@ describe('filter.count-positive rule', () => {
     };
 
     const result = validateStrategy(tree);
-    expect(result.errors.some(e => e.ruleId === 'filter.count-positive')).toBe(true);
+    expect(result.errors.some((e) => e.ruleId === 'filter.count-positive')).toBe(true);
   });
 });
 
@@ -541,6 +544,6 @@ describe('utility functions', () => {
     const result = validateStrategy(tree);
     const weightIssues = getBlockIssues(result, 'weight-1');
     expect(weightIssues.length).toBeGreaterThan(0);
-    expect(weightIssues.every(i => i.blockId === 'weight-1')).toBe(true);
+    expect(weightIssues.every((i) => i.blockId === 'weight-1')).toBe(true);
   });
 });

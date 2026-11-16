@@ -1,355 +1,288 @@
-import type { BacktestRun } from '@llamatrade/core/proto/backtest_pb';
-import { StrategyStatus } from '@llamatrade/core/proto/strategy_pb';
-import { useBacktestStore } from '@llamatrade/core/stores/backtest';
-import { type SortColumn, useStrategiesStore } from '@llamatrade/core/stores/strategies';
-import { AlertTriangle, Plus, RefreshCw, Search } from 'lucide-react';
+import { useStrategiesStore } from '@llamatrade/core/stores/strategies';
+import { Plus, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
-import { StrategyDetailDrawer } from '../../components/strategies/StrategyDetailDrawer';
+import { StrategiesEmpty } from '../../components/strategies/StrategiesEmpty';
+import { StrategyListRow } from '../../components/strategies/StrategyListRow';
+import { StrategyOverview } from '../../components/strategies/StrategyOverview';
 import {
-  buildRow,
-  formatMoneyFull,
-  formatReturn,
-  STRATEGY_COLORS,
-  type StrategyRowView,
-} from '../../components/strategies/strategyRow';
-import { StrategyTable } from '../../components/strategies/StrategyTable';
-import { StrategyTreePreview } from '../../components/strategies/StrategyTreePreview';
+  LIST_FILTERS,
+  matchesFilter,
+  runState,
+  stateLabel,
+  type ListFilter,
+} from '../../components/strategies/strategyView';
+import { useMediaQuery } from '../../components/strategies/useMediaQuery';
+import { useStrategyDetail } from '../../components/strategies/useStrategyDetail';
+import {
+  NoMatch,
+  PageArt,
+  PanelError,
+  Segmented,
+  Skeleton,
+  SkeletonChart,
+} from '../../components/ui';
 import { useUIStore } from '../../store/ui';
 
-const STATUS_SEGMENTS: { label: string; value: string }[] = [
-  { label: 'All', value: 'all' },
-  { label: 'Active', value: 'active' },
-  { label: 'Paused', value: 'paused' },
-  { label: 'Draft', value: 'draft' },
-];
+const PAGE_SIZE = 100;
 
-function sortValue(row: StrategyRowView, column: SortColumn): number | null {
-  switch (column) {
-    case 'return':
-      return row.returnPct;
-    case 'sharpe':
-      return row.sharpe;
-    case 'allocation':
-      return row.allocation;
-    case 'updated':
-      return row.strategy.updatedAt?.seconds ? Number(row.strategy.updatedAt.seconds) : null;
+function SelectedOverview({ id }: { id: string }) {
+  const detail = useStrategyDetail(id);
+  if (!detail.strategy) {
+    if (detail.status === 'error') {
+      return <PanelError title="This strategy couldn’t be loaded" onRetry={detail.retry} />;
+    }
+    return (
+      <div className="grid gap-4" aria-busy="true">
+        <Skeleton className="h-6 w-56" />
+        <Skeleton className="h-3 w-80" />
+        <SkeletonChart height={130} />
+      </div>
+    );
   }
-}
-
-interface KpiTileProps {
-  label: string;
-  value: string;
-  dark?: boolean;
-  accent?: 'green';
-}
-
-function KpiTile({ label, value, dark, accent }: KpiTileProps) {
   return (
-    <div className={`min-w-[110px] flex-1 border-2 border-ink px-4 py-2.5 ${dark ? 'bg-ink' : 'bg-paper'}`}>
-      <div className={`font-mono text-[9px] font-bold uppercase tracking-[0.1em] ${dark ? 'text-bone/55' : 'text-ink/50'}`}>
-        {label}
-      </div>
-      <div
-        className={`mt-1.5 font-mono text-[19px] font-bold leading-none tabular-nums ${
-          dark ? 'text-orange-500' : accent === 'green' ? 'text-green-500' : 'text-ink'
-        }`}
-      >
-        {value}
-      </div>
-    </div>
+    <StrategyOverview
+      strategy={detail.strategy}
+      state={detail.state}
+      stateLabel={detail.stateLabel}
+      meta={detail.meta}
+      run={detail.run}
+      session={detail.session}
+    />
   );
 }
 
 export default function StrategiesPage() {
-  const {
-    strategies,
-    details,
-    detailLoading,
-    deployments,
-    loading,
-    error,
-    statusFilter,
-    searchQuery,
-    sortColumn,
-    sortDirection,
-    setStatusFilter,
-    setSearchQuery,
-    setSort,
-    fetchStrategies,
-    fetchStrategyDetail,
-    fetchDeployments,
-    deleteStrategy,
-    activateStrategy,
-    pauseStrategy,
-    clearError,
-  } = useStrategiesStore();
-
-  const openNewStrategyDialog = useUIStore((state) => state.openNewStrategyDialog);
-
-  const recentRuns = useBacktestStore((state) => state.recentRuns);
-  const fetchRecentRuns = useBacktestStore((state) => state.fetchRecentRuns);
-
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [drawerClosed, setDrawerClosed] = useState(false);
-  const [actionLoading, setActionLoading] = useState(false);
+  const { strategies, deployments, loading, error, total, fetchStrategies, fetchDeployments } =
+    useStrategiesStore();
+  const openNewStrategyDialog = useUIStore((s) => s.openNewStrategyDialog);
+  const [params] = useSearchParams();
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<ListFilter>('all');
+  const [requested, setRequested] = useState(false);
+  const wide = useMediaQuery('(min-width: 1024px)');
 
   useEffect(() => {
-    fetchStrategies();
-    fetchDeployments();
-    fetchRecentRuns();
-  }, [fetchStrategies, fetchDeployments, fetchRecentRuns]);
-
-  // Latest completed run per strategy (recentRuns is newest-first, fully hydrated).
-  const latestRunByStrategyId = useMemo(() => {
-    const map = new Map<string, BacktestRun>();
-    recentRuns.forEach((run) => {
-      if (!map.has(run.strategyId)) map.set(run.strategyId, run);
+    useStrategiesStore.setState({
+      pageSize: PAGE_SIZE,
+      page: 1,
+      statusFilter: 'all',
+      searchQuery: '',
     });
-    return map;
-  }, [recentRuns]);
+    setRequested(true);
+    fetchStrategies().catch(() => undefined);
+    fetchDeployments().catch(() => undefined);
+  }, [fetchStrategies, fetchDeployments]);
 
-  // Deployed strategies use the backend series color (shared with the dashboard and
-  // portfolio); undeployed strategies fall back to a stable per-slot color.
   const rows = useMemo(
     () =>
-      strategies.map((strategy, i) =>
-        buildRow(
-          strategy,
-          latestRunByStrategyId.get(strategy.id) ?? null,
-          deployments[strategy.id],
-          deployments[strategy.id]?.color || STRATEGY_COLORS[i % STRATEGY_COLORS.length]
-        )
-      ),
-    [strategies, latestRunByStrategyId, deployments]
+      strategies.map((s) => {
+        const state = runState(s, deployments[s.id]);
+        return { strategy: s, state, label: stateLabel(state, deployments[s.id] !== undefined) };
+      }),
+    [strategies, deployments]
   );
-
-  const visibleRows = useMemo(() => {
-    const dir = sortDirection === 'asc' ? 1 : -1;
-    return [...rows].sort((a, b) => {
-      const av = sortValue(a, sortColumn);
-      const bv = sortValue(b, sortColumn);
-      if (av === null && bv === null) return 0;
-      if (av === null) return 1;
-      if (bv === null) return -1;
-      return (av - bv) * dir;
-    });
-  }, [rows, sortColumn, sortDirection]);
-
-  useEffect(() => {
-    if (visibleRows.length === 0) {
-      setSelectedId(null);
-      return;
-    }
-    // Keep a default selection unless the user explicitly closed the drawer.
-    const stillValid = selectedId && visibleRows.some((r) => r.strategy.id === selectedId);
-    if (!stillValid && !drawerClosed) {
-      setSelectedId(visibleRows[0].strategy.id);
-    }
-  }, [visibleRows, selectedId, drawerClosed]);
-
-  const selectRow = (id: string) => {
-    setDrawerClosed(false);
-    setSelectedId(id);
-  };
-
-  // Hydrate the open strategy's DSL/symbols on demand (the list ships
-  // summaries only). Cached in the store, so reselecting is instant.
-  useEffect(() => {
-    if (selectedId && !drawerClosed) fetchStrategyDetail(selectedId);
-  }, [selectedId, drawerClosed, fetchStrategyDetail]);
-
-  // Rebuild the selected row from cached detail (real DSL + tags); status stays from the summary, which activate/pause mutate.
-  const selectedRow = useMemo(() => {
-    if (drawerClosed || !selectedId) return null;
-    const base = visibleRows.find((r) => r.strategy.id === selectedId) ?? null;
-    if (!base) return null;
-    const detail = details[selectedId];
-    if (!detail) return base;
-    return buildRow(
-      { ...detail, status: base.strategy.status },
-      base.run,
-      deployments[selectedId],
-      base.color
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return rows.filter(
+      (r) =>
+        matchesFilter(r.state, filter) &&
+        (!q ||
+          r.strategy.name.toLowerCase().includes(q) ||
+          r.strategy.symbols.some((sym) => sym.toLowerCase().includes(q)))
     );
-  }, [drawerClosed, selectedId, visibleRows, details, deployments]);
+  }, [rows, query, filter]);
 
-  const totalAllocated = useMemo(() => rows.reduce((sum, r) => sum + (r.allocation ?? 0), 0), [rows]);
-  const activeCount = strategies.filter((s) => s.status === StrategyStatus.ACTIVE).length;
-  const draftCount = strategies.filter((s) => s.status === StrategyStatus.DRAFT).length;
+  const running = rows.filter((r) => r.state === 'running').length;
+  const selectedParam = params.get('s');
+  const selectedId =
+    shown.find((r) => r.strategy.id === selectedParam)?.strategy.id ??
+    shown[0]?.strategy.id ??
+    rows.find((r) => r.strategy.id === selectedParam)?.strategy.id ??
+    null;
+  const firstLoad = (!requested || loading) && strategies.length === 0;
+  const clear = () => {
+    setQuery('');
+    setFilter('all');
+  };
 
-  const bestReturn = useMemo(
-    () =>
-      rows.reduce<number | null>(
-        (best, r) => (r.returnPct !== null && (best === null || r.returnPct > best) ? r.returnPct : best),
-        null
-      ),
-    [rows]
+  if (!firstLoad && !error && strategies.length === 0) {
+    return (
+      <div className="page">
+        <ListHeader count={null} running={0} onNew={openNewStrategyDialog} />
+        <div className="mt-5">
+          <StrategiesEmpty />
+        </div>
+      </div>
+    );
+  }
+
+  const list = (
+    <div className="flex min-h-0 flex-col">
+      {firstLoad ? (
+        <div aria-busy="true">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <div
+              key={i}
+              className="grid grid-cols-[minmax(0,1fr)_64px_58px] items-center gap-3 border-t border-line px-[18px] py-3.5"
+            >
+              <span className="grid gap-1.5">
+                <Skeleton className="h-3 w-36" />
+                <Skeleton className="h-2.5 w-16" />
+              </span>
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="ml-auto h-3 w-10" />
+            </div>
+          ))}
+        </div>
+      ) : error ? (
+        <PanelError
+          title="Strategies couldn’t be loaded"
+          cause={error}
+          onRetry={() => {
+            fetchStrategies().catch(() => undefined);
+          }}
+        />
+      ) : shown.length === 0 ? (
+        <NoMatch
+          noun="strategies"
+          query={query}
+          filters={
+            filter === 'all' ? [] : [LIST_FILTERS.find((f) => f.key === filter)?.label ?? filter]
+          }
+          total={rows.length}
+          onClear={clear}
+        />
+      ) : (
+        shown.map((r) => (
+          <StrategyListRow
+            key={r.strategy.id}
+            strategy={r.strategy}
+            state={r.state}
+            stateLabel={r.label}
+            selected={wide && r.strategy.id === selectedId}
+            to={wide ? `/strategies?s=${r.strategy.id}` : `/strategies/${r.strategy.id}`}
+          />
+        ))
+      )}
+      <p className="m-0 mt-auto border-t border-line px-4 py-3 text-[11.5px] text-fg-3 lg:px-[18px]">
+        Curves and returns are from each strategy’s latest completed backtest.
+      </p>
+    </div>
   );
-  const avgSharpe = useMemo(() => {
-    const vals = rows.map((r) => r.sharpe).filter((s): s is number => s !== null);
-    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
-  }, [rows]);
 
-  const runAction = async (fn: () => Promise<unknown>) => {
-    setActionLoading(true);
-    try {
-      await fn();
-    } finally {
-      setActionLoading(false);
-    }
-  };
+  const filters = (
+    <div className="grid gap-3">
+      <label className="flex h-9 items-center gap-2 rounded-[6px] border border-line-strong bg-panel px-3 focus-within:border-accent">
+        <Search className="h-4 w-4 text-fg-3" aria-hidden="true" />
+        <span className="sr-only">Search strategies and symbols</span>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search strategies and symbols"
+          className="min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-fg-3"
+        />
+      </label>
+      <Segmented
+        label="Show"
+        options={LIST_FILTERS}
+        value={filter}
+        onChange={setFilter}
+        className="justify-self-start"
+      />
+    </div>
+  );
 
-  const handleDelete = (id: string) => {
-    if (!window.confirm('Delete this strategy? This action cannot be undone.')) return;
-    void runAction(() => deleteStrategy(id));
-  };
-
-  const hasFilters = searchQuery !== '' || statusFilter !== 'all';
-  const showEmpty = !loading && visibleRows.length === 0;
+  if (!wide) {
+    return (
+      <div className="page relative isolate grid grid-cols-[minmax(0,1fr)] gap-4">
+        <PageArt shape="own" />
+        <ListHeader
+          count={firstLoad ? undefined : total || rows.length}
+          running={running}
+          onNew={openNewStrategyDialog}
+        />
+        {filters}
+        <div className="panel overflow-hidden [&>div>a:first-child]:border-t-0">{list}</div>
+      </div>
+    );
+  }
 
   return (
-    <div className="min-h-[calc(100vh-56px)] bg-bone bg-grid">
-      <div className="mx-auto max-w-[1760px] px-6 py-6 lg:px-8">
-        {/* Page header */}
-        <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
-          <h1 className="flex items-baseline gap-3 font-display text-4xl uppercase leading-none tracking-tight">
-            Strategies
-            <span className="-translate-y-1.5 border-2 border-ink px-2 py-0.5 font-mono text-base font-bold tabular-nums text-orange-500">
-              {strategies.length}
-            </span>
-          </h1>
-          <button
-            onClick={openNewStrategyDialog}
-            className="flex items-center gap-2 border-2 border-ink bg-orange-500 px-4 py-3 font-mono text-xs font-bold uppercase tracking-wide text-ink shadow-[4px_4px_0_rgb(var(--lt-ink))] transition-transform hover:-translate-x-0.5 hover:-translate-y-0.5"
-          >
-            <Plus className="h-4 w-4" />
-            New Strategy
-          </button>
-        </div>
-
-        {/* KPI strip */}
-        <div className="mb-4 flex flex-wrap gap-2.5">
-          <KpiTile label="Deployed" value={formatMoneyFull(totalAllocated)} dark />
-          <KpiTile label="Live · Paper" value={String(activeCount)} />
-          <KpiTile label="Drafts" value={String(draftCount)} />
-          <KpiTile
-            label="Best Return"
-            value={bestReturn !== null ? formatReturn(bestReturn) : '—'}
-            accent={bestReturn !== null && bestReturn >= 0 ? 'green' : undefined}
-          />
-          <KpiTile label="Avg Sharpe" value={avgSharpe !== null ? avgSharpe.toFixed(2) : '—'} />
-        </div>
-
-        {/* Toolbar */}
-        <div className="mb-4 flex flex-wrap items-stretch gap-2.5">
-          <div className="flex min-w-[240px] flex-1 items-center gap-2.5 border-2 border-ink bg-paper px-3.5 shadow-[4px_4px_0_rgb(var(--lt-ink))]">
-            <Search className="h-4 w-4 flex-none text-ink/50" />
-            <input
-              type="text"
-              placeholder="Search strategies, assets, methods…"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full border-0 bg-transparent py-3 font-mono text-[13px] text-ink outline-none placeholder:text-ink/40 focus-visible:ring-0 focus-visible:ring-offset-0"
-            />
-          </div>
-
-          <div className="flex items-center border-2 border-ink bg-paper shadow-[4px_4px_0_rgb(var(--lt-ink))]">
-            <span className="border-r border-ink/15 pl-3 pr-1.5 font-mono text-[9px] font-bold uppercase tracking-widest text-ink/45">
-              Status
-            </span>
-            <div className="flex">
-              {STATUS_SEGMENTS.map((seg, i) => (
-                <button
-                  key={seg.value}
-                  onClick={() => setStatusFilter(seg.value)}
-                  className={`px-3 py-3 font-mono text-[11px] font-bold uppercase tracking-wide transition-colors ${
-                    i > 0 ? 'border-l border-ink/15' : ''
-                  } ${statusFilter === seg.value ? 'bg-ink text-bone' : 'text-ink/60 hover:text-ink'}`}
-                >
-                  {seg.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {error && (
-          <div className="mb-4 flex items-center justify-between gap-3 border-2 border-ink bg-red-50 p-4">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="h-5 w-5 flex-none text-red-600" />
-              <p className="text-sm text-red-700">{error}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              {error.includes('log in') ? (
-                <Link to="/login" className="btn btn-secondary btn-sm">
-                  Log In
-                </Link>
-              ) : (
-                <button onClick={() => fetchStrategies()} className="btn btn-secondary btn-sm">
-                  <RefreshCw className="h-4 w-4" />
-                  Retry
-                </button>
-              )}
-              <button onClick={clearError} className="btn btn-ghost btn-sm">
-                Dismiss
+    <div className="grid min-h-[calc(100vh-56px)] grid-cols-[340px_minmax(0,1fr)]">
+      <aside className="flex flex-col border-r border-line bg-panel">
+        <div className="grid gap-3 px-[18px] pb-3 pt-[18px]">
+          <div className="flex items-center justify-between">
+            <h1 className="m-0 text-[16px] font-semibold">Strategies</h1>
+            <span className="flex gap-1.5">
+              <Link to="/strategies/templates" className="btn btn-secondary btn-sm">
+                Templates
+              </Link>
+              <button
+                type="button"
+                onClick={openNewStrategyDialog}
+                className="btn btn-primary btn-sm px-2"
+                aria-label="New strategy"
+              >
+                <Plus className="h-4 w-4" />
               </button>
-            </div>
+            </span>
           </div>
-        )}
-
-        {/* Split: table + drawer */}
-        {loading && rows.length === 0 ? (
-          <div className="card-shadow py-16 text-center font-mono text-xs uppercase tracking-wide text-ink/50">
-            Loading strategies…
-          </div>
-        ) : strategies.length === 0 && !hasFilters ? (
-          <div className="card-shadow">
-            <StrategyTreePreview onCreateStrategy={openNewStrategyDialog} onBrowseTemplates={openNewStrategyDialog} />
-          </div>
+          {!firstLoad && rows.length > 0 && (
+            <p className="m-0 -mt-1.5 text-[12px] text-fg-3">
+              {rows.length} {rows.length === 1 ? 'strategy' : 'strategies'} · {running} running in
+              paper
+            </p>
+          )}
+          {filters}
+        </div>
+        {list}
+      </aside>
+      <section className="min-w-0 px-7 py-[22px]">
+        {selectedId ? (
+          <SelectedOverview key={selectedId} id={selectedId} />
+        ) : firstLoad ? (
+          <SkeletonChart height={200} />
         ) : (
-          <div
-            className={`grid grid-cols-1 items-start gap-4 ${
-              selectedRow ? 'lg:grid-cols-[3fr_2fr]' : ''
-            }`}
-          >
-            <div className="min-w-0">
-              {showEmpty ? (
-                <div className="card-shadow px-8 py-16 text-center">
-                  <h3 className="font-display text-2xl uppercase leading-tight text-ink">
-                    Nothing matches those filters
-                  </h3>
-                  <p className="mt-2 font-mono text-xs text-ink/55">Clear a filter to widen the list.</p>
-                </div>
-              ) : (
-                <StrategyTable
-                  rows={visibleRows}
-                  totalCount={strategies.length}
-                  totalAllocated={totalAllocated}
-                  selectedId={selectedRow ? selectedId : null}
-                  onSelect={selectRow}
-                  sortColumn={sortColumn}
-                  sortDirection={sortDirection}
-                  onSort={setSort}
-                />
-              )}
-            </div>
-
-            {/* Drawer */}
-            {selectedRow && (
-              <StrategyDetailDrawer
-                row={selectedRow}
-                dslLoading={selectedId ? !!detailLoading[selectedId] : false}
-                onClose={() => setDrawerClosed(true)}
-                onActivate={(id) => void runAction(() => activateStrategy(id))}
-                onPause={(id) => void runAction(() => pauseStrategy(id))}
-                onDelete={handleDelete}
-                actionLoading={actionLoading}
-              />
-            )}
-          </div>
+          <p className="m-0 mt-16 text-center text-[13px] text-fg-3">
+            Clear the filters to pick a strategy.
+          </p>
         )}
+      </section>
+    </div>
+  );
+}
+
+function ListHeader({
+  count,
+  running,
+  onNew,
+}: {
+  count: number | null | undefined;
+  running: number;
+  onNew: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h1 className="m-0 text-[22px] font-semibold tracking-[-0.015em]">Strategies</h1>
+        <p className="m-0 mt-0.5 text-[12.5px] text-fg-3">
+          {count === undefined
+            ? '\u00a0'
+            : count === null
+              ? 'No strategies yet'
+              : `${count} ${count === 1 ? 'strategy' : 'strategies'} · ${running} running in paper`}
+        </p>
+      </div>
+      <div className="flex gap-2">
+        <Link to="/strategies/templates" className="btn btn-secondary">
+          Templates
+        </Link>
+        <button type="button" onClick={onNew} className="btn btn-primary">
+          <Plus className="h-4 w-4" />
+          New strategy
+        </button>
       </div>
     </div>
   );

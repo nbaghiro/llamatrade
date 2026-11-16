@@ -11,7 +11,10 @@ const { getHistoricalBars, getSnapshot, getAssets, listPortfolios, getPositions 
   })
 );
 
-let tenantContext: { tenantId: string; userId: string } | undefined = { tenantId: 't1', userId: 'u1' };
+let tenantContext: { tenantId: string; userId: string } | undefined = {
+  tenantId: 't1',
+  userId: 'u1',
+};
 vi.mock('@llamatrade/core/net', () => ({
   marketDataClient: { getHistoricalBars, getSnapshot, getAssets },
   portfolioClient: { listPortfolios, getPositions },
@@ -80,7 +83,14 @@ describe('barsToCandles', () => {
   });
 
   it('skips bars without a timestamp', () => {
-    const missing = { symbol: 'X', open: dec(1), high: dec(1), low: dec(1), close: dec(1), volume: 0n } as unknown as Parameters<typeof barsToCandles>[0][number];
+    const missing = {
+      symbol: 'X',
+      open: dec(1),
+      high: dec(1),
+      low: dec(1),
+      close: dec(1),
+      volume: 0n,
+    } as unknown as Parameters<typeof barsToCandles>[0][number];
     expect(barsToCandles([missing])).toEqual([]);
   });
 });
@@ -105,7 +115,9 @@ describe('snapshotToQuote', () => {
   });
 
   it('returns null when no price can be resolved', () => {
-    expect(snapshotToQuote({ symbol: 'X' } as unknown as Parameters<typeof snapshotToQuote>[0])).toBeNull();
+    expect(
+      snapshotToQuote({ symbol: 'X' } as unknown as Parameters<typeof snapshotToQuote>[0])
+    ).toBeNull();
     expect(snapshotToQuote(undefined)).toBeNull();
   });
 });

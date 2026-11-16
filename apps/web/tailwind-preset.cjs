@@ -1,89 +1,88 @@
 /**
- * LlamaTrade "Monolith" Tailwind preset.
+ * LlamaTrade Tailwind preset. Every value is a reference into src/styles/tokens.css, which holds
+ * the colours as RGB channels so opacity modifiers work (`bg-accent/40`).
  *
- * This preset maps Tailwind's theme keys onto the CSS custom-property TOKEN
- * LAYER defined in `src/styles/monolith.css` — that file is the single source of
- * truth for every themeable value (palette, type, radius, shadows). Nothing here
- * holds a raw hex/px value that a theme would want to change; each entry is a
- * `var(--lt-*)` reference, so swapping the theme file (or a `[data-theme]` block)
- * reskins the whole product with zero preset edits.
- *
- * Colors use the `rgb(var(--lt-<name>) / <alpha-value>)` form so Tailwind opacity
- * modifiers keep working: `bg-orange-500/50` -> `rgb(var(--lt-orange-500) / 0.5)`.
- * The theme file therefore stores colors as space-separated RGB channels
- * (`255 77 28`), NOT as `#ff4d1c`. See that file's header for the full rationale.
- *
- * Consumed by `apps/web/tailwind.config.js`:
- *   presets: [require('./tailwind-preset.cjs')]
- * and the token layer is imported FIRST in the app's entry CSS:
- *   @import './styles/monolith.css';
- *
- * Authored as CommonJS (`module.exports`) so it is `require()`-able from an ESM
- * `tailwind.config.js` (Tailwind loads the config in a CJS context).
- *
- * Monolith is a light-only system — `darkMode: 'class'` here keeps any stale
- * `dark:` variants inert unless a `.dark` class is explicitly present.
+ * The legacy Monolith keys (ink, bone, paper, orange, green, red, blue, gray, warning, block,
+ * primary, success, danger) are transition aliases onto the semantic tokens. They go once
+ * `grep -rE "(bg|text|border)-(ink|bone|paper|orange-)" src` is clean.
  */
 
-/** Build an 11-step ramp of `rgb(var(--lt-<name>-<step>) / <alpha-value>)`. */
-const ramp = (name, steps) =>
-  Object.fromEntries(
-    steps.map((step) => [step, `rgb(var(--lt-${name}-${step}) / <alpha-value>)`]),
-  );
+const c = (name) => `rgb(var(--${name}) / <alpha-value>)`;
+const tint = (name, amount) => `rgb(var(--${name}) / calc(<alpha-value> * ${amount}))`;
 
-const FULL_STEPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
+const STEPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950];
+const TINTS = { 50: 0.08, 100: 0.14, 200: 0.24, 300: 0.45, 400: 0.75 };
+const legacyRamp = (name) =>
+  Object.fromEntries(STEPS.map((s) => [s, TINTS[s] ? tint(name, TINTS[s]) : c(name)]));
 
-const orange = ramp('orange', FULL_STEPS);
-const blue = ramp('blue', FULL_STEPS);
-const green = ramp('green', FULL_STEPS);
-const red = ramp('red', FULL_STEPS);
-const gray = ramp('gray', FULL_STEPS);
+const GRAY = {
+  50: 'sunk',
+  100: 'sunk',
+  200: 'line',
+  300: 'line-strong',
+  400: 'fg-3',
+  500: 'fg-3',
+  600: 'fg-2',
+  700: 'fg-2',
+  800: 'fg',
+  900: 'fg',
+  950: 'fg',
+};
+
+const accentRamp = legacyRamp('accent');
+const gainRamp = legacyRamp('gain');
+const lossRamp = legacyRamp('loss');
 
 /** @type {Partial<import('tailwindcss').Config>} */
 module.exports = {
+  // Tokens adapt per mode, so `dark:` variants stay inert (no element carries .dark).
   darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        // ---- Monolith core ----
-        bone: 'rgb(var(--lt-bone) / <alpha-value>)',
-        ink: 'rgb(var(--lt-ink) / <alpha-value>)',
-        paper: 'rgb(var(--lt-paper) / <alpha-value>)',
-        // Hairline rule carries a baked 14% alpha — mapped straight through (no
-        // <alpha-value> slot, matching its prior rgba() behaviour).
-        line: 'var(--lt-line)',
-        // Signal orange = primary/brand accent
-        orange,
-        // primary repointed to signal orange (brand/primary usages become orange)
-        primary: orange,
-        // accent repointed from pink -> electric blue
-        accent: blue,
-        // green = success / up (Monolith #0f7a34)
-        green,
-        // red = danger / down (Monolith #c81e1e)
-        red,
-        // blue = info / links (Monolith #1a1aff)
-        blue,
-        success: { 50: green[50], 500: green[500], 600: green[600] },
-        danger: { 50: red[50], 500: red[500], 600: red[600] },
-        warning: {
-          50: orange[50], // #fff1ec — identical to orange-50
-          500: 'rgb(var(--lt-warning-500) / <alpha-value>)',
-          600: 'rgb(var(--lt-warning-600) / <alpha-value>)',
+        canvas: c('canvas'),
+        panel: c('panel'),
+        sunk: c('sunk'),
+        line: { DEFAULT: c('line'), strong: c('line-strong') },
+        fg: { DEFAULT: c('fg'), 2: c('fg-2'), 3: c('fg-3') },
+        accent: {
+          DEFAULT: c('accent'),
+          fill: c('accent-fill'),
+          ink: c('accent-ink'),
+          soft: 'var(--accent-soft)',
+          ...accentRamp,
         },
-        // Block-editor branch fills (StrategyTree). Exposed as named colors so
-        // `bg-block-else` / `bg-block-weight` keep Tailwind's opacity machinery.
-        block: {
-          else: 'rgb(var(--lt-block-else-bg) / <alpha-value>)',
-          weight: 'rgb(var(--lt-block-weight-bg) / <alpha-value>)',
+        gain: c('gain'),
+        loss: c('loss'),
+        risk: { DEFAULT: c('risk'), soft: 'var(--risk-soft)', line: 'var(--risk-line)' },
+        chart: {
+          1: c('chart-1'),
+          2: c('chart-2'),
+          3: c('chart-3'),
+          4: c('chart-4'),
+          5: c('chart-5'),
         },
-        // Warm ink-biased neutral ramp (bone -> ink). Repoints all gray-* usages.
-        gray,
+        grid: c('grid'),
+        hatch: 'var(--hatch)',
+
+        ink: c('fg'),
+        bone: c('canvas'),
+        paper: c('panel'),
+        orange: accentRamp,
+        primary: accentRamp,
+        blue: accentRamp,
+        green: gainRamp,
+        red: lossRamp,
+        success: { 50: gainRamp[50], 500: gainRamp[500], 600: gainRamp[600] },
+        danger: { 50: lossRamp[50], 500: lossRamp[500], 600: lossRamp[600] },
+        warning: { 50: tint('risk', 0.1), 500: c('risk'), 600: c('risk') },
+        block: { else: c('sunk'), weight: tint('accent', 0.14) },
+        gray: Object.fromEntries(STEPS.map((s) => [s, c(GRAY[s])])),
       },
       fontFamily: {
-        display: 'var(--lt-font-display)',
-        sans: 'var(--lt-font-sans)',
-        mono: 'var(--lt-font-mono)',
+        sans: 'var(--font-sans)',
+        mono: 'var(--font-mono)',
+        display: 'var(--font-display)',
       },
       fontSize: {
         xs: ['0.75rem', { lineHeight: '1rem' }],
@@ -94,55 +93,46 @@ module.exports = {
         '2xl': ['1.25rem', { lineHeight: '1.75rem' }],
         '3xl': ['1.5rem', { lineHeight: '2rem' }],
       },
-      // Hard offset shadows — every shadow-* utility becomes a brutalist drop.
-      // Values live in the token layer (built from the ink channels).
-      boxShadow: {
-        sm: 'var(--lt-shadow-sm)',
-        DEFAULT: 'var(--lt-shadow)',
-        md: 'var(--lt-shadow)',
-        lg: 'var(--lt-shadow-lg)',
-        xl: 'var(--lt-shadow-lg)',
-        '2xl': 'var(--lt-shadow-xl)',
-        inner: 'var(--lt-shadow-inner)',
-        dropdown: 'var(--lt-shadow)',
-        // Bone-tinted drop the StrategyTree blocks cast on the ink ground.
-        // A named utility (`shadow-block`) so Tailwind treats it as a box-shadow
-        // (a bare `shadow-[var(...)]` would be misread as a shadow *color*).
-        block: 'var(--lt-block-shadow)',
-        none: 'none',
-      },
-      // Zero radius everywhere — every rounded-* utility flattens (token-driven).
-      borderRadius: {
-        none: 'var(--lt-radius)',
-        sm: 'var(--lt-radius)',
-        DEFAULT: 'var(--lt-radius)',
-        md: 'var(--lt-radius)',
-        lg: 'var(--lt-radius)',
-        xl: 'var(--lt-radius)',
-        '2xl': 'var(--lt-radius)',
-        '3xl': 'var(--lt-radius)',
-        full: 'var(--lt-radius)',
-      },
-      // Border/ring scale stays fixed (not theme-swappable); only their default
-      // colors are tokenized.
       borderWidth: {
-        DEFAULT: '1px',
         3: '3px',
       },
+      letterSpacing: {
+        display: 'var(--display-tracking)',
+      },
+      borderRadius: {
+        sm: 'var(--radius-sm)',
+        DEFAULT: 'var(--radius)',
+        md: 'var(--radius-panel)',
+        lg: 'var(--radius-window)',
+        r: 'var(--radius)',
+        panel: 'var(--radius-panel)',
+        window: 'var(--radius-window)',
+      },
+      boxShadow: {
+        sm: 'var(--shadow-sm)',
+        DEFAULT: 'var(--shadow)',
+        md: 'var(--shadow)',
+        lg: 'var(--shadow-lg)',
+        xl: 'var(--shadow-xl)',
+        '2xl': 'var(--shadow-xl)',
+        dropdown: 'var(--shadow-lg)',
+        block: 'var(--shadow-sm)',
+      },
       borderColor: {
-        DEFAULT: 'rgb(var(--lt-ink) / <alpha-value>)',
+        DEFAULT: 'rgb(var(--line) / <alpha-value>)',
       },
       ringColor: {
-        // A color FUNCTION (not the `<alpha-value>` string form): Tailwind builds
-        // the global `*` ring-reset default via `withAlphaValue`, which PARSES the
-        // color and cannot parse a `var()`-based one — it would silently fall back
-        // to Tailwind's built-in blue. The function is invoked with the resolved
-        // opacity, so the reset stays tokenized orange @ 0.5, matching the prior
-        // hardcoded `#ff4d1c`. (The `ring-<color>` utilities come from `colors`.)
+        // A function, because Tailwind parses the default ring colour and cannot parse var().
         DEFAULT: ({ opacityValue }) =>
           opacityValue === undefined
-            ? 'rgb(var(--lt-orange-500))'
-            : `rgb(var(--lt-orange-500) / ${opacityValue})`,
+            ? 'rgb(var(--accent))'
+            : `rgb(var(--accent) / ${opacityValue})`,
+      },
+      ringOffsetColor: {
+        DEFAULT: 'rgb(var(--canvas))',
+      },
+      maxWidth: {
+        content: '1240px',
       },
     },
   },

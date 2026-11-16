@@ -1,17 +1,15 @@
-/** A single tool-execution row (dotted border) matching the Copilot v1 design. */
-
-import { Settings } from 'lucide-react';
+import { AlertTriangle, Check } from 'lucide-react';
 
 interface ToolCallIndicatorProps {
   toolName: string;
-  status: 'running' | 'complete' | 'error';
-  /** Short summary of arguments/result shown dim after the function name. */
+  status: 'running' | 'waiting' | 'complete' | 'error';
+  /** Short summary of the arguments or result. */
   detail?: string;
   resultPreview?: string;
-  /** Execution time in ms (rendered as "· 0.4s" when complete). */
   durationMs?: number;
 }
 
+/** One tool step in the thread, as a quiet pill. */
 export function ToolCallIndicator({
   toolName,
   status,
@@ -19,25 +17,38 @@ export function ToolCallIndicator({
   resultPreview,
   durationMs,
 }: ToolCallIndicatorProps) {
-  const meta = detail || resultPreview;
-  const seconds = durationMs && durationMs > 0 ? `${(durationMs / 1000).toFixed(1)}s` : null;
+  const meta =
+    status === 'waiting'
+      ? 'waiting for your approval'
+      : status === 'error'
+        ? 'failed'
+        : detail || resultPreview;
+  const seconds =
+    status === 'complete' && durationMs && durationMs > 0
+      ? `${(durationMs / 1000).toFixed(1)} s`
+      : null;
 
   return (
-    <div className="flex items-center gap-2.5 border-2 border-dotted border-ink bg-paper px-3 py-2 font-mono text-xs">
-      <Settings className={`h-3.5 w-3.5 text-ink ${status === 'running' ? 'animate-spin' : ''}`} />
-      <span className="font-bold text-ink">{toolName}</span>
-      {meta && <span className="truncate text-ink/50">{meta}</span>}
-
-      <span
-        className={`ml-auto flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide ${
-          status === 'error' ? 'text-red-600' : status === 'running' ? 'text-orange-500' : 'text-green-600'
-        }`}
-      >
+    <div
+      className={`inline-flex max-w-full items-center gap-2 justify-self-start rounded-full border px-2.5 py-1 text-[12.5px] ${
+        status === 'error' ? 'border-risk-line text-risk' : 'border-line text-fg-3'
+      }`}
+    >
+      {status === 'running' || status === 'waiting' ? (
         <span
-          className={`h-1.5 w-1.5 bg-current ${status === 'running' ? 'animate-pulse' : ''}`}
+          aria-hidden="true"
+          className={`h-2 w-2 flex-none rounded-full bg-accent ${status === 'running' ? 'motion-safe:animate-pulse' : ''}`}
         />
-        {status === 'running' ? 'running…' : status === 'error' ? 'error' : 'done'}
-        {status === 'complete' && seconds && <span className="text-ink/50">· {seconds}</span>}
+      ) : status === 'error' ? (
+        <AlertTriangle className="h-3.5 w-3.5 flex-none" />
+      ) : (
+        <Check className="h-3.5 w-3.5 flex-none" />
+      )}
+      <b className="flex-none font-mono text-xs font-medium text-fg-2">{toolName}</b>
+      {meta && <span className="truncate">{meta}</span>}
+      {seconds && <span className="flex-none">· {seconds}</span>}
+      <span className="sr-only">
+        {status === 'running' ? 'Running' : status === 'complete' ? 'Done' : ''}
       </span>
     </div>
   );

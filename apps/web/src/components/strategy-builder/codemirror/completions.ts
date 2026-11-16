@@ -8,17 +8,51 @@ import { autocompletion } from '@codemirror/autocomplete';
 // tests/conformance/vocabulary.json). The dsl-conformance suite enforces that.
 
 const blockTypes: Completion[] = [
-  { label: 'strategy', type: 'keyword', info: 'Define a trading strategy', detail: '(strategy "Name" :rebalance ... blocks)' },
-  { label: 'weight', type: 'keyword', info: 'Allocate across child blocks', detail: '(weight :method ... blocks)' },
-  { label: 'group', type: 'keyword', info: 'Group assets together', detail: '(group "Name" [:weight N] blocks)' },
-  { label: 'asset', type: 'keyword', info: 'Add a tradable asset', detail: '(asset SYMBOL [:weight N])' },
-  { label: 'if', type: 'keyword', info: 'Conditional block', detail: '(if (condition) block [(else block)])' },
+  {
+    label: 'strategy',
+    type: 'keyword',
+    info: 'Define a trading strategy',
+    detail: '(strategy "Name" :rebalance ... blocks)',
+  },
+  {
+    label: 'weight',
+    type: 'keyword',
+    info: 'Allocate across child blocks',
+    detail: '(weight :method ... blocks)',
+  },
+  {
+    label: 'group',
+    type: 'keyword',
+    info: 'Group assets together',
+    detail: '(group "Name" [:weight N] blocks)',
+  },
+  {
+    label: 'asset',
+    type: 'keyword',
+    info: 'Add a tradable asset',
+    detail: '(asset SYMBOL [:weight N])',
+  },
+  {
+    label: 'if',
+    type: 'keyword',
+    info: 'Conditional block',
+    detail: '(if (condition) block [(else block)])',
+  },
   { label: 'else', type: 'keyword', info: 'Else branch of a conditional', detail: '(else block)' },
-  { label: 'filter', type: 'keyword', info: 'Rank and select assets', detail: '(filter :by ... :select (top N) blocks)' },
+  {
+    label: 'filter',
+    type: 'keyword',
+    info: 'Rank and select assets',
+    detail: '(filter :by ... :select (top N) blocks)',
+  },
 ];
 
 const parameters: Completion[] = [
-  { label: ':rebalance', type: 'property', info: 'Rebalance frequency (daily, weekly, monthly, quarterly, annually)' },
+  {
+    label: ':rebalance',
+    type: 'property',
+    info: 'Rebalance frequency (daily, weekly, monthly, quarterly, annually)',
+  },
   { label: ':benchmark', type: 'property', info: 'Benchmark symbol for comparison' },
   { label: ':description', type: 'property', info: 'Strategy description' },
   { label: ':method', type: 'property', info: 'Weight allocation method' },
@@ -68,47 +102,132 @@ const rebalanceFrequencies: Completion[] = [
 const indicators: Completion[] = [
   // Simple moving averages
   { label: 'sma', type: 'function', info: 'Simple Moving Average', detail: '(sma SYMBOL period)' },
-  { label: 'ema', type: 'function', info: 'Exponential Moving Average', detail: '(ema SYMBOL period)' },
+  {
+    label: 'ema',
+    type: 'function',
+    info: 'Exponential Moving Average',
+    detail: '(ema SYMBOL period)',
+  },
 
   // Momentum indicators
-  { label: 'rsi', type: 'function', info: 'Relative Strength Index (0-100)', detail: '(rsi SYMBOL period)' },
-  { label: 'cci', type: 'function', info: 'Commodity Channel Index', detail: '(cci SYMBOL period)' },
-  { label: 'williams-r', type: 'function', info: 'Williams %R (-100 to 0)', detail: '(williams-r SYMBOL period)' },
-  { label: 'momentum', type: 'function', info: 'Price Momentum', detail: '(momentum SYMBOL period)' },
+  {
+    label: 'rsi',
+    type: 'function',
+    info: 'Relative Strength Index (0-100)',
+    detail: '(rsi SYMBOL period)',
+  },
+  {
+    label: 'cci',
+    type: 'function',
+    info: 'Commodity Channel Index',
+    detail: '(cci SYMBOL period)',
+  },
+  {
+    label: 'williams-r',
+    type: 'function',
+    info: 'Williams %R (-100 to 0)',
+    detail: '(williams-r SYMBOL period)',
+  },
+  {
+    label: 'momentum',
+    type: 'function',
+    info: 'Price Momentum',
+    detail: '(momentum SYMBOL period)',
+  },
 
   // Multi-output: MACD - outputs: :line (default), :signal, :histogram
-  { label: 'macd', type: 'function', info: 'MACD (outputs: :line :signal :histogram)', detail: '(macd SYMBOL fast slow signal [:output])' },
+  {
+    label: 'macd',
+    type: 'function',
+    info: 'MACD (outputs: :line :signal :histogram)',
+    detail: '(macd SYMBOL fast slow signal [:output])',
+  },
 
   // Multi-output: Bollinger Bands - outputs: :upper, :middle (default), :lower
-  { label: 'bbands', type: 'function', info: 'Bollinger Bands (outputs: :upper :middle :lower)', detail: '(bbands SYMBOL period stddev [:output])' },
+  {
+    label: 'bbands',
+    type: 'function',
+    info: 'Bollinger Bands (outputs: :upper :middle :lower)',
+    detail: '(bbands SYMBOL period stddev [:output])',
+  },
 
   // Multi-output: Stochastic - outputs: :k (default), :d
-  { label: 'stoch', type: 'function', info: 'Stochastic Oscillator (outputs: :k :d)', detail: '(stoch SYMBOL k_period d_period smoothing [:output])' },
+  {
+    label: 'stoch',
+    type: 'function',
+    info: 'Stochastic Oscillator (outputs: :k :d)',
+    detail: '(stoch SYMBOL k_period d_period smoothing [:output])',
+  },
 
   // Multi-output: ADX - outputs: :value (default), :plus_di, :minus_di
-  { label: 'adx', type: 'function', info: 'Average Directional Index (outputs: :value :plus_di :minus_di)', detail: '(adx SYMBOL period [:output])' },
+  {
+    label: 'adx',
+    type: 'function',
+    info: 'Average Directional Index (outputs: :value :plus_di :minus_di)',
+    detail: '(adx SYMBOL period [:output])',
+  },
 
   // Volatility indicators
   { label: 'atr', type: 'function', info: 'Average True Range', detail: '(atr SYMBOL period)' },
-  { label: 'stddev', type: 'function', info: 'Standard Deviation', detail: '(stddev SYMBOL period)' },
+  {
+    label: 'stddev',
+    type: 'function',
+    info: 'Standard Deviation',
+    detail: '(stddev SYMBOL period)',
+  },
 
   // Channel indicators - outputs: :upper, :middle, :lower
-  { label: 'keltner', type: 'function', info: 'Keltner Channel (outputs: :upper :middle :lower)', detail: '(keltner SYMBOL period multiplier [:output])' },
-  { label: 'donchian', type: 'function', info: 'Donchian Channel (outputs: :upper :middle :lower)', detail: '(donchian SYMBOL period [:output])' },
+  {
+    label: 'keltner',
+    type: 'function',
+    info: 'Keltner Channel (outputs: :upper :middle :lower)',
+    detail: '(keltner SYMBOL period multiplier [:output])',
+  },
+  {
+    label: 'donchian',
+    type: 'function',
+    info: 'Donchian Channel (outputs: :upper :middle :lower)',
+    detail: '(donchian SYMBOL period [:output])',
+  },
 
   // Volume indicators
   { label: 'obv', type: 'function', info: 'On-Balance Volume', detail: '(obv SYMBOL)' },
-  { label: 'mfi', type: 'function', info: 'Money Flow Index (0-100)', detail: '(mfi SYMBOL period)' },
-  { label: 'vwap', type: 'function', info: 'Volume Weighted Average Price', detail: '(vwap SYMBOL)' },
+  {
+    label: 'mfi',
+    type: 'function',
+    info: 'Money Flow Index (0-100)',
+    detail: '(mfi SYMBOL period)',
+  },
+  {
+    label: 'vwap',
+    type: 'function',
+    info: 'Volume Weighted Average Price',
+    detail: '(vwap SYMBOL)',
+  },
 ];
 
 // Price fields are only valid as a keyword inside (price SYMBOL :field); the bare
 // names are not values, so they are offered through `parameters` instead.
 const metrics: Completion[] = [
-  { label: 'price', type: 'function', info: 'Price of a symbol', detail: '(price SYMBOL [:field])' },
+  {
+    label: 'price',
+    type: 'function',
+    info: 'Price of a symbol',
+    detail: '(price SYMBOL [:field])',
+  },
   { label: 'drawdown', type: 'function', info: 'Drawdown from peak', detail: '(drawdown SYMBOL)' },
-  { label: 'return', type: 'function', info: 'Return over a period', detail: '(return SYMBOL [period])' },
-  { label: 'volatility', type: 'function', info: 'Realized volatility', detail: '(volatility SYMBOL [period])' },
+  {
+    label: 'return',
+    type: 'function',
+    info: 'Return over a period',
+    detail: '(return SYMBOL [period])',
+  },
+  {
+    label: 'volatility',
+    type: 'function',
+    info: 'Realized volatility',
+    detail: '(volatility SYMBOL [period])',
+  },
 ];
 
 const operators: Completion[] = [
@@ -228,9 +347,7 @@ function getCompletions(context: CompletionContext): CompletionResult | null {
   // Filter options by the word being typed
   if (word && !word.startsWith(':')) {
     const lower = word.toLowerCase();
-    options = options.filter(opt =>
-      opt.label.toLowerCase().startsWith(lower)
-    );
+    options = options.filter((opt) => opt.label.toLowerCase().startsWith(lower));
   }
 
   if (options.length === 0) {

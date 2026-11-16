@@ -1,45 +1,54 @@
-import { Logo } from '../../components/common/Logo';
-import { useAuthed } from '../hooks/useAuthed';
+import { LogoMark } from '../../components/common/Logo';
+import { APP_URL, MARKETING_STANDALONE, SIGN_IN_URL } from '../../config/marketing';
+import { useSignedIn } from '../hooks/useSignedIn';
+import { appHref } from '../lib/session';
 
-/**
- * Sticky top nav: brand mark (shared <Logo>) + in-page section links + a CTA
- * that adapts to the build. Local dev co-serves the web app through the reverse
- * proxy, so the CTA links into it — "Open App" → "/dashboard" for a signed-in
- * visitor (shared localStorage, see useAuthed), else "Join the beta" → "/login".
- * The standalone production build has no app, so the CTA is always the in-page
- * waitlist ("Join the beta" → "#join").
- */
+const LINKS: readonly [string, string][] = [
+  ['#build', 'Build'],
+  ['#backtest', 'Backtest'],
+  ['#copilot', 'Copilot'],
+  ['#live', 'Sessions'],
+  ['#own', 'Your account'],
+];
+
+const LINK_OPTS = { standalone: MARKETING_STANDALONE, appUrl: APP_URL };
+
+/** Signed-in visitors get "Open app"; everyone else gets "Sign in" beside the invite button. */
 export function Nav() {
-  const authed = useAuthed();
-
-  let cta = { href: '#join', label: 'Join the beta →' };
-  if (import.meta.env.DEV) {
-    cta = authed
-      ? { href: '/dashboard', label: 'Open App →' }
-      : { href: '/login', label: 'Join the beta →' };
-  }
-
+  const signedIn = useSignedIn();
+  const open = appHref('/dashboard', LINK_OPTS);
+  const signIn = appHref(SIGN_IN_URL, LINK_OPTS);
   return (
     <header className="nav">
-      <div className="nav-inner">
-        <a className="brand" href="#top" aria-label="LlamaTrade home">
-          <Logo size={40} />
-          <span>
-            <span className="name">LlamaTrade</span>
-            <span className="tag">Open · Algorithmic · Your account</span>
-          </span>
+      <div className="wrap">
+        <a className="logo" href="#top" aria-label="LlamaTrade, back to top">
+          <LogoMark className="logo-mark" size={60} bold />
+          <span className="logo-word">LlamaTrade</span>
         </a>
-        <nav className="nav-links" aria-label="Primary">
-          <a href="#build">01 Build</a>
-          <a href="#backtest">02 Backtest</a>
-          <a href="#copilot">03 Copilot</a>
-          <a href="#live">04 Live</a>
-          <a href="#own">05 Own it</a>
+        <nav className="links" aria-label="Sections">
+          {LINKS.map(([href, label]) => (
+            <a key={href} href={href}>
+              {label}
+            </a>
+          ))}
         </nav>
-        <div className="nav-actions">
-          <a className="nav-cta" href={cta.href}>
-            {cta.label}
-          </a>
+        <div className="end">
+          {signedIn && open ? (
+            <a className="mk-btn pri" href={open}>
+              Open app
+            </a>
+          ) : (
+            <>
+              {signIn && (
+                <a className="mk-btn ghost" href={signIn}>
+                  Sign in
+                </a>
+              )}
+              <a className="mk-btn pri" href="#join">
+                Request an invite
+              </a>
+            </>
+          )}
         </div>
       </div>
     </header>

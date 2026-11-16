@@ -10,7 +10,9 @@ function sums(dsl: string) {
 
 describe('checkWeightSums', () => {
   it('passes when specified weights total 100', () => {
-    expect(sums('(weight :method specified (asset SPY :weight 60) (asset QQQ :weight 40))')).toHaveLength(0);
+    expect(
+      sums('(weight :method specified (asset SPY :weight 60) (asset QQQ :weight 40))')
+    ).toHaveLength(0);
   });
 
   it('flags a specified block that does not total 100', () => {
@@ -32,7 +34,9 @@ describe('checkWeightSums', () => {
     expect(
       sums('(weight :method specified (group "A" :weight 70 (asset SPY)) (asset BND :weight 30))')
     ).toHaveLength(0);
-    const bad = sums('(weight :method specified (group "A" :weight 70 (asset SPY)) (asset BND :weight 40))');
+    const bad = sums(
+      '(weight :method specified (group "A" :weight 70 (asset SPY)) (asset BND :weight 40))'
+    );
     expect(bad).toHaveLength(1);
     expect(bad[0].message).toContain('110');
   });
@@ -61,7 +65,9 @@ describe('checkWeightSums', () => {
 
   it('tolerates decimal rounding (33.3 × 3 ≈ 100)', () => {
     expect(
-      sums('(weight :method specified (asset A :weight 33.3) (asset B :weight 33.3) (asset C :weight 33.4))')
+      sums(
+        '(weight :method specified (asset A :weight 33.3) (asset B :weight 33.3) (asset C :weight 33.4))'
+      )
     ).toHaveLength(0);
   });
 });

@@ -1,148 +1,101 @@
-import { StatusBar } from 'expo-status-bar';
-import { Plus, X } from 'lucide-react-native';
+import { type AgentSession, useAgentStore } from '@llamatrade/core/stores/agent';
 import { Modal, Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AgentSessionStatus, type AgentSession, useAgentStore } from '@llamatrade/core/stores/agent';
-import { fonts, palette } from '../theme';
-import { Body, Display, Label, Mono } from '../ui';
+import { makeStyles, radius, space } from '../theme';
+import { Text } from '../ui';
 
-function relTime(ms: number): string {
-  const diff = Date.now() - ms;
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return 'now';
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d`;
-  return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
-}
-
-function dotColor(status: AgentSessionStatus): string {
-  if (status === AgentSessionStatus.ACTIVE) return palette.orange[500];
-  if (status === AgentSessionStatus.COMPLETED) return palette.green[500];
-  return palette.gray[400];
-}
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function sessionMs(s: AgentSession): number {
   const v = s.lastActivityAt?.seconds ?? s.createdAt?.seconds;
   return v ? Number(v) * 1000 : 0;
 }
 
+/** Clock time for today and yesterday, a date for anything older. */
+function when(ms: number, today: boolean): string {
+  if (!ms) return '';
+  const d = new Date(ms);
+  return today
+    ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    : `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+}
+
 interface Group {
   label: string;
+  recent: boolean;
   items: AgentSession[];
 }
 
 function group(sessions: AgentSession[]): Group[] {
   const now = new Date();
   const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const startYesterday = startToday - 86400000;
-  const today: AgentSession[] = [];
-  const yesterday: AgentSession[] = [];
-  const earlier: AgentSession[] = [];
+  const startYesterday = startToday - 86_400_000;
+  const groups: Group[] = [
+    { label: 'Today', recent: true, items: [] },
+    { label: 'Yesterday', recent: true, items: [] },
+    { label: 'Earlier', recent: false, items: [] },
+  ];
   for (const s of sessions) {
     const ms = sessionMs(s);
-    if (ms >= startToday) today.push(s);
-    else if (ms >= startYesterday) yesterday.push(s);
-    else earlier.push(s);
+    groups[ms >= startToday ? 0 : ms >= startYesterday ? 1 : 2].items.push(s);
   }
-  return [
-    { label: 'Today', items: today },
-    { label: 'Yesterday', items: yesterday },
-    { label: 'Earlier', items: earlier },
-  ].filter((g) => g.items.length > 0);
+  return groups.filter((g) => g.items.length > 0);
 }
 
+/** Bottom sheet listing past conversations, grouped by day. */
 export function HistorySheet({ visible, onClose }: { visible: boolean; onClose: () => void }) {
-  const sessions = useAgentStore((s) => s.sessions);
-  const currentId = useAgentStore((s) => s.currentSessionId);
-  const selectSession = useAgentStore((s) => s.selectSession);
-  const startNewChat = useAgentStore((s) => s.startNewChat);
-
+  const s = useStyles();
   const insets = useSafeAreaInsets();
+  const sessions = useAgentStore((st) => st.sessions);
+  const currentId = useAgentStore((st) => st.currentSessionId);
+  const selectSession = useAgentStore((st) => st.selectSession);
+  const startNewChat = useAgentStore((st) => st.startNewChat);
+
   const groups = group([...sessions].sort((a, b) => sessionMs(b) - sessionMs(a)));
 
   return (
-    <Modal visible={visible} animationType="slide" presentationStyle="fullScreen" onRequestClose={onClose}>
-      <View style={{ flex: 1, backgroundColor: palette.ink }}>
-        {visible ? <StatusBar style="light" /> : null}
-        {/* Header */}
-        <View
-          style={{
-            paddingTop: insets.top,
-            height: 48 + insets.top,
-            backgroundColor: palette.ink,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingHorizontal: 14,
-          }}
-        >
-          <Display size={16} color={palette.orange[500]}>
-            Conversations
-          </Display>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <Pressable
-              onPress={() => {
-                startNewChat();
-                onClose();
-              }}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 2, borderColor: palette.bone, paddingHorizontal: 8, paddingVertical: 4 }}
-            >
-              <Plus color={palette.bone} size={12} strokeWidth={2.5} />
-              <Mono size={9} color={palette.bone} style={{ fontWeight: '700' }}>
-                NEW
-              </Mono>
-            </Pressable>
-            <Pressable onPress={onClose} hitSlop={8}>
-              <X color={palette.bone} size={20} strokeWidth={2.5} />
-            </Pressable>
-          </View>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable accessibilityLabel="Close conversations" style={s.scrim} onPress={onClose} />
+      <View style={[s.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+        <View style={s.grab} />
+        <View style={s.head}>
+          <Text variant="subhead">Conversations</Text>
+          <Text
+            variant="bodyStrong"
+            tone="accent"
+            onPress={() => {
+              startNewChat();
+              onClose();
+            }}
+          >
+            New
+          </Text>
         </View>
-
-        <ScrollView style={{ flex: 1, backgroundColor: palette.bone }} contentContainerStyle={{ padding: 12, paddingBottom: 40, gap: 8 }}>
+        <ScrollView contentContainerStyle={s.list}>
           {sessions.length === 0 ? (
-            <View style={{ paddingVertical: 40, alignItems: 'center' }}>
-              <Label>No conversations yet</Label>
-            </View>
+            <Text variant="small" tone="fg3" style={s.empty}>No conversations yet.</Text>
           ) : (
             groups.map((g) => (
-              <View key={g.label} style={{ gap: 8 }}>
-                <Mono size={9} color={palette.gray[500]} style={{ letterSpacing: 1.2, marginTop: 6 }}>
-                  {g.label.toUpperCase()}
-                </Mono>
-                {g.items.map((s) => {
-                  const active = s.id === currentId;
+              <View key={g.label}>
+                <Text variant="label" tone="fg3" style={s.groupLabel}>{g.label}</Text>
+                {g.items.map((item, i) => {
+                  const active = item.id === currentId;
                   return (
                     <Pressable
-                      key={s.id}
+                      key={item.id}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
                       onPress={() => {
-                        void selectSession(s.id);
+                        selectSession(item.id);
                         onClose();
                       }}
-                      style={{
-                        borderWidth: 2,
-                        borderColor: palette.ink,
-                        backgroundColor: palette.paper,
-                        paddingHorizontal: 11,
-                        paddingVertical: 10,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        gap: 9,
-                        ...(active ? { borderLeftWidth: 5, borderLeftColor: palette.orange[500] } : {}),
-                      }}
+                      style={({ pressed }) => [s.row, i < g.items.length - 1 ? s.divider : null, pressed ? s.pressed : null]}
                     >
-                      <View style={{ width: 7, height: 7, borderRadius: 0, backgroundColor: dotColor(s.status) }} />
-                      <View style={{ flex: 1 }}>
-                        <Body size={13} style={{ fontWeight: '700' }} numberOfLines={1}>
-                          {s.title || 'Untitled'}
-                        </Body>
-                        <Mono size={9} color={palette.gray[500]} style={{ marginTop: 2 }}>
-                          {s.messageCount} msgs · {relTime(sessionMs(s))}
-                        </Mono>
-                      </View>
+                      <Text variant={active ? 'bodyStrong' : 'body'} tone={active ? 'accent' : 'fg'} numberOfLines={1} style={s.title}>
+                        {item.title || 'Untitled'}
+                      </Text>
+                      <Text variant="numSmall" tone="fg3">{when(sessionMs(item), g.recent)}</Text>
                     </Pressable>
                   );
                 })}
@@ -154,3 +107,30 @@ export function HistorySheet({ visible, onClose }: { visible: boolean; onClose: 
     </Modal>
   );
 }
+
+const useStyles = makeStyles((t) => ({
+  scrim: { flex: 1, backgroundColor: t.c.scrim },
+  sheet: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    maxHeight: '78%',
+    backgroundColor: t.c.panel,
+    borderTopLeftRadius: radius.sheet,
+    borderTopRightRadius: radius.sheet,
+    borderTopWidth: 1,
+    borderColor: t.c.lineStrong,
+    paddingTop: 8,
+    ...t.shadow.lg,
+  },
+  grab: { width: 38, height: 5, borderRadius: 3, backgroundColor: t.c.lineStrong, alignSelf: 'center', marginBottom: 10 },
+  head: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: space.gutter, paddingBottom: 6 },
+  list: { paddingHorizontal: space.gutter, paddingBottom: 8 },
+  groupLabel: { marginTop: 12, marginBottom: 2 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 },
+  divider: { borderBottomWidth: 1, borderColor: t.c.line },
+  pressed: { opacity: 0.6 },
+  title: { flex: 1 },
+  empty: { textAlign: 'center', paddingVertical: 40 },
+}));

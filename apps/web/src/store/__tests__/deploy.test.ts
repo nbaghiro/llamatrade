@@ -21,7 +21,7 @@ vi.mock('@llamatrade/core/net', () => ({
 
 import { ConnectError } from '@connectrpc/connect';
 import { ExecutionMode } from '@llamatrade/core/proto/common_pb';
-import { useDeployStore } from '@llamatrade/core/stores/deploy';
+import { useDeployStore, validateDeploy } from '@llamatrade/core/stores/deploy';
 import { useFundingStore } from '@llamatrade/core/stores/funding';
 
 const ARGS = {
@@ -38,7 +38,7 @@ beforeEach(() => {
   useFundingStore.setState({ paperCredentialId: 'paper-1', unallocatedCash: 5000 });
   createExecution.mockResolvedValue({ execution: { id: 'exec-1' } });
   startExecution.mockResolvedValue({});
-  startSession.mockResolvedValue({});
+  startSession.mockResolvedValue({ session: { id: 'sess-1' } });
 });
 
 describe('deploy guards', () => {
@@ -66,7 +66,7 @@ describe('deploy guards', () => {
 
     expect(result).toBeNull();
     expect(createExecution).not.toHaveBeenCalled();
-    expect(useDeployStore.getState().error).toMatch(/free cash/i);
+    expect(useDeployStore.getState().error).toMatch(/unallocated cash/i);
   });
 
   it('allows allocating exactly the free balance', async () => {
@@ -78,7 +78,36 @@ describe('deploy guards', () => {
   });
 });
 
+describe('validateDeploy', () => {
+  const base = { allocation: 1000, unallocatedCash: 5000, hasPaperCredential: true };
+
+  it('accepts an amount within unallocated cash, including all of it', () => {
+    expect(validateDeploy(base)).toBeNull();
+    expect(validateDeploy({ ...base, allocation: 5000 })).toBeNull();
+  });
+
+  it('asks for paper keys first', () => {
+    expect(validateDeploy({ ...base, hasPaperCredential: false })).toMatch(/paper keys/i);
+  });
+
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])('refuses %s', (allocation) => {
+    expect(validateDeploy({ ...base, allocation })).toMatch(/greater than \$0/);
+  });
+
+  it('compares at cent precision so float noise never blocks the full balance', () => {
+    expect(validateDeploy({ ...base, allocation: 0.1 + 0.2, unallocatedCash: 0.3 })).toBeNull();
+    expect(validateDeploy({ ...base, allocation: 5000.01 })).toMatch(/unallocated cash/i);
+  });
+});
+
 describe('deploy funding path', () => {
+  it('deploys the version it was given', async () => {
+    await useDeployStore.getState().deploy({ ...ARGS, strategyVersion: 3, goLive: true });
+
+    expect(createExecution).toHaveBeenCalledWith(expect.objectContaining({ version: 3 }));
+    expect(startSession).toHaveBeenCalledWith(expect.objectContaining({ strategyVersion: 3 }));
+  });
+
   it('creates then starts the execution with a cents-precise allocation', async () => {
     const result = await useDeployStore.getState().deploy(ARGS);
 
@@ -90,10 +119,13 @@ describe('deploy funding path', () => {
         credentialsId: 'paper-1',
       })
     );
-    expect(startExecution).toHaveBeenCalledWith(
-      expect.objectContaining({ executionId: 'exec-1' })
-    );
-    expect(result).toEqual({ executionId: 'exec-1', live: false, liveError: null });
+    expect(startExecution).toHaveBeenCalledWith(expect.objectContaining({ executionId: 'exec-1' }));
+    expect(result).toEqual({
+      executionId: 'exec-1',
+      sessionId: null,
+      live: false,
+      liveError: null,
+    });
     expect(useDeployStore.getState().deploying).toBe(false);
   });
 
@@ -130,7 +162,12 @@ describe('deploy live path', () => {
         credentialsId: 'paper-1',
       })
     );
-    expect(result).toEqual({ executionId: 'exec-1', live: true, liveError: null });
+    expect(result).toEqual({
+      executionId: 'exec-1',
+      sessionId: 'sess-1',
+      live: true,
+      liveError: null,
+    });
   });
 
   it('keeps the funded deployment when only the live session fails', async () => {

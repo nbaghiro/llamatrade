@@ -1,75 +1,40 @@
 /**
- * StrategyTree — the single presentational renderer for the Monolith block/tree
- * editor visual. Used by EVERY strategy-tree render site:
- *  - the interactive builder (wraps rows with handlers via `renderRow`)
- *  - the auth "strategy builds itself" animation (`node` + `visibleCount`)
- *  - marketing, template previews, inline viewers, empty states
- *
- * It owns the recursive walk, the connectors, the reveal animation, and the
- * rail-block styling (`StrategyBlockRow`). It is ground-aware: pass
- * `ground="ink"` (default) for a dark canvas (auth/marketing) or `ground="bone"`
- * for the light builder canvas — this swaps neutral fills, connector, and ring
- * tints so the same rail-blocks read correctly on either surface.
+ * StrategyTree draws a strategy as nested blocks with connectors and an optional build-up
+ * animation. Used by the auth showcase, marketing and template previews. Pass `renderRow` to
+ * layer interactivity. Colours come from tokens, so `ground` only remains for callers.
  */
 
 import type { ReactNode } from 'react';
 
-import { prepareForest, prepareTree, type BlockKind, type RawNode, type TreeNode } from './strategyTreeModel';
+import { blockStyle, SELECTED_BLOCK } from '../strategy-builder/block-theme';
+
+import {
+  prepareForest,
+  prepareTree,
+  type BlockKind,
+  type RawNode,
+  type TreeNode,
+} from './strategyTreeModel';
 
 export type { BlockKind, RawNode, TreeNode } from './strategyTreeModel';
 
 export type TreeGround = 'ink' | 'bone';
 
-interface KindStyle {
-  box: string;
-  kw: string;
-}
-
-/**
- * Per-kind rail-block styling. A 6px coloured left rail encodes the kind; the
- * fill is neutral (bone on an ink ground, paper on a bone ground) except the
- * `weight`/`else` theme tints and the orange `strategy`/`root` header.
- */
-function kindStyle(kind: BlockKind, ground: TreeGround): KindStyle {
-  const light = ground === 'bone';
-  const surface = light ? 'bg-paper' : 'bg-bone';
-  // Light builder canvas: every block carries a full 2px ink frame (the Split
-  // Studio design). Dark auth ground: the offset shadow provides the edge.
-  const frame = light ? 'border-2 border-ink ' : '';
-  switch (kind) {
-    case 'strategy':
-    case 'root':
-      return { box: `${frame}bg-orange-500 text-ink border-l-[5px] border-l-ink`, kw: 'text-ink' };
-    case 'if':
-    case 'filter':
-      // Solid theme-orange conditional gate on the light builder canvas; light
-      // surface + orange rail on the dark auth ground.
-      return light
-        ? { box: `${frame}bg-orange-500 text-ink border-l-[5px] border-l-ink`, kw: 'text-ink' }
-        : { box: `${surface} text-ink border-l-[5px] border-l-orange-500`, kw: 'text-orange-600' };
-    case 'weight':
-      // Solid deep green on the light builder canvas (the pale tint read washed
-      // out); keep the light tint on the dark auth ground where it pops.
-      return light
-        ? { box: `${frame}bg-green-600 text-bone border-l-[5px] border-l-green-800`, kw: 'text-bone' }
-        : { box: `bg-block-weight text-ink border-l-[5px] border-l-green-600`, kw: 'text-green-700' };
-    case 'else':
-      // Solid warm near-black with an orange rail (pairs it with its IF) on the
-      // light builder canvas; keep the warm tint on the dark auth ground.
-      return light
-        ? { box: `${frame}bg-gray-900 text-bone border-l-[5px] border-l-orange-500`, kw: 'text-bone' }
-        : { box: `bg-block-else text-ink border-l-[5px] border-l-ink`, kw: 'text-ink' };
-    case 'group':
-      return { box: `${frame}${surface} text-ink border-l-[5px] border-l-ink`, kw: 'text-ink' };
-    case 'asset':
-      return { box: `${frame}bg-paper text-ink border-l-[5px] border-l-blue-600`, kw: light ? 'text-blue-600' : '' };
-  }
+function kindStyle(kind: BlockKind) {
+  return blockStyle(kind);
 }
 
 function AssetGlyph() {
   return (
     <span className="flex-none" aria-hidden="true">
-      <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.9}>
+      <svg
+        width="15"
+        height="15"
+        viewBox="0 0 20 20"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={1.9}
+      >
         <path d="M10 2 L18 6 L10 10 L2 6 Z" />
         <path d="M3 10 L10 13.5 L17 10" />
         <path d="M3 13.5 L10 17 L17 13.5" />
@@ -102,7 +67,7 @@ export interface StrategyBlockRowProps {
  */
 export function StrategyBlockRow({
   node,
-  ground = 'ink',
+  ground: _ground = 'ink',
   comfortable = false,
   selected = false,
   leading,
@@ -113,18 +78,11 @@ export function StrategyBlockRow({
   testId,
   dataSymbol,
 }: StrategyBlockRowProps) {
-  const light = ground === 'bone';
-  const style = kindStyle(node.kind, ground);
-  const ringOffset = light ? 'ring-offset-bone' : 'ring-offset-ink';
-  // Colour theme follows `ground`; size follows `comfortable` (builder = large,
-  // full-width; preview/auth = compact). Light ground carries a full ink frame;
-  // the dark ground leans on the offset shadow for its edge.
-  const shadow = light ? '' : 'shadow-block';
+  const style = kindStyle(node.kind);
   const sizeCls = comfortable
     ? 'min-h-[40px] w-full gap-2.5 px-3.5 py-1.5 text-[13px]'
     : 'min-h-[34px] gap-2 px-2.5 py-1 text-[12px]';
-  const badgeCls = light ? 'bg-ink text-bone' : 'bg-orange-500 text-ink';
-  const selectedRing = selected ? `ring-2 ring-orange-500 ring-offset-2 ${ringOffset}` : '';
+  const selectedRing = selected ? SELECTED_BLOCK : '';
 
   return (
     <div
@@ -132,14 +90,16 @@ export function StrategyBlockRow({
       data-symbol={dataSymbol}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
-      className={`group relative flex items-center font-mono font-bold leading-[1.15] ${sizeCls} ${shadow} ${style.box} ${selectedRing} ${className}`}
+      className={`group relative flex items-center rounded-[4px] border border-line font-mono font-medium leading-[1.15] text-fg ${sizeCls} ${style.box} ${selectedRing} ${className}`}
     >
       {leading}
       {!node.kw && node.kind === 'asset' && <AssetGlyph />}
       {node.kw && <span className={`flex-none ${style.kw}`}>{node.kw}</span>}
       <span className="min-w-0 flex-1 truncate font-normal opacity-90">{node.label}</span>
       {node.weight && (
-        <span className={`ml-auto flex-none border-2 border-ink px-1.5 leading-[1.5] tabular-nums ${comfortable ? 'text-[11px]' : 'text-[10px]'} ${badgeCls}`}>
+        <span
+          className={`ml-auto flex-none rounded-[3px] bg-sunk px-1.5 leading-[1.5] tabular-nums text-fg ${comfortable ? 'text-[11px]' : 'text-[10px]'}`}
+        >
           {node.weight}
         </span>
       )}
@@ -180,7 +140,7 @@ function Branch({
   renderAfterChildren,
 }: BranchProps) {
   const visible = node.seq < visibleCount;
-  const connector = ground === 'ink' ? 'border-bone/25' : 'border-ink/25';
+  const connector = 'border-line-strong';
   const elbowTop = comfortable ? 'top-[19px]' : 'top-[17px]';
 
   const defaultRow = <StrategyBlockRow node={node} ground={ground} comfortable={comfortable} />;
@@ -195,7 +155,7 @@ function Branch({
       {!isRootLevel && (
         <span
           aria-hidden="true"
-          className={`absolute left-[-16px] w-3.5 border-t-2 ${elbowTop} ${connector}`}
+          className={`absolute left-[-16px] w-3.5 border-t ${elbowTop} ${connector}`}
           style={{ opacity: visible ? 1 : 0, transition: 'opacity .4s ease' }}
         />
       )}
@@ -212,7 +172,7 @@ function Branch({
       </div>
       {showRegion && (
         <div
-          className={`relative ml-2 border-l-2 ${connector} pl-4`}
+          className={`relative ml-2 border-l ${connector} pl-4`}
           style={{ opacity: visible ? 1 : 0, transition: 'opacity .4s ease' }}
         >
           {children.map((child) => (

@@ -1,121 +1,106 @@
-import { AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { useEffect, useRef } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 
 import { StrategyBuilder } from '../../components/strategy-builder/StrategyBuilder';
+import { PanelError, Skeleton, SkeletonRows } from '../../components/ui';
 import { useStrategyBuilderStore } from '../../store/strategy-builder';
 
+/** The editor for a saved strategy (/strategies/:id/edit) or a new draft (/strategies/builder). */
 export default function StrategyEditorPage() {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
   const templateId = searchParams.get('template');
   const artifactId = searchParams.get('artifact');
+  const mode = searchParams.get('mode');
+  const loadedKey = useRef<string | null>(null);
 
-  // Track if we've already loaded to prevent double-execution in React 18 Strict Mode
-  const hasLoadedRef = useRef(false);
+  const {
+    loadStrategy,
+    loadTemplate,
+    loadFromArtifact,
+    createNew,
+    setViewMode,
+    loading,
+    error,
+    tree,
+    isDirty,
+  } = useStrategyBuilderStore();
 
-  const { loadStrategy, loadTemplate, loadFromArtifact, createNew, loading, error, clearError, tree, isDirty } =
-    useStrategyBuilderStore();
-
-  useEffect(() => {
-    if (hasLoadedRef.current) return;
-
+  const key = `${id ?? ''}|${templateId ?? ''}|${artifactId ?? ''}|${mode ?? ''}`;
+  const load = () => {
     if (id) {
-      hasLoadedRef.current = true;
-      loadStrategy(id);
+      loadStrategy(id).catch(() => undefined);
     } else if (artifactId) {
-      // Load from pending artifact (survives page refresh)
-      hasLoadedRef.current = true;
-      loadFromArtifact(artifactId);
+      loadFromArtifact(artifactId).catch(() => undefined);
     } else if (templateId) {
-      hasLoadedRef.current = true;
-      loadTemplate(templateId);
+      loadTemplate(templateId).catch(() => undefined);
     } else {
-      // Check if tree was already populated (e.g., from preview dialog)
-      const currentTree = useStrategyBuilderStore.getState().tree;
-      const hasContent = Object.keys(currentTree.blocks).length > 1;
-      if (!hasContent) {
-        hasLoadedRef.current = true;
-        createNew();
-      }
+      createNew();
+      if (mode === 'code') setViewMode('code');
     }
-  }, [id, artifactId, templateId, loadStrategy, loadFromArtifact, loadTemplate, createNew]);
-
-  // Reset the ref when navigating to a new strategy
-  useEffect(() => {
-    return () => {
-      hasLoadedRef.current = false;
-    };
-  }, [id, artifactId, templateId]);
-
-  // Warn on browser refresh/close with unsaved changes
-  useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (isDirty) {
-        e.preventDefault();
-        // Modern browsers ignore custom messages, but returnValue must be set
-        e.returnValue = '';
-        return '';
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [isDirty]);
-
-  const handleBack = () => {
-    navigate('/strategies');
   };
+
+  useEffect(() => {
+    if (loadedKey.current === key) return;
+    loadedKey.current = key;
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (!isDirty) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [isDirty]);
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-56px)]">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-orange-500 mx-auto mb-4" />
-          <p className="text-gray-500 dark:text-gray-400">
-            {id ? 'Loading strategy...' : artifactId ? 'Loading artifact...' : templateId ? 'Loading template...' : 'Initializing...'}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // Error state - only show full-page error for load failures
-  // If tree has blocks beyond just root, load succeeded and save errors show inline
-  const isLoadError = error && Object.keys(tree.blocks).length <= 1;
-  if (isLoadError) {
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-56px)]">
-        <div className="text-center max-w-md">
-          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-          <h2 className="text-lg font-display uppercase tracking-tight text-gray-900 dark:text-gray-100 mb-2">
-            Failed to load strategy
-          </h2>
-          <p className="text-gray-500 dark:text-gray-400 mb-4">{error}</p>
-          <div className="flex items-center justify-center gap-3">
-            <button
-              onClick={handleBack}
-              className="btn btn-ghost"
-            >
-              <ArrowLeft className="w-4 h-4" />
-              Back to Strategies
-            </button>
-            <button
-              onClick={clearError}
-              className="btn btn-primary"
-            >
-              Try Again
-            </button>
+      <div className="page" aria-busy="true">
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className="mt-3 h-6 w-64" />
+        <Skeleton className="mt-2 h-3 w-80" />
+        <div className="mt-6 grid gap-9 lg:grid-cols-[minmax(0,1fr)_330px]">
+          <div className="panel">
+            <SkeletonRows rows={7} cols={2} />
           </div>
+          <Skeleton className="h-56 w-full" />
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="h-[calc(100vh-56px)]">
-      <StrategyBuilder />
-    </div>
-  );
+  if (error && Object.keys(tree.blocks).length <= 1) {
+    return (
+      <div className="page">
+        <Link
+          to="/strategies"
+          className="inline-flex items-center gap-1 text-[12.5px] text-fg-3 hover:text-fg"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Strategies
+        </Link>
+        <div className="panel mt-4">
+          <PanelError
+            title={
+              id
+                ? 'This strategy couldn’t be opened'
+                : templateId
+                  ? 'This template couldn’t be opened'
+                  : 'This draft couldn’t be opened'
+            }
+            cause={error}
+            unaffected="Your saved strategies aren’t affected."
+            onRetry={load}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  return <StrategyBuilder />;
 }

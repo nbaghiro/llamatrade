@@ -11,7 +11,6 @@ import {
 } from '@llamatrade/core/strategy/serializer';
 import { describe, it, expect } from 'vitest';
 
-
 describe('tokenizeWithPositions', () => {
   it('should tokenize simple S-expression', () => {
     const input = '(strategy :name "Test")';
@@ -54,7 +53,12 @@ describe('tokenizeWithPositions', () => {
 
     const keywords = tokens.filter((t) => t.type === 'keyword');
     expect(keywords.map((t) => t.value)).toEqual([
-      'strategy', 'weight', 'group', 'if', 'else', 'filter',
+      'strategy',
+      'weight',
+      'group',
+      'if',
+      'else',
+      'filter',
     ]);
   });
 
@@ -63,9 +67,7 @@ describe('tokenizeWithPositions', () => {
     const tokens = tokenizeWithPositions(input);
 
     const methods = tokens.filter((t) => t.type === 'method');
-    expect(methods.map((t) => t.value)).toEqual([
-      'equal', 'momentum', 'inverse-volatility',
-    ]);
+    expect(methods.map((t) => t.value)).toEqual(['equal', 'momentum', 'inverse-volatility']);
   });
 
   it('should classify indicators correctly', () => {
@@ -74,14 +76,23 @@ describe('tokenizeWithPositions', () => {
 
     const indicators = tokens.filter((t) => t.type === 'indicator');
     expect(indicators.map((t) => t.value)).toEqual([
-      'sma', 'ema', 'rsi', 'macd', 'bbands', 'stoch', 'williams-r',
+      'sma',
+      'ema',
+      'rsi',
+      'macd',
+      'bbands',
+      'stoch',
+      'williams-r',
     ]);
   });
 
   it('should not classify names the backend parser rejects', () => {
     const tokens = tokenizeWithPositions('(macd-line bb-upper cross-above allocation)');
     expect(tokens.filter((t) => t.type === 'unknown').map((t) => t.value)).toEqual([
-      'macd-line', 'bb-upper', 'cross-above', 'allocation',
+      'macd-line',
+      'bb-upper',
+      'cross-above',
+      'allocation',
     ]);
   });
 
@@ -91,7 +102,14 @@ describe('tokenizeWithPositions', () => {
 
     const operators = tokens.filter((t) => t.type === 'operator');
     expect(operators.map((t) => t.value)).toEqual([
-      '>', '<', '>=', '<=', '=', '!=', 'crosses-above', 'crosses-below',
+      '>',
+      '<',
+      '>=',
+      '<=',
+      '=',
+      '!=',
+      'crosses-above',
+      'crosses-below',
     ]);
   });
 
@@ -246,7 +264,7 @@ describe('fromDSLString', () => {
 
     // Find weight block
     const tree = result!.tree;
-    const weightBlocks = Object.values(tree.blocks).filter(b => b.type === 'weight');
+    const weightBlocks = Object.values(tree.blocks).filter((b) => b.type === 'weight');
     expect(weightBlocks.length).toBe(1);
 
     const weightBlock = weightBlocks[0] as { allocations: Record<string, number> };
@@ -270,10 +288,10 @@ describe('fromDSLString', () => {
     expect(result).not.toBeNull();
 
     const tree = result!.tree;
-    const groupBlocks = Object.values(tree.blocks).filter(b => b.type === 'group');
+    const groupBlocks = Object.values(tree.blocks).filter((b) => b.type === 'group');
     expect(groupBlocks.length).toBe(2);
 
-    const groupNames = groupBlocks.map(g => (g as { name: string }).name);
+    const groupNames = groupBlocks.map((g) => (g as { name: string }).name);
     expect(groupNames).toContain('US Stocks');
     expect(groupNames).toContain('Bonds');
   });
@@ -292,8 +310,8 @@ describe('fromDSLString', () => {
     expect(result).not.toBeNull();
 
     const tree = result!.tree;
-    const ifBlocks = Object.values(tree.blocks).filter(b => b.type === 'if');
-    const elseBlocks = Object.values(tree.blocks).filter(b => b.type === 'else');
+    const ifBlocks = Object.values(tree.blocks).filter((b) => b.type === 'if');
+    const elseBlocks = Object.values(tree.blocks).filter((b) => b.type === 'else');
 
     expect(ifBlocks.length).toBe(1);
     expect(elseBlocks.length).toBe(1);
@@ -315,15 +333,15 @@ describe('fromDSLString', () => {
     expect(result).not.toBeNull();
 
     const tree = result!.tree;
-    const ifBlocks = Object.values(tree.blocks).filter(b => b.type === 'if');
-    const elseBlocks = Object.values(tree.blocks).filter(b => b.type === 'else');
+    const ifBlocks = Object.values(tree.blocks).filter((b) => b.type === 'if');
+    const elseBlocks = Object.values(tree.blocks).filter((b) => b.type === 'else');
 
     expect(ifBlocks.length).toBe(1);
     expect(elseBlocks.length).toBe(1);
 
     // Find the weight block that contains the if/else
     const weightBlock = Object.values(tree.blocks).find(
-      b => b.type === 'weight' && 'childIds' in b
+      (b) => b.type === 'weight' && 'childIds' in b
     ) as { childIds: string[] } | undefined;
     expect(weightBlock).toBeDefined();
 
@@ -350,7 +368,7 @@ describe('fromDSLString', () => {
     expect(result).not.toBeNull();
 
     const tree = result!.tree;
-    const filterBlocks = Object.values(tree.blocks).filter(b => b.type === 'filter');
+    const filterBlocks = Object.values(tree.blocks).filter((b) => b.type === 'filter');
     expect(filterBlocks.length).toBe(1);
 
     const filter = filterBlocks[0] as { config: { selection: string; count: number } };
@@ -415,7 +433,7 @@ describe('fromDSLString', () => {
     expect(result).not.toBeNull();
 
     const tree = result!.tree;
-    const weightBlocks = Object.values(tree.blocks).filter(b => b.type === 'weight');
+    const weightBlocks = Object.values(tree.blocks).filter((b) => b.type === 'weight');
     expect(weightBlocks.length).toBe(1);
 
     const weight = weightBlocks[0] as { method: string; lookbackDays: number };
@@ -491,8 +509,8 @@ describe('round-trip DSL serialization', () => {
     expect(reparsed!.metadata.name).toBe(parsed!.metadata.name);
 
     // Check asset count is preserved
-    const originalAssets = Object.values(parsed!.tree.blocks).filter(b => b.type === 'asset');
-    const reparsedAssets = Object.values(reparsed!.tree.blocks).filter(b => b.type === 'asset');
+    const originalAssets = Object.values(parsed!.tree.blocks).filter((b) => b.type === 'asset');
+    const reparsedAssets = Object.values(reparsed!.tree.blocks).filter((b) => b.type === 'asset');
     expect(reparsedAssets.length).toBe(originalAssets.length);
   });
 
@@ -520,8 +538,8 @@ describe('round-trip DSL serialization', () => {
     expect(reparsed).not.toBeNull();
 
     // Verify groups are preserved
-    const originalGroups = Object.values(parsed!.tree.blocks).filter(b => b.type === 'group');
-    const reparsedGroups = Object.values(reparsed!.tree.blocks).filter(b => b.type === 'group');
+    const originalGroups = Object.values(parsed!.tree.blocks).filter((b) => b.type === 'group');
+    const reparsedGroups = Object.values(reparsed!.tree.blocks).filter((b) => b.type === 'group');
     expect(reparsedGroups.length).toBe(originalGroups.length);
   });
 
@@ -545,8 +563,8 @@ describe('round-trip DSL serialization', () => {
     expect(reparsed).not.toBeNull();
 
     // Verify if block is preserved
-    const originalIfBlocks = Object.values(parsed!.tree.blocks).filter(b => b.type === 'if');
-    const reparsedIfBlocks = Object.values(reparsed!.tree.blocks).filter(b => b.type === 'if');
+    const originalIfBlocks = Object.values(parsed!.tree.blocks).filter((b) => b.type === 'if');
+    const reparsedIfBlocks = Object.values(reparsed!.tree.blocks).filter((b) => b.type === 'if');
     expect(reparsedIfBlocks.length).toBe(originalIfBlocks.length);
   });
 });
@@ -595,7 +613,7 @@ describe('validateTree', () => {
 
     const result = validateTree(tree);
     expect(result.valid).toBe(false);
-    expect(result.errors.some(e => e.message.includes('at least one asset'))).toBe(true);
+    expect(result.errors.some((e) => e.message.includes('at least one asset'))).toBe(true);
   });
 
   it('should detect orphan blocks', () => {
@@ -630,7 +648,11 @@ describe('validateTree', () => {
 
     const result = validateTree(tree);
     // Updated message format from validation module
-    expect(result.warnings.some(w => w.message.includes('Orphan') || w.message.includes('not reachable'))).toBe(true);
+    expect(
+      result.warnings.some(
+        (w) => w.message.includes('Orphan') || w.message.includes('not reachable')
+      )
+    ).toBe(true);
   });
 });
 
@@ -644,7 +666,7 @@ describe('parseOperand - symbol extraction', () => {
     const result = fromDSLString(dsl);
     expect(result).not.toBeNull();
 
-    const ifBlocks = Object.values(result!.tree.blocks).filter(b => b.type === 'if');
+    const ifBlocks = Object.values(result!.tree.blocks).filter((b) => b.type === 'if');
     expect(ifBlocks.length).toBe(1);
 
     const ifBlock = ifBlocks[0] as { condition: { left: { symbol: string } } };
@@ -660,14 +682,14 @@ describe('parseOperand - symbol extraction', () => {
     const result = fromDSLString(dsl);
     expect(result).not.toBeNull();
 
-    const ifBlocks = Object.values(result!.tree.blocks).filter(b => b.type === 'if');
+    const ifBlocks = Object.values(result!.tree.blocks).filter((b) => b.type === 'if');
     expect(ifBlocks.length).toBe(1);
 
     const ifBlock = ifBlocks[0] as {
       condition: {
         left: { symbol: string };
         right: { symbol: string; period: number };
-      }
+      };
     };
     expect(ifBlock.condition.left.symbol).toBe('ETH');
     expect(ifBlock.condition.right.symbol).toBe('ETH');
@@ -683,11 +705,11 @@ describe('parseOperand - symbol extraction', () => {
     const result = fromDSLString(dsl);
     expect(result).not.toBeNull();
 
-    const ifBlocks = Object.values(result!.tree.blocks).filter(b => b.type === 'if');
+    const ifBlocks = Object.values(result!.tree.blocks).filter((b) => b.type === 'if');
     expect(ifBlocks.length).toBe(1);
 
     const ifBlock = ifBlocks[0] as {
-      condition: { left: { symbol: string; period: number } }
+      condition: { left: { symbol: string; period: number } };
     };
     expect(ifBlock.condition.left.symbol).toBe('SPY');
     expect(ifBlock.condition.left.period).toBe(14);
@@ -702,14 +724,14 @@ describe('parseOperand - symbol extraction', () => {
     const result = fromDSLString(dsl);
     expect(result).not.toBeNull();
 
-    const ifBlocks = Object.values(result!.tree.blocks).filter(b => b.type === 'if');
+    const ifBlocks = Object.values(result!.tree.blocks).filter((b) => b.type === 'if');
     expect(ifBlocks.length).toBe(1);
 
     const ifBlock = ifBlocks[0] as {
       condition: {
         left: { symbol: string; indicator: string };
         right: { symbol: string; indicator: string };
-      }
+      };
     };
     expect(ifBlock.condition.left.symbol).toBe('AAPL');
     expect(ifBlock.condition.left.indicator).toBe('sma');
@@ -729,14 +751,14 @@ describe('parseOperand - symbol extraction', () => {
     const result = fromDSLString(dsl);
     expect(result).not.toBeNull();
 
-    const ifBlocks = Object.values(result!.tree.blocks).filter(b => b.type === 'if');
+    const ifBlocks = Object.values(result!.tree.blocks).filter((b) => b.type === 'if');
     expect(ifBlocks.length).toBe(1);
 
     const ifBlock = ifBlocks[0] as {
       condition: {
         left: { symbol: string };
         right: { symbol: string };
-      }
+      };
     };
     // Both sides should use BTC as the symbol
     expect(ifBlock.condition.left.symbol).toBe('BTC');
@@ -757,16 +779,19 @@ describe('parseWeightExpr - group weight extraction', () => {
     const result = fromDSLString(dsl);
     expect(result).not.toBeNull();
 
-    const weightBlocks = Object.values(result!.tree.blocks).filter(b => b.type === 'weight');
+    const weightBlocks = Object.values(result!.tree.blocks).filter((b) => b.type === 'weight');
     expect(weightBlocks.length).toBe(1);
 
-    const weightBlock = weightBlocks[0] as { allocations: Record<string, number>; childIds: string[] };
-    const groupBlocks = Object.values(result!.tree.blocks).filter(b => b.type === 'group');
+    const weightBlock = weightBlocks[0] as {
+      allocations: Record<string, number>;
+      childIds: string[];
+    };
+    const groupBlocks = Object.values(result!.tree.blocks).filter((b) => b.type === 'group');
     expect(groupBlocks.length).toBe(2);
 
     // Both groups should have weights in the parent weight block's allocations
-    const techGroup = groupBlocks.find(g => (g as { name: string }).name === 'Tech');
-    const financeGroup = groupBlocks.find(g => (g as { name: string }).name === 'Finance');
+    const techGroup = groupBlocks.find((g) => (g as { name: string }).name === 'Tech');
+    const financeGroup = groupBlocks.find((g) => (g as { name: string }).name === 'Finance');
 
     expect(techGroup).toBeDefined();
     expect(financeGroup).toBeDefined();
@@ -774,5 +799,43 @@ describe('parseWeightExpr - group weight extraction', () => {
     // Weights should be extracted into allocations
     expect(weightBlock.allocations[techGroup!.id]).toBe(60);
     expect(weightBlock.allocations[financeGroup!.id]).toBe(40);
+  });
+});
+
+describe('filter lookback round trip', () => {
+  it('keeps an exact lookback that is not a whole period', () => {
+    const dsl = `(strategy "F" :rebalance monthly
+  (filter :by momentum :select (top 2) :lookback 90
+    (weight :method equal (asset XLK) (asset XLF) (asset XLV))))`;
+    const parsed = fromDSLString(dsl)!;
+    const out = toDSL(parsed.tree, { name: 'F', timeframe: parsed.metadata.timeframe ?? '1M' });
+    expect(out).toContain(':lookback 90');
+    expect(fromDSLString(out)!.tree).toBeDefined();
+  });
+
+  it('writes the period length when no exact lookback is set', () => {
+    const dsl = `(strategy "F" :rebalance monthly
+  (filter :by momentum :select (top 2)
+    (weight :method equal (asset XLK) (asset XLF))))`;
+    const parsed = fromDSLString(dsl)!;
+    expect(toDSL(parsed.tree, { name: 'F', timeframe: '1M' })).toContain(':lookback 63');
+  });
+});
+
+describe('momentum operand round trip', () => {
+  it('keeps (momentum SYMBOL N) rather than rewriting it as an SMA', () => {
+    const dsl = `(strategy "D" :rebalance monthly
+  (if (> (momentum SPY 252) (momentum EFA 252))
+    (asset SPY)
+    (else (asset BND))))`;
+    const parsed = fromDSLString(dsl)!;
+    const ifBlock = Object.values(parsed.tree.blocks).find((b) => b.type === 'if');
+    expect(ifBlock && 'condition' in ifBlock ? ifBlock.condition.left : null).toEqual(
+      expect.objectContaining({ type: 'indicator', indicator: 'momentum', period: 252 })
+    );
+    const out = toDSL(parsed.tree, { name: 'D', timeframe: '1M' });
+    expect(out).toContain('(momentum SPY 252)');
+    expect(out).toContain('(momentum EFA 252)');
+    expect(out).not.toContain('sma');
   });
 });

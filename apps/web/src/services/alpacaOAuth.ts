@@ -33,7 +33,11 @@ export async function startAlpacaLink(accessToken: string): Promise<void> {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!res.ok) throw new Error('Could not start the Alpaca connection.');
-  const { authorizeUrl } = (await res.json()) as { authorizeUrl: string };
+  const body = (await res.json().catch(() => null)) as { authorizeUrl?: unknown } | null;
+  const authorizeUrl = body?.authorizeUrl;
+  if (typeof authorizeUrl !== 'string' || !/^https?:\/\//.test(authorizeUrl)) {
+    throw new Error('Could not start the Alpaca connection.');
+  }
   window.location.href = authorizeUrl;
 }
 
@@ -60,4 +64,17 @@ export async function completeAlpacaSignup(payload: CompleteSignupPayload): Prom
     throw new Error(detail?.detail || 'Could not complete sign up.');
   }
   return (await res.json()) as OAuthSession;
+}
+
+/** Plain copy for the `error` Alpaca returns when a link round trip doesn't finish. */
+export function alpacaLinkErrorMessage(code: string): string {
+  if (code === 'access_denied') {
+    return 'The connection was cancelled on Alpaca, so nothing was connected.';
+  }
+  return "Alpaca didn't finish connecting, so nothing was changed. Please try again.";
+}
+
+/** Only an in-app path is accepted as a place to return to after connecting. */
+export function safeReturnPath(next: string | null, fallback = '/dashboard'): string {
+  return next && next.startsWith('/') && !next.startsWith('//') ? next : fallback;
 }

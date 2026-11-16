@@ -1,217 +1,166 @@
-import { router } from 'expo-router';
-import { Sparkles, TrendingUp, Zap } from 'lucide-react-native';
-import { isUp, money, num, pct, signedMoney, toMs } from '@llamatrade/core/format';
+import { money, num, pct, signedMoney, timeAgo, toDate } from '@llamatrade/core/format';
+import { ExecutionStatus } from '@llamatrade/core/proto/common_pb';
 import { MarketStatus } from '@llamatrade/core/proto/market_data_pb';
 import { TransactionType, type Transaction } from '@llamatrade/core/proto/portfolio_pb';
+import { router } from 'expo-router';
 import { useEffect } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { View } from 'react-native';
 
 import { LineChart } from '../../src/charts/LineChart';
-import { useAuthStore } from '../../src/stores/auth';
+import { timeLabels } from '../../src/charts/paths';
 import { usePortfolioStore } from '../../src/stores/portfolio';
-import { palette } from '../../src/theme';
-import { Badge, Body, Card, Display, GridBackground, Label, Mono } from '../../src/ui';
+import { makeStyles, radius } from '../../src/theme';
+import { Button, Card, Loading, Notice, PanelError, Screen, StatusMark, Text, pnlTone, type RunState } from '../../src/ui';
 
-function greeting(): string {
-  const h = new Date().getHours();
-  return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
-}
-
-function today(): string {
-  return new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-}
-
-function marketBadge(status: MarketStatus | null): { label: string; variant: 'green' | 'gray' | 'orange' } {
+function marketState(status: MarketStatus | null): { state: RunState; label: string } | null {
   switch (status) {
     case MarketStatus.OPEN:
-      return { label: 'Market Open', variant: 'green' };
+      return { state: 'running', label: 'Market open' };
     case MarketStatus.PRE_MARKET:
-      return { label: 'Pre-Market', variant: 'orange' };
+      return { state: 'stopped', label: 'Pre-market' };
     case MarketStatus.AFTER_HOURS:
-      return { label: 'After Hours', variant: 'orange' };
+      return { state: 'stopped', label: 'After hours' };
     case MarketStatus.CLOSED:
-      return { label: 'Market Closed', variant: 'gray' };
+      return { state: 'stopped', label: 'Market closed' };
     default:
-      return { label: 'Paper', variant: 'orange' };
+      return null;
   }
 }
 
-const TXN: Partial<Record<TransactionType, { tag: string; color: string }>> = {
-  [TransactionType.BUY]: { tag: 'BUY', color: palette.green[500] },
-  [TransactionType.SELL]: { tag: 'SELL', color: palette.red[500] },
-  [TransactionType.DIVIDEND]: { tag: 'DIV', color: palette.blue[500] },
-  [TransactionType.DEPOSIT]: { tag: 'DEP', color: palette.ink },
-  [TransactionType.WITHDRAWAL]: { tag: 'WD', color: palette.ink },
-  [TransactionType.FEE]: { tag: 'FEE', color: palette.gray[500] },
-  [TransactionType.INTEREST]: { tag: 'INT', color: palette.blue[500] },
+const TXN_TAG: Partial<Record<TransactionType, string>> = {
+  [TransactionType.BUY]: 'BUY',
+  [TransactionType.SELL]: 'SELL',
+  [TransactionType.DIVIDEND]: 'DIV',
+  [TransactionType.DEPOSIT]: 'DEP',
+  [TransactionType.WITHDRAWAL]: 'WD',
+  [TransactionType.FEE]: 'FEE',
+  [TransactionType.INTEREST]: 'INT',
 };
 
-function relTime(ms: number): string {
-  if (!ms) return '';
-  const m = Math.floor((Date.now() - ms) / 60000);
-  if (m < 1) return 'now';
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h`;
-  const d = Math.floor(h / 24);
-  if (d < 7) return `${d}d`;
-  return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-function txnRow(t: Transaction): { tag: string; color: string; title: string; sub: string; when: string } {
-  const meta = TXN[t.type] ?? { tag: 'TXN', color: palette.gray[500] };
-  const qty = num(t.quantity);
-  const sub =
-    (t.type === TransactionType.BUY || t.type === TransactionType.SELL) && qty
-      ? `${qty} ${t.symbol} @ ${money(t.price)}`
-      : money(t.amount) + (t.symbol ? ` · ${t.symbol}` : '');
-  return {
-    tag: meta.tag,
-    color: meta.color,
-    title: t.description || `${meta.tag} ${t.symbol}`.trim(),
-    sub: sub || money(t.amount),
-    when: relTime(toMs(t.timestamp)),
-  };
+function txnRow(t: Transaction): { tag: string; title: string; when: string } {
+  const tag = TXN_TAG[t.type] ?? 'TXN';
+  const shares = num(t.quantity);
+  const trade = (t.type === TransactionType.BUY || t.type === TransactionType.SELL) && shares;
+  const title = trade
+    ? `${shares} ${t.symbol} at ${money(t.price, 2)}`
+    : t.description || `${money(t.amount, 2)}${t.symbol ? ` · ${t.symbol}` : ''}`;
+  return { tag, title, when: timeAgo(toDate(t.timestamp)) };
 }
 
 export default function HomeScreen() {
-  const user = useAuthStore((s) => s.user);
-  const { portfolio, equityCurve, benchmarkCurve, transactions, marketStatus, loading, refreshing, loaded, error, fetch } =
-    usePortfolioStore();
+  const s = useStyles();
+  const {
+    portfolio,
+    strategies,
+    equityCurve,
+    equityTimes,
+    benchmarkCurve,
+    transactions,
+    marketStatus,
+    loading,
+    refreshing,
+    loaded,
+    error,
+    fetch,
+  } = usePortfolioStore();
 
   useEffect(() => {
-    void fetch();
+    fetch();
   }, [fetch]);
 
-  const firstName = user?.firstName || (user?.email ?? '').split('@')[0] || 'there';
-  const market = marketBadge(marketStatus);
-
-  const equity = equityCurve;
-  const bench = benchmarkCurve.length > 1 ? benchmarkCurve : undefined;
+  const market = marketState(marketStatus);
+  const failing = strategies.filter((x) => x.status === ExecutionStatus.ERROR);
+  const day = num(portfolio?.dayReturn);
 
   return (
-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: palette.bone }}>
-      <GridBackground />
-      <View
-        style={{
-          height: 46,
-          borderBottomWidth: 2,
-          borderColor: palette.ink,
-          backgroundColor: palette.paper,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingHorizontal: 14,
-        }}
-      >
-        <Display size={16}>Home</Display>
-        <Badge label={market.label} variant={market.variant} />
+    <Screen refreshing={refreshing} onRefresh={() => fetch({ refresh: true })}>
+      <View style={s.top}>
+        <Text variant="label" tone="fg3">Today · Paper</Text>
+        {market ? <StatusMark state={market.state} label={market.label} /> : null}
       </View>
-
       {loading && !loaded ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-          <ActivityIndicator color={palette.ink} />
-          <Label>Loading…</Label>
-        </View>
-      ) : (
-        <ScrollView
-          contentContainerStyle={{ padding: 12, gap: 11 }}
-          showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void fetch({ refresh: true })} tintColor={palette.ink} />}
-        >
-          <View>
-            <Display size={22}>
-              {greeting()}, {firstName}.
-            </Display>
-            <Label style={{ marginTop: 4 }}>
-              {today()} · {loaded ? 'machine running' : '—'}
-            </Label>
+        <Loading label="Loading your account" />
+      ) : error && !portfolio ? (
+        <PanelError title="Couldn't load your account" detail={error} onRetry={() => fetch()} />
+      ) : portfolio ? (
+        <>
+          {error ? <Notice title="Couldn't refresh." detail={`${error} Pull down to try again.`} /> : null}
+          {failing.length ? (
+            <Notice
+              title={failing.length === 1 ? `${failing[0].strategyName} stopped with an error.` : `${failing.length} sessions stopped with an error.`}
+              detail="Open Portfolio to see which."
+              onPress={() => router.push('/portfolio')}
+            />
+          ) : null}
+
+          <View style={s.hero}>
+            <Text variant="hero">{money(portfolio.totalValue, 2)}</Text>
+            <Text variant="numStrong" tone={pnlTone(day)}>
+              {signedMoney(day, 2)} ({pct(portfolio.dayReturnPercent)})
+            </Text>
           </View>
 
-          {error ? (
-            <Pressable onPress={() => void fetch()} style={{ borderWidth: 2, borderColor: palette.red[500], backgroundColor: palette.red[50], padding: 11 }}>
-              <Mono size={11} color={palette.red[600]}>{error} · tap to retry</Mono>
-            </Pressable>
+          {equityCurve.length > 1 ? (
+            <Card style={s.chartCard}>
+              <LineChart
+                values={equityCurve}
+                benchmark={benchmarkCurve.length > 1 ? benchmarkCurve : undefined}
+                height={130}
+                axis
+                xLabels={timeLabels(equityTimes)}
+              />
+            </Card>
           ) : null}
 
-          {portfolio ? (
-            <>
-              {/* Today hero — the day's move is the headline (Book owns total equity) */}
-              <Card ink shadow>
-                <Label color="#b7b0a2">Today · Paper</Label>
-                <Display size={30} color={palette.bone} style={{ marginTop: 4 }}>
-                  {signedMoney(portfolio.dayReturn)}
-                </Display>
-                <View style={{ flexDirection: 'row', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
-                  <Badge label={`${pct(portfolio.dayReturnPercent)} TODAY`} variant={isUp(portfolio.dayReturn) ? 'green' : 'red'} />
-                  <Badge label={`EQUITY ${money(portfolio.totalValue)}`} variant="orange" />
-                </View>
-                {equity.length > 1 ? (
-                  <View style={{ marginTop: 10 }}>
-                    <LineChart values={equity} benchmark={bench} height={44} fill="rgba(255,77,28,0.22)" />
+          <View style={s.actions}>
+            <Button label="Copilot" variant="secondary" onPress={() => router.push('/copilot')} style={s.action} />
+            <Button label="Strategies" variant="secondary" onPress={() => router.push('/strategies')} style={s.action} />
+            <Button label="Connect" variant="secondary" onPress={() => router.push('/account/connect-broker')} style={s.action} />
+          </View>
+
+          {transactions.length ? (
+            <Card>
+              <Text variant="label" tone="fg3" style={s.cardLabel}>Recent activity</Text>
+              {transactions.slice(0, 6).map((t, i, list) => {
+                const r = txnRow(t);
+                return (
+                  <View key={t.id || i} style={[s.txn, i < list.length - 1 ? s.txnDivider : null]}>
+                    <View style={s.tag}>
+                      <Text variant="numSmall" tone="fg2" style={s.tagText}>{r.tag}</Text>
+                    </View>
+                    <Text variant="small" style={s.txnTitle} numberOfLines={1}>{r.title}</Text>
+                    <Text variant="numSmall" tone="fg3">{r.when}</Text>
                   </View>
-                ) : null}
-              </Card>
-
-              {/* Quick actions — Home is the daily jump-off point */}
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                <Pressable
-                  onPress={() => router.push('/copilot')}
-                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.orange[500], paddingVertical: 12 }}
-                >
-                  <Sparkles color={palette.ink} size={13} strokeWidth={2.5} />
-                  <Mono size={10.5} style={{ fontWeight: '700' }}>COPILOT</Mono>
-                </Pressable>
-                <Pressable
-                  onPress={() => router.push('/strategies')}
-                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.paper, paddingVertical: 12 }}
-                >
-                  <TrendingUp color={palette.ink} size={13} strokeWidth={2.5} />
-                  <Mono size={10.5} style={{ fontWeight: '700' }}>STRATS</Mono>
-                </Pressable>
-                <Pressable
-                  onPress={() => router.push('/account/connect-broker')}
-                  style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.paper, paddingVertical: 12 }}
-                >
-                  <Zap color={palette.ink} size={13} strokeWidth={2.5} />
-                  <Mono size={10.5} style={{ fontWeight: '700' }}>GO LIVE</Mono>
-                </Pressable>
-              </View>
-
-              {/* Recent activity — Home owns "what just happened" */}
-              {transactions.length ? (
-                <>
-                  <Label style={{ marginTop: 2 }}>Recent Activity</Label>
-                  <Card>
-                    {transactions.slice(0, 6).map((t, i) => {
-                      const r = txnRow(t);
-                      const last = i === Math.min(6, transactions.length) - 1;
-                      return (
-                        <View
-                          key={t.id || i}
-                          style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7, borderBottomWidth: last ? 0 : 1, borderColor: 'rgba(13,13,13,0.12)' }}
-                        >
-                          <View style={{ backgroundColor: r.color, paddingHorizontal: 5, paddingVertical: 2 }}>
-                            <Mono size={8} color={palette.bone}>{r.tag}</Mono>
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Body size={11.5} style={{ fontWeight: '600' }} numberOfLines={1}>{r.title}</Body>
-                            <Mono size={9} color={palette.gray[500]} numberOfLines={1}>{r.sub}</Mono>
-                          </View>
-                          <Mono size={9} color={palette.gray[500]}>{r.when}</Mono>
-                        </View>
-                      );
-                    })}
-                  </Card>
-                </>
-              ) : null}
-            </>
-          ) : !error && loaded ? (
-            <Card><Label>No portfolio found for this account</Label></Card>
+                );
+              })}
+            </Card>
           ) : null}
-        </ScrollView>
-      )}
-    </SafeAreaView>
+        </>
+      ) : loaded ? (
+        <PanelError title="No portfolio yet" detail="This account has no paper portfolio. Connect Alpaca paper keys to start." />
+      ) : null}
+    </Screen>
   );
 }
+
+const useStyles = makeStyles((t) => ({
+  top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', minHeight: 22 },
+  hero: { gap: 4, marginTop: -6 },
+  chartCard: { paddingHorizontal: 12, paddingVertical: 12 },
+  actions: { flexDirection: 'row', gap: 8 },
+  action: { flex: 1, paddingHorizontal: 6 },
+  cardLabel: { marginBottom: 4 },
+  txn: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9 },
+  txnDivider: { borderBottomWidth: 1, borderColor: t.c.line },
+  tag: {
+    minWidth: 38,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: t.c.lineStrong,
+    borderRadius: radius.xs,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+  tagText: { fontSize: 10.5, lineHeight: 14 },
+  txnTitle: { flex: 1 },
+}));

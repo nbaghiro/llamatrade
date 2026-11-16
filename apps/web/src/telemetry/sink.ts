@@ -11,12 +11,7 @@
  * `record` never throws — telemetry must never break the host app.
  */
 
-import type {
-  TelemetryAttributes,
-  TelemetryConfig,
-  TelemetryEvent,
-  TelemetrySink,
-} from './types';
+import type { TelemetryAttributes, TelemetryConfig, TelemetryEvent, TelemetrySink } from './types';
 
 const SERVICE_NAME = 'llamatrade-web';
 

@@ -1,8 +1,5 @@
-/** Copilot chat turn: ink user bubble / paper assistant bubble, tool rows, inline artifacts. */
-
 import { AgentMessage, MessageRole, type PendingArtifact } from '@llamatrade/core/stores/agent';
-import { Sparkles } from 'lucide-react';
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 
 import { useAuthStore } from '../../store/auth';
 
@@ -12,263 +9,203 @@ import { ToolCallIndicator } from './ToolCallIndicator';
 
 interface ChatMessageProps {
   message: AgentMessage;
-  /** Map of artifact ID to artifact data for inline rendering */
+  /** Artifacts by id, for the strategy cards linked to this message. */
   artifacts?: Map<string, PendingArtifact>;
 }
 
-/** Format a proto Timestamp into a compact "9:47 ET" label. */
-function formatTime(seconds?: bigint): string {
-  if (!seconds) return '';
-  const d = new Date(Number(seconds) * 1000);
-  const h = d.getHours();
-  const m = d.getMinutes().toString().padStart(2, '0');
-  return `${h}:${m} ET`;
+const ET_TIME = new Intl.DateTimeFormat('en-US', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+  timeZone: 'America/New_York',
+});
+
+function etTime(seconds?: bigint): string {
+  return seconds ? `${ET_TIME.format(new Date(Number(seconds) * 1000))} ET` : '';
 }
 
-/** Condense a tool call's args/result into a short dim summary. */
 function toolDetail(tc: AgentMessage['toolCalls'][number]): string {
   const raw = (tc.resultJson || tc.argumentsJson || '').replace(/[{}'"]/g, '').trim();
   return raw.length > 56 ? `${raw.slice(0, 56)}…` : raw;
 }
 
+/** One turn: the user's message on the right, Copilot's reply as plain reading text. */
 export function ChatMessage({ message, artifacts }: ChatMessageProps) {
   const isUser = message.role === MessageRole.USER;
   const firstName = useAuthStore((s) => s.user?.firstName);
 
-  const linkedArtifacts = useMemo(() => {
+  const linked = useMemo(() => {
     if (isUser || !message.inlineArtifactIds?.length || !artifacts) return [];
     return message.inlineArtifactIds
       .map((id) => artifacts.get(id))
       .filter((a): a is PendingArtifact => a !== undefined);
   }, [isUser, message.inlineArtifactIds, artifacts]);
 
-  const time = formatTime(message.createdAt?.seconds);
-  const label = isUser ? [firstName || 'You', time].filter(Boolean).join(' · ') : 'Copilot';
+  if (isUser) {
+    const who = [firstName || 'You', etTime(message.createdAt?.seconds)]
+      .filter(Boolean)
+      .join(' · ');
+    return (
+      <div className="grid justify-items-end gap-1">
+        <span className="font-mono text-[11px] font-medium text-fg-3">{who}</span>
+        <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-[12px_12px_3px_12px] bg-sunk px-[13px] py-[9px] text-[14px]">
+          {message.content}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className={`flex gap-3.5 ${isUser ? 'flex-row-reverse' : ''}`}>
-      <div
-        className={`h-9 w-9 flex-none border-2 border-ink ${
-          isUser ? 'bg-gradient-to-br from-orange-300 to-orange-500' : 'grid place-items-center bg-ink'
-        }`}
-      >
-        {!isUser && <Sparkles className="h-4 w-4 text-orange-500" />}
-      </div>
-
-      <div className={`flex min-w-0 max-w-[80%] flex-col gap-2.5 ${isUser ? 'items-end' : 'items-start'}`}>
-        <span className="font-mono text-[9.5px] font-bold uppercase tracking-[0.1em] text-ink/45">{label}</span>
-
-        {!isUser && message.thinking && (
-          <ThinkingBlock content={message.thinking} autoExpanded={false} />
-        )}
-
-        <div
-          className={`min-w-0 max-w-full border-2 px-4 py-3 text-sm leading-relaxed ${
-            isUser
-              ? 'border-orange-500 bg-ink text-bone shadow-[4px_4px_0_rgb(var(--lt-orange-500))]'
-              : 'border-ink bg-paper text-ink shadow-[4px_4px_0_rgb(var(--lt-ink))]'
-          }`}
-        >
-          <MessageContent content={message.content} isUser={isUser} />
-        </div>
-
-        {/* Tool calls recorded on this message (historical sessions). */}
-        {!isUser &&
-          message.toolCalls?.map((tc) => (
-            <ToolCallIndicator
-              key={tc.id || tc.name}
-              toolName={tc.name}
-              status={tc.success ? 'complete' : 'error'}
-              detail={toolDetail(tc)}
-              durationMs={tc.durationMs}
-            />
-          ))}
-
-        {/* Inline strategy artifacts linked to this message. */}
-        {linkedArtifacts.map((artifact) => (
-          <PendingArtifactCard key={artifact.id} artifact={artifact} />
-        ))}
-      </div>
+    <div className="grid min-w-0 gap-2">
+      <span className="font-mono text-[11px] font-medium text-fg-3">Copilot</span>
+      {message.thinking && <ThinkingBlock content={message.thinking} autoExpanded={false} />}
+      {message.toolCalls?.map((tc) => (
+        <ToolCallIndicator
+          key={tc.id || tc.name}
+          toolName={tc.name}
+          status={tc.success ? 'complete' : 'error'}
+          detail={toolDetail(tc)}
+          durationMs={tc.durationMs}
+        />
+      ))}
+      {message.content && <MessageContent content={message.content} />}
+      {linked.map((artifact) => (
+        <PendingArtifactCard key={artifact.id} artifact={artifact} />
+      ))}
     </div>
   );
 }
 
-interface MessageContentProps {
-  content: string;
-  isUser: boolean;
-}
-
-function MessageContent({ content, isUser }: MessageContentProps) {
+function MessageContent({ content }: { content: string }) {
   const parts = content.split(/(```[\s\S]*?```)/g);
-
   return (
-    <div className="min-w-0 max-w-full break-words text-sm">
-      {parts.map((part, index) => {
+    <div className="min-w-0 max-w-full break-words text-[14px] leading-[1.55] text-fg">
+      {parts.map((part, i) => {
         if (part.startsWith('```') && part.endsWith('```')) {
           const lines = part.slice(3, -3).split('\n');
-          const language = lines[0].trim() || 'text';
-          const code = lines.slice(1).join('\n');
           return (
             <pre
-              key={index}
-              className={`my-2 max-w-full overflow-x-auto p-3 font-mono text-xs ${
-                isUser ? 'border border-bone/30 bg-ink/70 text-bone' : 'border border-ink bg-bone text-ink'
-              }`}
+              key={i}
+              className="my-2 max-w-full overflow-x-auto rounded-[8px] bg-sunk px-3.5 py-2.5 font-mono text-[12.5px] leading-[1.7]"
             >
-              <div className="mb-1 text-[10px] uppercase tracking-wider opacity-60">{language}</div>
-              <code>{code}</code>
+              <code>{lines.slice(1).join('\n')}</code>
             </pre>
           );
         }
-        return <MarkdownBlock key={index} content={part} isUser={isUser} />;
+        return <MarkdownBlock key={i} content={part} />;
       })}
     </div>
   );
 }
 
-interface MarkdownBlockProps {
-  content: string;
-  isUser: boolean;
-}
+const HEADING: Record<number, string> = {
+  1: 'mb-2 mt-3 text-[17px] font-semibold',
+  2: 'mb-1.5 mt-3 text-[15px] font-semibold',
+  3: 'mb-1 mt-2 text-[14px] font-semibold',
+};
 
-function MarkdownBlock({ content, isUser }: MarkdownBlockProps) {
-  const lines = content.split('\n');
-  const elements: React.ReactNode[] = [];
-  let currentList: { type: 'ul' | 'ol'; items: string[] } | null = null;
+function MarkdownBlock({ content }: { content: string }) {
+  const elements: ReactNode[] = [];
+  let list: { type: 'ul' | 'ol'; items: string[] } | null = null;
   let listKey = 0;
 
-  const flushList = () => {
-    if (currentList) {
-      const ListTag = currentList.type === 'ul' ? 'ul' : 'ol';
-      elements.push(
-        <ListTag
-          key={`list-${listKey++}`}
-          className={`my-2 ${currentList.type === 'ul' ? 'list-disc' : 'list-decimal'} list-inside space-y-1`}
-        >
-          {currentList.items.map((item, i) => (
-            <li key={i}>
-              <InlineMarkdown content={item} isUser={isUser} />
-            </li>
-          ))}
-        </ListTag>
-      );
-      currentList = null;
-    }
+  const flush = () => {
+    if (!list) return;
+    const Tag = list.type;
+    elements.push(
+      <Tag
+        key={`list-${listKey++}`}
+        className={`my-2 grid gap-1 pl-5 ${list.type === 'ul' ? 'list-disc' : 'list-decimal'}`}
+      >
+        {list.items.map((item, i) => (
+          <li key={i}>
+            <InlineMarkdown content={item} />
+          </li>
+        ))}
+      </Tag>
+    );
+    list = null;
   };
 
-  lines.forEach((line, lineIndex) => {
-    const trimmedLine = line.trim();
-    if (!trimmedLine) {
-      flushList();
+  content.split('\n').forEach((line, i) => {
+    const t = line.trim();
+    if (!t) {
+      flush();
       return;
     }
-
-    const headerMatch = trimmedLine.match(/^(#{1,6})\s+(.+)$/);
-    if (headerMatch) {
-      flushList();
-      const level = headerMatch[1].length;
-      const text = headerMatch[2];
-      const headerClasses: Record<number, string> = {
-        1: 'text-xl font-bold mt-4 mb-2',
-        2: 'text-lg font-semibold mt-3 mb-2',
-        3: 'text-base font-semibold mt-2 mb-1',
-        4: 'text-sm font-semibold mt-2 mb-1',
-        5: 'text-sm font-medium mt-1 mb-1',
-        6: 'text-xs font-medium mt-1 mb-1',
-      };
+    const heading = t.match(/^(#{1,6})\s+(.+)$/);
+    if (heading) {
+      flush();
       elements.push(
-        <div key={`h-${lineIndex}`} className={headerClasses[level]}>
-          <InlineMarkdown content={text} isUser={isUser} />
+        <div key={`h-${i}`} className={HEADING[Math.min(heading[1].length, 3)]}>
+          <InlineMarkdown content={heading[2]} />
         </div>
       );
       return;
     }
-
-    if (/^[-*_]{3,}$/.test(trimmedLine)) {
-      flushList();
-      elements.push(
-        <hr key={`hr-${lineIndex}`} className={`my-3 border-t ${isUser ? 'border-bone/30' : 'border-ink/20'}`} />
-      );
+    if (/^[-*_]{3,}$/.test(t)) {
+      flush();
+      elements.push(<hr key={`hr-${i}`} className="my-3 border-line" />);
       return;
     }
-
-    const ulMatch = trimmedLine.match(/^[-*+]\s+(.+)$/);
-    if (ulMatch) {
-      if (currentList?.type !== 'ul') {
-        flushList();
-        currentList = { type: 'ul', items: [] };
+    const ul = t.match(/^[-*+]\s+(.+)$/);
+    const ol = t.match(/^\d+[.)]\s+(.+)$/);
+    if (ul || ol) {
+      const type = ul ? 'ul' : 'ol';
+      if (list?.type !== type) {
+        flush();
+        list = { type, items: [] };
       }
-      currentList.items.push(ulMatch[1]);
+      list.items.push((ul ?? ol)?.[1] ?? '');
       return;
     }
-
-    const olMatch = trimmedLine.match(/^\d+[.)]\s+(.+)$/);
-    if (olMatch) {
-      if (currentList?.type !== 'ol') {
-        flushList();
-        currentList = { type: 'ol', items: [] };
-      }
-      currentList.items.push(olMatch[1]);
-      return;
-    }
-
-    flushList();
+    flush();
     elements.push(
-      <p key={`p-${lineIndex}`} className="my-1">
-        <InlineMarkdown content={line} isUser={isUser} />
+      <p key={`p-${i}`} className="mb-2 mt-0 last:mb-0">
+        <InlineMarkdown content={line} />
       </p>
     );
   });
-
-  flushList();
+  flush();
   return <>{elements}</>;
 }
 
-interface InlineMarkdownProps {
-  content: string;
-  isUser: boolean;
-}
-
-function InlineMarkdown({ content, isUser }: InlineMarkdownProps) {
-  const pattern = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g;
-  const parts = content.split(pattern);
-
+function InlineMarkdown({ content }: { content: string }) {
+  const parts = content.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g);
   return (
     <>
-      {parts.map((segment, index) => {
-        if (segment.startsWith('**') && segment.endsWith('**')) {
-          return <strong key={index}>{segment.slice(2, -2)}</strong>;
+      {parts.map((seg, i) => {
+        if (seg.startsWith('**') && seg.endsWith('**')) {
+          return <strong key={i}>{seg.slice(2, -2)}</strong>;
         }
-        if (segment.startsWith('*') && segment.endsWith('*') && !segment.startsWith('**')) {
-          return <em key={index}>{segment.slice(1, -1)}</em>;
+        if (seg.startsWith('*') && seg.endsWith('*') && seg.length > 2) {
+          return <em key={i}>{seg.slice(1, -1)}</em>;
         }
-        if (segment.startsWith('`') && segment.endsWith('`')) {
+        if (seg.startsWith('`') && seg.endsWith('`')) {
           return (
-            <code
-              key={index}
-              className={`px-1 py-0.5 font-mono text-xs font-bold ${
-                isUser ? 'bg-bone/20 text-bone' : 'border border-line bg-bone text-ink'
-              }`}
-            >
-              {segment.slice(1, -1)}
+            <code key={i} className="rounded-[4px] bg-sunk px-1 py-0.5 font-mono text-[12.5px]">
+              {seg.slice(1, -1)}
             </code>
           );
         }
-        const linkMatch = segment.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
-        if (linkMatch) {
-          return (
+        const link = seg.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+        if (link) {
+          const safe = /^(https?:|\/)/.test(link[2]);
+          return safe ? (
             <a
-              key={index}
-              href={linkMatch[2]}
-              target="_blank"
+              key={i}
+              href={link[2]}
+              target={link[2].startsWith('/') ? undefined : '_blank'}
               rel="noopener noreferrer"
-              className={`underline ${isUser ? 'text-orange-400 hover:text-orange-300' : 'text-blue-600 hover:text-blue-800'}`}
+              className="text-accent underline underline-offset-2"
             >
-              {linkMatch[1]}
+              {link[1]}
             </a>
+          ) : (
+            link[1]
           );
         }
-        return segment;
+        return seg;
       })}
     </>
   );

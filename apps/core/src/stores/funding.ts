@@ -1,12 +1,12 @@
-import { ConnectError } from '@connectrpc/connect';
-import { create } from 'zustand';
+import { ConnectError } from "@connectrpc/connect";
+import { create } from "zustand";
 
-import type { AlpacaCredentialsListItem } from '@llamatrade/core/proto/auth_pb';
-import { type Sleeve, SleeveType } from '@llamatrade/core/proto/ledger_pb';
-import { authClient, ledgerClient } from '../net';
-import { num } from '../format';
+import type { AlpacaCredentialsListItem } from "@llamatrade/core/proto/auth_pb";
+import { type Sleeve, SleeveType } from "@llamatrade/core/proto/ledger_pb";
+import { authClient, ledgerClient } from "../net";
+import { num } from "../format";
 
-import { getTenantContext } from '../net';
+import { getTenantContext } from "../net";
 
 /** number → proto Decimal (cents-precise string). */
 function toDecimal(value: number): { value: string } {
@@ -22,7 +22,7 @@ function toNumber(d?: { value: string }): number {
  * Only the Unallocated sleeve's free cash can fund a new strategy — the portfolio
  * summary's "cash" also counts residual cash parked inside each strategy sleeve.
  */
-function freeOf(sleeve?: Sleeve): number {
+export function freeCash(sleeve?: Sleeve): number {
   if (!sleeve?.cash) return 0;
   return toNumber(sleeve.cash.balance) - toNumber(sleeve.cash.reserved);
 }
@@ -49,20 +49,10 @@ interface FundingState {
   clearError: () => void;
 }
 
-export const useFundingStore = create<FundingState>((set, get) => ({
-  accountId: null,
-  paperCredentialId: null,
-  credentials: [],
-  unallocatedCash: 0,
-  resolving: false,
-  resolved: false,
-  submitting: false,
-  error: null,
+let inFlight: Promise<void> | null = null;
 
-  hasAccount: () => get().accountId !== null,
-
-  resolveAccount: async () => {
-    if (get().resolving) return;
+export const useFundingStore = create<FundingState>((set, get) => {
+  const resolveOnce = async (): Promise<void> => {
     set({ resolving: true, error: null });
     try {
       const context = getTenantContext();
@@ -71,7 +61,9 @@ export const useFundingStore = create<FundingState>((set, get) => ({
       const creds = credsRes.credentials;
       // The ledger account anchors to a paper credential; prefer an active one.
       const paper =
-        creds.find((c) => c.isPaper && c.isActive) ?? creds.find((c) => c.isActive) ?? null;
+        creds.find((c) => c.isPaper && c.isActive) ??
+        creds.find((c) => c.isActive) ??
+        null;
       if (!paper) {
         set({
           credentials: creds,
@@ -82,13 +74,18 @@ export const useFundingStore = create<FundingState>((set, get) => ({
         });
         return;
       }
-      const acct = await ledgerClient.getOrCreateAccount({ context, credentialsId: paper.id });
-      const unallocated = acct.baseSleeves.find((s) => s.type === SleeveType.UNALLOCATED);
+      const acct = await ledgerClient.getOrCreateAccount({
+        context,
+        credentialsId: paper.id,
+      });
+      const unallocated = acct.baseSleeves.find(
+        (s) => s.type === SleeveType.UNALLOCATED,
+      );
       set({
         credentials: creds,
         paperCredentialId: paper.id,
         accountId: acct.account?.id ?? null,
-        unallocatedCash: freeOf(unallocated),
+        unallocatedCash: freeCash(unallocated),
         resolving: false,
         resolved: true,
       });
@@ -96,46 +93,75 @@ export const useFundingStore = create<FundingState>((set, get) => ({
       set({
         resolving: false,
         resolved: true,
-        error: e instanceof ConnectError ? e.message : 'Could not load your account.',
+        error:
+          e instanceof ConnectError
+            ? e.message
+            : "Could not load your account.",
       });
     }
-  },
+  };
 
-  addFunds: async (amount) => {
-    if (!Number.isFinite(amount) || amount <= 0) {
-      set({ error: 'Enter an amount greater than $0.' });
-      return null;
-    }
-    let accountId = get().accountId;
-    if (!accountId) {
-      await get().resolveAccount();
-      accountId = get().accountId;
-    }
-    if (!accountId) {
-      set({ error: 'No paper account is connected yet — connect Alpaca paper keys first.' });
-      return null;
-    }
-    set({ submitting: true, error: null });
-    try {
-      const context = getTenantContext();
-      const res = await ledgerClient.depositFunds({
-        context,
-        accountId,
-        amount: toDecimal(amount),
-        // Idempotency key: a retried deposit must be a no-op, not a second credit.
-        requestId: crypto.randomUUID(),
-      });
-      const free = freeOf(res.unallocated);
-      set({ submitting: false, unallocatedCash: free });
-      return free;
-    } catch (e) {
-      set({
-        submitting: false,
-        error: e instanceof ConnectError ? e.message : 'Deposit failed — please try again.',
-      });
-      return null;
-    }
-  },
+  return {
+    accountId: null,
+    paperCredentialId: null,
+    credentials: [],
+    unallocatedCash: 0,
+    resolving: false,
+    resolved: false,
+    submitting: false,
+    error: null,
 
-  clearError: () => set({ error: null }),
-}));
+    hasAccount: () => get().accountId !== null,
+
+    resolveAccount: () => {
+      inFlight ??= resolveOnce().finally(() => {
+        inFlight = null;
+      });
+      return inFlight;
+    },
+
+    addFunds: async (amount) => {
+      if (!Number.isFinite(amount) || amount <= 0) {
+        set({ error: "Enter an amount greater than $0." });
+        return null;
+      }
+      let accountId = get().accountId;
+      if (!accountId) {
+        await get().resolveAccount();
+        accountId = get().accountId;
+      }
+      if (!accountId) {
+        set({
+          error:
+            "No paper account is connected yet. Connect your Alpaca paper keys in Settings first.",
+        });
+        return null;
+      }
+      set({ submitting: true, error: null });
+      try {
+        const context = getTenantContext();
+        const res = await ledgerClient.depositFunds({
+          context,
+          accountId,
+          amount: toDecimal(amount),
+          // Idempotency key: a retried deposit must be a no-op, not a second credit.
+          requestId: crypto.randomUUID(),
+        });
+        const free = freeCash(res.unallocated);
+        set({ submitting: false, unallocatedCash: free });
+        return free;
+      } catch (e) {
+        set({
+          submitting: false,
+          error:
+            e instanceof ConnectError
+              ? e.message
+              : "The paper funds could not be added. Please try again.",
+        });
+        return null;
+      }
+    },
+
+    clearError: () => set({ error: null }),
+  };
+});

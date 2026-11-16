@@ -1,0 +1,2386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strategy builder</title>
+<script>try{document.documentElement.dataset.mode=localStorage.getItem("ax-mode")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark")}catch(e){document.documentElement.dataset.mode="dark"}</script>
+<link rel="stylesheet" href="kit.css">
+<style>
+  /* ---------- Shared builder pieces (prefix b-) ---------- */
+  .b-head { display: flex; align-items: flex-end; gap: 18px; padding: 22px 32px 18px; flex: none; }
+  .b-back { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; color: var(--fg-3); }
+  .b-back .ic { width: 14px; height: 14px; }
+  .b-name { font: 600 25px/1.2 var(--sans); letter-spacing: -0.022em; margin-top: 6px; color: var(--fg); }
+  .b-meta { font-size: 12.5px; color: var(--fg-3); margin-top: 5px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .b-meta .dot { width: 5px; height: 5px; }
+  .b-act { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .b-unsaved { display: inline-flex; align-items: center; gap: 6px; color: var(--fg-2); }
+  .b-unsaved::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--acc); }
+
+  /* Code renderer output */
+  .b-code { font: 400 13px/1.85 var(--mono); color: var(--fg); font-variant-ligatures: none; }
+  .b-code .l { display: grid; grid-template-columns: 46px minmax(0, 1fr); white-space: pre; position: relative; }
+  .b-code.d2 .l { grid-template-columns: 34px 34px 22px minmax(0, 1fr); }
+  .b-code .l > i { font-style: normal; color: var(--fg-4); text-align: right; padding-right: 16px; user-select: none; }
+  .b-code.d2 .l > i { padding-right: 8px; }
+  .b-code .l > i.m { text-align: center; padding: 0; color: var(--fg-3); }
+  .b-code .k { color: var(--acc); }
+  .b-code .s { color: var(--fg-2); }
+  .b-code .kw { color: var(--fg-3); }
+  .b-code .n { color: var(--fg); }
+  .b-code .t { color: var(--fg); font-weight: 600; }
+  .b-code .l.sel { background: var(--acc-soft); }
+  .b-code .l.sel::before, .b-code .l.add::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--acc); }
+  .b-code .l.add { background: color-mix(in srgb, var(--acc) 11%, transparent); }
+  .b-code .l.add > i.m { color: var(--acc); }
+  .b-code .l.del { background: var(--sunk); }
+  .b-code .l.del > span, .b-code .l.del > span * { color: var(--fg-3); text-decoration: line-through; text-decoration-color: var(--fg-4); }
+  .b-code .l.cur { background: color-mix(in srgb, var(--fg) 4%, transparent); }
+  .b-code .l.dim > span { opacity: 0.45; }
+  .b-code .l.prob::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--risk); }
+  .b-code .pw { text-decoration: underline wavy var(--risk); text-underline-offset: 4px; text-decoration-thickness: 1.2px; }
+  .b-code .ins { background: var(--acc-soft); border-radius: 2px; box-shadow: inset 0 -1.5px var(--acc); }
+  .b-code .rm { color: var(--fg-3); text-decoration: line-through; }
+  .b-code .caret { display: inline-block; width: 1.5px; height: 1.2em; background: var(--acc); vertical-align: -0.25em; margin-left: 1px; }
+  .b-code .l.note > span { color: var(--fg-3); font-style: italic; }
+  .b-code .l.note::before { content: ""; position: absolute; left: 30px; top: 5px; bottom: 5px; width: 2px; border-radius: 2px; background: var(--acc-line); }
+  .b-code .w { white-space: normal; grid-column: 1 / -1; }
+  .b-code.sm { font-size: 12px; }
+  .b-code.lg { font-size: 15px; line-height: 1.9; }
+
+  /* Editable tokens inside outline sentences */
+  .tk { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: 5px; background: var(--sunk); border: 1px solid var(--line); font: 500 12.5px/1.55 var(--mono); color: var(--fg); white-space: nowrap; }
+  .tk.w { font-family: var(--sans); font-size: 13px; }
+  .tk.on { border-color: var(--acc); box-shadow: 0 0 0 3px var(--acc-soft); }
+  .tk.new { background: var(--acc-soft); border-color: var(--acc-line); }
+  .tk .ic { width: 12px; height: 12px; color: var(--fg-3); }
+  .was { color: var(--fg-3); text-decoration: line-through; text-decoration-color: var(--fg-4); font-family: var(--mono); font-size: 12.5px; }
+
+  /* Weight bars */
+  .b-wb { display: block; height: 6px; border-radius: 2px; background: var(--sunk); overflow: hidden; }
+  .b-wb > i { display: block; height: 100%; border-radius: 2px; background: var(--c1); }
+  .b-sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; background: var(--c1); flex: none; }
+  .b-split { display: flex; height: 10px; border-radius: 3px; overflow: hidden; gap: 2px; }
+  .b-split > i { display: block; height: 100%; background: var(--c1); }
+  .b-split > i.hatch { background: repeating-linear-gradient(135deg, var(--line-2) 0 2px, transparent 2px 6px); }
+
+  /* Key-value rows */
+  .b-kv { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  .b-kv:last-child { border-bottom: 0; }
+  .b-kv > span:first-child { color: var(--fg-3); }
+  .b-kv > span:last-child { font-family: var(--mono); color: var(--fg); text-align: right; }
+
+  /* Check rows */
+  .b-ck { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  .b-ck:last-child { border-bottom: 0; }
+  .b-ck > b { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; background: var(--acc-soft); color: var(--acc); }
+  .b-ck > b .ic { width: 11px; height: 11px; }
+  .b-ck.fail > b { background: var(--risk-soft); color: var(--risk); }
+  .b-ck.fail > span:nth-child(2) { color: var(--risk); }
+  .b-ck > span:last-child { font: 400 11.5px var(--mono); color: var(--fg-3); text-align: right; }
+
+  /* Engine chip */
+  .b-eng { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--fg-2); }
+  .b-eng::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 0 3px var(--acc-soft); }
+  .b-eng.bad { color: var(--risk); }
+  .b-eng.bad::before { background: var(--risk); box-shadow: 0 0 0 3px var(--risk-soft); }
+
+  /* Small caps kicker */
+  .b-kick { font: 500 10.5px/1 var(--mono); letter-spacing: 0.09em; text-transform: uppercase; color: var(--fg-3); }
+
+  /* Phone editor pieces */
+  .b-mbar { flex: none; display: flex; gap: 10px; padding: 12px 20px 30px; border-top: 1px solid var(--line); background: var(--bg); position: relative; z-index: 3; }
+  .b-mbar .m-btn { flex: 1; height: 46px; font-size: 15px; }
+  .b-mt { padding: 2px 20px 10px; flex: none; }
+  .b-mt .nm { font: 600 22px/1.15 var(--sans); letter-spacing: -0.02em; }
+  .b-mt .mm { font-size: 12.5px; color: var(--fg-3); margin-top: 4px; }
+  .b-mseg { display: flex; padding: 3px; gap: 2px; border-radius: 999px; background: var(--sunk); }
+  .b-mseg > span { flex: 1; text-align: center; padding: 7px 0; border-radius: 999px; font-size: 13.5px; font-weight: 500; color: var(--fg-3); }
+  .b-mseg > span.on { background: var(--panel); color: var(--fg); box-shadow: 0 1px 2px rgba(0,0,0,.18), inset 0 0 0 1px var(--line); }
+  .m-nav .ic { width: 20px; height: 20px; }
+  .m-nav .rt { display: inline-flex; gap: 16px; color: var(--fg-2); font-weight: 400; }
+
+  /* A plain keyboard for phone editing states */
+  .b-kb { flex: none; background: color-mix(in srgb, var(--sunk) 85%, var(--bg)); border-top: 1px solid var(--line); padding: 6px 4px 30px; position: relative; z-index: 3; }
+  .b-kb .acc-row { display: flex; gap: 6px; padding: 2px 4px 8px; overflow: hidden; }
+  .b-kb .acc-row > span { flex: none; min-width: 36px; height: 34px; padding: 0 10px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); display: grid; place-items: center; font: 500 14px var(--mono); color: var(--fg); }
+  .b-kb .acc-row > span.wd { font-family: var(--sans); font-size: 13px; color: var(--fg-2); }
+  .b-kb .krow { display: flex; justify-content: center; gap: 5px; margin-top: 8px; }
+  .b-kb .krow > span { width: 33px; height: 40px; border-radius: 6px; background: var(--panel); box-shadow: 0 1px 0 var(--line-2); display: grid; place-items: center; font: 400 17px var(--sans); color: var(--fg); }
+  .b-kb .krow > span.wide { width: 46px; font-size: 12px; color: var(--fg-2); }
+  .b-kb .krow > span.space { width: 180px; font-size: 13px; color: var(--fg-3); }
+</style>
+</head>
+<body data-title="Strategy builder" data-desc="The editor where a strategy is written: as blocks, as code or both, with its checks, saved versions and the changes Copilot proposes. Every option uses Recession Radar so the screens compare directly.">
+
+<style>
+  /* ---------- 1A outline and rail ---------- */
+  .b1a .work { display: grid; grid-template-columns: minmax(0, 1fr) 344px; gap: 28px; padding: 0 32px; }
+  .b-ask { display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 8px 0 14px; border: 1px solid var(--line-2); border-radius: 999px; background: var(--panel); color: var(--fg-3); font-size: 13px; }
+  .b-ask .ic { color: var(--acc); }
+  .b-ask .kbd { margin-left: auto; }
+  .b-ol { padding: 10px 10px 14px; }
+  .b-ol .r { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 6px 12px; border-radius: 8px; font-size: 14px; color: var(--fg); position: relative; }
+  .b-ol .r .kwd { font: 500 10.5px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-3); width: 74px; flex: none; }
+  .b-ol .r .aside { margin-left: auto; font-size: 12px; color: var(--fg-3); }
+  .b-ol .r.on { background: var(--acc-soft); box-shadow: inset 0 0 0 1px var(--acc-line); }
+  .b-ol .grp { margin: 2px 0 6px 18px; padding-left: 14px; border-left: 1px solid var(--line); }
+  .b-ol .as { display: grid; grid-template-columns: 74px minmax(0, 1fr) 140px 62px; align-items: center; gap: 10px; min-height: 38px; padding: 0 12px; font-size: 13px; color: var(--fg-2); }
+  .b-ol .as .sym { color: var(--fg); }
+  .b-ol .as .p { font: 500 12.5px var(--mono); color: var(--fg); text-align: right; }
+  .b-ol .as .p.rk { font-family: var(--sans); font-weight: 400; color: var(--fg-3); }
+  .b-ol .add { display: flex; gap: 8px; padding: 10px 12px 2px; }
+  .b1a .rail .panel-b { display: flex; flex-direction: column; gap: 12px; }
+  .b-scn { display: flex; flex-direction: column; gap: 8px; }
+  .b-leg { display: flex; flex-wrap: wrap; gap: 4px 14px; font: 500 12px var(--mono); color: var(--fg-2); }
+  .b-leg > span { display: inline-flex; align-items: center; gap: 6px; }
+  .b-leg b { color: var(--fg); font-weight: 600; }
+  .b-note { font-size: 12px; line-height: 1.55; color: var(--fg-3); }
+
+  /* ---------- 1B canvas and inspector ---------- */
+  .b1b .body { flex: 1; min-height: 0; display: grid; grid-template-columns: 220px minmax(0, 1fr) 320px; }
+  .b1b .pal { border-right: 1px solid var(--line); padding: 18px 14px; display: flex; flex-direction: column; gap: 2px; background: var(--bg); }
+  .b1b .pal .lbl { margin: 14px 8px 6px; }
+  .b1b .pal .lbl:first-child { margin-top: 0; }
+  .b1b .pal a { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 6px; font-size: 13px; color: var(--fg-2); }
+  .b1b .pal a i { font: 600 10px/1 var(--mono); font-style: normal; width: 22px; height: 22px; border-radius: 5px; display: grid; place-items: center; background: var(--sunk); border: 1px solid var(--line); color: var(--fg-3); }
+  .b1b .pal a.hi { background: var(--sunk); color: var(--fg); }
+  .b1b .cv { position: relative; overflow: hidden; background-color: var(--bg); background-image: radial-gradient(var(--grid) 1px, transparent 1.2px); background-size: 20px 20px; }
+  .b1b .cvbar { display: flex; align-items: center; gap: 12px; padding: 16px 22px; }
+  .b1b .cvbar .nm { font: 600 18px/1.2 var(--sans); letter-spacing: -0.015em; }
+  .b1b .cvbar .mt { font-size: 12px; color: var(--fg-3); }
+  .b1b .tree { display: flex; flex-direction: column; align-items: center; padding: 6px 30px 0; }
+  .nd { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; width: 300px; box-shadow: var(--shadow); }
+  .nd .hd { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+  .nd .hd .b-kick { font-size: 10px; }
+  .nd .hd .x { margin-left: auto; color: var(--fg-3); font-weight: 400; font-size: 11.5px; }
+  .nd .slots { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; font-size: 12.5px; color: var(--fg-3); }
+  .nd .ar { display: grid; grid-template-columns: 44px minmax(0, 1fr) 46px; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); font-size: 12px; color: var(--fg-3); }
+  .nd .ar:first-of-type { margin-top: 8px; }
+  .nd .ar .sym { color: var(--fg); }
+  .nd .ar .p { font: 500 12px var(--mono); color: var(--fg); text-align: right; }
+  .nd.on { border-color: var(--acc); box-shadow: 0 0 0 4px var(--acc-soft), var(--shadow); }
+  .nd.root { width: auto; padding: 9px 16px; display: flex; gap: 10px; align-items: center; font-size: 13px; border-radius: 999px; }
+  .vl { width: 1px; height: 26px; background: var(--line-2); }
+  .fork { position: relative; display: grid; grid-template-columns: 300px 300px; gap: 56px; padding-top: 30px; }
+  .fork::before { content: ""; position: absolute; top: 0; left: 150px; right: 150px; height: 1px; background: var(--line-2); }
+  .fork > div { position: relative; }
+  .fork > div::before { content: ""; position: absolute; top: -30px; left: 150px; width: 1px; height: 30px; background: var(--line-2); }
+  .fork .lab { position: absolute; top: -40px; left: 150px; transform: translateX(-50%); font: 500 10.5px var(--mono); padding: 2px 8px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line-2); color: var(--fg-2); z-index: 1; }
+  .b1b .insp { border-left: 1px solid var(--line); background: var(--panel); padding: 20px 20px; display: flex; flex-direction: column; gap: 16px; }
+  .b1b .insp .h3 { margin-top: 2px; }
+  .b1b .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .b1b .foot { margin-top: auto; display: flex; gap: 8px; }
+
+  /* ---------- 1C plain-English page ---------- */
+  .b1c .main { display: flex; flex-direction: column; align-items: center; }
+  .b1c .doc { position: relative; width: 760px; padding-top: 46px; }
+  .b1c .ttl { text-align: center; }
+  .b1c .ttl .b-name { font-size: 34px; letter-spacing: -0.03em; margin-top: 12px; }
+  .b1c .prose { margin-top: 30px; font-size: 19px; line-height: 2.05; color: var(--fg-2); letter-spacing: -0.005em; }
+  .b1c .prose .tk { background: transparent; border: 0; border-bottom: 1.5px dashed var(--acc-line); border-radius: 0; padding: 0 1px; font: 500 19px/1.4 var(--sans); color: var(--fg); }
+  .b1c .prose .tk.m { font-family: var(--mono); font-size: 17px; }
+  .b1c .prose .tk.on { border-bottom: 2px solid var(--acc); box-shadow: none; background: var(--acc-soft); }
+  .b1c .pop { position: absolute; z-index: 5; width: 280px; padding: 14px 16px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; box-shadow: var(--shadow-xl); font-size: 13px; }
+  .b1c .step { display: flex; align-items: center; gap: 10px; margin: 10px 0 12px; }
+  .b1c .step .v { flex: 1; text-align: center; font: 500 24px var(--mono); }
+  .b1c .scns { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 64px; }
+  .b1c .needs { display: flex; justify-content: center; gap: 28px; margin-top: 22px; font-size: 12.5px; color: var(--fg-3); }
+  .b1c .needs b { font: 500 12.5px var(--mono); color: var(--fg-2); margin-left: 6px; }
+  .b1c .scns .panel { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+  .b1c .dockbar { position: absolute; left: 50%; bottom: 26px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 7px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line-2); box-shadow: var(--shadow-lg); }
+  .b1c .dockbar .vr { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
+
+  .b1c-m u { text-decoration: none; border-bottom: 1.5px dashed var(--acc-line); color: var(--fg); }
+  .b1c-m u.mn { font-family: var(--mono); font-size: 15px; }
+  .b1c-m u.on { background: var(--acc-soft); border-bottom: 2px solid var(--acc); }
+
+  /* ---------- 1D decision flow ---------- */
+  .b1d .flow { display: grid; grid-template-columns: 330px 40px 120px 40px minmax(0, 1fr) 40px 330px; grid-template-rows: auto auto; gap: 18px 0; padding: 0 32px; align-items: center; }
+  .b1d .colh { grid-row: 1; }
+  .b1d .sig { grid-column: 1; grid-row: 2 / span 2; padding: 18px; display: flex; flex-direction: column; gap: 12px; align-self: stretch; }
+  .b1d .lane { display: contents; }
+  .b1d .arr { height: 1px; background: var(--line-2); position: relative; }
+  .b1d .arr::after { content: ""; position: absolute; right: 0; top: -3px; border: 3.5px solid transparent; border-left: 5px solid var(--line-2); border-right: 0; }
+  .b1d .side-yes { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; color: var(--fg-3); text-align: center; }
+  .b1d .side-yes b { font: 600 15px var(--sans); color: var(--fg); }
+  .b1d .card { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; }
+  .b1d .card .t { font-weight: 600; font-size: 14px; }
+  .b1d .card .d { font-size: 12.5px; color: var(--fg-3); line-height: 1.5; }
+  .b1d .rsi { position: relative; }
+  .b1d .rsi .thr { position: absolute; left: 0; right: 54px; top: 30%; border-top: 1px dashed var(--fg-3); }
+  .b1d .rsi .thr span { position: absolute; right: 0; top: -18px; font: 500 10.5px var(--mono); color: var(--fg-3); }
+  .b1d .lanes-r { grid-column: 2 / span 6; display: grid; grid-template-columns: 40px 120px 40px minmax(0, 1fr) 40px 330px; row-gap: 64px; align-items: center; align-self: center; }
+  .b1d .card { min-height: 112px; justify-content: center; }
+  .b1d .needs { margin: 26px 32px 0; }
+  .b1d .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+</style>
+
+<section class="ax-surface" id="builder-blocks"
+  data-surface="builder/blocks"
+  data-area="Strategy builder"
+  data-title="Blocks view"
+  data-why="Where most people write and read a strategy: the rules in words, each value editable in place, with what it holds and needs beside it.">
+
+  <!-- 1A -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="Outline and rail"
+    data-note="Rules read as short sentences with editable values, and a rail shows what the strategy holds and needs as written. Recommended: it scales to deep strategies, matches the Build screen on the marketing site and keeps Copilot one line away.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/edit">
+      <div class="app b1a">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="b-head">
+            <div>
+              <span class="b-back"><span data-icon="arrow-left"></span>Strategies</span>
+              <div class="b-name">Recession Radar</div>
+              <div class="b-meta"><span class="b-unsaved">Version 4 draft · 3 changes</span><span>·</span><span>Version 3 runs in paper</span></div>
+            </div>
+            <div class="b-act">
+              <div class="seg"><span class="on">Blocks</span><span>Code</span><span>Split</span></div>
+              <span class="btn ghost"><span data-icon="history"></span>Versions</span>
+              <span class="btn">Backtest</span>
+              <span class="btn pri">Save version 4</span>
+            </div>
+          </div>
+          <div class="work">
+            <div class="col gap-16">
+              <div class="b-ask"><span data-icon="copilot"></span>Ask Copilot to change or explain this strategy<span class="kbd">/</span></div>
+              <div class="panel">
+                <div class="panel-h">Rules<span class="aside">Rebalances <span class="tk w">monthly</span> against <span class="tk">SPY</span></span></div>
+                <div class="b-ol">
+                  <div class="r"><span class="kwd">When</span><span class="tk">RSI(SPY, 14)</span> is above <span class="tk">72</span><span class="aside">SPY is a signal, not held</span></div>
+                  <div class="grp">
+                    <div class="r"><span class="kwd">Hold</span><span class="tk w">Specified</span> weights</div>
+                    <div class="as"><span class="sym">TLT</span><span>iShares 20+ Year Treasury</span><span class="b-wb"><i style="width:60%"></i></span><span class="p">60%</span></div>
+                    <div class="as"><span class="sym">GLD</span><span>SPDR Gold Shares</span><span class="b-wb"><i style="width:40%;background:var(--c2)"></i></span><span class="p">40%</span></div>
+                  </div>
+                  <div class="r on"><span class="kwd">Otherwise</span>Hold the top <span class="tk">2</span> by <span class="tk w">momentum</span> over <span class="tk">120 days</span><span class="aside">Ranked at each rebalance</span></div>
+                  <div class="grp">
+                    <div class="as"><span class="sym">VTI</span><span>Vanguard Total Stock Market</span><span></span><span class="p rk">Ranked</span></div>
+                    <div class="as"><span class="sym">QQQ</span><span>Invesco QQQ Trust</span><span></span><span class="p rk">Ranked</span></div>
+                    <div class="as"><span class="sym">SMH</span><span>VanEck Semiconductor</span><span></span><span class="p rk">Ranked</span></div>
+                    <div class="as"><span class="sym">IWM</span><span>iShares Russell 2000</span><span></span><span class="p rk">Ranked</span></div>
+                  </div>
+                  <div class="add"><span class="btn sm ghost"><span data-icon="plus"></span>Add a rule</span><span class="btn sm ghost"><span data-icon="plus"></span>Add an asset</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="col gap-16 rail">
+              <div class="panel">
+                <div class="panel-h">What it holds<span class="aside">as written</span></div>
+                <div class="panel-b">
+                  <div class="b-scn">
+                    <span class="b-kick">When RSI is above 72</span>
+                    <div class="b-split"><i style="width:60%"></i><i style="width:40%;background:var(--c2)"></i></div>
+                    <div class="b-leg"><span><i class="b-sw"></i><b>TLT</b> 60%</span><span><i class="b-sw" style="background:var(--c2)"></i><b>GLD</b> 40%</span></div>
+                  </div>
+                  <div class="hr"></div>
+                  <div class="b-scn">
+                    <span class="b-kick">Otherwise</span>
+                    <div class="b-split"><i class="hatch" style="width:100%"></i></div>
+                    <div class="sm" style="color:var(--fg-2)">Two of <span class="sym">VTI QQQ SMH IWM</span>, weighted by 120-day momentum.</div>
+                  </div>
+                  <div class="b-note">These are the weights as written. Weights at the last close need an evaluation the engine doesn't offer yet.</div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h">What it needs</div>
+                <div class="panel-b tight">
+                  <div class="b-kv"><span>Symbols</span><span>7 · SPY as signal</span></div>
+                  <div class="b-kv"><span>History before first rebalance</span><span>120 bars</span></div>
+                  <div class="b-kv"><span>Engine check</span><span class="acc">Passed</span></div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h">Last backtest<span class="aside">version 3 · 2 years</span></div>
+                <div class="panel-b" style="padding-top:12px">
+                  <div class="row base"><span class="mono lg gain">+21.4%</span><span class="xs dim">vs SPY +11.0%</span><span class="sp"></span><span class="xs dim">Sharpe 0.79</span></div>
+                  <div data-chart="area" data-seed="42" data-ret="0.214" data-bench="0.11" data-vol="0.009" data-h="44" style="margin-top:8px"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Strategies</span><span></span><span class="rt"><span data-icon="copilot"></span><span data-icon="more"></span></span></div>
+      <div class="b-mt"><div class="nm">Recession Radar</div><div class="mm"><span class="b-unsaved">Version 4 draft · 3 changes</span></div></div>
+      <div class="m-body">
+        <div class="b-mseg"><span class="on">Blocks</span><span>Code</span></div>
+        <div class="row sm" style="color:var(--fg-2);gap:6px;flex-wrap:wrap">Rebalances <span class="tk w">monthly</span> against <span class="tk">SPY</span></div>
+        <div class="m-card col" style="gap:10px">
+          <div class="b-kick">When</div>
+          <div class="row wrap" style="gap:6px;font-size:15px"><span class="tk">RSI(SPY, 14)</span> is above <span class="tk">72</span></div>
+          <div class="hr"></div>
+          <div class="row" style="font-size:13px"><span class="sym">TLT</span><span class="sp"></span><span class="b-wb" style="width:120px"><i style="width:60%"></i></span><span class="mono" style="width:40px;text-align:right">60%</span></div>
+          <div class="row" style="font-size:13px"><span class="sym">GLD</span><span class="sp"></span><span class="b-wb" style="width:120px"><i style="width:40%;background:var(--c2)"></i></span><span class="mono" style="width:40px;text-align:right">40%</span></div>
+        </div>
+        <div class="m-card col" style="gap:10px;border-color:var(--acc-line);box-shadow:0 0 0 3px var(--acc-soft)">
+          <div class="b-kick">Otherwise</div>
+          <div class="row wrap" style="gap:6px;font-size:15px">Top <span class="tk">2</span> by <span class="tk w">momentum</span> over <span class="tk">120 days</span></div>
+          <div class="hr"></div>
+          <div class="row wrap" style="gap:6px"><span class="chip sym">VTI</span><span class="chip sym">QQQ</span><span class="chip sym">SMH</span><span class="chip sym">IWM</span><span class="chip"><span data-icon="plus" style="width:12px;height:12px"></span></span></div>
+          <div class="xs dim">Ranked by 120-day return at each rebalance.</div>
+        </div>
+        <div class="row xs"><span class="b-eng">Engine check passed</span><span class="sp"></span><span class="dim">7 symbols · 120 bars</span></div>
+      </div>
+      <div class="b-mbar"><span class="m-btn sec">Backtest</span><span class="m-btn">Save version 4</span></div>
+    </div>
+  </div>
+
+  <!-- 1B -->
+  <div class="ax-opt" data-opt="B" data-name="Canvas and inspector"
+    data-note="Blocks sit on a canvas as a branching tree, with a palette to drag from and an inspector for the selected block. The shape of the logic is obvious at a glance, but long strategies need panning and the words are thinner.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/edit">
+      <div class="app b1b">
+        <div data-use="top"></div>
+        <div class="body">
+          <aside class="pal">
+            <span class="lbl">Logic</span>
+            <a><i>IF</i>If and otherwise</a><a><i>FL</i>Filter</a><a><i>GR</i>Group</a>
+            <span class="lbl">Weighting</span>
+            <a><i>SP</i>Specified</a><a><i>EQ</i>Equal</a><a class="hi"><i>MO</i>Momentum</a><a><i>IV</i>Inverse volatility</a><a><i>MV</i>Min variance</a><a><i>RP</i>Risk parity</a>
+            <span class="lbl">Signals</span>
+            <a><i>RS</i>RSI</a><a><i>MA</i>Moving average</a><a><i>RT</i>Return</a><a><i>PR</i>Price</a>
+            <div class="xs faint" style="margin:auto 8px 0">Drag a block onto the canvas, or press <span class="kbd">/</span> to ask Copilot.</div>
+          </aside>
+          <div class="cv">
+            <div class="cvbar">
+              <div><div class="nm">Recession Radar</div><div class="mt"><span class="b-unsaved">Version 4 draft · 3 changes</span></div></div>
+              <span class="sp"></span>
+              <div class="seg"><span class="on">Blocks</span><span>Code</span><span>Split</span></div>
+              <span class="btn">Backtest</span><span class="btn pri">Save version 4</span>
+            </div>
+            <div class="tree">
+              <div class="nd root"><span data-logo="mark" data-size="18"></span><b>Recession Radar</b><span class="dim xs">Monthly · against SPY</span></div>
+              <div class="vl"></div>
+              <div class="nd" style="width:350px">
+                <div class="hd"><span class="b-kick">If</span>RSI is above a level<span class="x">signal</span></div>
+                <div class="slots"><span class="tk">RSI</span>of<span class="tk">SPY</span>over<span class="tk">14</span>days is above<span class="tk">72</span></div>
+              </div>
+              <div class="fork">
+                <div>
+                  <span class="lab">Yes</span>
+                  <div class="nd">
+                    <div class="hd"><span class="b-kick">Weight</span>Specified<span class="x">2 assets</span></div>
+                    <div class="ar"><span class="sym">TLT</span><span class="b-wb"><i style="width:60%"></i></span><span class="p">60%</span></div>
+                    <div class="ar"><span class="sym">GLD</span><span class="b-wb"><i style="width:40%;background:var(--c2)"></i></span><span class="p">40%</span></div>
+                  </div>
+                </div>
+                <div>
+                  <span class="lab">No</span>
+                  <div class="nd on">
+                    <div class="hd"><span class="b-kick">Weight</span>Momentum<span class="x">top 2 of 4</span></div>
+                    <div class="ar"><span class="sym">VTI</span><span>Total Stock Market</span><span class="p" style="color:var(--fg-3);font-family:var(--sans)">ranked</span></div>
+                    <div class="ar"><span class="sym">QQQ</span><span>Invesco QQQ</span><span class="p" style="color:var(--fg-3);font-family:var(--sans)">ranked</span></div>
+                    <div class="ar"><span class="sym">SMH</span><span>Semiconductor</span><span class="p" style="color:var(--fg-3);font-family:var(--sans)">ranked</span></div>
+                    <div class="ar"><span class="sym">IWM</span><span>Russell 2000</span><span class="p" style="color:var(--fg-3);font-family:var(--sans)">ranked</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="row xs" style="position:absolute;left:22px;bottom:18px;gap:14px"><span class="b-eng">Engine check passed</span><span class="dim">7 symbols · 120 bars of history · monthly</span></div>
+            <div class="row" style="position:absolute;right:18px;bottom:14px;gap:4px"><span class="btn icon sm"><span data-icon="minus"></span></span><span class="btn sm" style="font-family:var(--mono)">100%</span><span class="btn icon sm"><span data-icon="plus"></span></span></div>
+          </div>
+          <aside class="insp">
+            <div><span class="b-kick">Otherwise branch</span><div class="h3">Momentum weighting</div></div>
+            <div class="field"><label>Method</label><div class="select">Momentum</div></div>
+            <div class="g2" style="gap:12px">
+              <div class="field"><label>Lookback</label><div class="input focus">120<span class="suf">days</span></div></div>
+              <div class="field"><label>Keep the top</label><div class="input">2</div></div>
+            </div>
+            <div class="field"><label>Candidates</label>
+              <div class="chips"><span class="chip sym">VTI<span class="x">×</span></span><span class="chip sym">QQQ<span class="x">×</span></span><span class="chip sym">SMH<span class="x">×</span></span><span class="chip sym">IWM<span class="x">×</span></span><span class="chip"><span data-icon="plus" style="width:12px;height:12px"></span>Add</span></div>
+            </div>
+            <div class="callout acc"><span data-icon="info"></span><div>At each rebalance, ranks the four by their 120-day return, keeps the top 2 and weights them by that return.</div></div>
+            <div class="foot"><span class="btn ghost sm"><span data-icon="copy"></span>Duplicate</span><span class="btn ghost sm"><span data-icon="trash"></span>Remove block</span></div>
+          </aside>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Strategies</span><span>Recession Radar</span><span class="rt"><span data-icon="more"></span></span></div>
+      <div class="m-body" style="background-image:radial-gradient(var(--grid) 1px, transparent 1.2px);background-size:18px 18px;align-items:center;gap:0;padding-top:10px">
+        <div class="nd root" style="font-size:13px"><b>Monthly</b><span class="dim xs">against SPY</span></div>
+        <div class="vl" style="height:16px"></div>
+        <div class="nd" style="width:100%"><div class="hd"><span class="b-kick">If</span>RSI is above a level</div><div class="slots"><span class="tk">RSI</span>of<span class="tk">SPY</span><span class="tk">14</span>days above<span class="tk">72</span></div></div>
+        <div class="vl" style="height:16px"></div>
+        <div class="row" style="width:100%;gap:10px;align-items:stretch">
+          <div class="nd" style="width:50%;padding:10px 12px"><div class="hd"><span class="b-kick">Yes</span></div><div class="xs" style="margin-top:6px;color:var(--fg-2)">Specified</div><div class="mono xs" style="margin-top:4px"><b>TLT</b> 60 · <b>GLD</b> 40</div></div>
+          <div class="nd on" style="width:50%;padding:10px 12px"><div class="hd"><span class="b-kick">No</span></div><div class="xs" style="margin-top:6px;color:var(--fg-2)">Momentum · top 2</div><div class="mono xs" style="margin-top:4px">VTI QQQ SMH IWM</div></div>
+        </div>
+        <div class="sheet" style="padding-bottom:30px">
+          <div class="row"><div><span class="b-kick">Otherwise branch</span><div class="h3" style="margin-top:4px">Momentum weighting</div></div><span class="sp"></span><span class="btn ghost icon sm"><span data-icon="x"></span></span></div>
+          <div class="g2" style="gap:10px;margin-top:14px">
+            <div class="field"><label>Lookback</label><div class="input focus">120<span class="suf">days</span></div></div>
+            <div class="field"><label>Keep the top</label><div class="input">2</div></div>
+          </div>
+          <div class="row wrap" style="gap:6px;margin-top:14px"><span class="chip sym">VTI</span><span class="chip sym">QQQ</span><span class="chip sym">SMH</span><span class="chip sym">IWM</span><span class="chip"><span data-icon="plus" style="width:12px;height:12px"></span>Add</span></div>
+          <div class="m-btn" style="margin-top:16px">Done</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 1C -->
+  <div class="ax-opt" data-opt="C" data-name="Plain-English page"
+    data-note="The strategy is one paragraph you can read aloud, with every value editable where it sits. The calmest option and closest to the marketing hero, but nested strategies turn into long sentences.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/edit">
+      <div class="app b1c">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="glow" style="opacity:.7"></div>
+          <div class="art center" data-art="line" data-seed="311" style="height:300px"></div>
+          <div class="doc over">
+            <div class="ttl">
+              <span class="b-unsaved xs">Version 4 draft · 3 changes · version 3 runs in paper</span>
+              <div class="b-name">Recession Radar</div>
+            </div>
+            <p class="prose">Every <span class="tk">month</span>, check whether the <span class="tk">14-day RSI</span> of <span class="tk m">SPY</span> is above <span class="tk m on">72</span>. If it is, hold <span class="tk m">60%</span> in <span class="tk m">TLT</span> and <span class="tk m">40%</span> in <span class="tk m">GLD</span>. Otherwise, hold the <span class="tk">2</span> strongest of <span class="tk m">VTI</span>, <span class="tk m">QQQ</span>, <span class="tk m">SMH</span> and <span class="tk m">IWM</span> by their <span class="tk">120-day return</span>, weighted by that return. Compare the result against <span class="tk m">SPY</span>.</p>
+            <div class="pop" style="left:470px;top:226px">
+              <div class="row"><b>RSI level</b><span class="sp"></span><span class="xs dim">was 70 in version 3</span></div>
+              <div class="step"><span class="btn icon"><span data-icon="minus"></span></span><span class="v">72</span><span class="btn icon"><span data-icon="plus"></span></span></div>
+              <div class="row" style="gap:6px"><span class="chip">65</span><span class="chip">70</span><span class="chip on">72</span><span class="chip">75</span><span class="chip">80</span></div>
+            </div>
+            <div class="scns">
+              <div class="panel"><span class="b-kick">When RSI is above 72</span><div class="b-split"><i style="width:60%"></i><i style="width:40%;background:var(--c2)"></i></div><div class="b-leg"><span><i class="b-sw"></i><b>TLT</b> 60%</span><span><i class="b-sw" style="background:var(--c2)"></i><b>GLD</b> 40%</span></div></div>
+              <div class="panel"><span class="b-kick">Otherwise</span><div class="b-split"><i class="hatch" style="width:100%"></i></div><div class="sm" style="color:var(--fg-2)">Two of four, ranked at each rebalance</div></div>
+            </div>
+            <div class="needs"><span>Symbols<b>7 · SPY as signal</b></span><span>History<b>120 bars</b></span><span>Last backtest<b class="gain">+21.4%</b> <span class="faint">version 3</span></span><span class="b-eng">Engine check passed</span></div>
+          </div>
+          <div class="dockbar over">
+            <div class="seg round"><span class="on">Blocks</span><span>Code</span><span>Split</span></div>
+            <span class="vr"></span>
+            <span class="btn ghost round sm"><span data-icon="copilot"></span>Ask Copilot</span>
+            <span class="btn ghost round sm"><span data-icon="history"></span>Versions</span>
+            <span class="vr"></span>
+            <span class="btn round">Backtest</span>
+            <span class="btn pri round">Save version 4</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Strategies</span><span></span><span class="rt"><span data-icon="copilot"></span><span data-icon="history"></span></span></div>
+      <div class="m-body" style="padding-top:8px">
+        <div class="art" data-art="line" data-seed="311" style="height:180px"></div>
+        <div class="over" style="text-align:center"><span class="b-unsaved xs">Version 4 draft · 3 changes</span><div class="b-name" style="font-size:26px">Recession Radar</div></div>
+        <p class="over b1c-m" style="margin:4px 0 0;font-size:17px;line-height:1.95;color:var(--fg-2)">Every <u>month</u>, check whether the <u>14-day RSI</u> of <u class="mn">SPY</u> is above <u class="mn on">72</u>. If it is, hold <u class="mn">60%</u> <u class="mn">TLT</u> and <u class="mn">40%</u> <u class="mn">GLD</u>. Otherwise, hold the <u>2</u> strongest of <u class="mn">VTI</u>, <u class="mn">QQQ</u>, <u class="mn">SMH</u> and <u class="mn">IWM</u> by <u>120-day return</u>.</p>
+        <div class="m-card over col" style="gap:8px"><span class="b-kick">When RSI is above 72</span><div class="b-split"><i style="width:60%"></i><i style="width:40%;background:var(--c2)"></i></div><div class="b-leg"><span><i class="b-sw"></i><b>TLT</b> 60%</span><span><i class="b-sw" style="background:var(--c2)"></i><b>GLD</b> 40%</span></div></div>
+      </div>
+      <div class="b-mbar"><span class="m-btn sec">Backtest</span><span class="m-btn">Save version 4</span></div>
+    </div>
+  </div>
+
+  <!-- 1D -->
+  <div class="ax-opt" data-opt="D" data-name="Decision flow"
+    data-note="Reads left to right: the signal, the side it picks, how that side is weighted and what it holds. The RSI history beside the threshold shows how often each side applied, at the cost of a fixed layout that suits one condition better than several.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/edit">
+      <div class="app b1d">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="b-head">
+            <div>
+              <span class="b-back"><span data-icon="arrow-left"></span>Strategies</span>
+              <div class="b-name">Recession Radar</div>
+              <div class="b-meta"><span class="b-unsaved">Version 4 draft · 3 changes</span><span>·</span><span>Rebalances monthly against SPY</span></div>
+            </div>
+            <div class="b-act">
+              <div class="seg"><span class="on">Blocks</span><span>Code</span><span>Split</span></div>
+              <span class="btn ghost"><span data-icon="copilot"></span>Copilot</span>
+              <span class="btn">Backtest</span>
+              <span class="btn pri">Save version 4</span>
+            </div>
+          </div>
+          <div class="flow">
+            <span class="b-kick colh">1 · Signal</span><span class="colh"></span><span class="b-kick colh">2 · Side</span><span class="colh"></span><span class="b-kick colh">3 · Weighting</span><span class="colh"></span><span class="b-kick colh">4 · Holds</span>
+            <div class="panel sig rim">
+              <div class="row"><b>RSI of SPY</b><span class="sp"></span><span class="tk">14 days</span></div>
+              <div class="row base" style="gap:8px"><span class="muted">is above</span><span class="tk on" style="font-size:15px">72</span></div>
+              <div class="rsi"><div data-chart="line" data-seed="512" data-ret="0.08" data-vol="0.05" data-h="250" data-axis="x" data-x="Nov 2025,May 2026,Nov 2026" data-color="muted"></div><div class="thr"><span>72</span></div></div>
+              <div class="xs dim">SPY's RSI over the last 12 months. It closed above 72 on 21 of 251 days.</div>
+            </div>
+            <div class="lanes-r" style="grid-row: 2 / span 2">
+                            <div class="arr"></div><div class="side-yes"><b>Yes</b>21 days</div>
+              <div class="arr"></div>
+              <div class="panel card"><div class="t">Specified weights</div><div class="d">Fixed shares, reset at each rebalance.</div><div class="row" style="gap:6px"><span class="tk">TLT 60</span><span class="tk">GLD 40</span></div></div>
+              <div class="arr"></div>
+              <div class="panel card"><div class="b-split"><i style="width:60%"></i><i style="width:40%;background:var(--c2)"></i></div><div class="b-leg"><span><i class="b-sw"></i><b>TLT</b> 60%</span><span><i class="b-sw" style="background:var(--c2)"></i><b>GLD</b> 40%</span></div></div>
+
+              <div class="arr"></div><div class="side-yes"><b>No</b>230 days</div>
+              <div class="arr"></div>
+              <div class="panel card" style="border-color:var(--acc-line)"><div class="t">Momentum, top <span class="tk">2</span></div><div class="d">Ranks by return over <span class="tk">120 days</span> and weights by it.</div></div>
+              <div class="arr"></div>
+              <div class="panel card"><div class="b-split"><i class="hatch" style="width:100%"></i></div><div class="chips"><span class="chip sym">VTI</span><span class="chip sym">QQQ</span><span class="chip sym">SMH</span><span class="chip sym">IWM</span><span class="chip"><span data-icon="plus" style="width:12px;height:12px"></span></span></div><div class="d">Two of four, chosen at each rebalance.</div></div>
+            </div>
+          </div>
+          <div class="figs boxed needs" style="--n:4">
+            <div class="fig"><div class="lbl">Symbols</div><div class="v">7</div><div class="s">SPY as signal</div></div>
+            <div class="fig"><div class="lbl">History needed</div><div class="v">120 bars</div><div class="s">before the first rebalance</div></div>
+            <div class="fig"><div class="lbl">Rebalance</div><div class="v">Monthly</div><div class="s">first trading day</div></div>
+            <div class="fig"><div class="lbl">Engine check</div><div class="v" style="font-family:var(--sans)">Passed</div><div class="s">4 of 4 checks</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Strategies</span><span>Recession Radar</span><span class="rt"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="b-mseg"><span class="on">Blocks</span><span>Code</span></div>
+        <div class="m-card col" style="gap:8px">
+          <span class="b-kick">1 · Signal</span>
+          <div class="row wrap" style="gap:6px;font-size:15px">RSI of <span class="tk">SPY</span> over <span class="tk">14 days</span> is above <span class="tk on">72</span></div>
+          <div class="b1d"><div class="rsi"><div data-chart="line" data-seed="512" data-ret="0.08" data-vol="0.05" data-h="80" data-color="muted"></div><div class="thr" style="right:0"><span>72</span></div></div></div>
+          <div class="xs dim">Above 72 on 21 of the last 251 days.</div>
+        </div>
+        <div class="b-mseg"><span>If yes · 21 days</span><span class="on">If no · 230 days</span></div>
+        <div class="m-card col" style="gap:8px">
+          <span class="b-kick">2 · Weighting</span>
+          <div class="row wrap" style="gap:6px;font-size:15px">Momentum, top <span class="tk">2</span> over <span class="tk">120 days</span></div>
+          <span class="b-kick" style="margin-top:6px">3 · Holds</span>
+          <div class="row wrap" style="gap:6px"><span class="chip sym">VTI</span><span class="chip sym">QQQ</span><span class="chip sym">SMH</span><span class="chip sym">IWM</span></div>
+        </div>
+      </div>
+      <div class="b-mbar"><span class="m-btn sec">Backtest</span><span class="m-btn">Save version 4</span></div>
+    </div>
+  </div>
+</section>
+
+<style>
+  /* ---------- 2A code and reading ---------- */
+  .b2a .work { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 28px; padding: 0 32px; }
+  .b-file { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 16px; border-bottom: 1px solid var(--line); font: 500 12.5px var(--mono); color: var(--fg-2); }
+  .b-file .ic { color: var(--fg-3); }
+  .b-file .b-eng { margin-left: auto; font-family: var(--sans); }
+  .b-stat { display: flex; align-items: center; gap: 16px; height: 34px; padding: 0 16px; border-top: 1px solid var(--line); font: 400 11.5px var(--mono); color: var(--fg-3); }
+  .b2a .codebox { padding: 14px 0 18px; min-height: 420px; }
+  .b-read .ln2 { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 8px; padding: 9px 12px; border-radius: 8px; font-size: 13.5px; line-height: 1.6; color: var(--fg-2); }
+  .b-read .ln2 > i { font: 400 11px/1.9 var(--mono); font-style: normal; color: var(--fg-4); }
+  .b-read .ln2 b { color: var(--fg); font-weight: 500; }
+  .b-read .ln2 .tk { font-size: 12px; padding: 0 6px; }
+  .b-read .ln2.on { background: var(--acc-soft); box-shadow: inset 0 0 0 1px var(--acc-line); color: var(--fg); }
+
+  /* ---------- 2B margin notes ---------- */
+  .b2b .work { padding: 0 32px; }
+  .b2b .ed { display: grid; grid-template-columns: 560px minmax(0, 1fr); }
+  .b2b .codebox { position: relative; padding: 18px 0; border-right: 1px solid var(--line); }
+  .b2b .gl { position: relative; padding: 18px 0; }
+  .b2b .gl > div { position: absolute; left: 0; right: 24px; display: flex; align-items: center; gap: 12px; height: 24px; font-size: 13px; color: var(--fg-2); }
+  .b2b .gl > div::before { content: ""; width: 26px; border-top: 1px dotted var(--line-2); flex: none; }
+  .b2b .gl > div b { color: var(--fg); font-weight: 500; }
+  .b2b .gl > div.sub { color: var(--fg-3); }
+  .b2b .tip { position: absolute; z-index: 4; width: 330px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 10px; box-shadow: var(--shadow-xl); font-size: 12.5px; color: var(--fg-2); line-height: 1.55; }
+  .b2b .tip .sig { font: 500 12.5px var(--mono); color: var(--fg); margin-bottom: 6px; }
+  .b2b .tip .sig .k { color: var(--acc); }
+
+  /* ---------- 2C focus editor ---------- */
+  .b2c .main { display: flex; flex-direction: column; align-items: center; }
+  .b2c .sheetc { width: 860px; margin-top: 30px; }
+  .b2c .fh { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+  .b2c .fh .nm { font: 600 20px/1.2 var(--sans); letter-spacing: -0.015em; }
+  .b2c .fh .fn { font: 400 12.5px var(--mono); color: var(--fg-3); }
+  .b2c .codebox { position: relative; padding: 22px 0; }
+  .b-ac { position: absolute; z-index: 4; width: 420px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 10px; box-shadow: var(--shadow-xl); overflow: hidden; }
+  .b-ac .it { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 12px; align-items: center; padding: 7px 12px; font-size: 12.5px; color: var(--fg-3); }
+  .b-ac .it > span:first-child { font: 500 12.5px var(--mono); color: var(--fg); }
+  .b-ac .it.on { background: var(--acc-soft); }
+  .b-ac .it.on > span:first-child { color: var(--acc); }
+  .b-ac .ft { display: flex; gap: 14px; padding: 7px 12px; border-top: 1px solid var(--line); font-size: 11px; color: var(--fg-3); }
+  .b2c .pillbar { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; align-items: center; gap: 16px; padding: 8px 10px 8px 18px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line-2); box-shadow: var(--shadow-lg); font-size: 12.5px; color: var(--fg-2); white-space: nowrap; }
+  .b-pending { display: inline-flex; align-items: center; gap: 7px; }
+  .b-pending::before { content: ""; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--line-2); border-right-color: var(--acc); }
+  .b-mac { display: flex; gap: 6px; padding: 8px 8px 0; overflow: hidden; }
+  .b-mac > span { flex: none; padding: 6px 10px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); font: 500 12.5px var(--mono); color: var(--fg); }
+  .b-mac > span.on { border-color: var(--acc); color: var(--acc); }
+</style>
+
+
+<section class="ax-surface" id="builder-code"
+  data-surface="builder/code"
+  data-area="Strategy builder"
+  data-title="Code view"
+  data-why="The same strategy as a short S-expression, for people who prefer to type, diff and paste rules rather than click them.">
+
+  <!-- 2A -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="Code and reading"
+    data-note="The code sits in a plain editor and a rail reads it back in words, following the cursor line by line. Recommended: the rail catches mistakes that still parse, such as a threshold in the wrong place, without leaving the keyboard.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/edit?view=code">
+      <div class="app b2a">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="b-head">
+            <div>
+              <span class="b-back"><span data-icon="arrow-left"></span>Strategies</span>
+              <div class="b-name">Recession Radar</div>
+              <div class="b-meta"><span class="b-unsaved">Version 4 draft · 3 changes</span><span>·</span><span>Version 3 runs in paper</span></div>
+            </div>
+            <div class="b-act">
+              <div class="seg"><span>Blocks</span><span class="on">Code</span><span>Split</span></div>
+              <span class="btn ghost"><span data-icon="history"></span>Versions</span>
+              <span class="btn">Backtest</span>
+              <span class="btn pri">Save version 4</span>
+            </div>
+          </div>
+          <div class="work">
+            <div class="panel" style="overflow:hidden">
+              <div class="b-file"><span data-icon="code"></span>recession-radar.lt<span class="b-eng">Engine check passed</span></div>
+              <div class="codebox" style="min-height:470px"><div data-dsl="v4" data-cur="10"></div></div>
+              <div class="b-stat"><span>Line 10, column 22</span><span>14 lines</span><span class="sp"></span><span>⌘S save</span><span>⌘K ask Copilot</span></div>
+            </div>
+            <div class="col gap-16">
+              <div class="panel">
+                <div class="panel-h">Reads as<span class="aside">follows the cursor</span></div>
+                <div class="panel-b tight b-read" style="padding:8px">
+                  <div class="ln2"><i>2–3</i><span>Rebalances <b>monthly</b>, compared against <b>SPY</b>.</span></div>
+                  <div class="ln2"><i>4</i><span>When <b>SPY's 14-day RSI</b> is above <b>72</b>,</span></div>
+                  <div class="ln2"><i>5–7</i><span>hold <b>TLT 60%</b> and <b>GLD 40%</b>.</span></div>
+                  <div class="ln2 on"><i>9–14</i><span>Otherwise, hold the top <b>2</b> of <b>VTI QQQ SMH IWM</b> by momentum over <span class="tk">120 days</span>.</span></div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h">What it needs</div>
+                <div class="panel-b tight">
+                  <div class="b-kv"><span>Symbols</span><span>7 · SPY as signal</span></div>
+                  <div class="b-kv"><span>History before first rebalance</span><span>120 bars</span></div>
+                  <div class="b-kv"><span>Rebalance</span><span>Monthly</span></div>
+                </div>
+              </div>
+              <div class="xs dim" style="line-height:1.6">Changing the lookback from 90 to 120 days means the first rebalance needs 30 more bars of history.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Strategies</span><span></span><span class="rt"><span data-icon="copilot"></span><span data-icon="more"></span></span></div>
+      <div class="b-mt"><div class="nm">Recession Radar</div><div class="mm"><span class="b-unsaved">Version 4 draft · 3 changes</span></div></div>
+      <div class="m-body" style="gap:12px">
+        <div class="b-mseg"><span>Blocks</span><span class="on">Code</span></div>
+        <div class="m-card" style="padding:10px 0 10px;overflow:hidden"><div data-dsl="v4" data-cur="10" class="sm" style="font-size:11.5px;line-height:1.75"></div></div>
+        <div class="m-card col" style="gap:6px;border-color:var(--acc-line)">
+          <div class="row"><span class="b-kick">Line 10 reads as</span><span class="sp"></span><span class="b-eng xs">Passed</span></div>
+          <div class="sm" style="color:var(--fg-2);line-height:1.5">Otherwise, hold the top <b style="color:var(--fg)">2</b> of VTI QQQ SMH IWM by momentum over <b style="color:var(--fg)">120 days</b>.</div>
+        </div>
+      </div>
+      <div class="b-mbar"><span class="m-btn sec">Backtest</span><span class="m-btn">Save version 4</span></div>
+    </div>
+  </div>
+
+  <!-- 2B -->
+  <div class="ax-opt" data-opt="B" data-name="Margin notes"
+    data-note="Each expression gets a plain-English note in the margin, and hovering a function shows what it takes. Good for learning the language, but the notes compete with the code once a strategy grows past a screen.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/edit?view=code">
+      <div class="app b2b">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="b-head">
+            <div>
+              <span class="b-back"><span data-icon="arrow-left"></span>Strategies</span>
+              <div class="b-name">Recession Radar</div>
+              <div class="b-meta"><span class="b-unsaved">Version 4 draft · 3 changes</span><span>·</span><span class="b-eng">Engine check passed</span></div>
+            </div>
+            <div class="b-act">
+              <div class="seg"><span>Blocks</span><span class="on">Code</span><span>Split</span></div>
+              <span class="btn">Backtest</span>
+              <span class="btn pri">Save version 4</span>
+            </div>
+          </div>
+          <div class="work">
+            <div class="panel" style="overflow:hidden">
+              <div class="b-file"><span data-icon="code"></span>recession-radar.lt<span class="sp"></span><span style="font-family:var(--sans);color:var(--fg-3)">Notes</span><span class="toggle on"></span></div>
+              <div class="ed">
+                <div class="codebox">
+                  <div data-dsl="v4" data-cur="4"></div>
+                  <div class="tip" style="left:150px;top:132px">
+                    <div class="sig">(<span class="k">rsi</span> symbol period)</div>
+                    Relative strength index of a symbol's closing price over the last <i>period</i> bars. It runs from 0 to 100; readings above 70 are often called overbought.
+                    <div class="row xs" style="margin-top:8px;gap:12px"><span class="dim">Here: SPY, 14 bars</span><span class="sp"></span><span class="acc">Language reference</span></div>
+                  </div>
+                </div>
+                <div class="gl">
+                  <div style="top:18px"><span><b>Recession Radar</b></span></div>
+                  <div style="top:42px" class="sub"><span>Rebalances on the first trading day of each month</span></div>
+                  <div style="top:66px" class="sub"><span>Results are compared against SPY</span></div>
+                  <div style="top:90px"><span>When <b>SPY's 14-day RSI</b> closes above <b>72</b></span></div>
+                  <div style="top:114px"><span>hold fixed weights</span></div>
+                  <div style="top:138px" class="sub"><span><b>TLT 60%</b> · <b>GLD 40%</b></span></div>
+                  <div style="top:186px"><span>Otherwise</span></div>
+                  <div style="top:210px"><span>weight by <b>momentum</b>, keeping the top <b>2</b></span></div>
+                  <div style="top:234px" class="sub"><span>ranked by return over <b>120 days</b></span></div>
+                  <div style="top:258px" class="sub"><span>from four candidates</span></div>
+                </div>
+              </div>
+              <div class="b-stat"><span>Line 4, column 14</span><span class="sp"></span><span>7 symbols · 120 bars of history · monthly</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Recession Radar</span><span></span><span class="rt"><span data-icon="more"></span></span></div>
+      <div class="m-body" style="gap:10px">
+        <div class="b-mseg"><span>Blocks</span><span class="on">Code</span></div>
+        <div class="m-card" style="padding:10px 0;overflow:hidden"><div data-dsl="v4notes" style="font-size:11.5px;line-height:1.75"></div></div>
+        <div class="row xs"><span class="b-eng">Engine check passed</span><span class="sp"></span><span class="dim">Notes are not saved in the code</span></div>
+      </div>
+      <div class="b-mbar"><span class="m-btn sec">Backtest</span><span class="m-btn">Save version 4</span></div>
+    </div>
+  </div>
+
+  <!-- 2C -->
+  <div class="ax-opt" data-opt="C" data-name="Focus editor"
+    data-note="A wide, quiet page with only the code, larger type and completions that explain each choice. Best for people who live in code, but what the strategy holds and needs moves behind a status pill.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/edit?view=code">
+      <div class="app b2c">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="sheetc">
+            <div class="fh">
+              <span class="btn ghost icon sm"><span data-icon="arrow-left"></span></span>
+              <div><div class="nm">Recession Radar</div><div class="fn">recession-radar.lt · version 4 draft</div></div>
+              <span class="sp"></span>
+              <div class="seg round"><span>Blocks</span><span class="on">Code</span><span>Split</span></div>
+              <span class="btn round">Backtest</span>
+              <span class="btn pri round">Save version 4</span>
+            </div>
+            <div class="panel rim codebox">
+              <div data-dsl="edit" data-cur="9" class="lg"></div>
+              <div class="b-ac" style="left:340px;top:268px">
+                <div class="it"><span>specified</span><span>Fixed weights you set</span></div>
+                <div class="it"><span>equal</span><span>The same share for each asset</span></div>
+                <div class="it on"><span>momentum</span><span>Trailing return, keeps the top N</span></div>
+                <div class="it"><span>inverse-volatility</span><span>More weight to calmer assets</span></div>
+                <div class="it"><span>min-variance</span><span>Lowest combined variance</span></div>
+                <div class="it"><span>risk-parity</span><span>Each asset adds the same risk</span></div>
+                <div class="ft"><span>↑↓ choose</span><span>↵ insert</span><span>Esc close</span><span class="sp"></span><span>6 methods the engine runs</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="pillbar">
+            <span class="b-pending">Checks run when you stop typing</span>
+            <span class="faint">·</span><span>7 symbols</span><span class="faint">·</span><span>120 bars</span><span class="faint">·</span><span>Monthly</span>
+            <span class="btn ghost round sm"><span data-icon="copilot"></span>Ask</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Back</span><span>Code</span><span class="acc" style="font-weight:600">Save</span></div>
+      <div class="m-body flush" style="gap:0;padding-bottom:0">
+        <div data-dsl="edit" data-cur="9" data-dim="1-3" class="sm" style="font-size:11.5px;line-height:1.75;padding:6px 0"></div>
+      </div>
+      <div class="b-kb">
+        <div class="b-mac"><span>specified</span><span>equal</span><span class="on">momentum</span><span>inverse-volatility</span></div>
+        <div class="acc-row" style="padding-top:8px"><span>(</span><span>)</span><span>:</span><span>"</span><span>SPY</span><span class="wd">Tab</span></div>
+        <div class="krow"><span>q</span><span>w</span><span>e</span><span>r</span><span>t</span><span>y</span><span>u</span><span>i</span><span>o</span><span>p</span></div>
+        <div class="krow"><span>a</span><span>s</span><span>d</span><span>f</span><span>g</span><span>h</span><span>j</span><span>k</span><span>l</span></div>
+        <div class="krow"><span class="wide">⇧</span><span>z</span><span>x</span><span>c</span><span>v</span><span>b</span><span>n</span><span>m</span><span class="wide">⌫</span></div>
+        <div class="krow"><span class="wide">123</span><span class="space">space</span><span class="wide">return</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<style>
+  /* ---------- 3A linked halves ---------- */
+  .b3a .work { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0; margin: 0 32px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel); }
+  .b3a .work > div + div { border-left: 1px solid var(--line); }
+  .b3a .ph { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 16px; border-bottom: 1px solid var(--line); font-weight: 600; font-size: 13px; }
+  .b3a .ph .aside { margin-left: auto; font-weight: 400; font-size: 12px; color: var(--fg-3); }
+  .b3a .b-ol .as { grid-template-columns: 60px minmax(0, 1fr) 90px 50px; }
+  .b3a .b-ol .r .kwd { width: 66px; }
+  .b3a .codebox { padding: 14px 0; }
+  .b3a .link { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--acc); font-weight: 400; }
+  .b3a .strip { display: flex; align-items: center; gap: 22px; margin: 16px 32px 0; padding: 12px 18px; border: 1px solid var(--line); border-radius: 10px; font-size: 12.5px; color: var(--fg-3); }
+  .b3a .strip b { font: 500 12.5px var(--mono); color: var(--fg); margin-left: 6px; }
+  .b3a .strip .b-split { width: 180px; height: 8px; }
+
+  /* ---------- 3B code drawer ---------- */
+  .b3b .main { display: flex; flex-direction: column; }
+  .b3b .top { flex: 1; min-height: 0; overflow: hidden; padding: 0 32px; }
+  .b3b .drw { flex: none; height: 360px; border-top: 1px solid var(--line-2); background: var(--panel); display: flex; flex-direction: column; box-shadow: 0 -18px 40px -24px rgba(0,0,0,.45); }
+  .b3b .grab { height: 10px; display: grid; place-items: center; cursor: row-resize; }
+  .b3b .grab::before { content: ""; width: 44px; height: 4px; border-radius: 4px; background: var(--line-2); }
+  .b3b .dtabs { display: flex; align-items: center; gap: 4px; padding: 0 16px 0 20px; border-bottom: 1px solid var(--line); height: 40px; }
+  .b3b .dtabs a { padding: 0 10px; height: 40px; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--fg-3); border-bottom: 1.5px solid transparent; }
+  .b3b .dtabs a.on { color: var(--fg); border-bottom-color: var(--acc); }
+  .b3b .dtabs a .n { font: 500 11px var(--mono); color: var(--fg-3); }
+  .b3b .dbody { flex: 1; min-height: 0; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) 320px; }
+  .b3b .dbody .codebox { padding: 10px 0; }
+  .b3b .dside { border-left: 1px solid var(--line); padding: 14px 18px; }
+  .b3b .b-ol .r { min-height: 44px; }
+
+  /* ---------- 3C code per block ---------- */
+  .b3c .work { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 28px; padding: 0 32px; }
+  .b3c .blk { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); overflow: hidden; }
+  .b3c .blk + .blk { margin-top: 12px; }
+  .b3c .bh { display: flex; align-items: center; gap: 10px; padding: 16px 16px; font-size: 14px; }
+  .b3c .blk + .blk { margin-top: 14px; }
+  .b3c .bh .b-kick { width: 74px; }
+  .b3c .bh .tg { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-3); }
+  .b3c .bh .tg .ic { width: 14px; height: 14px; }
+  .b3c .blk.on { border-color: var(--acc-line); box-shadow: 0 0 0 3px var(--acc-soft); }
+  .b3c .blk.on .tg { color: var(--acc); }
+  .b3c .bc { border-top: 1px solid var(--line); background: var(--sunk); padding: 10px 0; }
+  .b3c .ba { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 16px 12px 100px; }
+</style>
+
+<section class="ax-surface" id="builder-split"
+  data-surface="builder/split"
+  data-area="Strategy builder"
+  data-title="Split view"
+  data-why="Blocks and code at once, so a change in one is visible in the other while you learn the language or check an edit.">
+
+  <!-- 3A -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="Linked halves"
+    data-note="Blocks on the left, code on the right, and selecting either highlights the same rule in both. Recommended: it teaches the language by showing what each sentence becomes, and it keeps both views at full height.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/edit?view=split">
+      <div class="app b3a">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="b-head">
+            <div>
+              <span class="b-back"><span data-icon="arrow-left"></span>Strategies</span>
+              <div class="b-name">Recession Radar</div>
+              <div class="b-meta"><span class="b-unsaved">Version 4 draft · 3 changes</span><span>·</span><span>Version 3 runs in paper</span></div>
+            </div>
+            <div class="b-act">
+              <div class="seg"><span>Blocks</span><span>Code</span><span class="on">Split</span></div>
+              <span class="btn ghost"><span data-icon="copilot"></span>Copilot</span>
+              <span class="btn">Backtest</span>
+              <span class="btn pri">Save version 4</span>
+            </div>
+          </div>
+          <div class="work">
+            <div>
+              <div class="ph">Blocks<span class="aside"><span class="link"><span data-icon="link" style="width:13px;height:13px"></span>Selection linked</span></span></div>
+              <div class="b-ol">
+                <div class="r"><span class="kwd">When</span><span class="tk">RSI(SPY, 14)</span> is above <span class="tk">72</span></div>
+                <div class="grp">
+                  <div class="r"><span class="kwd">Hold</span><span class="tk w">Specified</span> weights</div>
+                  <div class="as"><span class="sym">TLT</span><span>iShares 20+ Year</span><span class="b-wb"><i style="width:60%"></i></span><span class="p">60%</span></div>
+                  <div class="as"><span class="sym">GLD</span><span>SPDR Gold</span><span class="b-wb"><i style="width:40%;background:var(--c2)"></i></span><span class="p">40%</span></div>
+                </div>
+                <div class="r on"><span class="kwd">Otherwise</span>Top <span class="tk">2</span> by <span class="tk w">momentum</span> over <span class="tk">120 days</span></div>
+                <div class="grp">
+                  <div class="as"><span class="sym">VTI</span><span>Total Stock Market</span><span></span><span class="p rk">Ranked</span></div>
+                  <div class="as"><span class="sym">QQQ</span><span>Invesco QQQ</span><span></span><span class="p rk">Ranked</span></div>
+                  <div class="as"><span class="sym">SMH</span><span>Semiconductor</span><span></span><span class="p rk">Ranked</span></div>
+                  <div class="as"><span class="sym">IWM</span><span>Russell 2000</span><span></span><span class="p rk">Ranked</span></div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="ph" style="font-family:var(--mono);font-weight:500;font-size:12.5px;color:var(--fg-2)">recession-radar.lt<span class="aside" style="font-family:var(--sans)"><span class="b-eng">Engine check passed</span></span></div>
+              <div class="codebox"><div data-dsl="v4" data-sel="8-14"></div></div>
+            </div>
+          </div>
+          <div class="strip">
+            <span>If RSI is above 72</span><div class="b-split"><i style="width:60%"></i><i style="width:40%;background:var(--c2)"></i></div>
+            <span>Otherwise<b>2 of 4, ranked</b></span>
+            <span class="sp"></span>
+            <span>Symbols<b>7</b></span><span>History<b>120 bars</b></span><span>Rebalance<b>Monthly</b></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Strategies</span><span>Recession Radar</span><span class="rt"><span data-icon="more"></span></span></div>
+      <div class="m-body" style="gap:10px">
+        <div class="b-mseg"><span>Blocks</span><span>Code</span><span class="on">Both</span></div>
+        <div class="m-card col" style="gap:8px;border-color:var(--acc-line);box-shadow:0 0 0 3px var(--acc-soft)">
+          <div class="b-kick">Otherwise</div>
+          <div class="row wrap" style="gap:6px;font-size:14.5px">Top <span class="tk">2</span> by <span class="tk w">momentum</span> over <span class="tk">120 days</span></div>
+          <div class="row wrap" style="gap:6px"><span class="chip sym">VTI</span><span class="chip sym">QQQ</span><span class="chip sym">SMH</span><span class="chip sym">IWM</span></div>
+        </div>
+        <div class="row xs dim" style="justify-content:center;gap:6px"><span data-icon="chevron-down" style="width:13px;height:13px"></span>Lines 8 to 14</div>
+        <div class="m-card" style="padding:8px 0;overflow:hidden"><div data-dsl="v4" data-sel="8-14" data-dim="1-3" style="font-size:11.5px;line-height:1.75"></div></div>
+      </div>
+      <div class="b-mbar"><span class="m-btn sec">Backtest</span><span class="m-btn">Save version 4</span></div>
+    </div>
+  </div>
+
+  <!-- 3B -->
+  <div class="ax-opt" data-opt="B" data-name="Code drawer"
+    data-note="Blocks keep the page and the code lives in a drawer below, like browser developer tools, with tabs for problems and needs. Familiar to developers and easy to close, but the code gets only a third of the height.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/edit">
+      <div class="app b3b">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="b-head" style="padding-bottom:14px">
+            <div>
+              <div class="b-name" style="margin-top:0">Recession Radar</div>
+              <div class="b-meta"><span class="b-unsaved">Version 4 draft · 3 changes</span><span>·</span><span>Rebalances monthly against SPY</span></div>
+            </div>
+            <div class="b-act">
+              <span class="btn ghost"><span data-icon="code"></span>Hide code</span>
+              <span class="btn">Backtest</span>
+              <span class="btn pri">Save version 4</span>
+            </div>
+          </div>
+          <div class="top">
+            <div class="panel">
+              <div class="b-ol">
+                <div class="r"><span class="kwd">When</span><span class="tk">RSI(SPY, 14)</span> is above <span class="tk">72</span><span class="aside">SPY is a signal, not held</span></div>
+                <div class="grp">
+                  <div class="as"><span class="sym">TLT</span><span>iShares 20+ Year Treasury</span><span class="b-wb"><i style="width:60%"></i></span><span class="p">60%</span></div>
+                  <div class="as"><span class="sym">GLD</span><span>SPDR Gold Shares</span><span class="b-wb"><i style="width:40%;background:var(--c2)"></i></span><span class="p">40%</span></div>
+                </div>
+                <div class="r on"><span class="kwd">Otherwise</span>Hold the top <span class="tk">2</span> of <span class="tk">VTI QQQ SMH IWM</span> by <span class="tk w">momentum</span> over <span class="tk">120 days</span><span class="aside">Ranked at each rebalance</span></div>
+                <div class="add"><span class="btn sm ghost"><span data-icon="plus"></span>Add a rule</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="drw">
+            <div class="grab"></div>
+            <div class="dtabs"><a class="on"><span data-icon="code" style="width:14px;height:14px"></span>Code</a><a>Problems <span class="n">0</span></a><a>Needs</a><span class="sp"></span><span class="b-eng">Engine check passed</span><span class="btn ghost icon sm" style="margin-left:10px"><span data-icon="chevron-down"></span></span></div>
+            <div class="dbody">
+              <div class="codebox"><div data-dsl="v4" data-sel="8-14" style="font-size:12.5px;line-height:1.7"></div></div>
+              <div class="dside">
+                <span class="b-kick">Selected</span>
+                <div class="h3" style="margin-top:6px">Otherwise branch</div>
+                <div class="sm muted" style="margin-top:6px;line-height:1.55">Lines 8 to 14. Edits on either side update the other once the code parses.</div>
+                <div class="hr" style="margin:14px 0"></div>
+                <div class="b-kv"><span>Symbols</span><span>7 · SPY as signal</span></div>
+                <div class="b-kv"><span>History</span><span>120 bars</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Strategies</span><span>Recession Radar</span><span class="rt"><span data-icon="more"></span></span></div>
+      <div class="m-body" style="gap:10px">
+        <div class="m-card col" style="gap:8px"><div class="b-kick">When</div><div class="row wrap" style="gap:6px;font-size:14.5px"><span class="tk">RSI(SPY, 14)</span> is above <span class="tk">72</span></div><div class="mono xs muted">TLT 60% · GLD 40%</div></div>
+        <div class="m-card col" style="gap:8px;border-color:var(--acc-line)"><div class="b-kick">Otherwise</div><div class="row wrap" style="gap:6px;font-size:14.5px">Top <span class="tk">2</span> by <span class="tk w">momentum</span> over <span class="tk">120 days</span></div></div>
+        <div class="sheet" style="padding:8px 0 30px;height:360px">
+          <div class="row" style="padding:0 18px 8px"><b>Code</b><span class="xs dim" style="margin-left:8px">lines 8 to 14</span><span class="sp"></span><span class="b-eng xs">Passed</span></div>
+          <div data-dsl="v4" data-sel="8-14" data-start="1" style="font-size:11.5px;line-height:1.75"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3C -->
+  <div class="ax-opt" data-opt="C" data-name="Code per block"
+    data-note="Each block can open its own code underneath, so you see exactly what one rule becomes without a second pane. Light and local, but there is no view of the whole file at once.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/edit">
+      <div class="app b3c">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="b-head">
+            <div>
+              <span class="b-back"><span data-icon="arrow-left"></span>Strategies</span>
+              <div class="b-name">Recession Radar</div>
+              <div class="b-meta"><span class="b-unsaved">Version 4 draft · 3 changes</span><span>·</span><span>Rebalances monthly against SPY</span></div>
+            </div>
+            <div class="b-act">
+              <div class="seg"><span class="on">Blocks</span><span>Code</span></div>
+              <span class="btn">Backtest</span>
+              <span class="btn pri">Save version 4</span>
+            </div>
+          </div>
+          <div class="work">
+            <div>
+              <div class="blk">
+                <div class="bh"><span class="b-kick">When</span><span class="tk">RSI(SPY, 14)</span> is above <span class="tk">72</span>, hold <span class="tk">TLT 60%</span> <span class="tk">GLD 40%</span><span class="tg"><span data-icon="code"></span>Code</span></div>
+              </div>
+              <div class="blk on">
+                <div class="bh"><span class="b-kick">Otherwise</span>Hold the top <span class="tk">2</span> by <span class="tk w">momentum</span> over <span class="tk">120 days</span><span class="tg"><span data-icon="code"></span>Hide code</span></div>
+                <div class="ba"><span class="chip sym">VTI</span><span class="chip sym">QQQ</span><span class="chip sym">SMH</span><span class="chip sym">IWM</span><span class="chip"><span data-icon="plus" style="width:12px;height:12px"></span>Add</span></div>
+                <div class="bc"><div data-dsl="v4" data-sel="10" data-start="1" class="b3c-cut"></div></div>
+              </div>
+              <div class="blk"><div class="bh" style="color:var(--fg-3)"><span data-icon="plus"></span>Add a rule, or ask Copilot for one<span class="tg"><span class="kbd">/</span></span></div></div>
+            </div>
+            <div class="col gap-16">
+              <div class="panel"><div class="panel-h">What it holds<span class="aside">as written</span></div><div class="panel-b col" style="gap:10px">
+                <span class="b-kick">When RSI is above 72</span><div class="b-split"><i style="width:60%"></i><i style="width:40%;background:var(--c2)"></i></div>
+                <span class="b-kick" style="margin-top:6px">Otherwise</span><div class="sm muted">Two of four, by 120-day return</div>
+              </div></div>
+              <div class="panel"><div class="panel-b tight"><div class="b-kv"><span>Symbols</span><span>7</span></div><div class="b-kv"><span>History</span><span>120 bars</span></div><div class="b-kv"><span>Check</span><span class="acc">Passed</span></div></div></div>
+              <div class="panel"><div class="panel-h">Last backtest<span class="aside">version 3</span></div><div class="panel-b"><div class="row base"><span class="mono lg gain">+21.4%</span><span class="sp"></span><span class="xs dim">max drawdown −12.6%</span></div><div data-chart="area" data-seed="42" data-ret="0.214" data-bench="0.11" data-vol="0.009" data-h="70" style="margin-top:10px"></div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Strategies</span><span>Recession Radar</span><span class="rt"><span data-icon="more"></span></span></div>
+      <div class="m-body" style="gap:10px">
+        <div class="m-card col" style="gap:8px"><div class="row"><span class="b-kick">When</span><span class="sp"></span><span data-icon="code" style="color:var(--fg-3)"></span></div><div class="row wrap" style="gap:6px;font-size:14.5px"><span class="tk">RSI(SPY, 14)</span> above <span class="tk">72</span></div></div>
+        <div class="m-card col" style="gap:8px;padding-bottom:0;overflow:hidden;border-color:var(--acc-line)">
+          <div class="row"><span class="b-kick">Otherwise</span><span class="sp"></span><span data-icon="code" style="color:var(--acc)"></span></div>
+          <div class="row wrap" style="gap:6px;font-size:14.5px">Top <span class="tk">2</span> by <span class="tk w">momentum</span> over <span class="tk">120 days</span></div>
+          <div style="margin:4px -16px 0;border-top:1px solid var(--line);background:var(--sunk);padding:8px 0"><div data-dsl="v4" data-sel="10" class="b3c-cut" style="font-size:11.5px;line-height:1.75"></div></div>
+        </div>
+      </div>
+      <div class="b-mbar"><span class="m-btn sec">Backtest</span><span class="m-btn">Save version 4</span></div>
+    </div>
+  </div>
+</section>
+<style>
+  /* Show only the else branch (lines 8 to 14) inside per-block code. */
+  .b3c-cut .l:nth-child(-n+7) { display: none; }
+</style>
+
+<style>
+  .b-pb { margin: 4px 18px 8px 46px; padding: 10px 12px 12px; border-left: 2px solid var(--risk); background: var(--risk-soft); border-radius: 0 8px 8px 0; font: 400 12.5px/1.5 var(--sans); color: var(--fg-2); white-space: normal; }
+  .b-pb .t { display: flex; align-items: center; gap: 8px; color: var(--fg); font-weight: 600; font-size: 13px; }
+  .b-pb .t .ic { color: var(--risk); width: 15px; height: 15px; }
+  .b-pb .d { margin-top: 3px; }
+  .b-pb .ch { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+  .b-pb .ch .chip { font-family: var(--mono); font-size: 11.5px; background: var(--panel); }
+  .b-pb.sm { margin: 2px 10px 6px 30px; font-size: 12px; }
+  .b-pb.sm .ch .chip { font-size: 11px; padding: 2px 8px; }
+
+  .b4a .work { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 28px; padding: 0 32px; }
+  .b4a .codebox { padding: 14px 0 16px; }
+  .b-cnt { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; background: var(--risk-soft); border: 1px solid var(--risk-line); color: var(--risk); font: 500 11.5px var(--sans); }
+  .b-cnt .ic { width: 12px; height: 12px; }
+
+  .b4b .main { display: flex; flex-direction: column; }
+  .b4b .top { flex: 1; min-height: 0; padding: 0 32px; overflow: hidden; }
+  .b4b .tray { flex: none; height: 250px; border-top: 1px solid var(--line-2); background: var(--panel); display: flex; flex-direction: column; }
+  .b4b .tray .th { display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 20px; border-bottom: 1px solid var(--line); font-weight: 600; font-size: 13px; }
+  .b4b .pr { display: grid; grid-template-columns: 20px 74px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 12px 20px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .b4b .pr .ic { color: var(--risk); }
+  .b4b .pr .ln3 { font: 500 11.5px var(--mono); color: var(--fg-3); }
+  .b4b .pr .m b { color: var(--fg); font-weight: 600; }
+  .b4b .pr .m span { color: var(--fg-3); }
+  .b4b .pr.on { background: var(--sunk); }
+  .b4b .tipb { position: absolute; z-index: 5; right: 32px; top: 74px; width: 250px; padding: 10px 12px; border-radius: 8px; background: var(--ink); color: var(--ink-text); font-size: 12px; line-height: 1.45; box-shadow: var(--shadow-lg); }
+  .b4b .tipb::before { content: ""; position: absolute; top: -5px; right: 46px; width: 10px; height: 10px; background: var(--ink); transform: rotate(45deg); }
+
+  .b4c .work { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 28px; padding: 0 32px; }
+  .b4c .b-ol .r.bad { background: var(--risk-soft); box-shadow: inset 0 0 0 1px var(--risk-line); }
+  .b4c .b-ol .as.bad { background: var(--risk-soft); border-radius: 6px; }
+  .b4c .tk.bad { border-color: var(--risk-line); color: var(--risk); text-decoration: underline wavy var(--risk); text-underline-offset: 3px; }
+  .b4c .fix { margin: 4px 0 8px 0; padding: 10px 14px 12px; font-size: 12.5px; color: var(--fg-2); }
+  .b4c .fix .ch { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .b4c .fix .chip { background: var(--panel); }
+</style>
+
+<template id="w-p1"><div class="b-pb"><div class="t"><span data-icon="alert"></span>Market cap weighting can't run</div><div class="d">It needs company fundamentals, which the engine doesn't have. Choose a method it supports:</div><div class="ch"><span class="chip">specified</span><span class="chip">equal</span><span class="chip">momentum</span><span class="chip">inverse-volatility</span><span class="chip">min-variance</span><span class="chip">risk-parity</span></div></div></template>
+<template id="w-p2"><div class="b-pb"><div class="t"><span data-icon="alert"></span>VTII isn't a symbol Alpaca trades</div><div class="ch"><span class="chip">Use VTI</span><span class="chip">Use VTIP</span></div></div></template>
+<template id="w-p1m"><div class="b-pb sm"><div class="t"><span data-icon="alert"></span>Market cap weighting can't run</div><div class="d">The engine has no company fundamentals. Use a supported method:</div><div class="ch"><span class="chip">equal</span><span class="chip">momentum</span><span class="chip">risk-parity</span><span class="chip">3 more</span></div></div></template>
+
+<section class="ax-surface" id="builder-problems"
+  data-surface="builder/problems"
+  data-area="Strategy builder"
+  data-title="Problems and checks"
+  data-why="What the editor shows when the engine can't run the draft: where the problem is, what it means and the choices that would fix it.">
+
+  <!-- 4A -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="Under the line"
+    data-note="Each problem opens under the line it belongs to, says why in plain words and offers the fixes as one-tap choices. Recommended: the fix sits where your eyes already are, and the rail falls back to version 3 so you still see what the strategy holds.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/edit?view=code">
+      <div class="app b4a">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="b-head">
+            <div>
+              <span class="b-back"><span data-icon="arrow-left"></span>Strategies</span>
+              <div class="b-name">Recession Radar</div>
+              <div class="b-meta"><span class="b-unsaved">Version 4 draft</span><span>·</span><span class="risk">2 problems to fix before saving</span></div>
+            </div>
+            <div class="b-act">
+              <div class="seg"><span>Blocks</span><span class="on">Code</span><span>Split</span></div>
+              <span class="btn off">Backtest</span>
+              <span class="btn pri off">Save version 4</span>
+            </div>
+          </div>
+          <div class="work">
+            <div class="panel" style="overflow:hidden">
+              <div class="b-file"><span data-icon="code"></span>recession-radar.lt<span class="sp"></span><span class="b-cnt"><span data-icon="alert"></span>2 problems</span></div>
+              <div class="codebox"><div data-dsl="prob" data-cur="9"></div></div>
+            </div>
+            <div class="col gap-16">
+              <div class="panel">
+                <div class="panel-h">Checks</div>
+                <div class="panel-b tight">
+                  <div class="b-ck"><b><span data-icon="check"></span></b><span>Parses</span><span></span></div>
+                  <div class="b-ck fail"><b><span data-icon="x"></span></b><span>Every weight method is supported</span><span>line 9</span></div>
+                  <div class="b-ck fail"><b><span data-icon="x"></span></b><span>Every symbol is valid</span><span>line 11</span></div>
+                  <div class="b-ck"><b><span data-icon="check"></span></b><span>Indicators are known</span><span>rsi</span></div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h">What it holds<span class="aside">from version 3</span></div>
+                <div class="panel-b col" style="gap:10px">
+                  <span class="b-kick">When RSI is above 70</span>
+                  <div class="b-split"><i style="width:60%"></i><i style="width:40%;background:var(--c2)"></i></div>
+                  <div class="b-leg"><span><i class="b-sw"></i><b>TLT</b> 60%</span><span><i class="b-sw" style="background:var(--c2)"></i><b>GLD</b> 40%</span></div>
+                  <span class="b-kick" style="margin-top:4px">Otherwise</span>
+                  <div class="sm muted">Two of VTI QQQ IWM by 90-day momentum</div>
+                  <div class="b-note">The draft can't be checked until its problems are fixed, so this shows the last saved version.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Strategies</span><span></span><span class="rt"><span data-icon="more"></span></span></div>
+      <div class="b-mt"><div class="nm">Recession Radar</div><div class="mm risk">2 problems to fix before saving</div></div>
+      <div class="m-body" style="gap:10px">
+        <div class="m-card" style="padding:8px 0;overflow:hidden"><div data-dsl="probm" data-start="4" style="font-size:11.5px;line-height:1.75"></div></div>
+        <div class="row xs"><span class="b-cnt"><span data-icon="alert"></span>2 problems</span><span class="sp"></span><span class="dim">Next on line 11</span><span data-icon="chevron-down" style="width:14px;height:14px;color:var(--fg-3)"></span></div>
+      </div>
+      <div class="b-mbar"><span class="m-btn sec">Blocks</span><span class="m-btn" style="opacity:.4">Save version 4</span></div>
+    </div>
+  </div>
+
+  <!-- 4B -->
+  <div class="ax-opt" data-opt="B" data-name="Problems tray"
+    data-note="Problems collect in a tray under the editor, each with its line and a fix, and the save button says why it is waiting. Scales to many problems and suits developers, but every fix needs a glance away from the code.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/edit?view=code">
+      <div class="app b4b">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="b-head" style="padding-bottom:14px">
+            <div>
+              <div class="b-name" style="margin-top:0">Recession Radar</div>
+              <div class="b-meta"><span class="b-unsaved">Version 4 draft</span><span>·</span><span>Version 3 runs in paper</span></div>
+            </div>
+            <div class="b-act">
+              <div class="seg"><span>Blocks</span><span class="on">Code</span><span>Split</span></div>
+              <span class="btn off">Backtest</span>
+              <span class="btn pri off">Save version 4</span>
+            </div>
+          </div>
+          <div class="tipb">Fix 2 problems to save version 4. Version 3 keeps running in paper.</div>
+          <div class="top">
+            <div class="panel" style="overflow:hidden;height:100%">
+              <div class="b-file"><span data-icon="code"></span>recession-radar.lt<span class="b-eng bad">Engine can't run this draft</span></div>
+              <div style="padding:10px 0"><div data-dsl="probplain" data-cur="9" style="font-size:12.5px;line-height:1.72"></div></div>
+            </div>
+          </div>
+          <div class="tray">
+            <div class="th"><span>Problems</span><span class="b-cnt">2</span><span class="sp"></span><span class="xs dim" style="font-weight:400">Checked 2 seconds ago</span></div>
+            <div class="pr on"><span data-icon="alert"></span><span class="ln3">Line 9</span><span class="m"><b>Market cap weighting can't run.</b> <span>It needs company fundamentals, which the engine doesn't have.</span></span><span class="row" style="gap:6px"><span class="btn sm">Use momentum</span><span class="btn sm ghost">Other methods<span data-icon="chevron-down"></span></span></span></div>
+            <div class="pr"><span data-icon="alert"></span><span class="ln3">Line 11</span><span class="m"><b>VTII isn't a symbol Alpaca trades.</b> <span>The closest match is VTI, Vanguard Total Stock Market.</span></span><span class="row" style="gap:6px"><span class="btn sm">Use VTI</span></span></div>
+            <div class="row xs dim" style="padding:12px 20px;gap:16px"><span>Parses</span><span class="acc">Passed</span><span>Indicators</span><span class="acc">Passed</span><span class="sp"></span><span>Weight methods and symbols failed</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Strategies</span><span>Recession Radar</span><span class="rt"><span data-icon="more"></span></span></div>
+      <div class="m-body" style="gap:10px">
+        <div class="m-card" style="padding:8px 0;overflow:hidden"><div data-dsl="probplain" data-dim="1-3" style="font-size:11.5px;line-height:1.75"></div></div>
+        <div class="sheet" style="padding-bottom:30px">
+          <div class="row"><b style="font-size:16px">2 problems</b><span class="sp"></span><span class="xs dim">Save waits for these</span></div>
+          <div class="m-row" style="align-items:flex-start;margin-top:6px"><span data-icon="alert" style="color:var(--risk);margin-top:2px"></span><div style="flex:1"><div style="font-size:14px">Market cap weighting can't run</div><div class="d">Line 9 · the engine has no fundamentals</div></div><span class="btn sm">Fix</span></div>
+          <div class="m-row" style="align-items:flex-start"><span data-icon="alert" style="color:var(--risk);margin-top:2px"></span><div style="flex:1"><div style="font-size:14px">VTII isn't a symbol Alpaca trades</div><div class="d">Line 11 · did you mean VTI?</div></div><span class="btn sm">Use VTI</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4C -->
+  <div class="ax-opt" data-opt="C" data-name="Problems in words"
+    data-note="The same problems shown on the blocks they affect, with the engine's four named checks kept beside them. Friendlier for people who never open the code, but code typos are harder to point at precisely.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/edit">
+      <div class="app b4c">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="b-head">
+            <div>
+              <span class="b-back"><span data-icon="arrow-left"></span>Strategies</span>
+              <div class="b-name">Recession Radar</div>
+              <div class="b-meta"><span class="b-unsaved">Version 4 draft</span><span>·</span><span>2 of 4 checks need a change</span></div>
+            </div>
+            <div class="b-act">
+              <div class="seg"><span class="on">Blocks</span><span>Code</span><span>Split</span></div>
+              <span class="btn off">Backtest</span>
+              <span class="btn pri off">Save version 4</span>
+            </div>
+          </div>
+          <div class="work">
+            <div class="panel">
+              <div class="panel-h">Rules<span class="aside">Rebalances monthly against SPY</span></div>
+              <div class="b-ol">
+                <div class="r"><span class="kwd">When</span><span class="tk">RSI(SPY, 14)</span> is above <span class="tk">72</span></div>
+                <div class="grp">
+                  <div class="as"><span class="sym">TLT</span><span>iShares 20+ Year Treasury</span><span class="b-wb"><i style="width:60%"></i></span><span class="p">60%</span></div>
+                  <div class="as"><span class="sym">GLD</span><span>SPDR Gold Shares</span><span class="b-wb"><i style="width:40%;background:var(--c2)"></i></span><span class="p">40%</span></div>
+                </div>
+                <div class="r bad"><span class="kwd">Otherwise</span>Hold the top <span class="tk">2</span> by <span class="tk bad">market cap</span> over <span class="tk">120 days</span></div>
+                <div class="fix">Market cap weighting needs company fundamentals, which the engine doesn't have. Weight the top 2 by:
+                  <div class="ch"><span class="chip">Momentum</span><span class="chip">Equal</span><span class="chip">Inverse volatility</span><span class="chip">Min variance</span><span class="chip">Risk parity</span></div>
+                </div>
+                <div class="grp">
+                  <div class="as bad"><span class="sym risk">VTII</span><span>Not a symbol Alpaca trades</span><span></span><span class="p rk"><span class="btn sm">Use VTI</span></span></div>
+                  <div class="as"><span class="sym">QQQ</span><span>Invesco QQQ Trust</span><span></span><span class="p rk">Ranked</span></div>
+                  <div class="as"><span class="sym">SMH</span><span>VanEck Semiconductor</span><span></span><span class="p rk">Ranked</span></div>
+                  <div class="as"><span class="sym">IWM</span><span>iShares Russell 2000</span><span></span><span class="p rk">Ranked</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="col gap-16">
+              <div class="panel">
+                <div class="panel-h">Engine checks<span class="aside">2 of 4 passed</span></div>
+                <div class="panel-b tight">
+                  <div class="b-ck"><b><span data-icon="check"></span></b><span>Parses</span><span></span></div>
+                  <div class="b-ck fail"><b><span data-icon="x"></span></b><span>Every weight method is supported</span><span>market cap</span></div>
+                  <div class="b-ck fail"><b><span data-icon="x"></span></b><span>Every symbol is valid</span><span>VTII</span></div>
+                  <div class="b-ck"><b><span data-icon="check"></span></b><span>Indicators are known</span><span>rsi</span></div>
+                </div>
+              </div>
+              <div class="callout"><span data-icon="info"></span><div>Saving waits until every check passes. <b>Version 3 keeps running in paper</b> and nothing trades from this draft.</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Strategies</span><span>Recession Radar</span><span class="rt"><span data-icon="more"></span></span></div>
+      <div class="m-body" style="gap:12px">
+        <div class="callout risk" style="font-size:13px"><span data-icon="alert"></span><div><b>2 things to fix.</b> Version 4 can be saved once they're resolved.</div></div>
+        <div class="m-card col" style="gap:10px;border-color:var(--risk-line)">
+          <div class="b-kick">Otherwise</div>
+          <div class="row wrap" style="gap:6px;font-size:14.5px">Top <span class="tk">2</span> by <span class="tk" style="color:var(--risk);border-color:var(--risk-line)">market cap</span></div>
+          <div class="sm muted" style="line-height:1.5">The engine has no company fundamentals. Weight by:</div>
+          <div class="row wrap" style="gap:6px"><span class="chip">Momentum</span><span class="chip">Equal</span><span class="chip">Risk parity</span><span class="chip">More</span></div>
+        </div>
+        <div class="m-card rows">
+          <div class="m-row"><span class="sym risk">VTII</span><div style="flex:1" class="d">Not a symbol Alpaca trades</div><span class="btn sm">Use VTI</span></div>
+          <div class="m-row"><span class="sym">QQQ</span><div style="flex:1" class="d">Invesco QQQ Trust</div></div>
+        </div>
+      </div>
+      <div class="b-mbar"><span class="m-btn sec">Code</span><span class="m-btn" style="opacity:.4">Save version 4</span></div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .b-chg { display: flex; flex-direction: column; }
+  .b-chg > div { display: flex; align-items: baseline; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; color: var(--fg); }
+  .b-chg > div:last-child { border-bottom: 0; }
+  .b-chg > div > .ic { width: 14px; height: 14px; color: var(--acc); align-self: center; }
+  .b-chg .ar { color: var(--fg-3); }
+  .b-chg .sp2 { margin-left: auto; font-size: 12px; color: var(--fg-3); }
+  .b5a .dialog { width: 600px; }
+  .b5a .dialog .db { display: flex; flex-direction: column; gap: 18px; }
+  .b5a .dialog .h2 { font-size: 19px; }
+  .b-sec-l { margin-bottom: 6px; }
+  .b-ghost { opacity: 1; }
+  .b-info { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 10px; padding: 11px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--sunk); font-size: 12.5px; line-height: 1.5; color: var(--fg-2); }
+  .b-info .ic { color: var(--fg-3); margin-top: 1px; }
+
+  .b5b .drawer { width: 500px; display: flex; flex-direction: column; }
+  .b5b .dr-h { padding: 22px 24px 16px; border-bottom: 1px solid var(--line); }
+  .b5b .dr-b { flex: 1; min-height: 0; overflow: hidden; padding: 18px 24px; display: flex; flex-direction: column; gap: 20px; }
+  .b5b .dr-f { padding: 16px 24px; border-top: 1px solid var(--line); display: flex; gap: 8px; align-items: center; }
+  .b5b .trk { font-size: 13.5px; line-height: 2.1; color: var(--fg-2); }
+  .b5b .trk .tk { font-size: 12px; }
+  .b-steps { display: flex; flex-direction: column; }
+  .b-steps > div { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 12px; position: relative; padding-bottom: 16px; }
+  .b-steps > div:not(:last-child)::before { content: ""; position: absolute; left: 12px; top: 26px; bottom: 2px; width: 1px; background: var(--line-2); }
+  .b-steps .n { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font: 600 11.5px var(--mono); border: 1px solid var(--line-2); color: var(--fg-2); background: var(--panel); }
+  .b-steps .on .n { background: var(--ink); color: var(--ink-text); border-color: var(--ink); }
+  .b-steps .t { font-size: 13.5px; font-weight: 500; color: var(--fg); padding-top: 3px; }
+  .b-steps .d { font-size: 12.5px; color: var(--fg-3); margin-top: 3px; line-height: 1.5; }
+
+  .b5c .wrap { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 32px; padding: 0 32px; }
+  .b5c .cc { display: grid; grid-template-columns: 200px minmax(0, 1fr) minmax(0, 1fr); border-bottom: 1px solid var(--line); }
+  .b5c .cc > div { padding: 14px 18px; font-size: 13px; }
+  .b5c .cc > div + div { border-left: 1px solid var(--line); }
+  .b5c .cc .what { color: var(--fg-2); }
+  .b5c .cc .old { color: var(--fg-3); }
+  .b5c .cc .old .tk { color: var(--fg-3); text-decoration: line-through; text-decoration-color: var(--fg-4); }
+  .b5c .cc.hd > div { padding: 10px 18px; }
+  .b5c .ready { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+
+  .b5d .main { display: flex; flex-direction: column; }
+  .b5d .ed { flex: 1; min-height: 0; overflow: hidden; }
+  .b5d .cbar { position: absolute; left: 32px; right: 32px; bottom: 22px; z-index: 6; display: flex; align-items: center; gap: 14px; padding: 10px 10px 10px 18px; border-radius: 14px; background: var(--panel); border: 1px solid var(--line-2); box-shadow: var(--shadow-xl); }
+  .b5d .cbar .nt { flex: 1; display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 12px; border-radius: 8px; background: var(--sunk); font-size: 13px; color: var(--fg); }
+  .b5d .cbar .nt .cur { width: 1.5px; height: 16px; background: var(--acc); margin-left: -8px; }
+  .b5d .pop { position: absolute; left: 32px; bottom: 92px; z-index: 6; width: 440px; padding: 14px 16px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line-2); box-shadow: var(--shadow-xl); }
+</style>
+
+<section class="ax-surface" id="builder-save"
+  data-surface="builder/save"
+  data-area="Strategy builder"
+  data-title="Save a version"
+  data-why="Saving mints an immutable version: the moment to confirm what changed, that the engine can run it and what it means for a running session.">
+
+  <!-- 5A -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="Focused dialog"
+    data-note="One dialog with the changes in words, the four checks, a suggested note and a plain line about the paper session. Recommended: everything needed to save with confidence fits on one screen, and the default is a single keypress.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/edit">
+      <div class="app b5a">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="b-head">
+            <div><span class="b-back"><span data-icon="arrow-left"></span>Strategies</span><div class="b-name">Recession Radar</div><div class="b-meta"><span class="b-unsaved">Version 4 draft · 3 changes</span></div></div>
+            <div class="b-act"><div class="seg"><span class="on">Blocks</span><span>Code</span><span>Split</span></div><span class="btn">Backtest</span><span class="btn pri">Save version 4</span></div>
+          </div>
+          <div style="padding:0 32px;display:grid;grid-template-columns:minmax(0,1fr) 344px;gap:28px">
+            <div class="panel"><div class="b-ol">
+              <div class="r"><span class="kwd">When</span><span class="tk">RSI(SPY, 14)</span> is above <span class="tk">72</span></div>
+              <div class="grp"><div class="as"><span class="sym">TLT</span><span>iShares 20+ Year Treasury</span><span class="b-wb"><i style="width:60%"></i></span><span class="p">60%</span></div><div class="as"><span class="sym">GLD</span><span>SPDR Gold Shares</span><span class="b-wb"><i style="width:40%;background:var(--c2)"></i></span><span class="p">40%</span></div></div>
+              <div class="r"><span class="kwd">Otherwise</span>Hold the top <span class="tk">2</span> by <span class="tk w">momentum</span> over <span class="tk">120 days</span></div>
+              <div class="grp"><div class="as"><span class="sym">VTI</span><span>Vanguard Total Stock Market</span><span></span><span class="p rk">Ranked</span></div><div class="as"><span class="sym">QQQ</span><span>Invesco QQQ Trust</span><span></span><span class="p rk">Ranked</span></div><div class="as"><span class="sym">SMH</span><span>VanEck Semiconductor</span><span></span><span class="p rk">Ranked</span></div><div class="as"><span class="sym">IWM</span><span>iShares Russell 2000</span><span></span><span class="p rk">Ranked</span></div></div>
+            </div></div>
+            <div class="panel"><div class="panel-h">What it holds</div><div class="panel-b"><div class="b-split"><i style="width:60%"></i><i style="width:40%;background:var(--c2)"></i></div></div></div>
+          </div>
+          <div class="scrim"></div>
+          <div class="dialog">
+            <div class="dh"><div class="row base"><span class="h2">Save version 4</span><span class="sm dim">Recession Radar</span><span class="sp"></span><span class="btn ghost icon sm"><span data-icon="x"></span></span></div></div>
+            <div class="db">
+              <div>
+                <div class="lbl b-sec-l">What changed since version 3</div>
+                <div class="b-chg">
+                  <div><span data-icon="edit"></span>RSI level <span class="was">70</span><span class="ar">→</span><span class="tk new">72</span></div>
+                  <div><span data-icon="edit"></span>Momentum lookback <span class="was">90 days</span><span class="ar">→</span><span class="tk new">120 days</span></div>
+                  <div><span data-icon="plus"></span>Added <span class="tk new">SMH</span> to the momentum candidates</div>
+                </div>
+              </div>
+              <div>
+                <div class="row b-sec-l"><span class="lbl">Checks</span><span class="sp"></span><span class="xs acc">4 of 4 passed</span></div>
+                <div class="b-ck"><b><span data-icon="check"></span></b><span>Parses</span><span></span></div>
+                <div class="b-ck"><b><span data-icon="check"></span></b><span>Every weight method is supported</span><span>specified, momentum</span></div>
+                <div class="b-ck"><b><span data-icon="check"></span></b><span>Every symbol is valid</span><span>TLT GLD VTI QQQ SMH IWM</span></div>
+                <div class="b-ck"><b><span data-icon="check"></span></b><span>Indicators are known</span><span>rsi</span></div>
+              </div>
+              <div class="field"><label>Note for this version</label><div class="input focus">Raised the RSI level to 72, and 2 more changes</div></div>
+              <div class="b-info"><span data-icon="info"></span><span>The paper session keeps running version 3. To run version 4, backtest it and redeploy from the strategy page.</span></div>
+            </div>
+            <div class="df"><span class="xs dim" style="margin-right:auto;align-self:center">Saving doesn't trade or change any session.</span><span class="btn ghost">Save without a note</span><span class="btn">Save and backtest</span><span class="btn pri">Save version 4</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Strategies</span><span></span><span></span></div>
+      <div class="b-mt"><div class="nm">Recession Radar</div></div>
+      <div class="m-body">
+        <div class="m-card" style="height:160px"></div>
+        <div class="scrim"></div>
+        <div class="sheet" style="padding-bottom:30px">
+          <div class="row base"><span class="h3" style="font-size:18px">Save version 4</span><span class="sp"></span><span class="xs acc">4 checks passed</span></div>
+          <div class="b-chg" style="margin-top:10px">
+            <div style="font-size:14px">RSI level <span class="was">70</span><span class="ar">→</span><span class="tk new">72</span></div>
+            <div style="font-size:14px">Lookback <span class="was">90</span><span class="ar">→</span><span class="tk new">120 days</span></div>
+            <div style="font-size:14px">Added <span class="tk new">SMH</span></div>
+          </div>
+          <div class="field" style="margin-top:10px"><label>Note</label><div class="input">Raised the RSI level to 72, and 2 more</div></div>
+          <div class="b-info" style="margin-top:12px"><span data-icon="info"></span><span>Paper keeps running version 3 until you redeploy.</span></div>
+          <div class="m-btn" style="margin-top:14px">Save version 4</div>
+          <div class="m-btn sec" style="margin-top:8px">Save and backtest</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5B -->
+  <div class="ax-opt" data-opt="B" data-name="Review drawer"
+    data-note="A side drawer keeps the editor visible, writes the change as a tracked sentence and lays out what happens next, from saving to redeploying. Makes the backtest the natural next step, at the cost of a longer read.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/edit">
+      <div class="app b5b">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="b-head">
+            <div><span class="b-back"><span data-icon="arrow-left"></span>Strategies</span><div class="b-name">Recession Radar</div><div class="b-meta"><span class="b-unsaved">Version 4 draft · 3 changes</span></div></div>
+          </div>
+          <div style="padding:0 32px;width:880px" class="panel">
+            <div class="b-ol" style="opacity:.55">
+              <div class="r"><span class="kwd">When</span><span class="tk">RSI(SPY, 14)</span> is above <span class="tk">72</span></div>
+              <div class="grp"><div class="as"><span class="sym">TLT</span><span>iShares 20+ Year Treasury</span><span class="b-wb"><i style="width:60%"></i></span><span class="p">60%</span></div><div class="as"><span class="sym">GLD</span><span>SPDR Gold Shares</span><span class="b-wb"><i style="width:40%;background:var(--c2)"></i></span><span class="p">40%</span></div></div>
+              <div class="r"><span class="kwd">Otherwise</span>Hold the top <span class="tk">2</span> by <span class="tk w">momentum</span> over <span class="tk">120 days</span></div>
+            </div>
+          </div>
+          <div class="drawer">
+            <div class="dr-h"><div class="row"><span class="h2" style="font-size:19px">Save version 4</span><span class="sp"></span><span class="btn ghost icon sm"><span data-icon="x"></span></span></div><div class="sm dim" style="margin-top:4px">Recession Radar · 3 changes since version 3</div></div>
+            <div class="dr-b">
+              <div>
+                <div class="lbl b-sec-l">The change, as it reads</div>
+                <div class="trk">When <span class="tk">RSI(SPY, 14)</span> is above <span class="was">70</span> <span class="tk new">72</span>, hold TLT 60% and GLD 40%. Otherwise hold the top 2 of VTI, QQQ, <span class="tk new">SMH</span> and IWM by momentum over <span class="was">90</span> <span class="tk new">120 days</span>.</div>
+              </div>
+              <div class="row" style="padding:10px 12px;border-radius:8px;background:var(--sunk)"><span class="b-eng">4 of 4 engine checks passed</span><span class="sp"></span><span class="xs acc">Show</span></div>
+              <div class="field"><label>Note</label><div class="textarea" style="min-height:62px">Raised the RSI level to 72, longer momentum lookback, added SMH</div></div>
+              <div>
+                <div class="lbl b-sec-l">What happens next</div>
+                <div class="b-steps">
+                  <div class="on"><span class="n">1</span><div><div class="t">Save version 4</div><div class="d">Nothing trades. Versions can't be edited once saved.</div></div></div>
+                  <div><span class="n">2</span><div><div class="t">Backtest it</div><div class="d">Version 3 returned <span class="gain mono">+21.4%</span> over Nov 2024 to Oct 2026.</div></div></div>
+                  <div><span class="n">3</span><div><div class="t">Redeploy when you're ready</div><div class="d">The paper session runs version 3 until you stop and redeploy it.</div></div></div>
+                </div>
+              </div>
+            </div>
+            <div class="dr-f"><span class="btn ghost">Save only</span><span class="sp"></span><span class="btn pri">Save and backtest</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Edit</span><span>Save version 4</span><span></span></div>
+      <div class="m-body" style="gap:16px">
+        <div class="m-card" style="font-size:14.5px;line-height:2;color:var(--fg-2)">When RSI is above <span class="was">70</span> <span class="tk new">72</span>, hold TLT and GLD. Otherwise the top 2 of VTI, QQQ, <span class="tk new">SMH</span> and IWM over <span class="was">90</span> <span class="tk new">120 days</span>.</div>
+        <div class="row"><span class="b-eng">4 of 4 checks passed</span></div>
+        <div class="b-steps">
+          <div class="on"><span class="n">1</span><div><div class="t">Save version 4</div><div class="d">Nothing trades.</div></div></div>
+          <div><span class="n">2</span><div><div class="t">Backtest it</div><div class="d">Version 3 returned <span class="gain mono">+21.4%</span>.</div></div></div>
+          <div><span class="n">3</span><div><div class="t">Redeploy when ready</div><div class="d">Paper runs version 3 until then.</div></div></div>
+        </div>
+      </div>
+      <div class="b-mbar"><span class="m-btn sec">Save only</span><span class="m-btn">Save and backtest</span></div>
+    </div>
+  </div>
+
+  <!-- 5C -->
+  <div class="ax-opt" data-opt="C" data-name="Review page"
+    data-note="Saving becomes its own page, like reviewing a pull request: each change as version 3 against version 4, and a ready card with the checks and note. Thorough for strategies that run live, but heavy for a one-number tweak.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/review">
+      <div class="app b5c">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="b-head">
+            <div><span class="b-back"><span data-icon="arrow-left"></span>Back to the editor</span><div class="b-name">Review version 4</div><div class="b-meta">Recession Radar · compared with version 3, saved Oct 28</div></div>
+          </div>
+          <div class="wrap">
+            <div class="panel" style="overflow:hidden">
+              <div class="cc hd"><div class="lbl">Change</div><div class="lbl">Version 3</div><div class="lbl">Version 4</div></div>
+              <div class="cc"><div class="what">RSI level</div><div class="old">Above <span class="tk">70</span></div><div>Above <span class="tk new">72</span></div></div>
+              <div class="cc"><div class="what">Momentum lookback</div><div class="old"><span class="tk">90 days</span></div><div><span class="tk new">120 days</span></div></div>
+              <div class="cc"><div class="what">Momentum candidates</div><div class="old"><span class="mono" style="font-size:12.5px">VTI QQQ IWM</span></div><div><span class="mono" style="font-size:12.5px">VTI QQQ <span class="tk new">SMH</span> IWM</span></div></div>
+              <div class="cc"><div class="what">History needed</div><div class="old mono">90 bars</div><div class="mono">120 bars</div></div>
+              <div class="cc" style="border-bottom:0"><div class="what">Symbols</div><div class="old mono">6</div><div class="mono">7</div></div>
+              <div style="padding:16px 18px;border-top:1px solid var(--line)">
+                <div class="lbl" style="margin-bottom:10px">Code</div>
+                <div data-dsl="unified" data-d2 style="font-size:12px;line-height:1.7;opacity:.95"></div>
+              </div>
+            </div>
+            <div class="col gap-16">
+              <div class="panel rim ready">
+                <div class="row"><b>Ready to save</b><span class="sp"></span><span class="b-eng">4 of 4 checks</span></div>
+                <div class="field"><label>Note</label><div class="textarea" style="min-height:70px">Raised the RSI level to 72, longer momentum lookback, added SMH</div></div>
+                <div class="b-info"><span data-icon="info"></span><span>The paper session keeps running version 3. Saving doesn't trade.</span></div>
+                <span class="btn pri lg block">Save version 4</span>
+                <span class="btn block">Save and backtest</span>
+              </div>
+              <div class="xs dim" style="line-height:1.6;padding:0 4px">Versions can't be edited once saved. You can restore an older one from Versions at any time.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Edit</span><span>Review version 4</span><span></span></div>
+      <div class="m-body" style="gap:12px">
+        <div class="m-card rows">
+          <div class="m-row"><div style="flex:1"><div class="d">RSI level</div><div class="row" style="gap:8px;margin-top:4px"><span class="was">70</span><span class="dim">→</span><span class="tk new">72</span></div></div></div>
+          <div class="m-row"><div style="flex:1"><div class="d">Momentum lookback</div><div class="row" style="gap:8px;margin-top:4px"><span class="was">90 days</span><span class="dim">→</span><span class="tk new">120 days</span></div></div></div>
+          <div class="m-row"><div style="flex:1"><div class="d">Candidates</div><div class="row" style="gap:6px;margin-top:4px;font-family:var(--mono);font-size:13px">VTI QQQ <span class="tk new">SMH</span> IWM</div></div></div>
+        </div>
+        <div class="m-card col" style="gap:10px"><div class="row"><b>Ready to save</b><span class="sp"></span><span class="b-eng xs">4 checks</span></div><div class="input">Raised the RSI level to 72…</div></div>
+      </div>
+      <div class="b-mbar"><span class="m-btn">Save version 4</span></div>
+    </div>
+  </div>
+
+  <!-- 5D -->
+  <div class="ax-opt" data-opt="D" data-name="Save bar"
+    data-note="A bar at the bottom of the editor takes a note and saves, with the changes and checks one click above it. Fastest for frequent small edits, but the session consequence is easy to miss.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/edit">
+      <div class="app b5d">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="b-head">
+            <div><span class="b-back"><span data-icon="arrow-left"></span>Strategies</span><div class="b-name">Recession Radar</div><div class="b-meta"><span class="b-unsaved">Version 4 draft · 3 changes</span><span>·</span><span>Version 3 runs in paper</span></div></div>
+            <div class="b-act"><div class="seg"><span class="on">Blocks</span><span>Code</span><span>Split</span></div><span class="btn">Backtest</span></div>
+          </div>
+          <div class="ed" style="padding:0 32px">
+            <div class="panel">
+              <div class="b-ol">
+                <div class="r"><span class="kwd">When</span><span class="tk">RSI(SPY, 14)</span> is above <span class="tk new">72</span></div>
+                <div class="grp"><div class="as"><span class="sym">TLT</span><span>iShares 20+ Year Treasury</span><span class="b-wb"><i style="width:60%"></i></span><span class="p">60%</span></div><div class="as"><span class="sym">GLD</span><span>SPDR Gold Shares</span><span class="b-wb"><i style="width:40%;background:var(--c2)"></i></span><span class="p">40%</span></div></div>
+                <div class="r"><span class="kwd">Otherwise</span>Hold the top <span class="tk">2</span> by <span class="tk w">momentum</span> over <span class="tk new">120 days</span></div>
+                <div class="grp"><div class="as"><span class="sym">VTI</span><span>Vanguard Total Stock Market</span><span></span><span class="p rk">Ranked</span></div><div class="as"><span class="sym">QQQ</span><span>Invesco QQQ Trust</span><span></span><span class="p rk">Ranked</span></div><div class="as"><span class="sym">SMH</span><span>VanEck Semiconductor <span class="pill acc soft" style="margin-left:6px">New</span></span><span></span><span class="p rk">Ranked</span></div><div class="as"><span class="sym">IWM</span><span>iShares Russell 2000</span><span></span><span class="p rk">Ranked</span></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="pop">
+            <div class="row"><b class="sm">3 changes since version 3</b><span class="sp"></span><span class="b-eng xs">4 checks passed</span></div>
+            <div class="b-chg" style="margin-top:6px">
+              <div style="font-size:13px">RSI level <span class="was">70</span><span class="ar">→</span><span class="tk new">72</span></div>
+              <div style="font-size:13px">Momentum lookback <span class="was">90</span><span class="ar">→</span><span class="tk new">120 days</span></div>
+              <div style="font-size:13px">Added <span class="tk new">SMH</span> to the candidates</div>
+            </div>
+          </div>
+          <div class="cbar">
+            <span class="row" style="gap:8px;font-size:13px;white-space:nowrap"><span class="b-unsaved"></span>3 changes<span data-icon="chevron-up" style="color:var(--fg-3)"></span></span>
+            <div class="nt"><span class="cur"></span>Raised the RSI level to 72, longer lookback, added SMH</div>
+            <span class="xs dim" style="white-space:nowrap">Paper keeps version 3</span>
+            <span class="btn pri">Save version 4<span class="kbd" style="margin-left:4px;background:transparent;color:inherit;border-color:currentColor;opacity:.6">⌘S</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Strategies</span><span>Recession Radar</span><span></span></div>
+      <div class="m-body" style="gap:10px">
+        <div class="m-card col" style="gap:8px"><div class="b-kick">When</div><div class="row wrap" style="gap:6px;font-size:14.5px"><span class="tk">RSI(SPY, 14)</span> above <span class="tk new">72</span></div></div>
+        <div class="m-card col" style="gap:8px"><div class="b-kick">Otherwise</div><div class="row wrap" style="gap:6px;font-size:14.5px">Top <span class="tk">2</span> over <span class="tk new">120 days</span></div></div>
+      </div>
+      <div style="flex:none;padding:10px 12px;border-top:1px solid var(--line);background:var(--panel);position:relative;z-index:3">
+        <div class="row xs" style="margin-bottom:8px"><span class="b-unsaved">3 changes</span><span class="sp"></span><span class="b-eng">4 checks passed</span></div>
+        <div class="row" style="gap:8px"><div class="input" style="flex:1;font-size:14px">Raised the RSI level to 72<span class="caret" style="display:inline-block;width:1.5px;height:16px;background:var(--acc);vertical-align:-3px;margin-left:1px"></span></div><span class="btn pri round">Save</span></div>
+      </div>
+      <div class="b-kb" style="padding-top:8px">
+        <div class="krow" style="margin-top:0"><span>q</span><span>w</span><span>e</span><span>r</span><span>t</span><span>y</span><span>u</span><span>i</span><span>o</span><span>p</span></div>
+        <div class="krow"><span>a</span><span>s</span><span>d</span><span>f</span><span>g</span><span>h</span><span>j</span><span>k</span><span>l</span></div>
+        <div class="krow"><span class="wide">⇧</span><span>z</span><span>x</span><span>c</span><span>v</span><span>b</span><span>n</span><span>m</span><span class="wide">⌫</span></div>
+        <div class="krow"><span class="wide">123</span><span class="space">space</span><span class="wide">done</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .b-code .l.chg-o { background: var(--sunk); }
+  .b-code .l.chg-o::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--fg-4); }
+  .b-code .l.chg-n { background: color-mix(in srgb, var(--acc) 11%, transparent); }
+  .b-code .l.chg-n::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--acc); }
+
+  .b6a .body { display: grid; grid-template-columns: 300px minmax(0, 1fr); height: 100%; }
+  .b6a .tl { border-right: 1px solid var(--line); padding: 22px 16px; display: flex; flex-direction: column; gap: 4px; }
+  .b6a .tl .hd { padding: 0 10px 12px; }
+  .b-ver { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 12px 12px 12px 34px; border-radius: 10px; font-size: 13px; }
+  .b-ver::before { content: ""; position: absolute; left: 14px; top: 17px; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--fg-3); background: var(--bg); z-index: 1; }
+  .b-ver::after { content: ""; position: absolute; left: 18.5px; top: 22px; bottom: -14px; width: 1px; background: var(--line-2); }
+  .b-ver:last-child::after { display: none; }
+  .b-ver .v { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .b-ver .v .dt { margin-left: auto; font: 400 11.5px var(--mono); color: var(--fg-3); }
+  .b-ver .n { color: var(--fg-2); line-height: 1.45; }
+  .b-ver .r { font: 500 12px var(--mono); }
+  .b-ver.on { background: var(--sunk); box-shadow: inset 0 0 0 1px var(--line-2); }
+  .b-ver.on::before { background: var(--acc); border-color: var(--acc); box-shadow: 0 0 0 4px var(--acc-soft); }
+  .b-ver.draft::before { border-style: dashed; }
+  .b6a .cmp { padding: 22px 32px; overflow: hidden; }
+  .b6a .rc { margin: 18px 0 16px; }
+  .b6a .rc .v { font-size: 20px; }
+  .b6a .rc .v .ar2 { font-size: 13px; color: var(--fg-3); margin-right: 6px; }
+  .b-trk .r { display: flex; align-items: center; gap: 10px; min-height: 46px; padding: 6px 14px; font-size: 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .b-trk .r:last-child { border-bottom: 0; }
+  .b-trk .r .kwd { font: 500 10.5px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-3); width: 74px; flex: none; }
+  .b-trk .r.same { color: var(--fg-3); }
+  .b-trk .r.same .tk { color: var(--fg-3); }
+  .b-trk .r.chg { box-shadow: inset 2px 0 var(--acc); }
+
+  .b6b .vs { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin: 0 32px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel); }
+  .b6b .vs > div + div { border-left: 1px solid var(--line); }
+  .b6b .vh { display: flex; align-items: center; gap: 10px; height: 50px; padding: 0 16px; border-bottom: 1px solid var(--line); }
+  .b6b .vh .select { height: 32px; min-width: 210px; font-size: 13px; }
+  .b6b .codebox { padding: 14px 0; }
+  .b6b .codebox .b-code { font-size: 13.5px; line-height: 1.95; }
+  .b6b .sumr { display: flex; gap: 0; margin: 16px 32px 0; }
+
+  .b6c .wrap { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 24px; padding: 0 32px; }
+  .b6c .leg { display: flex; gap: 18px; font-size: 12px; color: var(--fg-2); }
+  .b6c .leg span { display: inline-flex; align-items: center; gap: 7px; }
+  .b6c .tbl .up { color: var(--fg); }
+</style>
+
+<section class="ax-surface" id="builder-diff"
+  data-surface="builder/diff"
+  data-area="Strategy builder"
+  data-title="Compare versions"
+  data-why="Every save is a version. This is where you see what changed between two of them, and what the change did to the backtest.">
+
+  <!-- 6A -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="Timeline and tracked rules"
+    data-note="Versions run down a timeline; the selected one shows its result change and its rules with the old values struck through. Recommended: it answers what changed and whether it helped in one view, and it reads the same way as the editor.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/versions?v=3">
+      <div class="app b6a">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="body">
+            <aside class="tl">
+              <div class="hd"><span class="b-back"><span data-icon="arrow-left"></span>Recession Radar</span><div class="h2" style="margin-top:8px">Versions</div></div>
+              <div class="b-ver draft"><div class="v">Version 4<span class="pill soft">Draft</span><span class="dt">today</span></div><div class="n">3 unsaved changes</div></div>
+              <div class="b-ver on"><div class="v">Version 3<span class="pill paper">Paper</span><span class="dt">Oct 28</span></div><div class="n">Lowered the RSI level to 70 and moved 10% from TLT to GLD</div><div class="r gain">+21.4%</div></div>
+              <div class="b-ver"><div class="v">Version 2<span class="dt">Sep 14</span></div><div class="n">Added IWM to the momentum candidates</div><div class="r gain">+18.2%</div></div>
+              <div class="b-ver"><div class="v">Version 1<span class="dt">Aug 2</span></div><div class="n">First version</div><div class="r gain">+15.6%</div></div>
+            </aside>
+            <div class="cmp">
+              <div class="row">
+                <div><div class="h2">Version 3 compared with version 2</div><div class="sm dim" style="margin-top:4px">Saved Oct 28, 2026 · running in paper since Nov 2</div></div>
+                <span class="sp"></span>
+                <div class="seg"><span class="on">Rules</span><span>Code</span></div>
+                <span class="btn">Restore version 2</span>
+                <span class="btn pri">Open in editor</span>
+              </div>
+              <div class="figs boxed rc" style="--n:3">
+                <div class="fig"><div class="lbl">Return</div><div class="v"><span class="ar2">+18.2% →</span><span class="gain">+21.4%</span></div></div>
+                <div class="fig"><div class="lbl">Max drawdown</div><div class="v"><span class="ar2">−14.9% →</span>−12.6%</div></div>
+                <div class="fig"><div class="lbl">Sharpe</div><div class="v"><span class="ar2">0.71 →</span>0.79</div></div>
+              </div>
+              <div class="xs dim" style="margin:-6px 0 18px">Both backtests cover Nov 2024 to Oct 2026 with $25,000 and the same commission.</div>
+              <div class="panel b-trk">
+                <div class="r same"><span class="kwd">Every</span>month, against <span class="tk">SPY</span></div>
+                <div class="r chg"><span class="kwd">When</span><span class="tk">RSI(SPY, 14)</span> is above <span class="was">75</span><span class="tk new">70</span></div>
+                <div class="r chg"><span class="kwd">Hold</span><span class="tk">TLT</span><span class="was">70%</span><span class="tk new">60%</span><span class="faint">·</span><span class="tk">GLD</span><span class="was">30%</span><span class="tk new">40%</span></div>
+                <div class="r same"><span class="kwd">Otherwise</span>Hold the top <span class="tk">2</span> of <span class="tk">VTI QQQ IWM</span> by momentum over <span class="tk">90 days</span></div>
+              </div>
+              <div class="row xs dim" style="margin-top:14px;gap:16px"><span><span class="tk new" style="font-size:11px">70</span> in version 3</span><span><span class="was">75</span> in version 2</span><span class="sp"></span><span>2 of 4 rules changed</span></div>
+              <div class="panel" style="margin-top:16px;padding:14px 18px 10px"><div class="row xs" style="gap:16px;color:var(--fg-2);margin-bottom:6px"><span class="row gap-6"><i class="dot acc"></i>Version 3</span><span class="row gap-6"><i style="width:14px;border-top:1.5px dashed var(--fg-3)"></i>Version 2</span><span class="sp"></span><span class="dim">Equity, Nov 2024 to Oct 2026</span></div><div data-chart="line" data-seed="42" data-ret="0.214" data-bench="0.182" data-vol="0.009" data-dip="0.45:0.1" data-start="25000" data-axis="y" data-h="140" data-mark></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Recession Radar</span><span>Versions</span><span></span></div>
+      <div class="m-body" style="gap:12px">
+        <div class="m-card col" style="gap:10px;border-color:var(--line-2)">
+          <div class="row"><b>Version 3</b><span class="pill paper">Paper</span><span class="sp"></span><span class="mono xs dim">Oct 28</span></div>
+          <div class="row" style="gap:16px;font-family:var(--mono);font-size:13px"><span><span class="dim">+18.2% → </span><span class="gain">+21.4%</span></span><span><span class="dim">DD </span>−12.6%</span></div>
+          <div class="hr"></div>
+          <div class="row wrap" style="gap:6px;font-size:14px">RSI above <span class="was">75</span><span class="tk new">70</span></div>
+          <div class="row wrap" style="gap:6px;font-size:14px">TLT <span class="was">70%</span><span class="tk new">60%</span> GLD <span class="was">30%</span><span class="tk new">40%</span></div>
+          <div class="row" style="gap:8px;margin-top:2px"><span class="btn sm">Restore version 2</span><span class="btn sm ghost">Code</span></div>
+        </div>
+        <div class="m-card rows">
+          <div class="m-row"><div style="flex:1"><div>Version 2</div><div class="d">Added IWM to the momentum candidates</div></div><span class="mono sm gain">+18.2%</span></div>
+          <div class="m-row"><div style="flex:1"><div>Version 1</div><div class="d">First version</div></div><span class="mono sm gain">+15.6%</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6B -->
+  <div class="ax-opt" data-opt="B" data-name="Side by side code"
+    data-note="Any two versions as code, line for line, with changed lines tinted and old values struck. Exact and familiar from code review, but it asks you to read the language to see the change.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/versions/compare?a=2&amp;b=3">
+      <div class="app b6b">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="b-head">
+            <div><span class="b-back"><span data-icon="arrow-left"></span>Recession Radar</span><div class="b-name">Compare versions</div><div class="b-meta">2 lines changed in 1 rule · same backtest window</div></div>
+            <div class="b-act"><div class="seg"><span>Rules</span><span class="on">Code</span></div><span class="btn ghost"><span data-icon="columns"></span>Unified</span><span class="btn">Restore version 2</span></div>
+          </div>
+          <div class="vs">
+            <div>
+              <div class="vh"><div class="select">Version 2 · Sep 14</div><span class="sp"></span><span class="mono sm gain">+18.2%</span><span class="xs dim">Sharpe 0.71</span></div>
+              <div class="codebox"><div data-dsl="v2"></div></div>
+            </div>
+            <div>
+              <div class="vh"><div class="select">Version 3 · Oct 28 · paper</div><span class="sp"></span><span class="mono sm gain">+21.4%</span><span class="xs dim">Sharpe 0.79</span></div>
+              <div class="codebox"><div data-dsl="v3marked"></div></div>
+            </div>
+          </div>
+          <div class="figs boxed sumr" style="--n:4">
+            <div class="fig"><div class="lbl">RSI level</div><div class="v" style="font-size:17px">75 → 70</div><div class="s">line 4</div></div>
+            <div class="fig"><div class="lbl">TLT weight</div><div class="v" style="font-size:17px">70 → 60</div><div class="s">line 6</div></div>
+            <div class="fig"><div class="lbl">GLD weight</div><div class="v" style="font-size:17px">30 → 40</div><div class="s">line 7</div></div>
+            <div class="fig"><div class="lbl">Max drawdown</div><div class="v" style="font-size:17px">−14.9% → −12.6%</div><div class="s">backtest, Nov 2024 to Oct 2026</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Versions</span><span>2 → 3</span><span></span></div>
+      <div class="m-body" style="gap:12px">
+        <div class="row" style="gap:8px"><div class="select" style="flex:1;font-size:13px">Version 2</div><span class="dim">→</span><div class="select" style="flex:1;font-size:13px">Version 3</div></div>
+        <div class="m-card" style="padding:8px 0;overflow:hidden"><div data-dsl="unified" data-d2 style="font-size:11px;line-height:1.75"></div></div>
+        <div class="row xs dim"><span>2 lines changed</span><span class="sp"></span><span>Return <span class="mono">+18.2% → <span class="gain">+21.4%</span></span></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6C -->
+  <div class="ax-opt" data-opt="C" data-name="Results first"
+    data-note="Leads with the two equity curves on one chart and a metrics table, with the rule changes as a short list. Best for judging whether a change was worth it, weaker for seeing exactly what was edited.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/versions/compare?a=2&amp;b=3">
+      <div class="app b6c">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="b-head">
+            <div><span class="b-back"><span data-icon="arrow-left"></span>Recession Radar</span><div class="b-name">Version 3 against version 2</div><div class="b-meta">Backtests over Nov 2024 to Oct 2026 · $25,000 · same commission</div></div>
+            <div class="b-act"><div class="seg"><span>1</span><span>2</span><span class="on">3</span><span>4 draft</span></div><span class="btn pri">Open version 3</span></div>
+          </div>
+          <div class="wrap">
+            <div class="panel">
+              <div class="panel-h bare" style="padding-top:6px"><div class="leg"><span><i class="dot acc"></i>Version 3</span><span><i style="width:14px;border-top:1.5px dashed var(--fg-3)"></i>Version 2</span></div><span class="aside">Equity, $25,000 start</span></div>
+              <div class="panel-b" style="padding-top:0">
+                <div data-chart="area" data-seed="42" data-ret="0.214" data-bench="0.182" data-vol="0.009" data-start="25000" data-axis="xy" data-x="Nov 2024,May 2025,Nov 2025,May 2026,Oct 2026" data-dip="0.45:0.1" data-h="370" data-mark></div>
+                <div class="lbl" style="margin:14px 0 6px">Drawdown, version 3</div>
+                <div data-chart="drawdown" data-seed="42" data-ret="0.214" data-vol="0.009" data-dip="0.45:0.1" data-h="70"></div>
+              </div>
+            </div>
+            <div class="col gap-16">
+              <div class="panel">
+                <table class="tbl compact">
+                  <tr><th>Metric</th><th class="num">V2</th><th class="num">V3</th></tr>
+                  <tr><td>Return</td><td class="num dim">+18.2%</td><td class="num gain">+21.4%</td></tr>
+                  <tr><td>CAGR</td><td class="num dim">8.7%</td><td class="num up">10.2%</td></tr>
+                  <tr><td>Sharpe</td><td class="num dim">0.71</td><td class="num up">0.79</td></tr>
+                  <tr><td>Max drawdown</td><td class="num dim">−14.9%</td><td class="num up">−12.6%</td></tr>
+                  <tr><td>Trades</td><td class="num dim">44</td><td class="num up">46</td></tr>
+                </table>
+              </div>
+              <div class="panel">
+                <div class="panel-h">What changed<span class="aside">2 of 4 rules</span></div>
+                <div class="panel-b b-chg" style="padding-top:6px;padding-bottom:6px">
+                  <div style="font-size:13px">RSI level <span class="was">75</span><span class="ar">→</span><span class="tk new">70</span></div>
+                  <div style="font-size:13px">TLT weight <span class="was">70%</span><span class="ar">→</span><span class="tk new">60%</span></div>
+                  <div style="font-size:13px">GLD weight <span class="was">30%</span><span class="ar">→</span><span class="tk new">40%</span></div>
+                </div>
+              </div>
+              <div class="xs dim" style="line-height:1.6">A backtest describes the past under its own assumptions. It doesn't predict how version 3 will do in paper.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Versions</span><span>3 against 2</span><span></span></div>
+      <div class="m-body" style="gap:12px">
+        <div class="row" style="gap:16px;font-size:12.5px;color:var(--fg-2)"><span class="row gap-6"><i class="dot acc"></i>Version 3</span><span class="row gap-6"><i style="width:14px;border-top:1.5px dashed var(--fg-3)"></i>Version 2</span></div>
+        <div data-chart="area" data-seed="42" data-ret="0.214" data-bench="0.182" data-vol="0.009" data-dip="0.45:0.1" data-h="170" data-mark></div>
+        <div class="m-card rows">
+          <div class="m-row"><span style="flex:1">Return</span><span class="mono sm dim">+18.2%</span><span class="mono sm gain" style="width:62px;text-align:right">+21.4%</span></div>
+          <div class="m-row"><span style="flex:1">Sharpe</span><span class="mono sm dim">0.71</span><span class="mono sm" style="width:62px;text-align:right">0.79</span></div>
+          <div class="m-row"><span style="flex:1">Max drawdown</span><span class="mono sm dim">−14.9%</span><span class="mono sm" style="width:62px;text-align:right">−12.6%</span></div>
+        </div>
+        <div class="sm muted">RSI level 75 → 70 · TLT 70 → 60 · GLD 30 → 40</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .b-ev { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .b-ev th { text-align: right; font: 500 11px var(--sans); color: var(--fg-3); padding: 6px 0; }
+  .b-ev th:first-child { text-align: left; }
+  .b-ev td { padding: 7px 0; border-top: 1px solid var(--line); text-align: right; font-family: var(--mono); color: var(--fg); }
+  .b-ev td:first-child { text-align: left; font-family: var(--sans); color: var(--fg-2); }
+  .b-prop { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; }
+  .b-prop .tt { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+  .b-prop .tt .ic { color: var(--acc); }
+  .b-prop ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--fg-2); }
+
+  .b7a .work { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 28px; padding: 0 32px; }
+  .b7a .b-ol .as.new { box-shadow: inset 2px 0 var(--acc); background: color-mix(in srgb, var(--acc) 7%, transparent); border-radius: 0 6px 6px 0; }
+  .b7a .b-ol .r.trk { box-shadow: inset 2px 0 var(--acc); border-radius: 0 8px 8px 0; }
+  .b7a .asked { color: var(--fg); }
+  .b7a .b-ol .as { grid-template-columns: 74px minmax(0, 1fr) 40px 150px; }
+  .b7c .b-ol .as { grid-template-columns: 66px minmax(0, 1fr) 20px 110px; }
+  .b7a .link { position: absolute; left: -29px; top: 36px; width: 29px; border-top: 1px dashed var(--acc-line); }
+
+  .b7b .work { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 28px; padding: 0 32px; }
+  .b-sbar { display: flex; align-items: center; gap: 10px; margin: 6px 18px 8px 46px; padding: 8px 10px 8px 12px; border-radius: 8px; background: var(--panel); border: 1px solid var(--acc-line); box-shadow: 0 0 0 3px var(--acc-soft); font: 400 12.5px var(--sans); color: var(--fg-2); white-space: normal; }
+  .b-sbar .ic { color: var(--acc); }
+  .b-sbar b { color: var(--fg); font-weight: 600; }
+  .b-sbar .btn .kbd { margin-left: 4px; height: 18px; min-width: 18px; font-size: 10px; background: transparent; color: inherit; border-color: currentColor; opacity: 0.55; }
+
+  .b7c .body { display: grid; grid-template-columns: minmax(0, 1fr) 440px; height: 100%; }
+  .b7c .ed { padding: 0 0 0 0; overflow: hidden; }
+  .b7c .banner { display: flex; align-items: center; gap: 10px; margin: 0 32px 16px; padding: 10px 14px; border-radius: 10px; background: var(--acc-soft); border: 1px solid var(--acc-line); font-size: 13px; color: var(--fg); }
+  .b7c .banner .ic { color: var(--acc); }
+  .b7c .chat { border-left: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; }
+  .b7c .chat .ch { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 18px; border-bottom: 1px solid var(--line); font-weight: 600; }
+  .b7c .chat .ch .ic { color: var(--acc); }
+  .b7c .chat .cb { flex: 1; min-height: 0; overflow: hidden; padding: 18px; display: flex; flex-direction: column; gap: 16px; }
+  .b7c .chat .cb .msg { max-width: 100%; }
+  .b7c .chat .cb .msg.me { max-width: 86%; }
+  .b7c .chat .ci { margin: 0 14px 14px; display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 14px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--bg); font-size: 13px; color: var(--fg-3); }
+
+  .b7d .cmpc { margin: 0 32px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 300px; }
+  .b7d .cmpc > div { padding: 20px 22px; }
+  .b7d .cmpc > div + div { border-left: 1px solid var(--line); }
+  .b7d .big2 { font: 500 24px var(--mono); letter-spacing: -0.01em; }
+  .b7d .mrow { display: flex; gap: 22px; margin-top: 14px; }
+  .b7d .mrow .lbl { margin-bottom: 4px; }
+  .b7d .after { margin: 18px 32px 0; opacity: 0.6; }
+</style>
+
+<template id="w-cbar"><div class="b-sbar"><span data-icon="copilot"></span><span><b>Copilot's change.</b> Backtested: max drawdown −12.6% → −9.1%, return +21.4% → +19.8%.</span><span class="sp"></span><span class="btn pri sm">Accept<span class="kbd">⌘↵</span></span><span class="btn sm">Decline</span><span class="btn ghost sm">Reply</span></div></template>
+<template id="w-cbarm"><div class="b-sbar" style="margin:6px 10px 8px 30px;flex-wrap:wrap"><span data-icon="copilot"></span><b>Copilot's change</b><span class="sp"></span><span class="btn pri sm">Accept</span><span class="btn sm">Decline</span></div></template>
+
+<section class="ax-surface" id="builder-copilot"
+  data-surface="builder/copilot"
+  data-area="Strategy builder"
+  data-title="Copilot edits in the editor"
+  data-why="When Copilot proposes a change it lands in the draft as a suggestion, with the backtests behind it, and nothing changes until you accept.">
+
+  <!-- 7A -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="Tracked change and note"
+    data-note="Copilot's edit appears in the rules as tracked changes, with a margin note holding the reason, the backtests it ran and the choice. Recommended: you read the change in the same words you write in, and the evidence sits next to the decision.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/edit">
+      <div class="app b7a">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="b-head">
+            <div><span class="b-back"><span data-icon="arrow-left"></span>Strategies</span><div class="b-name">Recession Radar</div><div class="b-meta"><span class="b-unsaved">Version 4 draft · 3 changes</span><span>·</span><span>1 suggestion from Copilot</span></div></div>
+            <div class="b-act"><div class="seg"><span class="on">Blocks</span><span>Code</span><span>Split</span></div><span class="btn">Backtest</span><span class="btn pri">Save version 4</span></div>
+          </div>
+          <div class="work">
+            <div class="col gap-16">
+              <div class="b-ask"><span data-icon="copilot"></span><span class="asked">Can the defensive side lose less in a drawdown?</span><span class="sp"></span><span class="xs dim">Asked 2 minutes ago</span></div>
+              <div class="panel">
+                <div class="panel-h">Rules<span class="aside">Rebalances monthly against SPY</span></div>
+                <div class="b-ol">
+                  <div class="r"><span class="kwd">When</span><span class="tk">RSI(SPY, 14)</span> is above <span class="tk">72</span></div>
+                  <div class="grp">
+                    <div class="r trk"><span class="kwd">Hold</span><span class="was">Specified</span><span class="tk new">Inverse volatility</span> over <span class="tk new">60 days</span></div>
+                    <div class="as"><span class="sym">TLT</span><span>iShares 20+ Year Treasury</span><span></span><span class="p"><span class="was">60%</span> <span class="rk" style="font-family:var(--sans);color:var(--fg-3);font-weight:400">by volatility</span></span></div>
+                    <div class="as"><span class="sym">GLD</span><span>SPDR Gold Shares</span><span></span><span class="p"><span class="was">40%</span> <span class="rk" style="font-family:var(--sans);color:var(--fg-3);font-weight:400">by volatility</span></span></div>
+                    <div class="as new"><span class="sym">BND</span><span>Vanguard Total Bond Market <span class="pill acc soft" style="margin-left:6px">Added</span></span><span></span><span class="p" style="font-family:var(--sans);color:var(--fg-3);font-weight:400">by volatility</span></div>
+                  </div>
+                  <div class="r" style="opacity:.6"><span class="kwd">Otherwise</span>Hold the top <span class="tk">2</span> by <span class="tk w">momentum</span> over <span class="tk">120 days</span></div>
+                  <div class="grp" style="opacity:.6">
+                    <div class="as"><span class="sym">VTI</span><span>Vanguard Total Stock Market</span><span></span><span class="p rk">Ranked</span></div>
+                    <div class="as"><span class="sym">QQQ</span><span>Invesco QQQ Trust</span><span></span><span class="p rk">Ranked</span></div>
+                    <div class="as"><span class="sym">SMH</span><span>VanEck Semiconductor</span><span></span><span class="p rk">Ranked</span></div>
+                    <div class="as"><span class="sym">IWM</span><span>iShares Russell 2000</span><span></span><span class="p rk">Ranked</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div style="position:relative;padding-top:58px">
+              <span class="link"></span>
+              <div class="panel rim b-prop">
+                <div class="tt"><span data-icon="copilot"></span>Weight the defensive side by volatility</div>
+                <div class="sm muted" style="line-height:1.55">Spreads the defensive side across TLT, GLD and BND by their 60-day volatility, so the calmer assets carry more weight.</div>
+                <ul><li>Weighting is now inverse volatility, was specified</li><li>Added BND to the defensive side</li><li>Removed the fixed 60% and 40%</li></ul>
+                <div class="xs dim">Backtests Copilot ran in this conversation, Nov 2024 to Oct 2026:</div>
+                <table class="b-ev">
+                  <tr><th></th><th>Version 3</th><th>This change</th></tr>
+                  <tr><td>Return</td><td class="gain">+21.4%</td><td class="gain">+19.8%</td></tr>
+                  <tr><td>Max drawdown</td><td>−12.6%</td><td>−9.1%</td></tr>
+                  <tr><td>Sharpe</td><td>0.79</td><td>0.88</td></tr>
+                </table>
+                <div class="row" style="gap:6px"><span class="btn pri sm">Accept</span><span class="btn sm">Decline</span><span class="btn ghost sm">Reply</span></div>
+                <div class="xs dim">Nothing changes in the draft until you accept.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Strategies</span><span>Recession Radar</span><span class="rt"><span data-icon="more"></span></span></div>
+      <div class="m-body" style="gap:10px">
+        <div class="m-card col" style="gap:9px">
+          <div class="b-kick">When RSI is above 72</div>
+          <div class="row wrap" style="gap:6px;font-size:14.5px">Hold by <span class="was">specified</span><span class="tk new">inverse volatility</span></div>
+          <div class="row wrap" style="gap:6px;font-family:var(--mono);font-size:13px">TLT <span class="was">60%</span> GLD <span class="was">40%</span> <span class="tk new">+ BND</span></div>
+        </div>
+        <div class="m-card col" style="gap:9px;opacity:.6"><div class="b-kick">Otherwise</div><div class="row wrap" style="gap:6px;font-size:14.5px">Top <span class="tk">2</span> by <span class="tk w">momentum</span> over <span class="tk">120 days</span></div></div>
+        <div class="sheet" style="padding-bottom:30px">
+          <div class="row" style="gap:8px"><span data-icon="copilot" style="color:var(--acc)"></span><b>Weight the defensive side by volatility</b></div>
+          <div class="sm muted" style="margin-top:8px;line-height:1.5">TLT, GLD and BND by 60-day volatility, so calmer assets carry more.</div>
+          <table class="b-ev" style="margin-top:10px">
+            <tr><th></th><th>Version 3</th><th>Change</th></tr>
+            <tr><td>Return</td><td class="gain">+21.4%</td><td class="gain">+19.8%</td></tr>
+            <tr><td>Max drawdown</td><td>−12.6%</td><td>−9.1%</td></tr>
+          </table>
+          <div class="row" style="gap:8px;margin-top:14px"><span class="m-btn sec" style="flex:1">Decline</span><span class="m-btn" style="flex:1">Accept</span></div>
+          <div class="xs dim" style="text-align:center;margin-top:10px">Nothing changes until you accept.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7B -->
+  <div class="ax-opt" data-opt="B" data-name="Suggestion in code"
+    data-note="The change appears in the code as removed and added lines, with a small bar to accept or decline it in place. Precise and quick for code users, but the reasoning gets one line.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/edit?view=code">
+      <div class="app b7b">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="b-head">
+            <div><span class="b-back"><span data-icon="arrow-left"></span>Strategies</span><div class="b-name">Recession Radar</div><div class="b-meta"><span class="b-unsaved">Version 4 draft · 3 changes</span><span>·</span><span>1 suggestion</span></div></div>
+            <div class="b-act"><div class="seg"><span>Blocks</span><span class="on">Code</span><span>Split</span></div><span class="btn">Backtest</span><span class="btn pri">Save version 4</span></div>
+          </div>
+          <div class="work">
+            <div class="panel" style="overflow:hidden">
+              <div class="b-file"><span data-icon="code"></span>recession-radar.lt<span class="sp"></span><span style="font-family:var(--sans);color:var(--fg-3)">Lines 5 to 7 · suggested by Copilot</span></div>
+              <div style="padding:12px 0"><div data-dsl="cop" data-d2></div></div>
+            </div>
+            <div class="col gap-16">
+              <div class="panel">
+                <div class="panel-h"><span data-icon="copilot" style="color:var(--acc)"></span>Copilot<span class="aside">2 min ago</span></div>
+                <div class="panel-b col" style="gap:12px">
+                  <div class="msg me" style="max-width:100%"><div class="bub">Can the defensive side lose less in a drawdown?</div></div>
+                  <div class="sm muted" style="line-height:1.55">I backtested two versions over Nov 2024 to Oct 2026. Weighting TLT, GLD and BND by inverse volatility lowered the max drawdown and the return.</div>
+                  <table class="b-ev"><tr><th></th><th>Now</th><th>Suggested</th></tr><tr><td>Return</td><td class="gain">+21.4%</td><td class="gain">+19.8%</td></tr><tr><td>Max drawdown</td><td>−12.6%</td><td>−9.1%</td></tr><tr><td>Sharpe</td><td>0.79</td><td>0.88</td></tr></table>
+                </div>
+              </div>
+              <div class="input search" style="border-radius:999px"><span data-icon="copilot" style="color:var(--fg-3)"></span><span class="ph">Reply to Copilot</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Strategies</span><span>Code</span><span class="rt"><span data-icon="more"></span></span></div>
+      <div class="m-body" style="gap:10px">
+        <div class="sm muted" style="line-height:1.5"><span class="acc">Copilot</span> suggests weighting the defensive side by volatility. Max drawdown −12.6% → −9.1% in its backtest.</div>
+        <div class="m-card" style="padding:8px 0;overflow:hidden"><div data-dsl="copm" data-start="4" style="font-size:11.5px;line-height:1.75"></div></div>
+      </div>
+      <div class="b-mbar"><span class="m-btn sec">Decline</span><span class="m-btn">Accept</span></div>
+    </div>
+  </div>
+
+  <!-- 7C -->
+  <div class="ax-opt" data-opt="C" data-name="Conversation beside a preview"
+    data-note="Copilot stays docked as a conversation, and its proposal previews in the editor until you accept or go back. Good for back-and-forth refinement, but the editor narrows and the change is shown applied, not marked.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/edit">
+      <div class="app b7c">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="body">
+            <div class="ed">
+              <div class="b-head">
+                <div><span class="b-back"><span data-icon="arrow-left"></span>Strategies</span><div class="b-name">Recession Radar</div><div class="b-meta"><span class="b-unsaved">Version 4 draft · 3 changes</span></div></div>
+                <div class="b-act"><div class="seg"><span class="on">Blocks</span><span>Code</span></div><span class="btn pri">Save version 4</span></div>
+              </div>
+              <div class="banner"><span data-icon="eye"></span><span><b>Previewing Copilot's proposal.</b> Nothing changes in your draft until you accept.</span><span class="sp"></span><span class="btn sm ghost">Back to my draft</span></div>
+              <div style="padding:0 32px">
+                <div class="panel">
+                  <div class="b-ol">
+                    <div class="r"><span class="kwd">When</span><span class="tk">RSI(SPY, 14)</span> is above <span class="tk">72</span></div>
+                    <div class="grp">
+                      <div class="r on"><span class="kwd">Hold</span><span class="tk new">Inverse volatility</span> over <span class="tk new">60 days</span></div>
+                      <div class="as"><span class="sym">TLT</span><span>iShares 20+ Year</span><span></span><span class="p rk">By volatility</span></div>
+                      <div class="as"><span class="sym">GLD</span><span>SPDR Gold</span><span></span><span class="p rk">By volatility</span></div>
+                      <div class="as"><span class="sym">BND</span><span>Total Bond Market</span><span></span><span class="p rk">By volatility</span></div>
+                    </div>
+                    <div class="r"><span class="kwd">Otherwise</span>Top <span class="tk">2</span> by <span class="tk w">momentum</span> over <span class="tk">120 days</span></div>
+                    <div class="grp"><div class="as"><span class="sym">VTI</span><span>Total Stock Market</span><span></span><span class="p rk">Ranked</span></div><div class="as"><span class="sym">QQQ</span><span>Invesco QQQ</span><span></span><span class="p rk">Ranked</span></div><div class="as"><span class="sym">SMH</span><span>Semiconductor</span><span></span><span class="p rk">Ranked</span></div><div class="as"><span class="sym">IWM</span><span>Russell 2000</span><span></span><span class="p rk">Ranked</span></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="chat">
+              <div class="ch"><span data-icon="copilot"></span>Copilot<span class="sp"></span><span class="xs dim" style="font-weight:400">About Recession Radar</span><span class="btn ghost icon sm"><span data-icon="x"></span></span></div>
+              <div class="cb">
+                <div class="msg me"><div class="bub">Can the defensive side lose less in a drawdown?</div></div>
+                <div class="msg bot"><div class="who">Copilot</div><div class="bub" style="color:var(--fg-2)">I ran two backtests over Nov 2024 to Oct 2026 with $25,000. Weighting TLT, GLD and BND by their 60-day volatility cut the max drawdown from −12.6% to −9.1%. The return fell from +21.4% to +19.8%.</div></div>
+                <div class="panel rim b-prop" style="padding:14px 16px">
+                  <div class="tt" style="font-size:13.5px">Weight the defensive side by volatility</div>
+                  <ul><li>Inverse volatility, was specified</li><li>Added BND</li><li>Removed the fixed 60% and 40%</li></ul>
+                  <div class="row" style="gap:6px"><span class="btn pri sm">Accept</span><span class="btn sm">Decline</span><span class="sp"></span><span class="row xs acc" style="gap:6px"><span class="toggle on"></span>Preview</span></div>
+                </div>
+              </div>
+              <div class="ci">Ask a follow-up<span class="sp"></span><span class="btn pri icon sm round"><span data-icon="send"></span></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Editor</span><span>Copilot</span><span></span></div>
+      <div class="m-body" style="gap:14px">
+        <div class="msg me" style="max-width:86%"><div class="bub" style="font-size:14px">Can the defensive side lose less in a drawdown?</div></div>
+        <div class="msg bot" style="max-width:100%"><div class="who">Copilot</div><div class="bub" style="font-size:14px;color:var(--fg-2)">Weighting TLT, GLD and BND by 60-day volatility cut the max drawdown from −12.6% to −9.1% in my backtest. The return fell from +21.4% to +19.8%.</div></div>
+        <div class="m-card rim col" style="gap:10px">
+          <b style="font-size:14.5px">Weight the defensive side by volatility</b>
+          <div class="xs dim">3 changes · previewing in the editor</div>
+          <div class="row" style="gap:8px"><span class="btn pri sm round">Accept</span><span class="btn sm round">Decline</span><span class="btn ghost sm round">Preview</span></div>
+        </div>
+      </div>
+      <div style="flex:none;padding:10px 16px 30px;position:relative;z-index:3"><div class="row" style="gap:8px;padding:6px 6px 6px 16px;border-radius:999px;border:1px solid var(--line-2);color:var(--fg-3);font-size:14px">Ask a follow-up<span class="sp"></span><span class="btn pri icon sm round"><span data-icon="send"></span></span></div></div>
+    </div>
+  </div>
+
+  <!-- 7D -->
+  <div class="ax-opt" data-opt="D" data-name="Before and after"
+    data-note="The proposal opens as a comparison of what the defensive side holds now and after the change, with the backtest results side by side. Makes the trade-off very clear, but the exact edit is one click deeper.">
+    <div data-frame="desktop" data-path="strategies/recession-radar/edit">
+      <div class="app b7d">
+        <div data-use="top"></div>
+        <div class="main">
+          <div class="b-head">
+            <div><span class="b-back"><span data-icon="arrow-left"></span>Strategies</span><div class="b-name">Recession Radar</div><div class="b-meta"><span class="b-unsaved">Version 4 draft</span><span>·</span><span>Copilot proposes a change to the defensive side</span></div></div>
+            <div class="b-act"><div class="seg"><span class="on">Blocks</span><span>Code</span></div><span class="btn pri">Save version 4</span></div>
+          </div>
+          <div class="panel rim cmpc">
+            <div>
+              <span class="b-kick">Now · specified</span>
+              <div class="h3" style="margin-top:8px">TLT 60% and GLD 40%</div>
+              <div class="b-split" style="margin-top:14px;height:12px"><i style="width:60%"></i><i style="width:40%;background:var(--c2)"></i></div>
+              <div class="b-leg" style="margin-top:10px"><span><i class="b-sw"></i><b>TLT</b> 60%</span><span><i class="b-sw" style="background:var(--c2)"></i><b>GLD</b> 40%</span></div>
+              <div class="mrow"><div><div class="lbl">Return</div><div class="big2 gain">+21.4%</div></div><div><div class="lbl">Max drawdown</div><div class="big2">−12.6%</div></div><div><div class="lbl">Sharpe</div><div class="big2">0.79</div></div></div>
+            </div>
+            <div>
+              <span class="b-kick acc">Proposed · inverse volatility, 60 days</span>
+              <div class="h3" style="margin-top:8px">TLT, GLD and BND by volatility</div>
+              <div class="b-split" style="margin-top:14px;height:12px"><i style="width:31%"></i><i style="width:24%;background:var(--c2)"></i><i style="width:45%;background:var(--c3)"></i></div>
+              <div class="b-leg" style="margin-top:10px"><span><i class="b-sw"></i><b>TLT</b> 31%</span><span><i class="b-sw" style="background:var(--c2)"></i><b>GLD</b> 24%</span><span><i class="b-sw" style="background:var(--c3)"></i><b>BND</b> 45%</span><span class="faint" style="font-family:var(--sans)">average in the backtest</span></div>
+              <div class="mrow"><div><div class="lbl">Return</div><div class="big2 gain">+19.8%</div></div><div><div class="lbl">Max drawdown</div><div class="big2">−9.1%</div></div><div><div class="lbl">Sharpe</div><div class="big2">0.88</div></div></div>
+            </div>
+            <div class="col" style="gap:12px">
+              <div class="row" style="gap:8px"><span data-icon="copilot" style="color:var(--acc)"></span><b>Copilot</b></div>
+              <div class="sm muted" style="line-height:1.55">You asked whether the defensive side could lose less in a drawdown. In this backtest it did, and the return was 1.6 points lower.</div>
+              <div class="xs dim">Nov 2024 to Oct 2026 · $25,000 · same commission</div>
+              <div class="row" style="gap:6px;margin-top:auto"><span class="btn pri">Accept</span><span class="btn">Decline</span><span class="btn ghost">See the edit</span></div>
+            </div>
+          </div>
+          <div class="panel" style="margin:16px 32px 0;display:grid;grid-template-columns:minmax(0,1fr) 300px">
+            <div style="padding:14px 18px 12px"><div class="row xs" style="gap:16px;color:var(--fg-2);margin-bottom:8px"><span class="row gap-6"><i class="dot acc"></i>Proposed</span><span class="row gap-6"><i style="width:14px;border-top:1.5px dashed var(--fg-3)"></i>Now</span><span class="sp"></span><span class="dim">Equity in Copilot's backtests, $25,000 start</span></div><div data-chart="line" data-seed="77" data-ret="0.198" data-bench="0.214" data-vol="0.007" data-start="25000" data-axis="xy" data-x="Nov 2024,Nov 2025,Oct 2026" data-h="150" data-mark></div></div>
+            <div style="padding:14px 18px;border-left:1px solid var(--line)"><div class="lbl" style="margin-bottom:8px">Drawdown, proposed</div><div data-chart="drawdown" data-seed="77" data-ret="0.198" data-vol="0.007" data-h="60"></div><div class="xs dim" style="margin-top:10px;line-height:1.5">The deepest fall was 9.1%, in March 2025. Version 3's was 12.6% in the same month.</div></div>
+          </div>
+          <div class="panel after">
+            <div class="b-ol">
+              <div class="r"><span class="kwd">When</span><span class="tk">RSI(SPY, 14)</span> is above <span class="tk">72</span>, hold <span class="tk w">Specified</span> <span class="tk">TLT 60%</span> <span class="tk">GLD 40%</span></div>
+              <div class="r"><span class="kwd">Otherwise</span>Hold the top <span class="tk">2</span> of <span class="tk">VTI QQQ SMH IWM</span> by <span class="tk w">momentum</span> over <span class="tk">120 days</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Editor</span><span>Proposal</span><span></span></div>
+      <div class="m-body" style="gap:12px">
+        <div class="m-card col" style="gap:8px">
+          <span class="b-kick">Now</span>
+          <div class="b-split"><i style="width:60%"></i><i style="width:40%;background:var(--c2)"></i></div>
+          <div class="b-leg"><span><b>TLT</b> 60%</span><span><b>GLD</b> 40%</span></div>
+          <div class="row mono sm" style="gap:14px"><span class="gain">+21.4%</span><span>DD −12.6%</span><span class="dim">Sharpe 0.79</span></div>
+        </div>
+        <div class="m-card rim col" style="gap:8px">
+          <span class="b-kick acc">Proposed</span>
+          <div class="b-split"><i style="width:31%"></i><i style="width:24%;background:var(--c2)"></i><i style="width:45%;background:var(--c3)"></i></div>
+          <div class="b-leg"><span><b>TLT</b> 31%</span><span><b>GLD</b> 24%</span><span><b>BND</b> 45%</span></div>
+          <div class="row mono sm" style="gap:14px"><span class="gain">+19.8%</span><span>DD −9.1%</span><span class="dim">Sharpe 0.88</span></div>
+        </div>
+        <div class="xs dim">Average weights and results from Copilot's backtest, Nov 2024 to Oct 2026.</div>
+      </div>
+      <div class="b-mbar"><span class="m-btn sec">Decline</span><span class="m-btn">Accept</span></div>
+    </div>
+  </div>
+</section>
+
+<script>
+/* Page helpers: expand the shared topbar and render strategy code before kit.js builds the viewer. */
+(function () {
+  "use strict";
+  const DSL = {
+    v3: [
+      '(strategy "Recession Radar"',
+      '  :rebalance monthly',
+      '  :benchmark SPY',
+      '  (if (> (rsi SPY 14) 70)',
+      '      (weight :method specified',
+      '        (asset TLT :weight 60)',
+      '        (asset GLD :weight 40))',
+      '      (else',
+      '        (weight :method momentum',
+      '          :lookback 90 :top 2',
+      '          (asset VTI)',
+      '          (asset QQQ)',
+      '          (asset IWM)))))',
+    ],
+    v4: [
+      '(strategy "Recession Radar"',
+      '  :rebalance monthly',
+      '  :benchmark SPY',
+      '  (if (> (rsi SPY 14) 72)',
+      '      (weight :method specified',
+      '        (asset TLT :weight 60)',
+      '        (asset GLD :weight 40))',
+      '      (else',
+      '        (weight :method momentum',
+      '          :lookback 120 :top 2',
+      '          (asset VTI)',
+      '          (asset QQQ)',
+      '          (asset SMH)',
+      '          (asset IWM)))))',
+    ],
+    edit: [
+      '(strategy "Recession Radar"',
+      '  :rebalance monthly',
+      '  :benchmark SPY',
+      '  (if (> (rsi SPY 14) 72)',
+      '      (weight :method specified',
+      '        (asset TLT :weight 60)',
+      '        (asset GLD :weight 40))',
+      '      (else',
+      '        (weight :method ^',
+      '          :lookback 120 :top 2',
+      '          (asset VTI)',
+      '          (asset QQQ)',
+      '          (asset SMH)',
+      '          (asset IWM)))))',
+    ],
+    sym: [
+      '(strategy "Recession Radar"',
+      '  :rebalance monthly',
+      '  :benchmark SPY',
+      '  (if (> (rsi SPY 14) 72)',
+      '      (weight :method specified',
+      '        (asset TLT :weight 60)',
+      '        (asset GLD :weight 40))',
+      '      (else',
+      '        (weight :method momentum',
+      '          :lookback 120 :top 2',
+      '          (asset VTI)',
+      '          (asset QQQ)',
+      '          (asset S^)',
+    ],
+    prob: [
+      '(strategy "Recession Radar"',
+      '  :rebalance monthly',
+      '  :benchmark SPY',
+      '  (if (> (rsi SPY 14) 72)',
+      '      (weight :method specified',
+      '        (asset TLT :weight 60)',
+      '        (asset GLD :weight 40))',
+      '      (else',
+      'P|        (weight :method ~~market-cap~~',
+      '@p1',
+      '          :lookback 120 :top 2',
+      'P|          (asset ~~VTII~~)',
+      '@p2',
+      '          (asset QQQ)',
+      '          (asset SMH)',
+      '          (asset IWM)))))',
+    ],
+    probm: [
+      '  (if (> (rsi SPY 14) 72)',
+      '      (weight :method specified',
+      '        (asset TLT :weight 60)',
+      '        (asset GLD :weight 40))',
+      '      (else',
+      'P|        (weight :method ~~market-cap~~',
+      '@p1m',
+      '          :lookback 120 :top 2',
+      'P|          (asset ~~VTII~~)',
+      '          (asset QQQ)',
+      '          (asset SMH)',
+      '          (asset IWM)))))',
+    ],
+    probplain: [
+      '(strategy "Recession Radar"',
+      '  :rebalance monthly',
+      '  :benchmark SPY',
+      '  (if (> (rsi SPY 14) 72)',
+      '      (weight :method specified',
+      '        (asset TLT :weight 60)',
+      '        (asset GLD :weight 40))',
+      '      (else',
+      'P|        (weight :method ~~market-cap~~',
+      '          :lookback 120 :top 2',
+      'P|          (asset ~~VTII~~)',
+      '          (asset QQQ)',
+      '          (asset SMH)',
+      '          (asset IWM)))))',
+    ],
+    v2v3: [
+      ' |(strategy "Recession Radar"',
+      ' |  :rebalance monthly',
+      ' |  :benchmark SPY',
+      '-|  (if (> (rsi SPY 14) 75)',
+      '+|  (if (> (rsi SPY 14) 70)',
+      ' |      (weight :method specified',
+      '-|        (asset TLT :weight 70)',
+      '-|        (asset GLD :weight 30))',
+      '+|        (asset TLT :weight 60)',
+      '+|        (asset GLD :weight 40))',
+      ' |      (else',
+      ' |        (weight :method momentum',
+      ' |          :lookback 90 :top 2',
+      ' |          (asset VTI)',
+      ' |          (asset QQQ)',
+      ' |          (asset IWM)))))',
+    ],
+    v2: [
+      '(strategy "Recession Radar"',
+      '  :rebalance monthly',
+      '  :benchmark SPY',
+      'X|  (if (> (rsi SPY 14) {-75-})',
+      '      (weight :method specified',
+      'X|        (asset TLT :weight {-70-})',
+      'X|        (asset GLD :weight {-30-}))',
+      '      (else',
+      '        (weight :method momentum',
+      '          :lookback 90 :top 2',
+      '          (asset VTI)',
+      '          (asset QQQ)',
+      '          (asset IWM)))))',
+    ],
+    v3marked: [
+      '(strategy "Recession Radar"',
+      '  :rebalance monthly',
+      '  :benchmark SPY',
+      'A|  (if (> (rsi SPY 14) {+70+})',
+      '      (weight :method specified',
+      'A|        (asset TLT :weight {+60+})',
+      'A|        (asset GLD :weight {+40+}))',
+      '      (else',
+      '        (weight :method momentum',
+      '          :lookback 90 :top 2',
+      '          (asset VTI)',
+      '          (asset QQQ)',
+      '          (asset IWM)))))',
+    ],
+    cop: [
+      ' |(strategy "Recession Radar"',
+      ' |  :rebalance monthly',
+      ' |  :benchmark SPY',
+      ' |  (if (> (rsi SPY 14) 72)',
+      '-|      (weight :method specified',
+      '-|        (asset TLT :weight 60)',
+      '-|        (asset GLD :weight 40))',
+      '+|      (weight :method inverse-volatility',
+      '+|        :lookback 60',
+      '+|        (asset TLT) (asset GLD) (asset BND))',
+      '@cbar',
+      ' |      (else',
+      ' |        (weight :method momentum',
+      ' |          :lookback 120 :top 2',
+      ' |          (asset VTI)',
+      ' |          (asset QQQ)',
+      ' |          (asset SMH)',
+      ' |          (asset IWM)))))',
+    ],
+    copm: [
+      ' |  (if (> (rsi SPY 14) 72)',
+      '-|      (weight :method specified',
+      '-|        (asset TLT :weight 60)',
+      '-|        (asset GLD :weight 40))',
+      '+|      (weight :method',
+      '+|        inverse-volatility',
+      '+|        :lookback 60',
+      '+|        (asset TLT) (asset GLD)',
+      '+|        (asset BND))',
+      ' |      (else',
+      ' |        (weight :method momentum',
+    ],
+    v4notes: [
+      'C|;; Rebalances monthly, against SPY',
+      '(strategy "Recession Radar"',
+      '  :rebalance monthly',
+      '  :benchmark SPY',
+      'C|;; When SPY\'s RSI is above 72,',
+      'C|;; hold TLT 60% and GLD 40%',
+      '  (if (> (rsi SPY 14) 72)',
+      '      (weight :method specified',
+      '        (asset TLT :weight 60)',
+      '        (asset GLD :weight 40))',
+      'C|;; Otherwise, the top 2 of 4',
+      'C|;; by their 120-day return',
+      '      (else',
+      '        (weight :method momentum',
+      '          :lookback 120 :top 2',
+      '          (asset VTI) (asset QQQ)',
+      '          (asset SMH) (asset IWM)))))',
+    ],
+    unified: [
+      ' |(strategy "Recession Radar"',
+      ' |  :rebalance monthly',
+      ' |  :benchmark SPY',
+      '-|  (if (> (rsi SPY 14) 75)',
+      '+|  (if (> (rsi SPY 14) 70)',
+      ' |      (weight :method specified',
+      '-|        (asset TLT :weight 70)',
+      '-|        (asset GLD :weight 30))',
+      '+|        (asset TLT :weight 60)',
+      '+|        (asset GLD :weight 40))',
+      ' |      (else',
+      ' |        (weight :method momentum',
+    ],
+  };
+
+  const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  const TOK = /("[^"]*")|(\()([a-z][\w-]*)|(:[a-z][\w-]*)|(\b\d+(?:\.\d+)?\b)|(\b[A-Z]{2,5}\b)/g;
+  function hl(raw) {
+    let out = "", last = 0, m;
+    TOK.lastIndex = 0;
+    while ((m = TOK.exec(raw))) {
+      out += esc(raw.slice(last, m.index));
+      if (m[1]) out += `<span class="s">${esc(m[1])}</span>`;
+      else if (m[2]) out += `(<span class="k">${m[3]}</span>`;
+      else if (m[4]) out += `<span class="kw">${m[4]}</span>`;
+      else if (m[5]) out += `<span class="n">${m[5]}</span>`;
+      else out += `<span class="t">${m[6]}</span>`;
+      last = TOK.lastIndex;
+    }
+    return out + esc(raw.slice(last));
+  }
+  function line(raw) {
+    const parts = raw.split(/(\{\+.*?\+\}|\{-.*?-\}|~~.*?~~|\^)/);
+    return parts.map((p) => {
+      if (p === "^") return '<span class="caret"></span>';
+      if (p.startsWith("{+")) return `<span class="ins">${hl(p.slice(2, -2))}</span>`;
+      if (p.startsWith("{-")) return `<span class="rm">${hl(p.slice(2, -2))}</span>`;
+      if (p.startsWith("~~")) return `<span class="pw">${hl(p.slice(2, -2))}</span>`;
+      return hl(p);
+    }).join("");
+  }
+  const ranges = (s) => {
+    const set = new Set();
+    (s || "").split(",").filter(Boolean).forEach((r) => {
+      const [a, b] = r.split("-").map(Number);
+      for (let i = a; i <= (b || a); i++) set.add(i);
+    });
+    return set;
+  };
+
+  function renderCode(el) {
+    const src = DSL[el.dataset.dsl];
+    if (!src) return;
+    const d2 = el.hasAttribute("data-d2");
+    const sel = ranges(el.dataset.sel), cur = ranges(el.dataset.cur), dim = ranges(el.dataset.dim);
+    const start = Number(el.dataset.start || 1);
+    let n = start - 1, o = start - 1, html = "";
+    src.forEach((rawLine) => {
+      if (rawLine.startsWith("@")) {
+        const w = document.getElementById("w-" + rawLine.slice(1));
+        html += `<div class="l"><span class="w">${w ? w.innerHTML : ""}</span></div>`;
+        return;
+      }
+      let mark = "", text = rawLine;
+      const mm = /^([ +\-PXAC])\|/.exec(rawLine);
+      if (mm) { mark = mm[1]; text = rawLine.slice(2); }
+      if (mark === "C") {
+        html += `<div class="l note"><i></i><span>${esc(text)}</span></div>`;
+        return;
+      }
+      const cls = [];
+      let numO = "", numN = "", sign = "";
+      if (mark === "+") { n++; numN = n; sign = "+"; cls.push("add"); }
+      else if (mark === "-") { o++; numO = o; sign = "−"; cls.push("del"); }
+      else { n++; o++; numN = n; numO = o; }
+      if (mark === "P") cls.push("prob");
+      if (mark === "X") cls.push("chg-o");
+      if (mark === "A") cls.push("chg-n");
+      const k = n;
+      if (mark !== "-") {
+        if (sel.has(k)) cls.push("sel");
+        if (cur.has(k)) cls.push("cur");
+        if (dim.has(k)) cls.push("dim");
+      }
+      const nums = d2 ? `<i>${numO}</i><i>${numN}</i><i class="m">${sign}</i>` : `<i>${mark === "-" ? "" : numN}</i>`;
+      html += `<div class="l ${cls.join(" ")}">${nums}<span>${line(text) || " "}</span></div>`;
+    });
+    el.classList.add("b-code");
+    if (d2) el.classList.add("d2");
+    el.innerHTML = html;
+  }
+
+  const NAV = ["Home", "Strategies", "Backtests", "Sessions", "Portfolio", "Copilot"];
+  function renderTop(el) {
+    const on = el.dataset.on || "Strategies";
+    el.className = "topbar";
+    el.innerHTML = `<span data-logo data-size="34" class="overhang"></span><nav class="nav">${NAV.map((n) => `<a class="${n === on ? "on" : ""}">${n}</a>`).join("")}</nav><div class="end"><span class="mkt">Market open · 10:42 ET</span><span class="avatar">SR</span></div>`;
+  }
+
+  document.querySelectorAll("[data-use='top']").forEach(renderTop);
+  document.querySelectorAll("[data-dsl]").forEach(renderCode);
+})();
+</script>
+<script src="kit.js"></script>
+</body>
+</html>

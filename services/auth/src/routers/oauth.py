@@ -143,7 +143,7 @@ async def alpaca_oauth_callback(
     """Handle Alpaca's redirect: exchange the code, then link or authenticate."""
     web = _web_app_url()
     if error:
-        return RedirectResponse(f"{web}/settings?tab=broker&error={error}", status_code=302)
+        return RedirectResponse(f"{web}/connect/alpaca?error={error}", status_code=302)
 
     verified = verify_state(state)
     if verified is None:
@@ -169,7 +169,7 @@ async def alpaca_oauth_callback(
             token=token,
             account_id=account_id,
         )
-        return RedirectResponse(f"{web}/settings?tab=broker&connected=1", status_code=302)
+        return RedirectResponse(f"{web}/connect/alpaca?connected=1", status_code=302)
 
     # intent == "auth": log in if the account is already linked, else stage a signup.
     return await _handle_auth_callback(web=web, token=token, account_id=account_id)

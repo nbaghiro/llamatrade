@@ -17,10 +17,10 @@ const sizeLimit = EditorView.theme({
   '.cm-scroller': { overflow: 'auto', maxWidth: '100%' },
 });
 
-// Read-only DSL viewer reusing the builder's grammar + terminal theme; lazy-loaded so CodeMirror stays out of the list bundle.
+// Read-only viewer for strategy code, on the builder's grammar and theme; lazy-load it to keep CodeMirror out of list bundles.
 export default function DslCodeBlock({
   code,
-  className = 'mx-4 mb-3.5 border-2 border-ink',
+  className = 'mx-4 mb-3.5 rounded-panel border border-line',
 }: DslCodeBlockProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);

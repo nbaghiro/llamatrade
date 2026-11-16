@@ -1,15 +1,7 @@
-/**
- * Backtest Components
- * Export all backtest-related components.
- */
-
-export { default as BacktestConfigForm } from './BacktestConfigForm';
-export { default as BacktestHistoryModal } from './BacktestHistoryModal';
-export { default as BacktestProgress } from './BacktestProgress';
-export { default as DrawdownChart } from './DrawdownChart';
-export { default as EquityCurveChart } from './EquityCurveChart';
-export { default as MetricsPanel } from './MetricsPanel';
-export { default as MonthlyReturnsGrid } from './MonthlyReturnsGrid';
-export { default as RecentRunsPanel } from './RecentRunsPanel';
-export { default as StrategyPickerModal } from './StrategyPickerModal';
-export { default as TradesTable } from './TradesTable';
+export { CompareChart } from './CompareChart';
+export { compareColor } from './compareColors';
+export { MonthByMonth } from './MonthByMonth';
+export { RunPanel } from './RunPanel';
+export { RunFailure, RunSections, RunSummary } from './RunSections';
+export { RunSentence } from './RunSentence';
+export { useRunView } from './useRunView';

@@ -1,11 +1,14 @@
-/**
- * CardForm component - Stripe CardElement wrapper with custom styling
- */
-
 import { CardElement, useElements, useStripe } from '@stripe/react-stripe-js';
 import type { StripeCardElementChangeEvent } from '@stripe/stripe-js';
 import { AlertCircle, CreditCard, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+
+/** Stripe's card iframe can't read CSS variables, so the token values are resolved here. */
+function tokenColor(name: string, fallback: string): string {
+  if (typeof document === 'undefined') return fallback;
+  const channels = getComputedStyle(document.documentElement).getPropertyValue(`--${name}`).trim();
+  return channels ? `rgb(${channels.split(/\s+/).join(', ')})` : fallback;
+}
 
 interface CardFormProps {
   clientSecret: string;
@@ -19,7 +22,7 @@ export default function CardForm({
   clientSecret,
   onSuccess,
   onError,
-  submitLabel = 'Add Card',
+  submitLabel = 'Save card',
   loading = false,
 }: CardFormProps) {
   const stripe = useStripe();
@@ -60,8 +63,8 @@ export default function CardForm({
       });
 
       if (error) {
-        setCardError(error.message || 'An error occurred');
-        onError(error.message || 'An error occurred');
+        setCardError(error.message || "The card couldn't be saved. Please try again.");
+        onError(error.message || "The card couldn't be saved. Please try again.");
       } else if (setupIntent && setupIntent.payment_method) {
         const paymentMethodId =
           typeof setupIntent.payment_method === 'string'
@@ -70,7 +73,8 @@ export default function CardForm({
         onSuccess(paymentMethodId);
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'An unexpected error occurred';
+      const message =
+        err instanceof Error ? err.message : "The card couldn't be saved. Please try again.";
       setCardError(message);
       onError(message);
     } finally {
@@ -81,30 +85,22 @@ export default function CardForm({
   const isDisabled = !stripe || !cardComplete || processing || loading;
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="grid gap-3">
       <div>
-        <label className="label">
-          Card Details
-        </label>
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-            <CreditCard className="h-5 w-5 text-ink/40" />
-          </div>
-          <div className="pl-10 pr-3 py-3 border-2 border-ink bg-paper focus-within:border-orange-500">
+        <span className="label">Card details</span>
+        <div className="flex items-center gap-2.5 rounded-[6px] border border-line-strong bg-panel px-3 py-2.5 focus-within:border-accent">
+          <CreditCard className="h-4 w-4 flex-none text-fg-3" />
+          <div className="min-w-0 flex-1">
             <CardElement
               options={{
                 style: {
                   base: {
-                    fontSize: '16px',
-                    color: '#0d0d0d',
-                    fontFamily: 'Archivo, system-ui, sans-serif',
-                    '::placeholder': {
-                      color: '#7a7362',
-                    },
+                    fontSize: '14px',
+                    color: tokenColor('fg', '#888888'),
+                    fontFamily: 'Geist, system-ui, sans-serif',
+                    '::placeholder': { color: tokenColor('fg-3', '#888888') },
                   },
-                  invalid: {
-                    color: '#c81e1e',
-                  },
+                  invalid: { color: tokenColor('risk', '#c78a00') },
                 },
                 hidePostalCode: true,
               }}
@@ -115,23 +111,19 @@ export default function CardForm({
       </div>
 
       {cardError && (
-        <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
-          <AlertCircle className="h-4 w-4" />
-          <span>{cardError}</span>
-        </div>
+        <p role="alert" className="m-0 flex items-center gap-2 text-xs text-risk">
+          <AlertCircle className="h-3.5 w-3.5" />
+          {cardError}
+        </p>
       )}
 
-      <button
-        type="submit"
-        disabled={isDisabled}
-        className="btn btn-primary w-full"
-      >
-        {(processing || loading) && <Loader2 className="h-4 w-4 animate-spin" />}
-        {processing ? 'Processing...' : submitLabel}
+      <button type="submit" disabled={isDisabled} className="btn btn-primary w-full">
+        {(processing || loading) && <Loader2 className="h-4 w-4 motion-safe:animate-spin" />}
+        {processing ? 'Saving…' : submitLabel}
       </button>
 
-      <p className="text-xs text-center text-gray-500 dark:text-gray-400">
-        Your card details are securely processed by Stripe.
+      <p className="m-0 text-center text-xs text-fg-3">
+        Card details go straight to Stripe and never reach LlamaTrade.
       </p>
     </form>
   );

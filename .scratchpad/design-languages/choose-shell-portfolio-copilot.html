@@ -1,0 +1,782 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LlamaTrade · Choose shell, portfolio, Copilot</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2032%2032%22%3E%3Cpath%20d=%22M8%202v20M12.4%2013v16.5M25.6%2013v16.5M16.8%2012.5v10M21.2%2013v9%22%20stroke=%22%23888%22%20stroke-width=%221.1%22%20stroke-linecap=%22round%22/%3E%3Crect%20x=%222%22%20y=%227%22%20width=%223.2%22%20height=%224%22%20rx=%220.5%22%20fill=%22%234cc2ff%22/%3E%3Crect%20x=%226.4%22%20y=%224.5%22%20width=%223.2%22%20height=%2214%22%20rx=%220.5%22%20fill=%22%23888%22/%3E%3Crect%20x=%2210.8%22%20y=%2214.5%22%20width=%223.2%22%20height=%2210%22%20rx=%220.5%22%20fill=%22%23888%22/%3E%3Crect%20x=%2215.2%22%20y=%2214.5%22%20width=%223.2%22%20height=%226%22%20rx=%220.5%22%20fill=%22%23888%22/%3E%3Crect%20x=%2219.6%22%20y=%2215%22%20width=%223.2%22%20height=%225.5%22%20rx=%220.5%22%20fill=%22%23888%22/%3E%3Crect%20x=%2224%22%20y=%2214.5%22%20width=%223.2%22%20height=%2210%22%20rx=%220.5%22%20fill=%22%23888%22/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Tokens follow b-session-site.html: Dark is Slate or Black, Light is Warm or White. */
+:root {
+--font-sans: "Geist", system-ui, sans-serif; --font-mono: "Geist Mono", ui-monospace, monospace;
+--p-bg: #0b0e11; --p-card: #13171b; --p-ink: #e6eaee; --p-ink2: #aab3bd; --p-ink3: #7f8994; --p-line: #20272e; --p-line2: #323b44;
+--p-acc: #4cc2ff; --p-acc-ink: #04121c;
+--bg: #0f1316; --panel: #151a1f; --sunk: #1c2228; --line: #252c34; --line2: #36404a; --ink: #e6eaee; --ink2: #aab3bd; --ink3: #7f8994;
+--gain: #3fbf7a; --loss: #f2555a; --risk: #f0a63a; --risk-soft: rgba(240,166,58,0.1); --risk-line: rgba(240,166,58,0.45);
+--t1: #b8c0c8; --t2: #75808b; --t3: #4a545e; --bezel: #050607; --chrome: #13171b;
+--shadow: 0 50px 90px -40px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.03);
+--scrim: rgba(0,0,0,0.55);
+}
+html[data-theme="black"] {
+--p-bg: #000; --p-card: #0e0e0e; --p-ink: #ededed; --p-ink2: #a3a3a3; --p-ink3: #767676; --p-line: #1f1f1f; --p-line2: #2e2e2e;
+--bg: #0a0a0a; --panel: #111111; --sunk: #181818; --line: #222222; --line2: #2e2e2e; --ink: #ededed; --ink2: #a3a3a3; --ink3: #767676;
+--t1: #bdbdbd; --t2: #7a7a7a; --t3: #4a4a4a; --bezel: #1a1a1a; --chrome: #0e0e0e;
+--shadow: 0 50px 90px -40px rgba(0,0,0,0.9), 0 0 0 1px rgba(255,255,255,0.05);
+}
+html[data-theme="light"], html[data-mode="light"] {
+--p-bg: #faf9f6; --p-card: #ffffff; --p-ink: #15191f; --p-ink2: #444b56; --p-ink3: #6b717c; --p-line: #e4e1da; --p-line2: #cfcbc2;
+--bg: #faf9f6; --panel: #ffffff; --sunk: #f2f0ea; --line: #e8e5de; --line2: #cfcbc2; --ink: #15191f; --ink2: #444b56; --ink3: #6b717c;
+--gain: #17703f; --loss: #b3261e; --risk: #8a5a00; --risk-soft: #fbf3e2; --risk-line: #e7cf9d;
+--t1: #3d434c; --t2: #8a9099; --t3: #c3c7cc; --bezel: #23272d; --chrome: #f1efe9;
+--shadow: 0 34px 60px -30px rgba(21,25,31,0.32), 0 2px 6px rgba(21,25,31,0.06); --scrim: rgba(21,25,31,0.32);
+}
+html[data-theme="light"][data-light="white"], html[data-mode="light"][data-light="white"] {
+--p-bg: #fdfdfd; --p-card: #ffffff; --p-ink: #111418; --p-ink2: #474d56; --p-ink3: #6b717a; --p-line: #e9ebee; --p-line2: #d7dade;
+--bg: #fbfbfc; --panel: #ffffff; --sunk: #f4f5f7; --line: #eceef1; --line2: #dcdfe3; --ink: #111418; --ink2: #474d56; --ink3: #6b717a;
+--t1: #3a3f46; --t2: #8b9199; --t3: #c8ccd1; --chrome: #f4f5f7;
+--shadow: 0 34px 60px -30px rgba(17,20,24,0.26), 0 1px 4px rgba(17,20,24,0.05);
+}
+/* Dark accents (the 12 of the site plus Silver) */
+html[data-acc="cyan"] { --p-acc: #4cc2ff; --p-acc-ink: #04121c; }
+html[data-acc="white"] { --p-acc: #dbe3f0; --p-acc-ink: #0b1220; }
+html[data-acc="amber"] { --p-acc: #ffc24b; --p-acc-ink: #1f1500; }
+html[data-acc="violet"] { --p-acc: #a78bfa; --p-acc-ink: #14082e; }
+html[data-acc="silver"] { --p-acc: #a1a1aa; --p-acc-ink: #0a0a0a; }
+html[data-acc="orange"] { --p-acc: #ff9f43; --p-acc-ink: #1f1000; }
+html[data-acc="lime"] { --p-acc: #d9f05c; --p-acc-ink: #141a00; }
+html[data-acc="teal"] { --p-acc: #2dd4bf; --p-acc-ink: #031a17; }
+html[data-acc="indigo"] { --p-acc: #818cf8; --p-acc-ink: #0b0b2e; }
+html[data-acc="lilac"] { --p-acc: #d8b4fe; --p-acc-ink: #1e0b33; }
+html[data-acc="pink"] { --p-acc: #f472b6; --p-acc-ink: #2b0618; }
+html[data-acc="blue"] { --p-acc: #5b8cff; --p-acc-ink: #fff; --acc-fill: #2563eb; }
+html[data-acc="slate"] { --p-acc: #8fa4cf; --p-acc-ink: #fff; --acc-fill: #475f8a; }
+/* The same keys in Light, darkened to read on paper */
+html[data-theme="light"][data-acc="cyan"], html[data-mode="light"][data-acc="cyan"] { --p-acc: #0a6fb3; --p-acc-ink: #fff; }
+html[data-theme="light"][data-acc="white"], html[data-mode="light"][data-acc="white"] { --p-acc: #0f1418; --p-acc-ink: #fff; }
+html[data-theme="light"][data-acc="amber"], html[data-mode="light"][data-acc="amber"] { --p-acc: #a35f00; --p-acc-ink: #fff; }
+html[data-theme="light"][data-acc="violet"], html[data-mode="light"][data-acc="violet"] { --p-acc: #6247d9; --p-acc-ink: #fff; }
+html[data-theme="light"][data-acc="silver"], html[data-mode="light"][data-acc="silver"] { --p-acc: #52525b; --p-acc-ink: #fff; }
+html[data-theme="light"][data-acc="orange"], html[data-mode="light"][data-acc="orange"] { --p-acc: #b45309; --p-acc-ink: #fff; }
+html[data-theme="light"][data-acc="lime"], html[data-mode="light"][data-acc="lime"] { --p-acc: #65730a; --p-acc-ink: #fff; }
+html[data-theme="light"][data-acc="teal"], html[data-mode="light"][data-acc="teal"] { --p-acc: #0f766e; --p-acc-ink: #fff; }
+html[data-theme="light"][data-acc="indigo"], html[data-mode="light"][data-acc="indigo"] { --p-acc: #4f46e5; --p-acc-ink: #fff; }
+html[data-theme="light"][data-acc="lilac"], html[data-mode="light"][data-acc="lilac"] { --p-acc: #9333ea; --p-acc-ink: #fff; }
+html[data-theme="light"][data-acc="pink"], html[data-mode="light"][data-acc="pink"] { --p-acc: #be185d; --p-acc-ink: #fff; }
+html[data-theme="light"][data-acc="blue"], html[data-mode="light"][data-acc="blue"] { --p-acc: #2563eb; --p-acc-ink: #fff; --acc-fill: #2563eb; }
+html[data-theme="light"][data-acc="slate"], html[data-mode="light"][data-acc="slate"] { --p-acc: #475f8a; --p-acc-ink: #fff; --acc-fill: #475f8a; }
+/* The site's Light accent set, if the page runs in the site's Light mode */
+html[data-mode="light"][data-acc="charcoal"] { --p-acc: #3a3f47; --p-acc-ink: #fff; }
+html[data-mode="light"][data-acc="ink"] { --p-acc: #1b2940; --p-acc-ink: #fff; }
+html[data-mode="light"][data-acc="rust"] { --p-acc: #a8520a; --p-acc-ink: #fff; }
+html[data-mode="light"][data-acc="pine"] { --p-acc: #1d5c45; --p-acc-ink: #fff; }
+html[data-mode="light"][data-acc="ocean"] { --p-acc: #1d4e89; --p-acc-ink: #fff; }
+html[data-mode="light"][data-acc="navy"] { --p-acc: #1f3b73; --p-acc-ink: #fff; }
+html[data-mode="light"][data-acc="iris"] { --p-acc: #4a3fd4; --p-acc-ink: #fff; }
+html[data-mode="light"][data-acc="plum"] { --p-acc: #6b2d5c; --p-acc-ink: #fff; }
+html[data-mode="light"][data-acc="burgundy"] { --p-acc: #5a1e3c; --p-acc-ink: #fff; }
+html[data-mode="light"][data-acc="teal"] { --p-acc: #0f6b78; --p-acc-ink: #fff; }
+:root { --acc: var(--p-acc); --acc-ink: var(--p-acc-ink); --acc-soft: color-mix(in srgb, var(--p-acc) 14%, transparent); }
+
+/* Page */
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; background: var(--p-bg); }
+body { margin: 0; background: var(--p-bg); color: var(--p-ink); font: 400 16px/1.55 var(--font-sans); font-variant-numeric: tabular-nums; overflow-x: hidden; }
+a { color: inherit; }
+.wrap { max-width: 1440px; margin: 0 auto; padding: 0 32px; }
+.intro { padding: 56px 0 28px; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 48px; }
+.intro .kick { font: 500 13px var(--font-mono); color: var(--p-ink3); margin: 0 0 14px; }
+.intro h1 { margin: 0 0 16px; font: 600 44px/1.08 var(--font-display, var(--font-sans)); letter-spacing: -0.035em; }
+.intro p { margin: 0 0 12px; color: var(--p-ink2); max-width: 640px; }
+.intro .facts { display: flex; gap: 28px; flex-wrap: wrap; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--p-line); }
+.intro .facts b { display: block; font: 500 18px var(--font-mono); color: var(--p-ink); }
+.intro .facts span { font-size: 13px; color: var(--p-ink3); }
+.toc { border: 1px solid var(--p-line); border-radius: 10px; padding: 18px 22px; background: var(--p-card); align-self: start; }
+.toc h2 { margin: 0 0 4px; font: 500 12px var(--font-mono); color: var(--p-ink3); text-transform: uppercase; letter-spacing: 0.06em; }
+.toc ol { list-style: none; margin: 0 0 14px; padding: 0; columns: 1; }
+.toc li a { display: flex; gap: 10px; padding: 4px 0; text-decoration: none; color: var(--p-ink2); font-size: 14.5px; }
+.toc li a:hover { color: var(--p-ink); }
+.toc li a em { font: normal 500 12px/1.9 var(--font-mono); color: var(--p-ink3); width: 22px; flex: none; }
+.toc .keys { font-size: 13px; color: var(--p-ink3); margin: 6px 0 0; }
+.toc .keys kbd { font: 500 11.5px var(--font-mono); border: 1px solid var(--p-line2); border-radius: 4px; padding: 1px 5px; color: var(--p-ink2); }
+.area-h { padding: 44px 0 0; }
+.area-h h2 { margin: 0; font: 600 13px var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--p-acc); }
+.pair { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 28px; align-items: start; }
+.cap { font: 500 12px var(--font-mono); color: var(--p-ink3); margin-top: 10px; text-align: center; }
+.trio { display: grid; grid-template-columns: repeat(3, minmax(0, 300px)); gap: 28px; justify-content: center; }
+.host { position: relative; width: 100%; overflow: hidden; }
+.host > .sc { position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+.ends { padding: 44px 0 120px; border-top: 1px solid var(--p-line); }
+.ends h2 { margin: 0 0 14px; font-size: 24px; font-weight: 600; letter-spacing: -0.01em; }
+.ends ul { margin: 0; padding-left: 20px; color: var(--p-ink2); max-width: 900px; }
+.ends li { margin-bottom: 8px; }
+.ends p { color: var(--p-ink3); max-width: 900px; }
+@media (max-width: 1000px) {
+  .intro { grid-template-columns: 1fr; gap: 28px; }
+  .pair { grid-template-columns: 1fr; }
+  .pair > div:last-child { width: min(100%, 320px); margin: 0 auto; order: -1; }
+  .trio { grid-template-columns: 1fr; }
+  .trio > div { width: min(100%, 320px); margin: 0 auto; }
+}
+@media (max-width: 640px) {
+  .wrap { padding: 0 16px; }
+  .intro { padding-top: 36px; }
+  .intro h1 { font-size: 32px; }
+}
+
+/* Frames */
+.bw { width: 1240px; height: 820px; border-radius: 12px; overflow: hidden; background: var(--bg); box-shadow: var(--shadow); border: 1px solid var(--line); display: flex; flex-direction: column; }
+.bw-bar { height: 40px; flex: none; display: flex; align-items: center; padding: 0 16px; background: var(--chrome); border-bottom: 1px solid var(--line); }
+.bw-bar .dots { display: flex; gap: 7px; } .bw-bar .dots i { width: 11px; height: 11px; border-radius: 50%; background: var(--line2); }
+.bw-bar .url { margin: 0 auto; transform: translateX(-30px); min-width: 380px; height: 24px; border-radius: 6px; background: var(--sunk); display: flex; align-items: center; justify-content: center; gap: 6px; font: 400 12.5px var(--font-sans); color: var(--ink3); }
+.bw-bar .url svg { width: 11px; height: 11px; }
+.bw-vp { position: relative; flex: 1; overflow: hidden; }
+.phone { position: absolute; top: 8px; left: 8px; width: 390px; height: 844px; border-radius: 50px; overflow: hidden; background: var(--bg); color: var(--ink); box-shadow: 0 0 0 8px var(--bezel), 0 0 0 9px var(--line2); font: 400 15px/1.45 var(--font-sans); }
+.phone::before { content: ""; position: absolute; top: 11px; left: 50%; width: 118px; height: 34px; margin-left: -59px; border-radius: 20px; background: #000; z-index: 20; }
+
+/* App (inside frames) */
+.app { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg); color: var(--ink); font: 400 13.5px/1.45 var(--font-sans); }
+.app.side { flex-direction: row; }
+.app .ico { width: 16px; height: 16px; flex: none; }
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.t2 { color: var(--ink2); } .t3 { color: var(--ink3); } .sm { font-size: 12.5px; }
+.gain { color: var(--gain); } .loss { color: var(--loss); } .risk { color: var(--risk); } .accent { color: var(--acc); }
+.lbl { display: block; font: 500 11px var(--font-mono); color: var(--ink3); letter-spacing: 0.02em; }
+.ltm { width: 22px; height: 22px; --lacc: var(--acc); }
+.brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; letter-spacing: -0.01em; white-space: nowrap; }
+.tn { height: 56px; flex: none; display: flex; align-items: center; gap: 26px; padding: 0 22px; border-bottom: 1px solid var(--line); background: var(--bg); }
+.tn nav { display: flex; gap: 2px; }
+.tn nav span { padding: 6px 11px; border-radius: 7px; color: var(--ink2); font-weight: 500; }
+.tn nav span.on { color: var(--ink); background: var(--sunk); }
+.tn .end { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.srch { display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink3); min-width: 200px; background: var(--panel); }
+.srch .kbd { margin-left: auto; }
+.kbd { font: 500 11px var(--font-mono); padding: 2px 6px; border: 1px solid var(--line2); border-radius: 5px; color: var(--ink3); }
+.bell { position: relative; display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 8px; color: var(--ink2); }
+.bell.on { background: var(--sunk); color: var(--ink); }
+.bell b { position: absolute; top: 2px; right: 1px; min-width: 16px; height: 16px; border-radius: 8px; background: var(--acc); color: var(--acc-ink); font: 600 10px/16px var(--font-mono); text-align: center; padding: 0 4px; }
+.mode { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 999px; border: 1px solid var(--line2); color: var(--ink2); font: 500 11.5px var(--font-mono); white-space: nowrap; }
+.mode i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink3); }
+.av { width: 30px; height: 30px; border-radius: 50%; background: var(--sunk); border: 1px solid var(--line2); display: inline-flex; align-items: center; justify-content: center; font: 600 11.5px var(--font-sans); color: var(--ink2); flex: none; }
+.sbar { width: 232px; flex: none; border-right: 1px solid var(--line); display: flex; flex-direction: column; padding: 16px 12px; gap: 14px; background: var(--panel); }
+.sbar .brand { padding: 2px 8px 6px; }
+.sbar .srch { min-width: 0; width: 100%; }
+.sbar nav { display: grid; gap: 2px; }
+.sbar nav span, .sbar .it { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 7px; color: var(--ink2); font-weight: 500; }
+.sbar nav span.on { color: var(--ink); background: var(--sunk); }
+.sbar nav span.on .ico { color: var(--acc); }
+.sbar .grp { font: 500 11px var(--font-mono); color: var(--ink3); padding: 10px 10px 2px; }
+.sbar .foot { margin-top: auto; display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 12px; }
+.sbar .acct { display: flex; align-items: center; gap: 10px; padding: 6px 8px; }
+.sbar .acct div { min-width: 0; } .sbar .acct b { display: block; font-weight: 600; font-size: 13px; } .sbar .acct span { font-size: 12px; color: var(--ink3); }
+.cnt { margin-left: auto; font: 600 11px var(--font-mono); background: var(--acc); color: var(--acc-ink); border-radius: 8px; padding: 1px 6px; }
+.rail { width: 64px; flex: none; border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; padding: 14px 0; gap: 6px; background: var(--panel); }
+.rail .r { width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: var(--ink3); position: relative; }
+.rail .r .ico { width: 19px; height: 19px; }
+.rail .r.on { background: var(--sunk); color: var(--acc); }
+.rail .r.on::before { content: ""; position: absolute; left: -11px; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; background: var(--acc); }
+.rail .tip { position: absolute; left: 50px; top: 9px; background: var(--ink); color: var(--bg); font-size: 12px; font-weight: 500; padding: 3px 8px; border-radius: 5px; white-space: nowrap; z-index: 4; }
+.rail .bot { margin-top: auto; display: grid; gap: 6px; justify-items: center; }
+.col { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
+.utl { height: 52px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 28px; border-bottom: 1px solid var(--line); }
+.utl .crumb { color: var(--ink3); } .utl .crumb b { color: var(--ink); font-weight: 600; }
+.utl .end { margin-left: auto; display: flex; gap: 12px; align-items: center; }
+.ribbon { height: 30px; flex: none; display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 12.5px; color: var(--ink2); background: repeating-linear-gradient(135deg, var(--sunk) 0 8px, var(--panel) 8px 16px); border-bottom: 1px solid var(--line); }
+.ribbon b { font: 600 11.5px var(--font-mono); color: var(--ink); }
+.main { flex: 1; min-height: 0; overflow: hidden; padding: 26px 36px; position: relative; }
+.hd { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.hd h3 { margin: 0; font-size: 22px; font-weight: 600; letter-spacing: -0.02em; }
+.hd .meta { color: var(--ink3); font-size: 13px; margin-top: 2px; }
+.acts { display: flex; gap: 8px; align-items: center; }
+.b { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 32px; padding: 0 12px; border: 1px solid var(--line2); border-radius: 7px; font-weight: 500; font-size: 13px; color: var(--ink); background: var(--panel); white-space: nowrap; }
+.b .ico { width: 14px; height: 14px; }
+.b.p { background: var(--acc-fill, var(--acc)); border-color: var(--acc-fill, var(--acc)); color: var(--acc-ink); }
+.b.g { background: transparent; border-color: transparent; color: var(--ink2); }
+.b.dis { opacity: 0.45; }
+.b.full { width: 100%; }
+.pn { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.pn-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.pn-h b { font-weight: 600; }
+.pn-b { padding: 14px 16px; }
+.alert { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-radius: 8px; background: var(--risk-soft); border: 1px solid var(--risk-line); color: var(--ink); }
+.alert > .ico { color: var(--risk); width: 18px; height: 18px; }
+.alert > div { flex: 1; min-width: 0; }
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 999px; border: 1px solid var(--line2); font-size: 11.5px; color: var(--ink2); white-space: nowrap; }
+.chip.acc { border-color: color-mix(in srgb, var(--acc) 50%, transparent); color: var(--acc); background: var(--acc-soft); }
+.chip .ico { width: 12px; height: 12px; }
+.st { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink2); white-space: nowrap; }
+.st i { width: 7px; height: 7px; border-radius: 50%; background: var(--ink3); }
+.st.run i { background: var(--acc); }
+.st.frz { color: var(--risk); } .st.frz i { background: var(--risk); }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 8px; vertical-align: 0; }
+.tbl { width: 100%; border-collapse: collapse; }
+.tbl th { text-align: left; font: 500 11px var(--font-mono); color: var(--ink3); padding: 9px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tbl td { padding: 9px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tbl .n { text-align: right; }
+.tbl tr.tot td { border-bottom: 0; border-top: 1px solid var(--line2); font-weight: 600; }
+.tbl tr.tot2 td { border-bottom: 3px double var(--line2); }
+.tbl tr.frz td { background: var(--risk-soft); }
+.tbl tr.sub td { color: var(--ink2); }
+.tbl tr.gh td { font: 500 11px var(--font-mono); color: var(--ink3); background: var(--sunk); padding: 6px 14px; }
+.sym { font: 600 13px var(--font-mono); letter-spacing: 0; }
+.grid { display: grid; gap: 16px; }
+.row2 { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.stack { display: grid; gap: 12px; align-content: start; }
+.big { font: 500 34px/1.1 var(--font-mono); letter-spacing: -0.03em; }
+.ab { display: flex; height: 14px; border-radius: 4px; overflow: hidden; gap: 2px; }
+.ab i { display: block; height: 100%; }
+.ab i.free { background: repeating-linear-gradient(135deg, var(--line2) 0 3px, transparent 3px 7px); border: 1px dashed var(--line2); }
+.ab i.new { background: var(--acc-soft); border: 1px dashed var(--acc); }
+.ab i.frz { box-shadow: inset 0 0 0 2px var(--risk); }
+.lg { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 12.5px; color: var(--ink2); margin-top: 10px; }
+.lg span { display: inline-flex; align-items: center; }
+.wr { display: grid; grid-template-columns: 48px minmax(0, 1fr) 46px 40px; gap: 10px; align-items: center; padding: 6px 0; }
+.wr.full { grid-template-columns: 54px minmax(0, 1fr) 54px 50px 90px 86px; }
+.wb { position: relative; height: 8px; border-radius: 4px; background: var(--sunk); }
+.wb i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--t1); }
+.wb b { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--acc); border-radius: 1px; }
+.wb.frz i { background: var(--risk); }
+.wb .gh { position: absolute; top: 0; bottom: 0; border: 1px dashed var(--risk); border-left: 0; border-radius: 0 4px 4px 0; }
+.wr .num { text-align: right; font-size: 12.5px; }
+.code { font: 400 12.5px/1.7 var(--font-mono); background: var(--sunk); border-radius: 8px; padding: 10px 0; overflow: hidden; }
+.code > div { display: flex; padding: 0 14px 0 0; white-space: pre; }
+.code .ln { width: 34px; flex: none; text-align: right; padding-right: 12px; color: var(--ink3); opacity: 0.7; }
+.code .k { color: var(--acc); } .code .s { color: var(--ink2); }
+.code .add { background: color-mix(in srgb, var(--acc) 12%, transparent); }
+.code .del { opacity: 0.55; text-decoration: line-through; }
+.msg { display: grid; gap: 4px; }
+.msg .who { font: 500 11px var(--font-mono); color: var(--ink3); }
+.msg.me { justify-items: end; }
+.msg.me .bub { background: var(--sunk); border-radius: 12px 12px 3px 12px; padding: 9px 13px; max-width: 80%; }
+.msg.ai .bub { line-height: 1.55; }
+.msg.ai .bub p { margin: 0 0 8px; } .msg.ai .bub p:last-child { margin: 0; }
+.tool { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--ink3); padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; justify-self: start; }
+.tool b { font: 500 12px var(--font-mono); color: var(--ink2); }
+.tool .ico { width: 13px; height: 13px; }
+.tool .spin { width: 8px; height: 8px; border-radius: 50%; background: var(--acc); }
+.art { border: 1px solid var(--line2); border-radius: 10px; background: var(--panel); overflow: hidden; }
+.art-h { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+.art-h b { font-weight: 600; }
+.art-b { padding: 12px 14px; display: grid; gap: 12px; }
+.art-f { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line); background: var(--sunk); }
+.art.ask { border-color: color-mix(in srgb, var(--acc) 55%, var(--line2)); box-shadow: 0 0 0 3px var(--acc-soft); }
+.args { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 6px 12px; font-size: 13px; }
+.args span:nth-child(odd) { color: var(--ink3); }
+.args span:nth-child(even) { font-family: var(--font-mono); font-size: 12.5px; }
+.composer { display: flex; gap: 8px; align-items: center; border: 1px solid var(--line2); border-radius: 12px; padding: 8px 8px 8px 14px; background: var(--panel); }
+.composer .ph { flex: 1; color: var(--ink3); }
+.composer .send { width: 32px; height: 32px; border-radius: 8px; background: var(--acc-fill, var(--acc)); color: var(--acc-ink); display: flex; align-items: center; justify-content: center; }
+.inp { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border: 1px solid var(--line2); border-radius: 8px; background: var(--panel); color: var(--ink); }
+.inp .ph { color: var(--ink3); }
+.inp.focus { border-color: var(--acc); box-shadow: 0 0 0 3px var(--acc-soft); }
+.inp.big { height: 56px; font: 500 26px var(--font-mono); letter-spacing: -0.02em; }
+.inp .af { color: var(--ink3); }
+.caret { display: inline-block; width: 2px; height: 1.1em; background: var(--acc); margin-left: 2px; vertical-align: middle; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; padding: 2px; gap: 2px; background: var(--panel); }
+.seg span { padding: 4px 10px; border-radius: 6px; color: var(--ink2); font-size: 12.5px; white-space: nowrap; }
+.seg span.on { background: var(--sunk); color: var(--ink); }
+.ovl { position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center; z-index: 5; }
+.ovl.clear { background: transparent; }
+.ovl.right { justify-content: flex-end; align-items: stretch; }
+.ovl.top { align-items: flex-start; padding-top: 90px; }
+.modal { width: 500px; background: var(--panel); border: 1px solid var(--line2); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+.modal-h { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.modal-h b { font-size: 15px; font-weight: 600; }
+.modal-b { padding: 16px 18px; display: grid; gap: 14px; }
+.modal-f { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--line); background: var(--sunk); }
+.drawer { width: 440px; background: var(--panel); border-left: 1px solid var(--line2); display: flex; flex-direction: column; box-shadow: var(--shadow); }
+.pop { position: absolute; z-index: 6; background: var(--panel); border: 1px solid var(--line2); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+.nt { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; padding: 11px 16px; border-bottom: 1px solid var(--line); align-items: start; }
+.nt:last-child { border-bottom: 0; }
+.nt .ico { margin-top: 2px; color: var(--ink3); }
+.nt.rk .ico { color: var(--risk); }
+.nt b { font-weight: 600; display: block; }
+.nt p { margin: 2px 0 0; color: var(--ink2); font-size: 12.5px; white-space: normal; }
+.nt em { font: normal 11.5px var(--font-mono); color: var(--ink3); display: flex; align-items: center; gap: 6px; }
+.nt em i { width: 7px; height: 7px; border-radius: 50%; background: var(--acc); }
+.nt.on { background: var(--sunk); }
+.cmd { width: 640px; }
+.cmd .q { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 18px; border-bottom: 1px solid var(--line); font-size: 16px; }
+.cmd .q .ico { width: 18px; height: 18px; color: var(--ink3); }
+.cmd .gh { font: 500 11px var(--font-mono); color: var(--ink3); padding: 10px 18px 4px; }
+.cmd .ci { display: flex; align-items: center; gap: 12px; padding: 8px 18px; color: var(--ink2); }
+.cmd .ci .ico { color: var(--ink3); }
+.cmd .ci b { color: var(--ink); font-weight: 500; }
+.cmd .ci .r { margin-left: auto; font-size: 12px; color: var(--ink3); display: flex; gap: 8px; align-items: center; }
+.cmd .ci.on { background: var(--sunk); color: var(--ink); }
+.cmd .ci.on .ico { color: var(--acc); }
+.cmd .ft { display: flex; gap: 16px; padding: 9px 18px; border-top: 1px solid var(--line); font-size: 12px; color: var(--ink3); background: var(--sunk); }
+.hl { color: var(--ink); background: var(--acc-soft); border-radius: 2px; }
+.hist .gh { font: 500 11px var(--font-mono); color: var(--ink3); padding: 14px 16px 6px; }
+.hist .it { display: grid; gap: 2px; padding: 8px 16px; color: var(--ink2); border-left: 2px solid transparent; }
+.hist .it span { color: var(--ink); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hist .it em { font: normal 12px var(--font-sans); color: var(--ink3); }
+.hist .it.on { background: var(--sunk); border-left-color: var(--acc); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.card.flush { padding: 0 16px; }
+.card .ln { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.card .ln:last-child { border-bottom: 0; }
+.scard { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; display: grid; gap: 10px; align-content: start; }
+.scard.free { border-style: dashed; background: transparent; }
+.scard.frz { border-color: var(--risk-line); }
+.scard h6 { margin: 0; font-size: 15px; font-weight: 600; }
+.scard .v { font: 500 26px var(--font-mono); letter-spacing: -0.02em; }
+.step { display: flex; gap: 12px; align-items: flex-start; }
+.step .n { width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--line2); display: flex; align-items: center; justify-content: center; font: 600 11.5px var(--font-mono); color: var(--ink2); flex: none; }
+.step.on .n { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); }
+.step.done .n { color: var(--acc); border-color: var(--acc); }
+.opt { display: flex; gap: 12px; padding: 12px 14px; border: 1px solid var(--line2); border-radius: 9px; align-items: flex-start; }
+.opt .rd { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--line2); flex: none; margin-top: 2px; }
+.opt.on { border-color: var(--acc); background: var(--acc-soft); }
+.opt.on .rd { border: 5px solid var(--acc); }
+.opt.dis { opacity: 0.5; }
+.opt b { display: block; font-weight: 600; }
+.opt span { font-size: 12.5px; color: var(--ink2); }
+.vs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.vs > div { background: var(--sunk); border-radius: 8px; padding: 12px 14px; }
+.vs .n { font: 500 24px var(--font-mono); margin-top: 2px; }
+.tl { display: grid; grid-template-columns: 70px 20px minmax(0, 1fr) auto; gap: 0 12px; }
+.tl > * { padding: 9px 0; }
+.tl .ax { position: relative; } .tl .ax::before { content: ""; position: absolute; left: 9px; top: 0; bottom: 0; width: 1px; background: var(--line2); }
+.tl .ax i { position: absolute; left: 5px; top: 14px; width: 9px; height: 9px; border-radius: 50%; background: var(--panel); border: 1.5px solid var(--ink3); }
+.kb { font: 500 11px var(--font-mono); border: 1px solid var(--line2); border-radius: 4px; padding: 1px 5px; color: var(--ink2); }
+.fab { position: absolute; right: 18px; bottom: 100px; width: 56px; height: 56px; border-radius: 18px; background: var(--acc-fill, var(--acc)); color: var(--acc-ink); display: flex; align-items: center; justify-content: center; box-shadow: 0 14px 30px -10px rgba(0,0,0,0.5); z-index: 6; }
+.fab .ico { width: 24px; height: 24px; }
+
+/* Phone parts */
+.phone .sb { height: 50px; display: flex; justify-content: space-between; align-items: center; padding: 6px 34px 0; font: 600 15px var(--font-sans); }
+.phone .sb i { width: 26px; height: 12px; border-radius: 3px; border: 1.5px solid var(--ink2); }
+.phone .mh { display: flex; justify-content: space-between; align-items: center; padding: 8px 20px 12px; gap: 10px; }
+.phone .mh h5 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -0.02em; }
+.phone .mh .r { display: flex; align-items: center; gap: 12px; color: var(--ink2); }
+.phone .mh .ico { width: 21px; height: 21px; }
+.phone .back { display: flex; align-items: center; gap: 4px; color: var(--acc); padding: 6px 14px 4px; font-size: 15px; }
+.phone .back .ico { width: 18px; height: 18px; }
+.phone .body { padding: 0 18px; display: grid; gap: 14px; align-content: start; }
+.phone .body h5 { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
+.phone .big { font-size: 34px; }
+.phone .ico { width: 18px; height: 18px; }
+.phone .ln { font-size: 14.5px; }
+.phone .tabs { position: absolute; left: 0; right: 0; bottom: 0; height: 86px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 94%, transparent); display: grid; padding: 8px 6px 0; z-index: 8; }
+.phone .tabs span { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 10.5px; font-weight: 500; color: var(--ink3); }
+.phone .tabs span .ico { width: 23px; height: 23px; }
+.phone .tabs span.on { color: var(--acc); }
+.phone .tabs span.mid .ico { width: 26px; height: 26px; }
+.phone .tabs span.mid { position: relative; top: -14px; }
+.phone .tabs span.mid > i { width: 52px; height: 52px; border-radius: 16px; background: var(--acc-fill, var(--acc)); color: var(--acc-ink); display: flex; align-items: center; justify-content: center; }
+.phone .scrim { position: absolute; inset: 0; background: var(--scrim); z-index: 9; }
+.phone .sheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--panel); border-radius: 18px 18px 0 0; z-index: 10; border-top: 1px solid var(--line2); overflow: hidden; }
+.phone .grab { width: 40px; height: 5px; border-radius: 3px; background: var(--line2); margin: 8px auto 10px; }
+.phone .drw { position: absolute; top: 0; bottom: 0; left: 0; width: 300px; background: var(--panel); z-index: 10; border-right: 1px solid var(--line2); padding: 60px 14px 20px; display: flex; flex-direction: column; gap: 12px; }
+.phone .drw nav span { display: flex; align-items: center; gap: 12px; padding: 10px 10px; border-radius: 8px; color: var(--ink2); font-weight: 500; font-size: 15.5px; }
+.phone .drw nav span.on { background: var(--sunk); color: var(--ink); }
+.phone .drw nav span.on .ico { color: var(--acc); }
+.phone .composer { margin: 0 14px; }
+.phone .alert { align-items: flex-start; font-size: 14px; }
+.phone .nt { padding: 12px 0; } .phone .nt p { font-size: 13.5px; }
+.phone .wr { grid-template-columns: 44px minmax(0, 1fr) 46px 34px; }
+.phone .tbl td, .phone .tbl th { padding: 9px 8px; }
+</style>
+<script>
+(function () {
+    var d = document.documentElement;
+    var g = function (k, f, ok) { try { var v = localStorage.getItem(k); return ok.indexOf(v) >= 0 ? v : f; } catch (e) { return f; } };
+    d.dataset.mode = g("lts-site-mode", "dark", ["light", "dark"]);
+    d.dataset.theme = g("lts-theme-b2", "slate", ["black", "slate"]);
+    d.dataset.light = g("lts-light-sub2", "white", ["warm", "white"]);
+    d.dataset.acc = d.dataset.mode === "light"
+        ? g("lts-acc-a6", "ocean", ["charcoal", "ink", "rust", "pine", "teal", "ocean", "blue", "navy", "slate", "iris", "plum", "burgundy"])
+        : g("lts-acc-b5", "slate", ["silver", "white", "orange", "amber", "lime", "teal", "cyan", "blue", "slate", "indigo", "violet", "lilac", "pink"]);
+})();
+</script>
+</head>
+<body>
+<main>
+    <div class="wrap">
+        <section class="intro">
+            <div>
+                <p class="kick">Choose · Shell, Portfolio, Copilot</p>
+                <h1>The app shell, the portfolio and Copilot</h1>
+                <p>Each section below is one product surface with two to four options. Every option shows the desktop app at 1240 px in a browser beside the same screen on a phone, so you can compare them one at a time and pick one.</p>
+                <p>All figures come from the same paper account on Nov 13 at 10:42 ET. The recommended option for each surface is marked, and it usually refines the pick from the Portfolio, Copilot and Account flow page rather than starting over.</p>
+                <div class="facts"><div><b>$103,410.27</b><span>3 sleeves and $17,077.12 unallocated</span></div><div><b>167 · 120</b><span>TLT in the ledger and at Alpaca, so Recession Radar is frozen</span></div><div><b>Paper</b><span>the only mode in the beta</span></div></div>
+            </div>
+            <nav class="toc" id="toc" aria-label="Contents"></nav>
+        </section>
+    </div>
+    <div class="wrap" id="surfaces"></div>
+    <div class="wrap">
+        <section class="ends" id="ends">
+            <h2>Merged, skipped and left open</h2>
+            <ul>
+                <li><b>Mobile tab bar</b> has no desktop frame. Its options show three phone screens each, since the desktop has no tab bar; the desktop side of navigation is the first surface.</li>
+                <li><b>Search and the command palette</b> are one surface. A separate search page was skipped because the palette covers the same lookups.</li>
+                <li><b>Copilot side panel</b> is an option under Conversation rather than its own surface. If the full page wins, the panel can stay as the quick way in, since both read the same conversation store.</li>
+                <li><b>Treemap overview</b> from the flow page was dropped. Small positions such as DBC become unreadable blocks and the frozen TLT position gets lost in the tint.</li>
+                <li><b>Frozen sleeve and reconciliation</b> are one surface, because the frozen state only exists as a result of a reconciliation.</li>
+                <li><b>Resolving a frozen sleeve</b> is shown as a design only. The ledger catalogues <code>ReconciliationAdjusted</code> and <code>SleeveResumed</code> but doesn't emit them yet, so today the only action is to run reconciliation again.</li>
+                <li><b>Account settings, plan and usage</b> belong to the start, home and account page. Billing and pricing are unsettled, so no prices appear here.</li>
+            </ul>
+            <p>Green and red mark profit and loss only. Amber marks something that needs attention, and the accent marks what you can act on and the targets you set.</p>
+        </section>
+    </div>
+</main>
+<script>
+(() => {
+    "use strict";
+    const P = {
+        plus: '<path d="M10 4v12M4 10h12"/>', warn: '<path d="M10 2.5 18 17H2L10 2.5Z"/><path d="M10 8v4M10 14.2v.3"/>', info: '<circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.2v.3"/>',
+        check: '<path d="m5 10.5 3 3 7-7"/>', bell: '<path d="M4.5 11.5V8a5.5 5.5 0 0 1 11 0v3.5l1.5 2.5H3l1.5-2.5Z"/><path d="M8 16.5a2 2 0 0 0 4 0"/>',
+        search: '<circle cx="9" cy="9" r="5.5"/><path d="m13 13 4 4"/>', send: '<path d="M3.5 10 16.5 3.5 13 16.5l-3-5.5-6.5-1Z"/>',
+        spark: '<path d="M10 2.5v4M10 13.5v4M2.5 10h4M13.5 10h4M5 5l2.2 2.2M12.8 12.8 15 15M15 5l-2.2 2.2M7.2 12.8 5 15"/>',
+        back: '<path d="M12.5 4.5 7 10l5.5 5.5"/>', chev: '<path d="m7.5 4.5 5.5 5.5-5.5 5.5"/>', x: '<path d="m5 5 10 10M15 5 5 15"/>', down: '<path d="m5 8 5 5 5-5"/>',
+        home: '<path d="M3.5 9 10 3.5 16.5 9v7.5h-13V9Z"/>', wallet: '<rect x="2.5" y="5" width="15" height="11" rx="1.5"/><path d="M13 10.5h2"/><path d="M4.5 5 13 2.5V5"/>',
+        chart: '<path d="M3 16.5h14"/><path d="M4.5 13 8 9l3 2.5 5-6"/>', user: '<circle cx="10" cy="7" r="3.5"/><path d="M3.5 17a6.5 6.5 0 0 1 13 0"/>',
+        refresh: '<path d="M16 10a6 6 0 1 1-1.8-4.3"/><path d="M16 3.5V7h-3.5"/>', hist: '<path d="M3.5 10a6.5 6.5 0 1 0 2-4.7"/><path d="M3.5 3.5v3h3"/><path d="M10 6.5V10l2.5 1.5"/>',
+        play: '<path d="M6 4.5v11l9-5.5-9-5.5Z"/>', expand: '<path d="M11.5 3.5h5v5M8.5 16.5h-5v-5M16.5 3.5 11 9M3.5 16.5 9 11"/>',
+        lock: '<rect x="4" y="9" width="12" height="8" rx="1.5"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9"/>', flask: '<path d="M8 3h4M8.5 3v5L4 15.5A1 1 0 0 0 5 17h10a1 1 0 0 0 1-1.5L11.5 8V3"/><path d="M6 12.5h8"/>',
+        in: '<path d="M10 3.5v9M6 8.5l4 4 4-4"/><path d="M3.5 16.5h13"/>', out: '<path d="M10 12.5v-9M6 7.5l4-4 4 4"/><path d="M3.5 16.5h13"/>',
+        swap: '<path d="M4 7h11l-3-3M16 13H5l3 3"/>', coin: '<circle cx="10" cy="10" r="7"/><path d="M10 6v8M7.5 8.2c0-1 1.1-1.7 2.5-1.7s2.5.7 2.5 1.7-1.1 1.4-2.5 1.8-2.5.8-2.5 1.8 1.1 1.7 2.5 1.7 2.5-.7 2.5-1.7"/>',
+        code: '<path d="m7 6-4 4 4 4M13 6l4 4-4 4"/>', menu: '<path d="M3.5 6h13M3.5 10h13M3.5 14h13"/>', gear: '<circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/>',
+        enter: '<path d="M15.5 5v5.5h-10"/><path d="m8.5 7.5-3 3 3 3"/>', more: '<circle cx="5" cy="10" r=".9"/><circle cx="10" cy="10" r=".9"/><circle cx="15" cy="10" r=".9"/>',
+        doc: '<path d="M5.5 2.5h6l3 3v12h-9v-15Z"/><path d="M11.5 2.5v3h3M8 10h4.5M8 13h4.5"/>', sessions: '<circle cx="10" cy="10" r="7"/><path d="M10 6v4l3 2"/>',
+    };
+    const ic = (k, c = "ico") => `<svg class="${c}" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[k]}</svg>`;
+    const LOGO = '<svg class="ltm" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M8 2v20M12.4 13v16.5M25.6 13v16.5M16.8 12.5v10M21.2 13v9" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><rect x="2" y="7" width="3.2" height="4" rx="0.5" fill="var(--lacc)"/><rect x="6.4" y="4.5" width="3.2" height="14" rx="0.5" fill="currentColor"/><rect x="10.8" y="14.5" width="3.2" height="10" rx="0.5" fill="currentColor"/><rect x="15.2" y="14.5" width="3.2" height="6" rx="0.5" fill="currentColor"/><rect x="19.6" y="15" width="3.2" height="5.5" rx="0.5" fill="currentColor"/><rect x="24" y="14.5" width="3.2" height="10" rx="0.5" fill="currentColor"/><rect x="28.4" y="13" width="2" height="4.5" rx="0.5" fill="currentColor"/></svg>';
+    const brand = `<span class="brand">${LOGO}LlamaTrade</span>`;
+
+    const nf = (v, d = 2) => Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+    const usd = (v) => (v < 0 ? "−$" : "$") + nf(v);
+    const sgu = (v) => (v < 0 ? "−$" : "+$") + nf(v);
+    const pl = (v) => (v < 0 ? "loss" : "gain");
+    const pc = (v, d = 1) => v.toFixed(d) + "%";
+    const b = (t, c = "") => `<span class="b ${c}">${t}</span>`;
+
+    /* The paper account, Nov 13 at 10:42 ET. Sleeves add up with unallocated cash to the total. */
+    const EQ = 103410.27, FREE = 17077.12, TODAY = 895.4, RET = 1333.15;
+    const SL = [
+        { id: "aw", n: "All-Weather Portfolio", sh: "All-Weather", s: "run", mv: 35982.55, al: 35000, d: -84.12, t: 982.55, tone: "var(--t1)", reb: "Quarterly", next: "Jan 4", since: "Aug 3",
+            pos: [["VGLT", 209, 61.75, 62.18, 40], ["VTI", 28, 402.1, 436.12, 30], ["IEF", 54, 95.4, 96.1, 15], ["GLD", 12, 231.4, 247.86, 7.5], ["DBC", 105, 22.8, 22.45, 7.5]] },
+        { id: "rr", n: "Recession Radar", sh: "Recession Radar", s: "frz", mv: 25436.18, al: 25000, d: 112.4, t: 436.18, tone: "var(--t2)", reb: "Monthly", next: "Held", since: "Sep 1",
+            pos: [["TLT", 167, 89.82, 90.41, 60], ["GLD", 41, 243.9, 247.86, 40]] },
+        { id: "tm", n: "Tech Momentum Rotation", sh: "Tech Momentum", s: "run", mv: 24914.42, al: 25000, d: 867.12, t: -85.58, tone: "var(--t3)", reb: "Monthly", next: "Dec 1", since: "Oct 1",
+            pos: [["QQQ", 20, 621.3, 618.95, 50], ["SMH", 42, 290.85, 289.3, 50]] },
+    ];
+    SL.forEach((s) => {
+        s.rows = s.pos.map(([sym, q, c, l, tg]) => { const mv = Math.round(q * l * 100) / 100; return { sym, q, c, l, tg, mv, pl: Math.round(q * (l - c) * 100) / 100, w: (mv / s.mv) * 100 }; });
+        s.cash = Math.round((s.mv - s.rows.reduce((a, r) => a + r.mv, 0)) * 100) / 100;
+        s.w = (s.mv / EQ) * 100;
+    });
+    const [AW, RR, TM] = SL;
+    const REC = [["VGLT", "All-Weather", 209, 209], ["VTI", "All-Weather", 28, 28], ["IEF", "All-Weather", 54, 54], ["GLD", "All-Weather 12 · Recession Radar 41", 53, 53], ["DBC", "All-Weather", 105, 105], ["TLT", "Recession Radar", 167, 120], ["QQQ", "Tech Momentum", 20, 20], ["SMH", "Tech Momentum", 42, 42]];
+    const ACT = [
+        ["Nov 6", "09:00", "Dividend", "VGLT · All-Weather Portfolio", 41.2, "coin", "Income"],
+        ["Nov 4", "15:12", "Released to cash", "Classic 60/40 was stopped", 14787.6, "swap", "Allocations"],
+        ["Nov 2", "09:31", "Buy GLD", "41 at 243.90 · Recession Radar", -9999.9, "in", "Trades"],
+        ["Nov 2", "09:31", "Buy TLT", "167 at 89.82 · Recession Radar", -14999.94, "in", "Trades"],
+        ["Nov 2", "09:31", "Buy SMH", "42 at 290.85 · Tech Momentum Rotation", -12215.7, "in", "Trades"],
+        ["Nov 2", "09:31", "Sell VTI", "30 at 436.23 · Recession Radar", 13086.9, "out", "Trades"],
+        ["Nov 2", "09:31", "Sell XLK", "38 at 301.12 · Tech Momentum Rotation", 11442.56, "out", "Trades"],
+        ["Oct 1", "09:30", "Allocated", "To Tech Momentum Rotation", -25000, "swap", "Allocations"],
+        ["Oct 1", "09:28", "Deposit", "Paper credit", 25000, "wallet", "Funding"],
+    ];
+    const NOTES = [
+        ["rk", "Recession Radar is frozen", "Alpaca reports 120 TLT and the ledger expects 167. New orders for this sleeve wait until it's resolved.", "10:15", 1],
+        ["", "Backtest completed", "Recession Radar v3 · +21.4% · Sharpe 0.79", "Nov 12", 1],
+        ["", "Session stopped", "Classic 60/40 was stopped and its holdings released to cash.", "Nov 4", 1],
+        ["rk", "Order rejected by a risk check", "BUY 24 VOO in Classic 60/40 would pass the $10,000 position limit.", "Nov 4", 0],
+        ["", "Rebalance complete", "Tech Momentum Rotation · 3 orders filled.", "Nov 2", 0],
+    ];
+    const HIST = [
+        ["Today", [["Tech momentum with a 200-day exit", "10:31", "Draft · Tech Momentum Defensive"], ["How is my portfolio doing?", "09:48", ""], ["Backtest Recession Radar", "09:44", "Backtest · Recession Radar v3"]]],
+        ["Yesterday", [["Bond hedge below the 200-day", "15:02", "Draft change · Recession Radar"], ["Why did Recession Radar go defensive?", "11:20", ""]]],
+        ["Earlier", [["Backtest Core Four over 10 years", "Nov 8", "Backtest · Core Four v1"], ["Dual momentum, stocks vs bonds", "Nov 5", "Draft · Dual Momentum"]]],
+    ];
+    const NAV = [["Home", "home"], ["Portfolio", "wallet"], ["Strategies", "chart"], ["Backtests", "flask"], ["Sessions", "sessions"], ["Copilot", "spark"]];
+    const TABS = {
+        A: [["Home", "home"], ["Portfolio", "wallet"], ["Strategies", "chart"], ["Copilot", "spark"], ["Account", "user"]],
+        B: [["Home", "home"], ["Book", "wallet"], ["Copilot", "spark"], ["Strats", "chart"], ["You", "user"]],
+        C: [["Home", "home"], ["Portfolio", "wallet"], ["Copilot", "spark"], ["Strategies", "chart"], ["Account", "user"]],
+    };
+
+    /* Frames */
+    const browser = (url, inner) => `<div class="host" data-w="1240" data-h="820"><div class="sc"><div class="bw"><div class="bw-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">${ic("lock")}app.llamatrade.ai${url}</span></div><div class="bw-vp">${inner}</div></div></div></div>`;
+    const phone = (inner, o = {}) => {
+        const set = o.set || "A";
+        const tabs = o.tab === -1 ? "" : `<div class="tabs" style="grid-template-columns:repeat(${TABS[set].length},1fr)">${TABS[set].map(([n, i], k) => set === "C" && k === 2 ? `<span class="mid ${k === o.tab ? "on" : ""}"><i>${ic(i)}</i>${n}</span>` : `<span class="${k === (o.tab ?? 1) ? "on" : ""}">${ic(i)}${n}</span>`).join("")}</div>`;
+        return `<div class="host" data-w="406" data-h="860"><div class="sc"><div class="phone"><div class="sb"><span>9:41</span><i></i></div>${inner}${tabs}${o.after || ""}</div></div></div>`;
+    };
+    const mh = (t, r = "") => `<div class="mh"><h5>${t}</h5><span class="r">${r}</span></div>`;
+    const mback = (t) => `<div class="back">${ic("back")}${t}</div>`;
+    const bell = (n = 3, on) => `<span class="bell ${on ? "on" : ""}">${ic("bell")}${n ? `<b>${n}</b>` : ""}</span>`;
+    const mode = '<span class="mode"><i></i>Paper</span>';
+    const av = '<span class="av">SR</span>';
+    const srch = (t = "Search or jump to") => `<span class="srch">${ic("search")}<span>${t}</span><span class="kbd">⌘K</span></span>`;
+
+    /* Shells */
+    const topNav = (on, o = {}) => `<header class="tn">${brand}<nav>${NAV.map(([n]) => `<span class="${n === on ? "on" : ""}">${n}</span>`).join("")}</nav><div class="end">${o.search === false ? "" : o.searchEl || srch()}${o.bell || bell()}${o.mode === false ? "" : mode}${o.av || av}</div></header>`;
+    const sideNav = (on) => `<aside class="sbar">${brand}${srch("Search")}<nav>${NAV.map(([n, i]) => `<span class="${n === on ? "on" : ""}">${ic(i)}${n}</span>`).join("")}</nav><div class="foot"><span class="it">${ic("bell")}Notifications<span class="cnt">3</span></span><span class="it">${ic("gear")}Settings</span><div class="acct">${av}<div><b>Sam Rahimov</b><span>Paper · Alpaca ···9cc</span></div></div></div></aside>`;
+    const railNav = (on, tip) => `<aside class="rail">${LOGO}<div style="height:10px"></div>${NAV.map(([n, i]) => `<span class="r ${n === on ? "on" : ""}">${ic(i)}${n === tip ? `<span class="tip">${n}</span>` : ""}</span>`).join("")}<div class="bot"><span class="r">${ic("gear")}</span>${av}</div></aside>`;
+    const app = (on, main, o = {}) => {
+        const kind = o.nav || "top";
+        const ov = o.ovl || "";
+        if (kind === "side") return `<div class="app side">${sideNav(on)}<div class="col">${o.ribbon || ""}<div class="main">${main}</div>${ov}</div></div>`;
+        if (kind === "rail") return `<div class="app side">${railNav(on, o.tip)}<div class="col"><div class="utl"><span class="crumb"><b>${o.crumb || on}</b></span><span class="end">${srch()}${bell()}${mode}</span></div><div class="main">${main}</div>${ov}</div></div>`;
+        return `<div class="app">${o.ribbon || ""}${topNav(on, o)}<div class="col"><div class="main">${main}</div>${ov}</div></div>`;
+    };
+
+    /* Portfolio parts */
+    const frozenAlert = (btn = "Review") => `<div class="alert">${ic("warn")}<div><b>Recession Radar is frozen.</b> Alpaca reports 120 TLT shares and the ledger expects 167. New orders for this sleeve wait until the difference is resolved.</div>${btn ? b(btn) : ""}</div>`;
+    const mFrozen = (t) => `<div class="alert">${ic("warn")}<div><b>Recession Radar is frozen.</b> ${t || "Alpaca and the ledger disagree on TLT. Its orders are held."}</div></div>`;
+    const pHead = (acts = true) => `<div class="hd"><div><h3>Portfolio</h3><div class="meta">Alpaca paper account ending 9cc · 9 open positions</div></div>${acts ? `<div class="acts">${b("Activity")}${b(`${ic("plus")}Add paper funds`)}${b("Deploy a strategy", "p")}</div>` : ""}</div>`;
+    const stt = (s) => (s === "frz" ? '<span class="st frz"><i></i>Frozen</span>' : '<span class="st run"><i></i>Running</span>');
+    const abar = (o = {}) => `<div class="ab" style="height:${o.h || 14}px">${SL.map((s) => `<i class="${s.s === "frz" ? "frz" : ""}" style="flex:${s.mv} 1 0;background:${s.tone}"></i>`).join("")}<i class="free" style="flex:${FREE + (o.extra || 0)} 1 0"></i>${o.add ? `<i class="new" style="flex:${o.add} 1 0"></i>` : ""}</div>`;
+    const legend = (o = {}) => `<div class="lg">${SL.map((s) => `<span><span class="dot" style="background:${s.tone}"></span>${s.sh} <span class="num t3" style="margin-left:6px">${pc(s.w)}</span>${s.s === "frz" ? '<span class="risk" style="margin-left:6px">Frozen</span>' : ""}</span>`).join("")}<span><span class="dot" style="border:1px dashed var(--line2)"></span>Unallocated <span class="num t3" style="margin-left:6px">${pc((FREE / EQ) * 100)}</span></span>${o.add ? `<span><span class="dot" style="background:var(--acc-soft);border:1px dashed var(--acc)"></span>New paper funds</span>` : ""}</div>`;
+    const SCALE = 70;
+    const wrow = (r, s, o = {}) => {
+        const fz = s.s === "frz" && r.sym === "TLT";
+        return `<div class="wr ${o.full ? "full" : ""}"><span class="sym">${r.sym}</span><span class="wb ${fz ? "frz" : ""}"><i style="width:${(r.w / SCALE) * 100}%"></i><b style="left:${(r.tg / SCALE) * 100}%"></b></span><span class="num">${pc(r.w)}</span><span class="num t3">${r.tg}%</span>${o.full ? `<span class="num">${nf(r.mv)}</span><span class="num ${pl(r.pl)}">${sgu(r.pl)}</span>` : ""}</div>`;
+    };
+    const figs = () => `<div class="pn" style="display:grid;grid-template-columns:repeat(4,1fr);margin-bottom:16px">${[["Total equity", usd(EQ), ""], ["Today", sgu(TODAY), "gain", "+0.87%"], ["Since Aug 3", sgu(RET), "gain", "+1.31%"], ["Unallocated", usd(FREE), "", "16.5% of equity"]].map(([l, v, c, s], i) => `<div style="padding:14px 18px;${i ? "border-left:1px solid var(--line)" : ""}"><span class="lbl">${l}</span><div class="num ${c}" style="font-size:22px;margin-top:4px">${v}</div>${s ? `<div class="t3 sm num">${s}</div>` : ""}</div>`).join("")}</div>`;
+    const stmt = (o = {}) => `<div class="pn"><table class="tbl"><thead><tr><th>Sleeve</th><th>Status</th><th>Rebalance</th><th class="n">Allocated</th><th class="n">Market value</th><th class="n">Today</th><th class="n">Since start</th><th class="n">Weight</th></tr></thead><tbody>${SL.map((s) => `<tr class="${s.s === "frz" ? "frz" : ""}"><td><span class="dot" style="background:${s.tone}"></span>${s.n}</td><td>${stt(s.s)}</td><td class="t2">${s.reb} · ${s.next === "Held" ? "held" : "next " + s.next}</td><td class="n num">${nf(s.al)}</td><td class="n num">${nf(s.mv)}</td><td class="n num ${pl(s.d)}">${sgu(s.d)}</td><td class="n num ${pl(s.t)}">${sgu(s.t)}</td><td class="n num">${pc(s.w)}</td></tr>${o.open === s.id ? s.rows.map((r) => `<tr class="sub"><td style="padding-left:40px"><span class="sym">${r.sym}</span> <span class="t3">${r.q} at ${nf(r.l)}</span></td><td></td><td></td><td></td><td class="n num">${nf(r.mv)}</td><td></td><td class="n num ${pl(r.pl)}">${sgu(r.pl)}</td><td class="n num t3">${pc(r.w)} of sleeve</td></tr>`).join("") : ""}`).join("")}<tr><td><span class="dot" style="border:1px dashed var(--line2)"></span>Unallocated cash</td><td class="t3">Ready to deploy</td><td></td><td></td><td class="n num">${nf(FREE)}</td><td></td><td></td><td class="n num">${pc((FREE / EQ) * 100)}</td></tr><tr class="tot tot2"><td>Total equity</td><td></td><td></td><td></td><td class="n num">${nf(EQ)}</td><td class="n num gain">${sgu(TODAY)}</td><td class="n num gain">${sgu(RET)}</td><td class="n num">100.0%</td></tr></tbody></table></div>`;
+    const sleeveCol = (s) => `<div class="pn" style="${s.s === "frz" ? "border-color:var(--risk-line)" : ""}"><div class="pn-h"><span><span class="dot" style="background:${s.tone}"></span><b>${s.sh}</b></span>${stt(s.s)}</div><div class="pn-b" style="padding-top:10px"><div class="row2" style="align-items:flex-end;margin-bottom:8px"><div><div class="num" style="font-size:20px">${nf(s.mv)}</div><span class="num sm ${pl(s.d)}">${sgu(s.d)} today</span></div><div class="t3 sm" style="text-align:right">${s.reb}<br>${s.next === "Held" ? "Orders held" : "Next " + s.next}</div></div><div class="row2 t3" style="font:500 10.5px var(--font-mono);padding:4px 0"><span>Fund</span><span>Weight · target</span></div>${s.rows.map((r) => wrow(r, s)).join("")}</div></div>`;
+    const overviewA = () => `${pHead()}<div class="row2" style="align-items:flex-end;margin-bottom:12px"><div><span class="lbl">Total equity</span><div class="num" style="font-size:36px;letter-spacing:-0.03em;line-height:1.1">${usd(EQ)}</div></div><div class="num" style="text-align:right"><span class="gain">${sgu(TODAY)} today · +0.87%</span><div class="t3 sm">${sgu(RET)} since Aug 3</div></div></div>${abar()}${legend()}<div style="height:16px"></div>${frozenAlert()}<div class="grid" style="grid-template-columns:repeat(3,minmax(0,1fr));margin-top:16px;align-items:start">${SL.map(sleeveCol).join("")}</div><div class="row2" style="margin-top:14px;padding:10px 4px;border-top:1px solid var(--line2);border-bottom:3px double var(--line2)"><span class="t2">Sleeves ${nf(AW.mv + RR.mv + TM.mv)} + unallocated ${nf(FREE)}</span><span class="num" style="font-weight:600">Total ${usd(EQ)}</span></div>`;
+    const mOverviewA = () => `${mh("Portfolio", bell())}<div class="body"><div><span class="lbl">Total equity</span><div class="big num">${usd(EQ)}</div><div class="gain num" style="font-size:14px;margin:4px 0 12px">${sgu(TODAY)} today · +0.87%</div>${abar({ h: 12 })}</div>${mFrozen()}${SL.map((s) => `<div class="card" style="${s.s === "frz" ? "border-color:var(--risk-line)" : ""}"><div class="row2" style="margin-bottom:6px"><b style="font-weight:600"><span class="dot" style="background:${s.tone}"></span>${s.sh}</b><span class="num">${nf(s.mv)}</span></div>${s.rows.slice(0, 2).map((r) => wrow(r, s)).join("")}${s.rows.length > 2 ? `<div class="t3 sm">${s.rows.length - 2} more funds</div>` : ""}</div>`).join("")}</div>`;
+
+    /* Copilot parts */
+    const k = (s) => `<span class="k">${s}</span>`;
+    const DRAFT = [`(${k("strategy")} <span class="s">"Tech Momentum Defensive"</span>`, "  :rebalance monthly :benchmark QQQ", `  (${k("if")} (&lt; (price QQQ) (sma QQQ 200))`, `    (${k("asset")} IEF)`, `    (${k("else")}`, `      (${k("filter")} :by momentum :select (top 2) :lookback 90`, `        (${k("weight")} :method equal`, `          (${k("asset")} QQQ) (${k("asset")} XLK) (${k("asset")} SMH))))))`];
+    const code = (lines, cls = {}) => `<div class="code">${lines.map((l, i) => `<div class="${cls[i] || ""}"><span class="ln">${cls[i] === "add" ? "+" : cls[i] === "del" ? "−" : i + 1}</span><span>${l}</span></div>`).join("")}</div>`;
+    const msgMe = (t, who = "Sam · 10:29 ET") => `<div class="msg me"><span class="who">${who}</span><div class="bub">${t}</div></div>`;
+    const msgAi = (t) => `<div class="msg ai"><span class="who">Copilot</span><div class="bub">${t}</div></div>`;
+    const tool = (n, d, spin) => `<div class="tool">${spin ? '<span class="spin"></span>' : ic("check")}<b>${n}</b>${d}</div>`;
+    const CHme = "Make a version of Tech Momentum Rotation that moves to IEF when QQQ is below its 200-day average.";
+    const CHai = "<p>Here's a draft. When QQQ closes below its 200-day average it holds IEF. Otherwise it ranks QQQ, XLK and SMH by 90-day return each month and holds the top two at equal weight, like the running version.</p><p>QQQ is above its 200-day today, so it would hold the same two funds as now.</p>";
+    const wbar = (rows) => rows.map(([s, w]) => `<div class="wr" style="grid-template-columns:48px minmax(0,1fr) 46px"><span class="sym">${s}</span><span class="wb"><i style="width:${w}%;background:var(--acc)"></i></span><span class="num">${w}%</span></div>`).join("");
+    const stratCard = (o = {}) => `<div class="art"><div class="art-h"><span style="display:flex;gap:10px;align-items:center"><span class="lbl">Strategy draft</span><b>Tech Momentum Defensive</b></span><span class="chip acc">${ic("check")}Valid</span></div><div class="art-b">${o.m ? "" : '<div class="row2 sm t3"><span>Monthly · benchmark QQQ · 4 funds, holds 2</span><span>Would hold at Nov 13 close</span></div>'}${wbar([["QQQ", 50], ["SMH", 50]])}${o.code ? code(DRAFT) : ""}</div><div class="art-f">${b("Save as draft", "p")}${b("Backtest")}${o.m ? "" : b(`${ic("code")}${o.code ? "Hide" : "Show"} code`, "g")}</div></div>`;
+    const ARGS = [["Strategy", "Tech Momentum Defensive (draft)"], ["Period", "2021-11-01 to 2026-10-30"], ["Capital", "$25,000"], ["Benchmark", "QQQ"]];
+    const APme = "Backtest it over the last five years.";
+    const APai = "I'll run the draft from 2021-11-01 to 2026-10-30 with $25,000, against QQQ. Nothing runs until you approve.";
+    const approveCard = (o = {}) => `<div class="art ask"><div class="art-h"><b>Run a backtest</b><span class="chip acc">Needs your approval</span></div><div class="art-b"><div class="args">${ARGS.map(([a, v]) => `<span>${a}</span><span>${v}</span>`).join("")}</div><span class="t3 sm">A backtest uses historical data only. It doesn't place orders or change the draft.</span></div><div class="art-f">${b(`${ic("play")}Approve and run`, "p")}${b("Change settings")}${b("Decline", "g")}</div></div>`;
+    const histList = (on = -1, compact) => HIST.map(([g, rows], gi) => `<div class="gh">${g}</div>${rows.map(([t, w, a], i) => `<div class="it ${gi * 10 + i === on ? "on" : ""}"><span>${t}</span><em>${w}${a && !compact ? " · " + a : ""}</em></div>`).join("")}`).join("");
+    const rail2 = (on) => `<div style="width:270px;flex:none;border-right:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column"><div style="padding:14px 14px 4px;display:grid;gap:8px">${b(`${ic("plus")}New conversation`, "p full")}<div class="inp" style="height:32px">${ic("search")}<span class="ph">Search conversations</span></div></div><div class="hist" style="flex:1;overflow:hidden">${histList(on, 1)}</div><div class="t3 sm" style="padding:12px 16px;border-top:1px solid var(--line)">214 of 2,000 messages this month</div></div>`;
+    const readCol = (inner, ph = "Ask Copilot to build, edit or explain a strategy") => `<div style="flex:1;display:flex;flex-direction:column;min-width:0"><div style="flex:1;min-height:0;overflow:hidden;padding:30px 0 10px"><div class="stack" style="max-width:700px;margin:0 auto;gap:18px">${inner}</div></div><div style="max-width:700px;width:100%;margin:0 auto;padding:0 0 20px"><div class="composer"><span class="ph">${ph}</span><span class="send">${ic("send")}</span></div><div class="t3 sm" style="text-align:center;margin-top:8px">Copilot writes the strategy language. Nothing runs or trades until you approve it.</div></div></div>`;
+    const cpFull = (on, inner) => app("Copilot", "", { ovl: "" }).replace('<div class="main"></div>', `<div class="main" style="padding:0;display:flex">${rail2(on)}${readCol(inner)}</div>`);
+    const mComposer = (ph = "Message Copilot") => `<div style="position:absolute;left:0;right:0;bottom:96px"><div class="composer"><span class="ph">${ph}</span><span class="send">${ic("send")}</span></div></div>`;
+
+    /* Surfaces */
+    const S = [];
+    const add = (area, id, title, why, opts) => S.push({ area, id, title, why, opts });
+
+    /* ---------- Shell ---------- */
+    add("Shell", "shell/navigation", "App navigation", "How you move between the six areas on desktop. Every option holds the same Portfolio page so only the frame changes.", [
+        { k: "A", name: "Top bar", rec: 1, note: "Six destinations across the top, with search, the bell, Paper and the account on the right. It's the existing Layout restyled and gives tables the full 1240 px, but a seventh area would crowd it.",
+            d: () => browser("/portfolio", app("Portfolio", overviewA())),
+            m: () => phone(mOverviewA()) },
+        { k: "B", name: "Sidebar", note: "A 232 px sidebar with icons and labels, notifications and the account at the bottom. It has room to grow and shows the account at all times, at the cost of width for the statement and a new layout component.",
+            d: () => browser("/portfolio", app("Portfolio", overviewA(), { nav: "side" })),
+            m: () => phone(`${mh("Portfolio", bell())}<div class="body">${mFrozen()}</div>`, { after: `<div class="scrim"></div><div class="drw">${brand}<nav>${NAV.map(([n, i]) => `<span class="${n === "Portfolio" ? "on" : ""}">${ic(i)}${n}</span>`).join("")}</nav><div style="margin-top:auto;border-top:1px solid var(--line);padding-top:12px;display:flex;gap:10px;align-items:center">${av}<div><b style="font-weight:600">Sam Rahimov</b><div class="t3 sm">Paper · Alpaca ···9cc</div></div></div></div>` }) },
+        { k: "C", name: "Compact rail", note: "Icons only in a 64 px rail, with labels on hover and a thin utility bar per page. It leaves the most room for content, but icons alone are slower to learn for six areas that people visit weekly.",
+            d: () => browser("/portfolio", app("Portfolio", overviewA().replace(/<div class="hd">.*?<\/div><\/div><div class="acts">/, '<div class="hd"><div class="meta">Alpaca paper account ending 9cc · 9 open positions</div><div class="acts">'), { nav: "rail" })),
+            m: () => phone(`<div class="mh"><h5 style="font-size:20px">Portfolio</h5><span class="r">${bell()}</span></div><div class="body"><div><span class="lbl">Total equity</span><div class="big num">${usd(EQ)}</div><div class="gain num" style="font-size:14px;margin-top:4px">${sgu(TODAY)} today · +0.87%</div></div>${mFrozen()}<div class="card flush">${SL.map((s) => `<div class="ln"><span><span class="dot" style="background:${s.tone}"></span>${s.sh}</span><span class="num">${nf(s.mv)}</span></div>`).join("")}<div class="ln"><span class="t2">Unallocated</span><span class="num">${nf(FREE)}</span></div></div></div>`) },
+    ]);
+
+    const acctMenu = `<div class="pop" style="right:22px;top:52px;width:320px"><div style="padding:14px 16px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center">${av}<div><b style="font-weight:600">Sam Rahimov</b><div class="t3 sm">sam@rahimov.dev</div></div></div><div style="padding:8px"><div class="lbl" style="padding:6px 8px">Trading account</div><div class="nt on" style="grid-template-columns:22px 1fr auto;border:0;border-radius:8px;padding:9px 8px">${ic("check")}<div><b>Paper · Alpaca ···9cc</b><p class="num">${usd(EQ)}</p></div><span></span></div><div class="nt" style="grid-template-columns:22px 1fr auto;border:0;padding:9px 8px;opacity:0.55">${ic("lock")}<div><b>Live</b><p>Live trading isn't available in the beta.</p></div><span></span></div></div><div style="padding:8px;border-top:1px solid var(--line)">${["Settings", "Plan and usage", "Sign out"].map((x) => `<div style="padding:7px 8px;color:var(--ink2)">${x}</div>`).join("")}</div></div>`;
+    add("Shell", "shell/account-mode", "Account and Paper indicator", "Shows which account the numbers belong to and that it's paper money. Only Paper exists in the beta, so the question is how loud it should be.", [
+        { k: "A", name: "Paper pill", rec: 1, note: "A quiet Paper pill beside the avatar on every page, and a Paper line on the phone's Portfolio header. It's always visible without taking a row, and it's one small component.",
+            d: () => browser("/portfolio", app("Portfolio", overviewA())),
+            m: () => phone(`<div class="mh"><h5>Portfolio</h5><span class="r">${mode}${bell()}</span></div><div class="body"><div><span class="lbl">Total equity · Paper</span><div class="big num">${usd(EQ)}</div><div class="gain num" style="font-size:14px;margin-top:4px">${sgu(TODAY)} today · +0.87%</div></div>${abar({ h: 12 })}${mFrozen()}<div class="card flush">${SL.map((s) => `<div class="ln"><span><span class="dot" style="background:${s.tone}"></span>${s.sh}</span><span class="num">${nf(s.mv)}</span></div>`).join("")}</div></div>`) },
+        { k: "B", name: "Paper ribbon", note: "A hatched ribbon above the app that says what paper means. Nobody could miss it, and it's a natural place for a Live warning later. It costs 30 px on every page and reads as a warning when nothing is wrong.",
+            d: () => browser("/portfolio", app("Portfolio", overviewA(), { mode: false, ribbon: '<div class="ribbon"><b>PAPER</b>Orders go to Alpaca\'s paper environment and use no real money.</div>' })),
+            m: () => phone(`<div class="ribbon" style="height:28px;font-size:12px"><b>PAPER</b>No real money</div>${mh("Portfolio", bell())}<div class="body"><div><span class="lbl">Total equity</span><div class="big num">${usd(EQ)}</div><div class="gain num" style="font-size:14px;margin-top:4px">${sgu(TODAY)} today · +0.87%</div></div>${abar({ h: 12 })}${mFrozen()}</div>`) },
+        { k: "C", name: "Account switcher", note: "The avatar opens a menu that names the account and lists Live as unavailable. It explains the mode in context and is ready for live accounts, but the mode is hidden until you open the menu.",
+            d: () => browser("/portfolio", app("Portfolio", overviewA(), { mode: false, av: `<span class="chip" style="height:30px;gap:8px;padding:0 6px 0 10px">Paper ···9cc ${ic("down")}</span>`, ovl: acctMenu })),
+            m: () => phone(`${mh("Account")}<div class="body"><div class="card"><div class="row2"><div style="display:flex;gap:12px;align-items:center">${av}<div><b style="font-weight:600">Sam Rahimov</b><div class="t3 sm">sam@rahimov.dev</div></div></div></div></div><span class="lbl">Trading account</span><div class="card flush"><div class="ln"><span>${ic("check")} Paper · Alpaca ···9cc</span><span class="num t2">${nf(EQ)}</span></div><div class="ln" style="opacity:0.55"><span>${ic("lock")} Live</span><span class="sm">Not in the beta</span></div></div><div class="card flush">${["Notifications", "Security", "Broker keys", "Plan and usage"].map((x) => `<div class="ln"><span>${x}</span>${ic("chev")}</div>`).join("")}</div></div>`, { tab: 4 }) },
+    ]);
+
+    const nlist = (o = {}) => NOTES.map(([c, t, d, w, u], i) => `<div class="nt ${c} ${o.on === i ? "on" : ""}">${ic(c ? "warn" : "info")}<div><b>${t}</b><p>${d}</p></div><em>${w}${u ? "<i></i>" : ""}</em></div>`).join("");
+    add("Shell", "shell/notifications", "Notifications", "The bell collects what the ledger, trading and backtests report. Three are unread, and the frozen sleeve is the only one that needs action.", [
+        { k: "A", name: "Bell popover", rec: 1, note: "A 400 px list under the bell with unread dots and amber for anything that needs attention. Fast to check and close, and it maps onto the existing NotificationBell. Older items need a link to settings or a full list later.",
+            d: () => browser("/portfolio", app("Portfolio", overviewA(), { bell: bell(3, 1), ovl: `<div class="pop" style="right:96px;top:52px;width:400px"><div class="pn-h"><b>Notifications</b><span class="t3 sm">Mark all read</span></div>${nlist()}<div class="pn-h" style="border-top:1px solid var(--line);border-bottom:0"><span class="t3 sm">Choose what reaches you by email in Settings</span>${ic("gear")}</div></div>` })),
+            m: () => phone(`${mh("Portfolio", bell(3, 1))}`, { after: `<div class="scrim"></div><div class="sheet" style="height:620px"><div class="grab"></div><div class="row2" style="padding:0 18px 6px"><b style="font-size:18px;font-weight:600">Notifications</b><span class="t3 sm">Mark all read</span></div><div style="padding:0 18px">${nlist()}</div></div>` }) },
+        { k: "B", name: "Drawer with filters", note: "A full-height drawer with All, Needs attention and Trading filters. It scales to a long history and keeps the page visible behind it, but it's heavier than five items need today.",
+            d: () => browser("/portfolio", app("Portfolio", overviewA(), { bell: bell(3, 1), ovl: `<div class="ovl right"><div class="drawer"><div class="modal-h"><b>Notifications</b><span style="display:flex;gap:12px;color:var(--ink3)">${ic("gear")}${ic("x")}</span></div><div style="padding:12px 16px;border-bottom:1px solid var(--line)"><span class="seg"><span class="on">All</span><span>Needs attention · 1</span><span>Trading</span><span>Strategies</span></span></div><div class="lbl" style="padding:12px 16px 4px">Today</div>${nlist().split('<div class="nt').slice(1, 2).map((x) => '<div class="nt' + x).join("")}<div class="lbl" style="padding:12px 16px 4px">Earlier</div>${nlist().split('<div class="nt').slice(2).map((x) => '<div class="nt' + x).join("")}</div></div>` })),
+            m: () => phone(`${mback("Portfolio")}${mh("Notifications", ic("gear"))}<div class="body"><span class="seg"><span class="on">All</span><span>Needs attention</span><span>Trading</span></span><div>${nlist()}</div></div>`) },
+        { k: "C", name: "Inbox page", note: "A /notifications page with the list on the left and the selected notice with its actions on the right. Each notice gets room to explain itself and link to the fix. It's a new route for a list most people read in seconds.",
+            d: () => browser("/notifications", app("", `<div class="hd"><div><h3>Notifications</h3><div class="meta">3 unread · kept for 90 days</div></div><div class="acts">${b("Mark all read")}${b(`${ic("gear")}Settings`)}</div></div><div class="grid" style="grid-template-columns:420px minmax(0,1fr);align-items:start"><div class="pn">${nlist({ on: 0 })}</div><div class="pn"><div class="pn-h"><span class="st frz"><i></i>Needs attention · 10:15 ET</span></div><div class="pn-b stack" style="gap:14px"><h3 style="margin:0;font-size:20px;font-weight:600">Recession Radar is frozen</h3><p style="margin:0" class="t2">The 10:15 reconciliation found 120 TLT shares at Alpaca and 167 in the ledger. Every sleeve that holds TLT is frozen, and the risk check rejects its orders until the two agree.</p><div class="vs"><div><span class="lbl">Ledger</span><div class="n">167</div></div><div><span class="lbl">Alpaca</span><div class="n">120</div></div><div><span class="lbl">Difference</span><div class="n risk">47</div></div></div><div class="acts">${b("Open Recession Radar", "p")}${b(`${ic("refresh")}Run reconciliation`)}</div></div></div></div>`, { bell: bell(3, 1) })),
+            m: () => phone(`${mback("Notifications")}<div class="body"><span class="st frz"><i></i>Needs attention · 10:15 ET</span><h5>Recession Radar is frozen</h5><p style="margin:0" class="t2">The 10:15 reconciliation found 120 TLT shares at Alpaca and 167 in the ledger. Orders for this sleeve wait until they agree.</p><div class="vs"><div><span class="lbl">Ledger</span><div class="n">167</div></div><div><span class="lbl">Alpaca</span><div class="n">120</div></div><div><span class="lbl">Diff</span><div class="n risk">47</div></div></div>${b("Open Recession Radar", "p full")}${b("Run reconciliation", "full")}</div>`) },
+    ]);
+
+    const cmdRows = (o = {}) => `<div class="gh">Strategies</div><div class="ci on">${ic("chart")}<b><span class="hl">Rec</span>ession Radar</b><span class="r"><span class="st frz"><i></i>Frozen</span>${ic("enter")}</span></div><div class="ci">${ic("chart")}<b><span class="hl">Rec</span>ession Radar v2</b><span class="r">Archived</span></div><div class="gh">Pages</div><div class="ci">${ic("wallet")}<b>Portfolio › <span class="hl">Rec</span>onciliation</b><span class="r">Last run 10:15 ET</span></div><div class="gh">Actions</div><div class="ci">${ic("refresh")}<b>Run <span class="hl">rec</span>onciliation</b></div><div class="ci">${ic("plus")}<b>Add paper funds</b></div>${o.ask === false ? "" : `<div class="gh">Copilot</div><div class="ci">${ic("spark")}<b>Ask Copilot about “rec”</b><span class="r">Opens Copilot</span></div>`}`;
+    add("Shell", "shell/search", "Search and command palette", "One way to find a strategy, a page or an action from anywhere. Shown with the query “rec”.", [
+        { k: "A", name: "Command palette", rec: 1, note: "⌘K opens a palette that finds strategies, pages and actions, with Ask Copilot as the last row. It's one component that covers search and navigation, and Copilot answers stay in Copilot where there's room for them.",
+            d: () => browser("/portfolio", app("Portfolio", overviewA(), { ovl: `<div class="ovl top"><div class="pop cmd" style="position:static"><div class="q">${ic("search")}<span>rec<span class="caret"></span></span><span class="kbd" style="margin-left:auto">esc</span></div>${cmdRows()}<div class="ft"><span><span class="kb">↑↓</span> move</span><span><span class="kb">↵</span> open</span><span><span class="kb">⌘↵</span> ask Copilot</span></div></div></div>` })),
+            m: () => phone(`<div style="padding:6px 16px 10px;display:flex;gap:10px;align-items:center"><div class="inp focus" style="flex:1;height:42px">${ic("search")}<span>rec<span class="caret"></span></span></div><span class="accent">Cancel</span></div><div class="cmd" style="width:auto">${cmdRows()}</div>`, { tab: -1 }) },
+        { k: "B", name: "Search field in the bar", note: "A visible search field in the top bar with results dropping below it. It's discoverable without knowing ⌘K, but it takes 280 px of the bar and covers search only, not actions.",
+            d: () => browser("/portfolio", app("Portfolio", overviewA(), { searchEl: `<span class="srch" style="min-width:280px;border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-soft);color:var(--ink)">${ic("search")}<span>rec<span class="caret"></span></span></span>`, ovl: `<div class="pop cmd" style="right:150px;top:50px;width:420px">${cmdRows({ ask: false })}</div>` })),
+            m: () => phone(`${mh("Home")}<div class="body"><div class="inp focus" style="height:42px">${ic("search")}<span>rec<span class="caret"></span></span></div><div class="cmd" style="width:auto;margin:0 -18px">${cmdRows({ ask: false })}</div></div>`, { tab: 0 }) },
+        { k: "C", name: "Palette that answers", note: "The palette sends questions to Copilot and shows a short answer in place, with a link to continue. Quick for a fact, but a palette is a cramped place for strategy cards and approvals, and it needs streaming in the palette.",
+            d: () => browser("/portfolio", app("Portfolio", overviewA(), { ovl: `<div class="ovl top"><div class="pop cmd" style="position:static"><div class="q">${ic("spark")}<span>why is recession radar frozen<span class="caret"></span></span></div><div style="padding:14px 18px;display:grid;gap:10px;border-bottom:1px solid var(--line)"><span class="lbl">Copilot</span><p style="margin:0">The 10:15 reconciliation found 120 TLT at Alpaca and 167 in the ledger. Recession Radar holds TLT, so it's frozen and its orders are held until the two agree.</p><div class="acts">${b("Open Recession Radar")}${b("Continue in Copilot", "g")}</div></div><div class="gh">Strategies</div><div class="ci">${ic("chart")}<b>Recession Radar</b><span class="r"><span class="st frz"><i></i>Frozen</span></span></div><div class="ft"><span><span class="kb">↵</span> ask</span><span><span class="kb">tab</span> search instead</span></div></div></div>` })),
+            m: () => phone(`<div style="padding:6px 16px 10px;display:flex;gap:10px;align-items:center"><div class="inp focus" style="flex:1;height:42px">${ic("spark")}<span class="sm">why is recession radar frozen</span></div><span class="accent">Cancel</span></div><div class="body"><span class="lbl">Copilot</span><p style="margin:0">The 10:15 reconciliation found 120 TLT at Alpaca and 167 in the ledger. Recession Radar holds TLT, so its orders are held until they agree.</p>${b("Continue in Copilot", "full")}</div>`, { tab: -1 }) },
+    ]);
+
+    const tabPhones = (set) => [
+        phone(`${mh("Home", bell())}<div class="body"><div class="card"><span class="lbl">Today · Paper</span><div class="big num">${usd(EQ)}</div><div class="gain num" style="font-size:14px">${sgu(TODAY)} · +0.87%</div></div>${mFrozen()}<div class="card flush"><div class="ln"><span>Next rebalance</span><span class="t2">Tech Momentum · Dec 1</span></div><div class="ln"><span>Last backtest</span><span class="t2">Recession Radar v3</span></div></div></div>`, { set, tab: 0 }),
+        phone(mOverviewA().replace("<h5>Portfolio</h5>", `<h5>${set === "B" ? "Book" : "Portfolio"}</h5>`), { set, tab: 1 }),
+        phone(`${mh("Copilot", ic("hist") + ic("plus"))}<div class="body">${msgMe("How is my portfolio doing?", "09:48")}${msgAi(`<p>Up <span class="num">$895.40</span> today, mostly Tech Momentum Rotation. Recession Radar is frozen while a TLT quantity is checked.</p>`)}</div>${mComposer()}`, { set, tab: set === "A" ? 3 : 2 }),
+    ];
+    add("Shell", "shell/tab-bar", "Mobile tab bar and labels", "The phone's five places. Each option shows Home, Portfolio and Copilot with the same bar; desktop has no tab bar, so there's no browser frame here.", [
+        { k: "A", name: "Home, Portfolio, Strategies, Copilot, Account", rec: 1, note: "Full words that match the desktop nav, with Copilot fourth. Every label fits at 10.5 px on a 375 px phone. Backtests and Sessions live inside Strategies on the phone.",
+            phones: () => tabPhones("A") },
+        { k: "B", name: "Current labels: Home, Book, Copilot, Strats, You", note: "What the mobile app ships today. The short words are friendly, but Book and Strats don't match the desktop names, and You is vague about where settings are.",
+            phones: () => tabPhones("B") },
+        { k: "C", name: "Copilot raised in the centre", note: "Same full labels with Copilot as a raised centre button. It makes asking Copilot the main action on the phone, which suits the product, but it gives one tab more weight than the money screens.",
+            phones: () => tabPhones("C") },
+    ]);
+
+    /* ---------- Portfolio ---------- */
+    add("Portfolio", "portfolio/overview", "Portfolio overview", "The account as the ledger records it: one sleeve per strategy, unallocated cash and a total of $103,410.27.", [
+        { k: "A", name: "Weights with drift ticks", rec: 1, note: "One allocation bar for the account, then each sleeve's funds as weight bars with a tick at the target, and a ruled total last. It shows what makes a sleeve a plan. Needs target weights in the portfolio response.",
+            d: () => browser("/portfolio", app("Portfolio", overviewA())),
+            m: () => phone(mOverviewA()) },
+        { k: "B", name: "Statement", note: "A brokerage statement: four figures, then one table with each sleeve as a line, unallocated cash and a double-ruled total. The easiest to audit and the cheapest to build, but it doesn't show drift from the plan.",
+            d: () => browser("/portfolio", app("Portfolio", `${pHead()}${figs()}${frozenAlert()}<div style="height:16px"></div>${stmt()}<div class="t3 sm" style="margin-top:10px">Figures are the ledger's book of record. Reconciled with Alpaca at 10:15 ET, where 7 of 8 positions agree.</div>`)),
+            m: () => phone(`${mh("Portfolio", bell())}<div class="body"><div><span class="lbl">Total equity</span><div class="big num">${usd(EQ)}</div><div class="gain num" style="font-size:14px;margin-top:4px">${sgu(TODAY)} today · +0.87%</div></div>${mFrozen()}<span class="lbl">Statement · Nov 13, 10:42 ET</span><div class="card flush">${SL.map((s) => `<div class="ln"><span>${s.sh}${s.s === "frz" ? ' <span class="risk sm">· Frozen</span>' : ""}<div class="num sm ${pl(s.d)}">${sgu(s.d)} today</div></span><span class="num">${nf(s.mv)}</span></div>`).join("")}<div class="ln"><span class="t2">Unallocated cash</span><span class="num">${nf(FREE)}</span></div><div class="ln" style="border-top:1px solid var(--line2);font-weight:600"><span>Total</span><span class="num">${nf(EQ)}</span></div></div></div>`) },
+        { k: "C", name: "Sleeve cards", note: "Each sleeve is a card with its value, today's change and a holdings bar, and unallocated cash is a dashed card with the funding actions. Friendly and clear on a phone, but the total and the arithmetic are less visible.",
+            d: () => browser("/portfolio", app("Portfolio", `${pHead()}<div class="row2" style="margin-bottom:16px"><div><span class="lbl">Total equity</span><div class="num" style="font-size:30px">${usd(EQ)}</div></div><span class="num gain">${sgu(TODAY)} today · +0.87%</span></div>${frozenAlert()}<div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:16px">${SL.map((s) => `<div class="scard ${s.s === "frz" ? "frz" : ""}"><div class="row2"><h6><span class="dot" style="background:${s.tone}"></span>${s.n}</h6>${stt(s.s)}</div><div class="row2" style="align-items:flex-end"><div class="v">${usd(s.mv)}</div><span class="num ${pl(s.d)}">${sgu(s.d)} today</span></div><div class="ab" style="height:10px">${s.rows.map((r) => `<i style="flex:${r.mv} 1 0;background:${s.s === "frz" && r.sym === "TLT" ? "var(--risk)" : s.tone};opacity:${0.55 + r.w / 200}"></i>`).join("")}</div><div class="t3 sm">${s.rows.map((r) => r.sym).join(" · ")} · ${s.reb.toLowerCase()}, ${s.next === "Held" ? "orders held" : "next " + s.next}</div></div>`).join("")}<div class="scard free"><div class="row2"><h6 class="t2">Unallocated cash</h6><span class="t3 sm">16.5% of equity</span></div><div class="v">${usd(FREE)}</div><div class="t3 sm">Ready to deploy into a new strategy or to top up a sleeve.</div><div class="acts">${b(`${ic("plus")}Add paper funds`)}${b("Deploy a strategy")}</div></div></div>`)),
+            m: () => phone(`${mh("Portfolio", bell())}<div class="body"><div><span class="lbl">Total equity</span><div class="big num">${usd(EQ)}</div></div>${mFrozen()}${SL.map((s) => `<div class="scard ${s.s === "frz" ? "frz" : ""}" style="padding:14px 16px;gap:6px"><div class="row2"><b style="font-weight:600">${s.sh}</b>${stt(s.s)}</div><div class="row2"><span class="num" style="font-size:20px">${nf(s.mv)}</span><span class="num sm ${pl(s.d)}">${sgu(s.d)}</span></div></div>`).join("")}</div>`) },
+    ]);
+
+    const sleeveHead = (s, extra = "") => `<div class="hd"><div><div class="t3 sm">Portfolio /</div><h3><span class="dot" style="background:${s.tone}"></span>${s.n}</h3><div class="meta">${s.rows.length} positions · ${s.reb.toLowerCase()} · since ${s.since} · next rebalance ${s.next}</div></div><div class="acts">${extra}${b("Open strategy")}${b("Session")}</div></div>`;
+    const awFigs = `<div class="pn" style="display:grid;grid-template-columns:repeat(4,1fr);margin-bottom:16px">${[["Market value", nf(AW.mv), ""], ["Today", sgu(AW.d), "loss"], ["Since Aug 3", sgu(AW.t), "gain"], ["Sleeve cash", nf(AW.cash), ""]].map(([l, v, c], i) => `<div style="padding:12px 18px;${i ? "border-left:1px solid var(--line)" : ""}"><span class="lbl">${l}</span><div class="num ${c}" style="font-size:20px;margin-top:2px">${v}</div></div>`).join("")}</div>`;
+    add("Portfolio", "portfolio/sleeve", "Sleeve positions", "One sleeve's holdings, shown for All-Weather Portfolio: five funds against the weights the strategy sets.", [
+        { k: "A", name: "Weight rows with targets", rec: 1, note: "Each fund is a weight bar with its target tick, then value and unrealized gain, with a sentence on what the next rebalance would do. It reuses the overview's row, so it's mostly layout work.",
+            d: () => browser("/portfolio/all-weather", app("Portfolio", `${sleeveHead(AW)}${awFigs}<div class="grid" style="grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);align-items:start"><div class="pn"><div class="pn-h"><b>Holdings against target</b><span class="t3 sm">Tick marks the target weight</span></div><div class="pn-b"><div class="wr full t3" style="font:500 10.5px var(--font-mono);padding-top:0"><span>Fund</span><span>Weight</span><span style="text-align:right">Now</span><span style="text-align:right">Target</span><span style="text-align:right">Value</span><span style="text-align:right">Unrealized</span></div>${AW.rows.map((r) => wrow(r, AW, { full: 1 })).join("")}<div class="row2 sm t3" style="border-top:1px solid var(--line);margin-top:8px;padding-top:10px"><span>Sleeve cash</span><span class="num">${nf(AW.cash)}</span></div></div></div><div class="stack"><div class="pn"><div class="pn-h"><b>Next rebalance · Jan 4</b></div><div class="pn-b t2">VTI and VGLT have moved furthest from target. At today's prices the rebalance would sell about 3 VTI and buy about 22 VGLT.</div></div><div class="pn"><div class="pn-h"><b>Recent fills</b></div>${[["Aug 3", "Buy 209 VGLT", "61.75"], ["Aug 3", "Buy 28 VTI", "402.10"], ["Aug 3", "Buy 54 IEF", "95.40"]].map(([d, t, p]) => `<div class="row2" style="padding:9px 16px;border-bottom:1px solid var(--line)"><span><span class="t3 num">${d}</span> ${t}</span><span class="num">${p}</span></div>`).join("")}</div></div></div>`)),
+            m: () => phone(`${mback("Portfolio")}<div class="body"><div><span class="lbl">All-Weather Portfolio</span><div class="big num">${usd(AW.mv)}</div><div class="num loss" style="font-size:14px;margin-top:4px">${sgu(AW.d)} today</div></div><div class="card">${AW.rows.map((r) => wrow(r, AW)).join("")}</div><div class="t2" style="font-size:14px">The tick is each fund's target. The Jan 4 rebalance would sell about 3 VTI and buy about 22 VGLT.</div><div class="card flush">${AW.rows.slice(0, 3).map((r) => `<div class="ln"><span class="sym">${r.sym}</span><span class="num">${nf(r.mv)} <span class="${pl(r.pl)} sm">${sgu(r.pl)}</span></span></div>`).join("")}</div></div>`) },
+        { k: "B", name: "Positions table", note: "A classic table with quantity, cost, price, value, unrealized, weight, target and drift. Dense and sortable, familiar from brokerages, but drift is a number to read rather than something you see.",
+            d: () => browser("/portfolio/all-weather", app("Portfolio", `${sleeveHead(AW)}${awFigs}<div class="pn"><table class="tbl"><thead><tr><th>Symbol</th><th class="n">Qty</th><th class="n">Avg cost</th><th class="n">Last</th><th class="n">Market value</th><th class="n">Unrealized</th><th class="n">Weight</th><th class="n">Target</th><th class="n">Drift</th></tr></thead><tbody>${AW.rows.map((r) => `<tr><td class="sym">${r.sym}</td><td class="n num">${r.q}</td><td class="n num">${nf(r.c)}</td><td class="n num">${nf(r.l)}</td><td class="n num">${nf(r.mv)}</td><td class="n num ${pl(r.pl)}">${sgu(r.pl)}</td><td class="n num">${pc(r.w)}</td><td class="n num t3">${r.tg}%</td><td class="n num">${(r.w - r.tg > 0 ? "+" : "−") + Math.abs(r.w - r.tg).toFixed(1)} pt</td></tr>`).join("")}<tr><td class="t2">Sleeve cash</td><td></td><td></td><td></td><td class="n num">${nf(AW.cash)}</td><td></td><td class="n num">${pc((AW.cash / AW.mv) * 100)}</td><td></td><td></td></tr><tr class="tot"><td>Total</td><td></td><td></td><td></td><td class="n num">${nf(AW.mv)}</td><td></td><td class="n num">100.0%</td><td class="n num t3">100%</td><td></td></tr></tbody></table></div>`)),
+            m: () => phone(`${mback("Portfolio")}<div class="body"><div><span class="lbl">All-Weather Portfolio</span><div class="big num">${usd(AW.mv)}</div></div><div class="card flush">${AW.rows.map((r) => `<div class="ln"><span><span class="sym">${r.sym}</span><div class="t3 sm num">${r.q} at ${nf(r.l)} · ${pc(r.w)} of ${r.tg}%</div></span><span style="text-align:right"><span class="num">${nf(r.mv)}</span><div class="num sm ${pl(r.pl)}">${sgu(r.pl)}</div></span></div>`).join("")}</div></div>`) },
+        { k: "C", name: "List and position detail", note: "Positions on the left, and the selected fund's fills, cost and contribution on the right. Good for answering where a number came from, but it adds a detail view per position that the ledger would need to serve.",
+            d: () => browser("/portfolio/all-weather/vti", app("Portfolio", `${sleeveHead(AW)}<div class="grid" style="grid-template-columns:360px minmax(0,1fr);align-items:start"><div class="pn">${AW.rows.map((r, i) => `<div class="row2" style="padding:11px 16px;border-bottom:1px solid var(--line);${i === 1 ? "background:var(--sunk);box-shadow:inset 2px 0 0 var(--acc)" : ""}"><span><span class="sym">${r.sym}</span><div class="t3 sm">${pc(r.w)} · target ${r.tg}%</div></span><span style="text-align:right"><span class="num">${nf(r.mv)}</span><div class="num sm ${pl(r.pl)}">${sgu(r.pl)}</div></span></div>`).join("")}</div><div class="pn"><div class="pn-h"><b>VTI · Vanguard Total Stock Market ETF</b><span class="t3 sm">28 shares in this sleeve</span></div><div class="pn-b stack" style="gap:16px"><div class="vs"><div><span class="lbl">Avg cost</span><div class="n">402.10</div></div><div><span class="lbl">Last</span><div class="n">436.12</div></div><div><span class="lbl">Unrealized</span><div class="n gain">+952.56</div></div></div><div><span class="lbl" style="margin-bottom:6px">Weight against target</span>${wrow(AW.rows[1], AW)}</div><div><span class="lbl" style="margin-bottom:6px">Fills in this sleeve</span><table class="tbl"><tbody><tr><td class="num t3">Aug 3 · 09:31</td><td>Buy 28</td><td class="n num">402.10</td><td class="n num">11,258.80</td></tr></tbody></table></div><p class="t3 sm" style="margin:0">Recession Radar sold its 30 VTI on Nov 2. Each sleeve keeps its own lots, so that sale doesn't change this cost.</p></div></div></div>`)),
+            m: () => phone(`${mback("All-Weather")}<div class="body"><div><span class="lbl">VTI · 28 shares</span><div class="big num">${nf(AW.rows[1].mv)}</div><div class="num gain" style="font-size:14px;margin-top:4px">+952.56 unrealized</div></div>${wrow(AW.rows[1], AW)}<div class="card flush"><div class="ln"><span class="t2">Avg cost</span><span class="num">402.10</span></div><div class="ln"><span class="t2">Last</span><span class="num">436.12</span></div><div class="ln"><span class="t2">Bought</span><span class="num">Aug 3 · 28 at 402.10</span></div></div><p class="t3 sm" style="margin:0">Each sleeve keeps its own lots.</p></div>`) },
+    ]);
+
+    const recTable = `<table class="tbl"><thead><tr><th>Symbol</th><th>Sleeve</th><th class="n">Ledger</th><th class="n">Alpaca</th><th class="n">Difference</th><th>State</th></tr></thead><tbody>${REC.map(([s, sl, l, a]) => `<tr class="${l !== a ? "frz" : ""}"><td class="sym">${s}</td><td class="t2">${sl}</td><td class="n num">${l}</td><td class="n num">${a}</td><td class="n num ${l !== a ? "risk" : "t3"}">${l === a ? "0" : "−" + (l - a)}</td><td>${l === a ? '<span class="st"><i></i>Agrees</span>' : '<span class="st frz"><i></i>Sleeve frozen</span>'}</td></tr>`).join("")}</tbody></table>`;
+    add("Portfolio", "portfolio/reconciliation", "Reconciliation and a frozen sleeve", "The ledger and Alpaca disagree on TLT (167 against 120), so Recession Radar is frozen and its orders are rejected until they agree.", [
+        { k: "A", name: "Inside the sleeve", rec: 1, note: "The frozen sleeve's page explains the difference with both counts on one bar and lists what you can do today. Run reconciliation is the only real action now; adjust and resume wait on ledger events that aren't emitted yet.",
+            d: () => browser("/portfolio/recession-radar", app("Portfolio", `<div class="hd"><div><div class="t3 sm">Portfolio /</div><h3><span class="dot" style="background:${RR.tone}"></span>Recession Radar</h3><div class="meta">2 positions · monthly · since Sep 1</div></div><div class="acts"><span class="st frz"><i></i>Frozen since 10:15 ET</span>${b(`${ic("refresh")}Run reconciliation`, "p")}</div></div>${frozenAlert("")}<div class="grid" style="grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:20px;align-items:start;margin-top:18px"><div class="pn"><div class="pn-h"><b>Ledger against Alpaca</b><span class="t3 sm">Checked 10:15 ET · next check 12:15 ET</span></div><div class="pn-b stack" style="gap:18px"><div><div class="row2" style="margin-bottom:8px"><span class="sym">TLT</span><span class="num risk">47 shares apart</span></div><div class="wb frz" style="height:12px"><i style="width:${(120 / 180) * 100}%"></i><span class="gh" style="left:${(120 / 180) * 100}%;width:${(47 / 180) * 100}%"></span></div><div class="row2 sm t3" style="margin-top:6px"><span>Alpaca 120</span><span>Ledger 167</span></div></div><div><div class="row2" style="margin-bottom:8px"><span class="sym">GLD</span><span class="t3 sm">Agrees · 41 in this sleeve, 53 across the account</span></div><div class="wb" style="height:12px"><i style="width:${(41 / 180) * 100}%"></i></div></div><div class="t2 sm">The other sleeves don't hold TLT, so they keep trading.</div></div></div><div class="stack"><div class="pn"><div class="pn-h"><b>What you can do</b></div><div class="pn-b stack" style="gap:12px"><div class="step"><span class="n">1</span><div><b>Run reconciliation again</b><div class="t2 sm">Alpaca's paper positions can lag a fill by a few minutes.</div></div></div><div class="step"><span class="n">2</span><div><b>Check TLT orders in Alpaca</b><div class="t2 sm">A trade made outside LlamaTrade would explain a lower count.</div></div></div><div class="step" style="opacity:0.55"><span class="n">3</span><div><b>Adjust the ledger and resume</b><div class="t2 sm">Not available yet. Nothing is adjusted automatically.</div></div></div></div></div><div class="pn"><div class="pn-h"><b>Held orders</b><span class="t3 sm">0 waiting</span></div><div class="pn-b t2 sm">The next rebalance would be Dec 1. It won't run while the sleeve is frozen.</div></div></div></div>`)),
+            m: () => phone(`${mback("Portfolio")}<div class="body"><div><span class="st frz"><i></i>Frozen since 10:15 ET</span><h5 style="margin-top:6px">Recession Radar</h5></div>${mFrozen("Nothing is adjusted automatically.")}<div class="card"><div class="row2" style="margin-bottom:8px"><span class="sym">TLT</span><span class="num risk">47 apart</span></div><div class="wb frz" style="height:12px"><i style="width:${(120 / 180) * 100}%"></i><span class="gh" style="left:${(120 / 180) * 100}%;width:${(47 / 180) * 100}%"></span></div><div class="row2 sm t3" style="margin-top:6px"><span>Alpaca 120</span><span>Ledger 167</span></div></div><div class="card flush"><div class="ln"><span class="sym">GLD</span><span class="t3 sm">Agrees · 41</span></div></div>${b(`${ic("refresh")}Run reconciliation`, "p full")}<span class="t3 sm">Next automatic check at 12:15 ET.</span></div>`) },
+        { k: "B", name: "Account reconciliation page", note: "One page lists every symbol with ledger, Alpaca and difference, and the frozen row is highlighted. Complete and auditable, and it's what support would use, but the person has to connect the row back to the sleeve.",
+            d: () => browser("/portfolio/reconciliation", app("Portfolio", `<div class="hd"><div><h3>Reconciliation</h3><div class="meta">Last run Nov 13, 10:15 ET · next at 12:15 ET · 7 of 8 positions agree</div></div><div class="acts">${b(`${ic("refresh")}Run again`, "p")}</div></div>${frozenAlert("")}<div style="height:16px"></div><div class="grid" style="grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);align-items:start"><div class="pn">${recTable}</div><div class="pn"><div class="pn-h"><b>How this works</b></div><div class="pn-b stack t2" style="gap:10px"><p style="margin:0">Every two hours the ledger's positions are compared with Alpaca's. A symbol missing from the ledger is adopted as unmanaged. A quantity that differs freezes every sleeve holding that symbol.</p><p style="margin:0">A frozen sleeve keeps its positions and value. Only new orders are blocked.</p></div></div></div>`)),
+            m: () => phone(`${mback("Portfolio")}<div class="body"><h5>Reconciliation</h5><div class="t3 sm" style="margin-top:-8px">Last run 10:15 ET · next at 12:15 ET</div>${mFrozen("Nothing is adjusted automatically.")}<div class="card flush"><div class="ln t3 sm"><span>Symbol</span><span>Ledger · Alpaca</span></div>${REC.map(([s, , l, a]) => `<div class="ln" style="${l !== a ? "color:var(--risk);font-weight:600" : ""}"><span class="sym">${s}</span><span class="num">${l} · ${a}</span></div>`).join("")}</div></div>`) },
+        { k: "C", name: "Guided resolve", note: "A three-step dialog: see the difference, choose which count to trust, confirm. The clearest path to unfreezing, but it needs ReconciliationAdjusted and SleeveResumed to be emitted, which is new ledger work.",
+            d: () => browser("/portfolio/recession-radar", app("Portfolio", `${overviewA()}`, { ovl: `<div class="ovl"><div class="modal" style="width:620px"><div class="modal-h"><b>Resolve Recession Radar</b>${ic("x")}</div><div class="modal-b"><div style="display:flex;gap:22px"><div class="step done"><span class="n">${ic("check")}</span><span class="sm">Difference</span></div><div class="step on"><span class="n">2</span><span class="sm">Choose</span></div><div class="step"><span class="n">3</span><span class="sm">Confirm</span></div></div><p style="margin:0" class="t2">Alpaca reports 120 TLT and the ledger expects 167. Which count should the sleeve use?</p><div class="opt on"><span class="rd"></span><div><b>Use Alpaca's 120</b><span>The ledger records 47 TLT as removed at 90.41, about $4,249 less in the sleeve, and the sleeve resumes.</span></div></div><div class="opt"><span class="rd"></span><div><b>Keep the ledger's 167</b><span>Leave the sleeve frozen and check again at 12:15 ET.</span></div></div><div class="t3 sm">Either choice is recorded in Activity with the time and both counts.</div></div><div class="modal-f">${b("Back", "g")}${b("Continue", "p")}</div></div></div>` })),
+            m: () => phone(`${mback("Recession Radar")}<div class="body"><span class="lbl">Step 2 of 3</span><h5>Which count is right?</h5><p style="margin:0" class="t2">Alpaca reports 120 TLT and the ledger expects 167.</p><div class="opt on"><span class="rd"></span><div><b>Use Alpaca's 120</b><span>Records 47 TLT removed and resumes the sleeve.</span></div></div><div class="opt"><span class="rd"></span><div><b>Keep the ledger's 167</b><span>Stay frozen and check again at 12:15 ET.</span></div></div>${b("Continue", "p full")}</div>`, { tab: -1 }) },
+    ]);
+
+    const chips = (on = 1) => `<div style="display:flex;gap:6px">${["+10K", "+25K", "+50K", "+100K"].map((x, i) => b(x, i === on ? "p" : "")).join("")}</div>`;
+    const fundsPrev = `<table class="tbl"><thead><tr><th></th><th class="n">Now</th><th class="n">After</th></tr></thead><tbody><tr><td>Unallocated cash</td><td class="n num">${nf(FREE)}</td><td class="n num accent">${nf(FREE + 25000)}</td></tr><tr><td>Sleeves</td><td class="n num">${nf(EQ - FREE)}</td><td class="n num">${nf(EQ - FREE)}</td></tr><tr class="tot"><td>Total equity</td><td class="n num">${nf(EQ)}</td><td class="n num">${nf(EQ + 25000)}</td></tr></tbody></table>`;
+    const fundsNote = "Paper money only. It lands in unallocated cash, and no sleeve changes until you deploy or top one up.";
+    add("Portfolio", "portfolio/funds", "Add paper funds", "Paper money for testing. The beta credits it straight to unallocated cash; there's no bank link or card involved.", [
+        { k: "A", name: "Dialog with a before and after", rec: 1, note: "A focused dialog with quick amounts and a small table showing unallocated cash and the total before and after. It's explicit about where the money goes, and it's one dialog over the existing deposit call.",
+            d: () => browser("/portfolio", app("Portfolio", overviewA(), { ovl: `<div class="ovl"><div class="modal"><div class="modal-h"><b>Add paper funds</b>${ic("x")}</div><div class="modal-b"><div class="inp big focus"><span class="af">$</span>25,000.00<span class="caret"></span></div>${chips()}${fundsPrev}<div class="t3 sm">${fundsNote}</div></div><div class="modal-f">${b("Cancel", "g")}${b("Add $25,000.00", "p")}</div></div></div>` })),
+            m: () => phone(`${mback("Portfolio")}<div class="body"><h5>Add paper funds</h5><div class="inp big focus" style="height:64px;border-radius:10px"><span class="af">$</span>25,000.00<span class="caret"></span></div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">${["+10K", "+25K", "+50K", "+100K"].map((x, i) => b(x, i === 1 ? "p" : "")).join("")}</div><div class="card flush"><div class="ln"><span class="t2">Unallocated</span><span class="num">${nf(FREE)} → <span class="accent">${nf(FREE + 25000)}</span></span></div><div class="ln"><span class="t2">Total equity</span><span class="num">${nf(EQ)} → ${nf(EQ + 25000)}</span></div></div><span class="t3 sm">${fundsNote}</span>${b("Add $25,000.00", "p full")}</div>`, { tab: -1 }) },
+        { k: "B", name: "Drawer with a live bar", note: "A side drawer keeps the portfolio visible, and the allocation bar grows a new unallocated segment as you type. It shows the effect in place, but it's more motion and state for a one-field form.",
+            d: () => browser("/portfolio", app("Portfolio", `${pHead(false)}<div class="row2" style="align-items:flex-end;margin-bottom:12px;max-width:740px"><div><span class="lbl">Total equity after</span><div class="num" style="font-size:34px">${usd(EQ + 25000)}</div></div><span class="t3 sm num">now ${usd(EQ)}</span></div><div style="max-width:740px">${abar({ add: 25000 })}${legend({ add: 1 })}</div><div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:20px;max-width:740px">${SL.slice(0, 2).map(sleeveCol).join("")}</div>`, { ovl: `<div class="ovl right clear"><div class="drawer"><div class="modal-h"><b>Add paper funds</b>${ic("x")}</div><div class="modal-b"><div class="inp big focus"><span class="af">$</span>25,000.00<span class="caret"></span></div>${chips()}<div class="t2 sm">The new segment on the bar is where this money lands.</div><div class="t3 sm">${fundsNote}</div></div><div class="modal-f" style="margin-top:auto">${b("Cancel", "g")}${b("Add $25,000.00", "p")}</div></div></div>` })),
+            m: () => phone(`${mh("Portfolio")}<div class="body"><div><span class="lbl">After</span><div class="num" style="font-size:26px">${usd(EQ + 25000)}</div></div>${abar({ add: 25000, h: 12 })}</div>`, { after: `<div class="sheet" style="height:470px;bottom:0"><div class="grab"></div><div style="padding:4px 18px 18px;display:grid;gap:14px"><b style="font-size:18px;font-weight:600">Add paper funds</b><div class="inp big focus" style="height:60px"><span class="af">$</span>25,000.00<span class="caret"></span></div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">${["+10K", "+25K", "+50K", "+100K"].map((x, i) => b(x, i === 1 ? "p" : "")).join("")}</div><span class="t3 sm">${fundsNote}</span>${b("Add $25,000.00", "p full")}</div></div>`, tab: -1 }) },
+        { k: "C", name: "Inline on the cash card", note: "The unallocated cash card turns into the form, so funding happens where the cash is shown. Light and contextual, but it only works if the overview uses cards, and it's easy to miss from other pages.",
+            d: () => browser("/portfolio", app("Portfolio", `${pHead(false)}<div class="grid" style="grid-template-columns:repeat(2,minmax(0,1fr));gap:18px">${SL.slice(0, 3).map((s) => `<div class="scard ${s.s === "frz" ? "frz" : ""}"><div class="row2"><h6>${s.n}</h6>${stt(s.s)}</div><div class="v">${usd(s.mv)}</div></div>`).join("")}<div class="scard" style="border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-soft)"><div class="row2"><h6>Unallocated cash</h6>${ic("x")}</div><div class="num t3">${usd(FREE)} now</div><div class="inp big focus" style="height:50px;font-size:22px"><span class="af">$</span>25,000.00<span class="caret"></span></div>${chips()}<div class="t3 sm">${fundsNote}</div><div class="acts">${b("Add $25,000.00", "p")}${b("Cancel", "g")}</div></div></div>`)),
+            m: () => phone(`${mh("Portfolio")}<div class="body"><div class="scard" style="border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-soft);padding:16px"><div class="row2"><b style="font-weight:600">Unallocated cash</b>${ic("x")}</div><div class="num t3">${usd(FREE)} now</div><div class="inp big focus" style="height:56px"><span class="af">$</span>25,000.00<span class="caret"></span></div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">${["+10K", "+25K", "+50K", "+100K"].map((x, i) => b(x, i === 1 ? "p" : "")).join("")}</div>${b("Add $25,000.00", "p full")}</div></div>`) },
+    ]);
+
+    const actTable = () => `<table class="tbl"><thead><tr><th>Date</th><th>Entry</th><th>Detail</th><th>Type</th><th class="n">Paid in</th><th class="n">Paid out</th></tr></thead><tbody><tr class="gh"><td colspan="6">November</td></tr>${ACT.slice(0, 7).map(([d, t, e, s, v, i, ty]) => `<tr><td class="num t3">${d} · ${t}</td><td>${e}</td><td class="t2">${s}</td><td class="t3">${ty}</td><td class="n num">${v > 0 ? nf(v) : ""}</td><td class="n num">${v < 0 ? nf(v) : ""}</td></tr>`).join("")}<tr class="gh"><td colspan="6">October</td></tr>${ACT.slice(7).map(([d, t, e, s, v, i, ty]) => `<tr><td class="num t3">${d} · ${t}</td><td>${e}</td><td class="t2">${s}</td><td class="t3">${ty}</td><td class="n num">${v > 0 ? nf(v) : ""}</td><td class="n num">${v < 0 ? nf(v) : ""}</td></tr>`).join("")}</tbody></table>`;
+    const segAct = '<span class="seg"><span class="on">All</span><span>Funding</span><span>Allocations</span><span>Trades</span><span>Income</span></span>';
+    add("Portfolio", "portfolio/activity", "Activity", "Everything that moved money: deposits, allocations to sleeves, trades and income, as the ledger recorded them.", [
+        { k: "A", name: "Ledger table", rec: 1, note: "A page with filters and one table grouped by month, with paid in and paid out columns like a statement. It reads the ledger's journal directly, and it's the honest record behind every figure.",
+            d: () => browser("/portfolio/activity", app("Portfolio", `<div class="hd"><div><div class="t3 sm">Portfolio /</div><h3>Activity</h3><div class="meta">Deposits, allocations, trades and income on the paper account</div></div><div class="acts">${segAct}${b("Export CSV")}</div></div><div class="pn">${actTable()}</div>`)),
+            m: () => phone(`${mback("Portfolio")}<div class="body"><h5>Activity</h5><span class="seg"><span class="on">All</span><span>Funding</span><span>Trades</span><span>Income</span></span><span class="lbl">November</span><div class="card flush">${ACT.slice(0, 6).map(([d, t, e, s, v]) => `<div class="ln"><span>${e}<div class="t3 sm">${d} · ${s.split(" · ")[0]}</div></span><span class="num">${v > 0 ? "+" : "−"}${nf(v)}</span></div>`).join("")}</div></div>`) },
+        { k: "B", name: "Drawer over the portfolio", note: "Activity opens as a drawer from the portfolio, so you never leave the overview. Handy for a quick look, but the history is long and a drawer can't be linked or exported comfortably.",
+            d: () => browser("/portfolio", app("Portfolio", overviewA(), { ovl: `<div class="ovl right"><div class="drawer" style="width:480px"><div class="modal-h"><div><b>Activity</b><div class="t3 sm">What moved cash between the account and its sleeves</div></div>${ic("x")}</div><div style="padding:12px 18px;border-bottom:1px solid var(--line)"><span class="seg"><span class="on">All</span><span>Funding</span><span>Allocations</span><span>Trades</span></span></div>${ACT.map(([d, t, e, s, v, i]) => `<div class="nt" style="grid-template-columns:22px minmax(0,1fr) auto">${ic(i)}<div><b>${e}</b><p>${d} · ${s}</p></div><span class="num">${v > 0 ? "+" : "−"}${nf(v)}</span></div>`).join("")}</div></div>` })),
+            m: () => phone(`${mh("Portfolio")}`, { after: `<div class="scrim"></div><div class="sheet" style="height:700px"><div class="grab"></div><div style="padding:0 18px"><b style="font-size:18px;font-weight:600">Activity</b>${ACT.slice(0, 7).map(([d, t, e, s, v, i]) => `<div class="nt" style="grid-template-columns:22px minmax(0,1fr) auto">${ic(i)}<div><b>${e}</b><p>${d} · ${s.split(" · ")[0]}</p></div><span class="num">${v > 0 ? "+" : "−"}${nf(v)}</span></div>`).join("")}</div></div>` }) },
+        { k: "C", name: "Day timeline", note: "A vertical timeline grouped by day with icons for each kind of entry. Easy to scan for what happened when, but amounts lose their columns, so adding things up gets harder.",
+            d: () => browser("/portfolio/activity", app("Portfolio", `<div class="hd"><div><div class="t3 sm">Portfolio /</div><h3>Activity</h3><div class="meta">Paper account ending 9cc</div></div><div class="acts">${segAct}</div></div><div class="pn" style="padding:6px 20px;max-width:860px"><div class="tl">${ACT.map(([d, t, e, s, v], i) => `<span class="num t3 sm">${i === 0 || ACT[i - 1][0] !== d ? d + "<br>" : ""}${t}</span><span class="ax"><i></i></span><span><b style="font-weight:600">${e}</b><div class="t2 sm">${s}</div></span><span class="num">${v > 0 ? "+" : "−"}${nf(v)}</span>`).join("")}</div></div>`)),
+            m: () => phone(`${mback("Portfolio")}<div class="body"><h5>Activity</h5><div class="tl" style="grid-template-columns:52px 20px minmax(0,1fr) auto;font-size:14px">${ACT.slice(0, 7).map(([d, t, e, s, v], i) => `<span class="num t3 sm">${i === 0 || ACT[i - 1][0] !== d ? d : ""}</span><span class="ax"><i></i></span><span>${e}</span><span class="num sm">${v > 0 ? "+" : "−"}${nf(v)}</span>`).join("")}</div></div>`) },
+    ]);
+
+    /* ---------- Copilot ---------- */
+    const conv = () => `${msgMe(CHme)}${tool("validate_strategy", "4 symbols · needs 200 bars of history")}${msgAi(CHai)}${stratCard()}`;
+    const panel = (inner, title = "Copilot", ctx = "On: Portfolio", w = 480) => `<div class="ovl right clear"><div class="drawer" style="width:${w}px"><div class="modal-h"><span style="display:flex;gap:10px;align-items:center"><b>${title}</b><span class="chip">${ctx}</span></span><span style="display:flex;gap:12px;color:var(--ink3)">${ic("hist")}${ic("plus")}${ic("expand")}${ic("x")}</span></div>${inner}</div></div>`;
+    const panelBody = (inner, ph = "Ask about this page") => `<div class="stack" style="flex:1;padding:18px;gap:14px;overflow:hidden">${inner}</div><div style="padding:12px 16px;border-top:1px solid var(--line)"><div class="composer"><span class="ph">${ph}</span><span class="send">${ic("send")}</span></div></div>`;
+    const CONV1ai = `<p>Up <span class="num">$895.40</span> today (<span class="num">+0.87%</span>), and <span class="num">$1,333.15</span> since Aug 3. Most of today's gain is Tech Momentum Rotation, at <span class="num gain">+$867.12</span>. All-Weather is down <span class="num loss">$84.12</span>.</p><p>Recession Radar is frozen while a TLT quantity is checked: the ledger expects 167 shares and Alpaca reports 120. Its orders wait until that's resolved.</p>`;
+    const RADAR = [`(${k("strategy")} <span class="s">"Tech Momentum Rotation"</span>`, "  :rebalance monthly :benchmark QQQ", `  (${k("filter")} :by momentum :select (top 2) :lookback 90`, `    (${k("weight")} :method equal`, `      (${k("asset")} QQQ) (${k("asset")} XLK) (${k("asset")} SMH))))`];
+    const EDIT = [`(${k("strategy")} <span class="s">"Tech Momentum Rotation"</span>`, "  :rebalance monthly :benchmark QQQ", `  (${k("if")} (&lt; (price QQQ) (sma QQQ 200))`, `    (${k("asset")} IEF)`, `    (${k("else")}`, `  (${k("filter")} :by momentum :select (top 2) :lookback 90`, `      (${k("filter")} :by momentum :select (top 2) :lookback 90`, `        (${k("weight")} :method equal`, `          (${k("asset")} QQQ) (${k("asset")} XLK) (${k("asset")} SMH))))))`];
+    const edHead = (x = "") => `<div class="hd"><div><div class="t3 sm">Strategies /</div><h3>Tech Momentum Rotation</h3><div class="meta">Version 1 · running in paper${x}</div></div><div class="acts">${b("Versions")}${b("Backtest")}${b("Save version 2", "p")}</div></div>`;
+    const inlineAsk = (q) => `<div class="composer" style="margin-bottom:16px;border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-soft)">${ic("spark")}<span style="flex:1">${q}</span><span class="kbd">esc</span></div>`;
+    add("Copilot", "copilot/conversation", "Copilot conversation", "Copilot writes the strategy language, explains results and runs backtests when asked. A draft stays a draft until it's saved.", [
+        { k: "A", name: "Full page with strategy cards", rec: 1, note: "A /copilot page with conversations in a rail and one reading column. A strategy arrives as a card with what it would hold today, its code folded and its actions. Restyles PendingArtifactCard; the existing side panel can expand into this page.",
+            d: () => browser("/copilot", cpFull(0, conv())),
+            m: () => phone(`${mh("Copilot", ic("hist") + ic("plus"))}<div class="body" style="gap:12px">${msgMe("Make a version of Tech Momentum that moves to IEF below QQQ's 200-day.", "10:29")}${msgAi("<p>Here's a draft. Below the 200-day it holds IEF; otherwise the top two of QQQ, XLK and SMH. Today it would hold the same two funds as now.</p>")}${stratCard({ m: 1 })}</div>${mComposer()}`, { tab: 3 }) },
+        { k: "B", name: "Side panel on any page", note: "A 480 px panel docked over the current page, which becomes its context. Good for short questions without leaving the portfolio; at this width a strategy card and its code are cramped. This is what CopilotSidePanel does today.",
+            d: () => browser("/portfolio", app("Portfolio", overviewA(), { ovl: panel(panelBody(`${msgMe("How is my portfolio doing?", "Sam · 09:48 ET")}${tool("get_portfolio_summary", "account, 3 sleeves")}${msgAi(CONV1ai)}`)) })),
+            m: () => phone(`${mh("Portfolio")}<div class="body"><div><span class="lbl">Total equity</span><div class="big num">${usd(EQ)}</div></div></div>`, { after: `<div class="scrim"></div><div class="sheet" style="height:700px"><div class="grab"></div><div class="row2" style="padding:0 18px 10px"><span style="display:flex;gap:8px;align-items:center"><b style="font-size:18px;font-weight:600">Copilot</b><span class="chip">On: Portfolio</span></span>${ic("expand")}</div><div class="stack" style="padding:0 18px;gap:12px">${msgMe("How is my portfolio doing?", "09:48")}${msgAi(CONV1ai)}</div><div style="position:absolute;left:0;right:0;bottom:30px"><div class="composer" style="margin:0 14px"><span class="ph">Ask about this page</span><span class="send">${ic("send")}</span></div></div></div>`, tab: -1 }) },
+        { k: "C", name: "Inline in the editor", note: "Copilot lives in the strategy editor: you ask in a bar above the code and the change arrives as a diff to apply or discard. The tightest loop for editing, but questions about the portfolio have nowhere to go.",
+            d: () => browser("/strategies/tech-momentum", app("Strategies", `${edHead(" · 1 suggested change")}${inlineAsk("Move to IEF when QQQ is below its 200-day average")}<div class="grid" style="grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);align-items:start"><div class="pn">${code(EDIT, { 2: "add", 3: "add", 4: "add", 5: "del", 6: "add" })}<div class="art-f" style="border-radius:0 0 10px 10px">${b("Apply change", "p")}${b("Discard", "g")}<span class="t3 sm" style="margin-left:auto">4 lines added, 1 moved</span></div></div><div class="pn"><div class="pn-h"><b>Copilot</b><span class="chip">On: this strategy</span></div><div class="pn-b stack">${msgAi("<p>This wraps the momentum rule in a 200-day check on QQQ. Below it, the strategy holds IEF; above it, nothing changes.</p><p>QQQ is above its 200-day today, so the next rebalance on Dec 1 would hold QQQ and SMH, the same as now.</p>")}${b("Backtest both versions")}</div></div></div>`)),
+            m: () => phone(`${mback("Strategies")}<div class="body"><h5>Tech Momentum Rotation</h5><div class="card" style="font-size:13.5px"><span class="lbl">Suggested change</span><div style="margin-top:6px" class="num"><span style="background:var(--acc-soft);padding:1px 4px;border-radius:3px">if price QQQ &lt; sma 200 → IEF</span></div><div class="t2 sm" style="margin-top:8px">Otherwise the momentum rule runs as before.</div></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${b("Apply", "p")}${b("Discard")}</div>${code(RADAR)}</div>`, { tab: 2 }) },
+    ]);
+
+    add("Copilot", "copilot/approve", "Approving an action", "Copilot asks before it runs anything. Shown with a five-year backtest of the new draft.", [
+        { k: "A", name: "Approval card in the thread", rec: 1, note: "The request is a card in the conversation with the exact arguments, a sentence on what it will and won't do, and Approve, Change and Decline. It stays in the record and reads well on a phone. Extends ToolConfirmationCard.",
+            d: () => browser("/copilot", cpFull(0, `${msgMe(CHme)}${msgAi("<p>Draft saved as Tech Momentum Defensive.</p>")}${msgMe(APme, "Sam · 10:36 ET")}${msgAi(APai)}${approveCard()}${tool("run_backtest", "waiting for your approval", 1)}`)),
+            m: () => phone(`${mh("Copilot", ic("hist") + ic("plus"))}<div class="body" style="gap:12px">${msgMe(APme, "10:36")}${msgAi(APai)}${approveCard()}</div>`, { tab: 3 }) },
+        { k: "B", name: "Confirmation dialog", note: "A modal over the conversation that has to be answered before anything else. Impossible to miss, but it interrupts reading, and after closing there's nothing in the thread showing what was approved.",
+            d: () => browser("/copilot", cpFull(0, `${msgMe(APme, "Sam · 10:36 ET")}${msgAi(APai)}${tool("run_backtest", "waiting for your approval", 1)}`).replace(/<\/div><\/div>$/, `</div><div class="ovl"><div class="modal"><div class="modal-h"><b>Run a backtest?</b>${ic("x")}</div><div class="modal-b"><div class="args">${ARGS.map(([a, v]) => `<span>${a}</span><span>${v}</span>`).join("")}</div><span class="t3 sm">Historical data only. No orders are placed.</span></div><div class="modal-f">${b("Decline", "g")}${b("Approve and run", "p")}</div></div></div></div>`)),
+            m: () => phone(`${mh("Copilot")}<div class="body">${msgMe(APme, "10:36")}${msgAi(APai)}</div>`, { after: `<div class="scrim"></div><div class="sheet" style="height:380px"><div class="grab"></div><div style="padding:4px 18px;display:grid;gap:14px"><b style="font-size:18px;font-weight:600">Run a backtest?</b><div class="args">${ARGS.map(([a, v]) => `<span>${a}</span><span>${v}</span>`).join("")}</div>${b("Approve and run", "p full")}${b("Decline", "full")}</div></div>`, tab: -1 }) },
+        { k: "C", name: "Keyboard bar above the composer", note: "A slim bar above the composer names the action and takes Enter to approve or Esc to decline. Fastest for repeat use, but the arguments are folded and Enter is easy to press by habit.",
+            d: () => browser("/copilot", cpFull(0, `${msgMe(APme, "Sam · 10:36 ET")}${msgAi(APai)}`).replace('<div class="composer"><span class="ph">', `<div class="art ask" style="margin-bottom:10px"><div class="art-h" style="border:0"><span style="display:flex;gap:10px;align-items:center">${ic("play")}<b>run_backtest</b><span class="t2 sm">Tech Momentum Defensive · 5 years · $25,000 · QQQ</span></span><span style="display:flex;gap:8px"><span class="kb">↵ Approve</span><span class="kb">esc Decline</span></span></div></div><div class="composer"><span class="ph">`)),
+            m: () => phone(`${mh("Copilot")}<div class="body">${msgMe(APme, "10:36")}${msgAi(APai)}</div><div style="position:absolute;left:14px;right:14px;bottom:158px" class="art ask"><div class="art-h" style="border:0"><span><b>run_backtest</b><div class="t2 sm">5 years · $25,000 · QQQ</div></span>${b("Approve", "p")}</div></div>${mComposer()}`, { tab: 3 }) },
+    ]);
+
+    add("Copilot", "copilot/history", "Conversation history", "Past conversations and what each produced: drafts, draft changes and backtests. Kept for your account only.", [
+        { k: "A", name: "Rail grouped by day", rec: 1, note: "The Copilot page keeps a rail of conversations grouped by day with search at the top. Always one click away and it's the layout the full page already uses, though what each one produced shows only when opened.",
+            d: () => browser("/copilot", cpFull(1, `${msgMe("How is my portfolio doing?", "Sam · 09:48 ET")}${tool("get_portfolio_summary", "account, 3 sleeves")}${msgAi(CONV1ai)}`)),
+            m: () => phone(`${mh("Conversations", ic("plus"))}<div class="body" style="padding:0"><div style="padding:0 18px"><div class="inp" style="height:40px">${ic("search")}<span class="ph">Search conversations</span></div></div><div class="hist">${histList(1)}</div></div>`, { tab: 3 }) },
+        { k: "B", name: "History page with outputs", note: "A separate list page where each conversation shows its outputs as chips, filterable by drafts or backtests. Good for finding the conversation that made something, but it's a page you leave the chat to visit.",
+            d: () => browser("/copilot/history", app("Copilot", `<div style="max-width:860px;margin:0 auto"><div class="hd"><div><h3>Conversations</h3><div class="meta">7 this month · kept for your account only</div></div><div class="acts">${b(`${ic("plus")}New conversation`, "p")}</div></div><div class="row2" style="margin-bottom:14px"><div class="inp" style="flex:1">${ic("search")}<span class="ph">Search conversations</span></div><span class="seg"><span class="on">All</span><span>With drafts</span><span>With backtests</span></span></div>${HIST.map(([g, rows]) => `<div class="lbl" style="margin:14px 0 8px">${g}</div><div class="pn">${rows.map(([t, w, a]) => `<div class="row2" style="padding:11px 16px;border-bottom:1px solid var(--line)"><span><b style="font-weight:500">${t}</b>${a ? `<div style="margin-top:4px"><span class="chip">${ic(a.startsWith("Backtest") ? "flask" : "doc")}${a}</span></div>` : ""}</span><span class="t3 sm num">${w}</span></div>`).join("")}</div>`).join("")}</div>`)),
+            m: () => phone(`${mback("Copilot")}${mh("History")}<div class="body"><span class="seg"><span class="on">All</span><span>Drafts</span><span>Backtests</span></span>${HIST.slice(0, 2).map(([g, rows]) => `<span class="lbl">${g}</span><div class="card flush">${rows.map(([t, w, a]) => `<div class="ln"><span>${t}${a ? `<div class="t3 sm">${a}</div>` : ""}</span><span class="t3 sm">${w}</span></div>`).join("")}</div>`).join("")}</div>`, { tab: 3 }) },
+        { k: "C", name: "By strategy", note: "Conversations are filed under the strategy they touched, with general questions in their own group. It connects history to the work, but a conversation that touches two strategies has to live in two places.",
+            d: () => browser("/copilot", app("Copilot", "", {}).replace('<div class="main"></div>', `<div class="main" style="padding:0;display:flex"><div style="width:290px;flex:none;border-right:1px solid var(--line);background:var(--panel)"><div style="padding:14px">${b(`${ic("plus")}New conversation`, "p full")}</div><div class="hist">${[["Tech Momentum Rotation", [["Tech momentum with a 200-day exit", "Today 10:31"]]], ["Recession Radar", [["Backtest Recession Radar", "Today 09:44"], ["Bond hedge below the 200-day", "Yesterday"], ["Why did Recession Radar go defensive?", "Yesterday"]]], ["Core Four", [["Backtest Core Four over 10 years", "Nov 8"]]], ["General", [["How is my portfolio doing?", "Today 09:48"], ["Dual momentum, stocks vs bonds", "Nov 5"]]]].map(([g, rows]) => `<div class="gh">${g}</div>${rows.map(([t, w]) => `<div class="it ${t.startsWith("Tech") ? "on" : ""}"><span>${t}</span><em>${w}</em></div>`).join("")}`).join("")}</div></div>${readCol(conv())}</div>`)),
+            m: () => phone(`${mh("Copilot", ic("plus"))}<div class="body"><span class="lbl">Recession Radar</span><div class="card flush">${["Backtest Recession Radar", "Bond hedge below the 200-day", "Why did Recession Radar go defensive?"].map((t) => `<div class="ln"><span>${t}</span>${ic("chev")}</div>`).join("")}</div><span class="lbl">Tech Momentum Rotation</span><div class="card flush"><div class="ln"><span>Tech momentum with a 200-day exit</span>${ic("chev")}</div></div><span class="lbl">General</span><div class="card flush"><div class="ln"><span>How is my portfolio doing?</span>${ic("chev")}</div></div></div>`, { tab: 3 }) },
+    ]);
+
+    /* Render */
+    const host = document.getElementById("surfaces");
+    let html = "", area = "";
+    S.forEach((s) => {
+        if (s.area !== area) { area = s.area; html += `<div class="area-h"><h2>${area}</h2></div>`; }
+        html += `<section class="dc-surface" id="${s.id}" data-surface="${s.id}" data-area="${s.area}" data-title="${s.title}" data-why="${s.why.replace(/"/g, "&quot;")}">${s.opts.map((o) => `<div class="dc-opt" data-opt="${o.k}" data-name="${o.name}"${o.rec ? " data-rec" : ""} data-note="${o.note.replace(/"/g, "&quot;")}">${o.phones ? `<div class="trio">${o.phones().map((p, i) => `<div>${p}<div class="cap">${["Home", "Portfolio", "Copilot"][i]} · 390 px</div></div>`).join("")}</div>` : `<div class="pair"><div>${o.d()}<div class="cap">Desktop · 1240 px</div></div><div>${o.m()}<div class="cap">Phone · 390 px</div></div></div>`}</div>`).join("")}</section>`;
+    });
+    host.innerHTML = html;
+    const toc = document.getElementById("toc");
+    const areas = [...new Set(S.map((s) => s.area))];
+    toc.innerHTML = areas.map((a) => `<h2>${a}</h2><ol>${S.filter((s) => s.area === a).map((s) => `<li><a href="#${s.id}"><em>${String(S.indexOf(s) + 1).padStart(2, "0")}</em>${s.title}</a></li>`).join("")}</ol>`).join("") + `<h2>End</h2><ol><li><a href="#ends"><em>→</em>Merged, skipped and left open</a></li></ol><p class="keys"><kbd>←</kbd> <kbd>→</kbd> switch options · <kbd>P</kbd> pick · <kbd>J</kbd> <kbd>K</kbd> next and previous surface</p>`;
+
+    /* Scale every frame to its column */
+    const fit = (h) => {
+        const w = +h.dataset.w, ht = +h.dataset.h, cw = h.clientWidth;
+        if (!cw) return;
+        const s = cw / w;
+        h.firstElementChild.style.transform = `scale(${s})`;
+        h.style.height = ht * s + "px";
+    };
+    const hosts = [...document.querySelectorAll(".host")];
+    if ("ResizeObserver" in window) { const ro = new ResizeObserver((es) => es.forEach((e) => fit(e.target))); hosts.forEach((h) => ro.observe(h)); }
+    hosts.forEach(fit);
+    window.addEventListener("resize", () => hosts.forEach(fit));
+})();
+</script>
+<script>window.RB_CONFIG = { fonts: true };</script>
+<script src="review-bar.js"></script><script src="decide.js"></script>
+</body>
+</html>

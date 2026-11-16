@@ -1,29 +1,25 @@
-/** Floating action button that toggles the overlay side-panel Copilot ("quick ask"). */
-
 import { useAgentStore } from '@llamatrade/core/stores/agent';
+import { Sparkles } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 
-import { MagicIcon } from '../common/MagicIcon';
-
+/** Opens the Copilot side panel on desktop; phones reach Copilot from the tab bar. */
 export function AgentFAB() {
-  const location = useLocation();
+  const { pathname } = useLocation();
   const panelOpen = useAgentStore((s) => s.panelOpen);
   const togglePanel = useAgentStore((s) => s.togglePanel);
 
-  // Redundant on the full-page Copilot and while the panel is open; the strategy
-  // builder shows a compact launcher in its bottom insights bar instead.
-  const path = location.pathname;
-  const inBuilder = path.startsWith('/strategies/') && path !== '/strategies/templates';
-  if (path === '/copilot' || panelOpen || inBuilder) return null;
+  const inBuilder = pathname === '/strategies/builder' || pathname.endsWith('/edit');
+  if (pathname.startsWith('/copilot') || panelOpen || inBuilder) return null;
 
   return (
     <button
       type="button"
       onClick={togglePanel}
-      className="fixed bottom-6 right-6 z-40 flex h-12 w-12 items-center justify-center border-2 border-orange-500 bg-ink shadow transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg"
-      title="Open Copilot"
+      aria-label="Ask Copilot"
+      title="Ask Copilot"
+      className="fixed bottom-6 right-6 z-40 hidden h-12 w-12 place-items-center rounded-full bg-fg text-canvas shadow-lg motion-safe:transition-transform motion-safe:hover:-translate-y-0.5 md:grid"
     >
-      <MagicIcon className="h-5 w-5 text-orange-500" />
+      <Sparkles className="h-5 w-5" />
     </button>
   );
 }

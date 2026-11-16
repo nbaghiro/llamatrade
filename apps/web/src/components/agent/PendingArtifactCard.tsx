@@ -1,129 +1,179 @@
-/** Inline strategy artifact card: dark-terminal DSL + open/backtest/save actions. */
-
-import { buildMeta, formatDSL, parsePreview } from '@llamatrade/core/agent/artifact';
+import { formatDSL, parsePreview } from '@llamatrade/core/agent/artifact';
+import { strategyStructure } from '@llamatrade/core/agent/structure';
 import { ArtifactType, PendingArtifact, useAgentStore } from '@llamatrade/core/stores/agent';
-import { AlertTriangle, Check, FlaskConical, LayoutGrid, Loader2, Play, Sparkles } from 'lucide-react';
+import { Check, Code2, FlaskConical, PenLine } from 'lucide-react';
 import { lazy, Suspense, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import { Pill, Skeleton } from '../ui';
 
-// Lazy so the shared viewer stays in one chunk (the drawer lazy-loads it too).
 const DslCodeBlock = lazy(() => import('../strategies/DslCodeBlock'));
 
 interface PendingArtifactCardProps {
   artifact: PendingArtifact;
 }
 
+function structureMeta(rebalance: string, benchmark: string, funds: number): string {
+  const parts: string[] = [];
+  if (rebalance) parts.push(rebalance[0].toUpperCase() + rebalance.slice(1));
+  if (benchmark) parts.push(`benchmark ${benchmark}`);
+  if (funds) parts.push(`${funds} ${funds === 1 ? 'fund' : 'funds'}`);
+  return parts.join(' · ');
+}
+
+/** A strategy draft from Copilot: its structure as written, its code folded, and its actions. */
 export function PendingArtifactCard({ artifact }: PendingArtifactCardProps) {
   const navigate = useNavigate();
   const commitArtifact = useAgentStore((s) => s.commitArtifact);
-  const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [showCode, setShowCode] = useState(false);
 
-  const preview = useMemo(() => parsePreview(artifact), [artifact.previewJson]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const formattedDSL = useMemo(() => (preview?.dsl_code ? formatDSL(preview.dsl_code) : ''), [preview?.dsl_code]);
-  const meta = useMemo(() => buildMeta(formattedDSL, preview), [formattedDSL, preview]);
+  const preview = useMemo(() => parsePreview(artifact), [artifact]);
+  const dsl = useMemo(() => (preview?.dsl_code ? formatDSL(preview.dsl_code) : ''), [preview]);
+  const structure = useMemo(() => (dsl ? strategyStructure(dsl) : null), [dsl]);
 
   const isStrategy = artifact.artifactType === ArtifactType.STRATEGY;
-  const isSaved = artifact.isCommitted || saved;
+  const saved = artifact.isCommitted;
+  const name = artifact.name || structure?.name || 'Strategy';
+  const meta = structure
+    ? structureMeta(structure.rebalance, structure.benchmark, structure.symbols.length)
+    : '';
 
-  const handleOpenInBuilder = () => {
-    if (!preview?.dsl_code) return;
-    navigate(`/strategies/builder?artifact=${artifact.id}`);
-  };
-
-  const handleBacktest = () => {
-    if (artifact.committedResourceId) {
-      navigate(`/backtest?strategy=${artifact.committedResourceId}`);
-    } else {
-      navigate('/backtest');
-    }
-  };
-
-  // Commit the draft into a real strategy server-side (single source of truth).
-  const handleSave = async () => {
-    if (isSaved || saving) return;
+  const save = async (): Promise<string | null> => {
+    if (saved) return artifact.committedResourceId || null;
+    if (saving) return null;
     setSaving(true);
     setFailed(false);
     const id = await commitArtifact(artifact.id);
     setSaving(false);
-    if (id) setSaved(true);
-    else setFailed(true);
+    if (!id) setFailed(true);
+    return id;
+  };
+
+  const backtest = async () => {
+    const id = await save();
+    if (id) navigate(`/backtest?strategy=${id}`);
   };
 
   return (
-    <div className="w-full min-w-0 max-w-full border-2 border-ink bg-paper shadow-[4px_4px_0_rgb(var(--lt-ink))]">
-      {/* Header */}
-      <div className="flex items-center gap-2.5 border-b-2 border-ink bg-bone px-3.5 py-2.5">
-        <span className="flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink/50">
-          <Sparkles className="h-3 w-3 text-orange-500" />
-          {isStrategy ? 'Strategy' : 'Artifact'}
+    <section
+      aria-label={`${isStrategy ? 'Strategy draft' : 'Draft'}: ${name}`}
+      className="min-w-0 overflow-hidden rounded-panel border border-line-strong bg-panel"
+    >
+      <div className="flex items-center justify-between gap-2.5 border-b border-line px-3.5 py-[11px]">
+        <span className="flex min-w-0 items-center gap-2.5">
+          <span className="kicker flex-none">{isStrategy ? 'Strategy draft' : 'Draft'}</span>
+          <b className="truncate font-semibold">{name}</b>
         </span>
-        <span className="text-sm font-black tracking-tight text-ink">{artifact.name || 'Strategy'}</span>
-        <span
-          className={`ml-auto border-2 border-ink px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-[0.08em] ${
-            isSaved ? 'bg-green-600 text-bone' : 'bg-orange-500 text-ink'
-          }`}
-        >
-          {isSaved ? 'Saved' : 'Draft'}
-        </span>
+        {saved ? (
+          <Pill tone="accent">
+            <Check className="h-3 w-3" />
+            Saved
+          </Pill>
+        ) : (
+          <Pill>Not saved</Pill>
+        )}
       </div>
 
-      {/* Meta line */}
-      {meta && (
-        <div className="px-3.5 pt-2.5 font-mono text-[10.5px] uppercase tracking-[0.03em] text-ink/55">{meta}</div>
-      )}
+      <div className="grid gap-3 px-3.5 py-3">
+        {(meta || structure) && (
+          <div className="flex flex-wrap justify-between gap-x-3 gap-y-1 text-[12.5px] text-fg-3">
+            <span>{meta}</span>
+            {structure && <span>The structure as written</span>}
+          </div>
+        )}
+        {structure && structure.lines.length > 0 ? (
+          <ol className="m-0 grid list-none gap-1.5 p-0 text-[13px]">
+            {structure.lines.map((line, i) => (
+              <li
+                key={i}
+                className={line.kind === 'funds' ? 'flex flex-wrap gap-1.5' : 'text-fg-2'}
+                style={{ paddingLeft: line.depth * 16 }}
+              >
+                {line.kind === 'funds'
+                  ? line.funds?.map((f) => (
+                      <span
+                        key={f.symbol}
+                        className="rounded-[5px] border border-line px-1.5 py-px font-mono text-[12px] font-semibold text-fg"
+                      >
+                        {f.symbol}
+                        {f.weight !== undefined && (
+                          <span className="ml-1 font-normal text-fg-3">{f.weight}%</span>
+                        )}
+                      </span>
+                    ))
+                  : line.text}
+              </li>
+            ))}
+          </ol>
+        ) : (
+          artifact.description && (
+            <p className="m-0 text-[13px] text-fg-2">{artifact.description}</p>
+          )
+        )}
+        {dsl && !structure && (
+          <p className="m-0 text-[12.5px] text-fg-3">
+            The structure couldn&apos;t be read from this code. Open the code to check it.
+          </p>
+        )}
+        {showCode && dsl && (
+          <Suspense fallback={<Skeleton className="h-24 w-full" />}>
+            <DslCodeBlock code={dsl} className="rounded-[8px] border border-line" />
+          </Suspense>
+        )}
+      </div>
 
-      {/* Dark-terminal DSL — shared read-only viewer (same highlighter as the builder/drawer) */}
-      {formattedDSL ? (
-        <Suspense fallback={<div className="mx-3.5 mb-3.5 mt-2.5 h-24 border-2 border-ink bg-ink" />}>
-          <DslCodeBlock code={formattedDSL} className="mx-3.5 mb-3.5 mt-2.5 border-2 border-ink" />
-        </Suspense>
-      ) : (
-        artifact.description && <p className="px-3.5 py-3 text-sm text-ink/70">{artifact.description}</p>
-      )}
-
-      {/* Actions */}
-      <div className="flex flex-wrap gap-2.5 border-t-2 border-ink px-3.5 py-3">
+      <div className="flex flex-wrap items-center gap-2 border-t border-line bg-sunk px-3.5 py-2.5">
         <button
-          onClick={handleOpenInBuilder}
-          disabled={!preview?.dsl_code}
-          className="flex items-center gap-1.5 border-2 border-ink bg-orange-500 px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-[0.04em] text-ink shadow-[3px_3px_0_rgb(var(--lt-ink))] transition-all hover:bg-orange-600 disabled:opacity-40 disabled:shadow-none"
+          type="button"
+          className="btn btn-primary"
+          onClick={save}
+          disabled={saved || saving || !dsl}
         >
-          <LayoutGrid className="h-3.5 w-3.5" />
-          Open in builder
+          {saving
+            ? 'Saving…'
+            : saved
+              ? 'Saved as draft'
+              : failed
+                ? 'Try saving again'
+                : 'Save as draft'}
         </button>
         <button
-          onClick={handleBacktest}
-          className="flex items-center gap-1.5 border-2 border-ink bg-paper px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-[0.04em] text-ink shadow-[3px_3px_0_rgb(var(--lt-ink))] transition-all hover:bg-bone"
+          type="button"
+          className="btn btn-secondary"
+          onClick={backtest}
+          disabled={!dsl || saving}
         >
-          <Play className="h-3.5 w-3.5" />
+          <FlaskConical className="h-3.5 w-3.5" />
           Backtest
         </button>
         <button
-          onClick={handleSave}
-          disabled={isSaved || saving || !preview?.dsl_code}
-          title={failed ? 'Saving failed — click to retry' : undefined}
-          className={`flex items-center gap-1.5 border-2 px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-[0.04em] shadow-[3px_3px_0_rgb(var(--lt-ink))] transition-all disabled:opacity-40 disabled:shadow-none ${
-            failed && !saving && !isSaved
-              ? 'border-red-600 bg-red-50 text-red-700 hover:bg-red-100'
-              : 'border-ink bg-paper text-ink hover:bg-bone'
-          }`}
+          type="button"
+          className="btn btn-secondary"
+          onClick={() => navigate(`/strategies/builder?artifact=${artifact.id}`)}
+          disabled={!dsl}
         >
-          {saving ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : isSaved ? (
-            <Check className="h-3.5 w-3.5" />
-          ) : failed ? (
-            <AlertTriangle className="h-3.5 w-3.5" />
-          ) : (
-            <FlaskConical className="h-3.5 w-3.5" />
-          )}
-          {isSaved ? 'Saved' : saving ? 'Saving…' : failed ? 'Retry save' : 'Save'}
+          <PenLine className="h-3.5 w-3.5" />
+          Open in editor
         </button>
+        {dsl && (
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => setShowCode(!showCode)}
+            aria-expanded={showCode}
+          >
+            <Code2 className="h-3.5 w-3.5" />
+            {showCode ? 'Hide code' : 'Show code'}
+          </button>
+        )}
       </div>
-    </div>
+      {failed && (
+        <p role="alert" className="m-0 border-t border-line px-3.5 py-2 text-[12.5px] text-risk">
+          The draft couldn&apos;t be saved. Your conversation is unaffected; please try again.
+        </p>
+      )}
+    </section>
   );
 }

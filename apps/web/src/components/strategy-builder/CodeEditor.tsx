@@ -1,168 +1,130 @@
-// CodeMirror-based code editor for the strategy DSL
+// The strategy language editor, with the engine's problems drawn under their line.
 
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { bracketMatching, foldGutter, indentOnInput } from '@codemirror/language';
-import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
-import { EditorState, Compartment } from '@codemirror/state';
-import { EditorView, keymap } from '@codemirror/view';
-import { AlertCircle } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { highlightSelectionMatches, searchKeymap } from '@codemirror/search';
+import { Compartment, EditorState } from '@codemirror/state';
+import { EditorView, keymap, lineNumbers } from '@codemirror/view';
+import { useCallback, useEffect, useRef } from 'react';
 
 import { useStrategyBuilderStoreWithContext } from '../../store/strategy-builder';
 
-import { sExprDSL, getEditorTheme, dslAutocomplete, dslLinter } from './codemirror';
+import {
+  dslAutocomplete,
+  dslLinter,
+  getEditorTheme,
+  problemsField,
+  problemsTheme,
+  setProblems,
+  sExprDSL,
+} from './codemirror';
+import type { CodeProblem } from './codemirror/problemModel';
 
 interface CodeEditorProps {
   readOnly?: boolean;
+  /** Engine problems for the current text; ignored while the text differs from what was checked. */
+  problems?: readonly CodeProblem[];
 }
 
-export function CodeEditor({ readOnly = false }: CodeEditorProps) {
+export function CodeEditor({ readOnly = false, problems = [] }: CodeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const themeCompartmentRef = useRef<Compartment | null>(null);
-  const readOnlyCompartmentRef = useRef<Compartment | null>(null);
+  const readOnlyCompartment = useRef(new Compartment());
   const isInitializedRef = useRef(false);
-  // True while pushing a store-driven (tree→code) update into the editor, so the
-  // resulting docChanged event isn't mistaken for a user edit (which would loop).
+  // True while pushing a store-driven update into the editor, so the echo isn't treated as typing.
   const isApplyingExternalRef = useRef(false);
-  const { dslCode, dslParseError, updateDSLCode, clearDSLParseError } = useStrategyBuilderStoreWithContext();
+  const { dslCode, dslParseError, updateDSLCode, clearDSLParseError } =
+    useStrategyBuilderStoreWithContext();
 
-  const [isDark, setIsDark] = useState(() =>
-    document.documentElement.classList.contains('dark')
+  const handleChange = useCallback(
+    (value: string) => {
+      if (!isInitializedRef.current || isApplyingExternalRef.current) return;
+      updateDSLCode(value);
+    },
+    [updateDSLCode]
   );
-
-  useEffect(() => {
-    const observer = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        if (mutation.attributeName === 'class') {
-          setIsDark(document.documentElement.classList.contains('dark'));
-        }
-      });
-    });
-
-    observer.observe(document.documentElement, { attributes: true });
-    return () => observer.disconnect();
-  }, []);
-
-  const handleChange = useCallback((value: string) => {
-    // Skip updates during initialization and store-driven (tree→code) updates.
-    if (!isInitializedRef.current) return;
-    if (isApplyingExternalRef.current) return;
-    updateDSLCode(value);
-  }, [updateDSLCode]);
-
-  useEffect(() => {
-    if (viewRef.current && themeCompartmentRef.current) {
-      viewRef.current.dispatch({
-        effects: themeCompartmentRef.current.reconfigure(getEditorTheme(isDark)),
-      });
-    }
-  }, [isDark]);
-
-  useEffect(() => {
-    if (viewRef.current && readOnlyCompartmentRef.current) {
-      viewRef.current.dispatch({
-        effects: readOnlyCompartmentRef.current.reconfigure(
-          EditorState.readOnly.of(readOnly)
-        ),
-      });
-    }
-  }, [readOnly]);
+  const changeRef = useRef(handleChange);
+  changeRef.current = handleChange;
 
   useEffect(() => {
     if (!editorRef.current || viewRef.current) return;
-
-    const themeCompartment = new Compartment();
-    const readOnlyCompartment = new Compartment();
-    themeCompartmentRef.current = themeCompartment;
-    readOnlyCompartmentRef.current = readOnlyCompartment;
-
-    const state = EditorState.create({
-      doc: dslCode,
-      extensions: [
-        foldGutter(),
-        bracketMatching(),
-        indentOnInput(),
-        highlightSelectionMatches(),
-        history(),
-        keymap.of([
-          ...defaultKeymap,
-          ...historyKeymap,
-          ...searchKeymap,
-        ]),
-        sExprDSL(),
-        dslAutocomplete,
-        dslLinter,
-        themeCompartment.of(getEditorTheme(isDark)),
-        readOnlyCompartment.of(EditorState.readOnly.of(readOnly)),
-        EditorView.updateListener.of((update) => {
-          if (update.docChanged) {
-            handleChange(update.state.doc.toString());
-          }
-        }),
-      ],
-    });
-
     const view = new EditorView({
-      state,
+      state: EditorState.create({
+        doc: dslCode,
+        extensions: [
+          lineNumbers(),
+          foldGutter(),
+          bracketMatching(),
+          indentOnInput(),
+          highlightSelectionMatches(),
+          history(),
+          keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+          sExprDSL(),
+          dslAutocomplete,
+          dslLinter,
+          problemsField,
+          problemsTheme,
+          ...getEditorTheme(),
+          EditorView.lineWrapping,
+          readOnlyCompartment.current.of(EditorState.readOnly.of(readOnly)),
+          EditorView.updateListener.of((update) => {
+            if (update.docChanged) changeRef.current(update.state.doc.toString());
+          }),
+        ],
+      }),
       parent: editorRef.current,
     });
-
     viewRef.current = view;
-
-    // Mark as initialized after a tick to skip initial events
-    requestAnimationFrame(() => {
+    const raf = requestAnimationFrame(() => {
       isInitializedRef.current = true;
     });
-
     return () => {
+      cancelAnimationFrame(raf);
       view.destroy();
       viewRef.current = null;
-      themeCompartmentRef.current = null;
-      readOnlyCompartmentRef.current = null;
       isInitializedRef.current = false;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run once on mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Update editor content when dslCode changes externally (switching views or the
-  // live tree→code bind). Flag it so the docChanged echo isn't re-committed.
   useEffect(() => {
-    if (viewRef.current) {
-      const currentContent = viewRef.current.state.doc.toString();
-      if (currentContent !== dslCode) {
-        isApplyingExternalRef.current = true;
-        viewRef.current.dispatch({
-          changes: {
-            from: 0,
-            to: currentContent.length,
-            insert: dslCode,
-          },
-        });
-        isApplyingExternalRef.current = false;
-      }
+    viewRef.current?.dispatch({
+      effects: readOnlyCompartment.current.reconfigure(EditorState.readOnly.of(readOnly)),
+    });
+  }, [readOnly]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const current = view.state.doc.toString();
+    if (current !== dslCode) {
+      isApplyingExternalRef.current = true;
+      view.dispatch({ changes: { from: 0, to: current.length, insert: dslCode } });
+      isApplyingExternalRef.current = false;
     }
   }, [dslCode]);
 
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: setProblems.of(problems) });
+  }, [problems]);
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex min-h-0 flex-col">
       {dslParseError && (
-        <div className="flex items-center gap-2 mx-4 mt-2 px-3 py-2 bg-red-100 border-2 border-ink">
-          <AlertCircle size={14} className="text-red-600 flex-shrink-0" />
-          <span className="text-sm text-red-700 flex-1">{dslParseError}</span>
-          <button
-            onClick={clearDSLParseError}
-            className="text-xs text-red-600 hover:underline"
-          >
+        <div
+          role="alert"
+          className="mx-4 mb-2 mt-3 flex items-center gap-3 rounded-[6px] border border-risk-line bg-risk-soft px-3 py-2 text-[12.5px]"
+        >
+          <span className="flex-1 text-fg">
+            <b className="font-semibold text-risk">The outline can’t follow this yet.</b>{' '}
+            {dslParseError}
+          </span>
+          <button type="button" onClick={clearDSLParseError} className="btn btn-ghost btn-sm">
             Dismiss
           </button>
         </div>
       )}
-
-      <div
-        ref={editorRef}
-        className="flex-1 overflow-auto border-2 border-ink bg-ink shadow-[4px_4px_0_#ff4d1c] mx-4 mt-2 mb-3"
-      />
+      <div ref={editorRef} className="min-h-[420px] flex-1 overflow-auto" />
     </div>
   );
 }

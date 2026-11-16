@@ -1,22 +1,35 @@
-/**
- * PaymentMethodsPage - Manage saved payment methods
- */
-
+import { CLOSED_BETA } from '@llamatrade/core/billing/planTiers';
 import { useBillingStore } from '@llamatrade/core/stores/billing';
 import { Elements } from '@stripe/react-stripe-js';
-import { loadStripe } from '@stripe/stripe-js';
-import { ArrowLeft, Loader2, Plus } from 'lucide-react';
+import { loadStripe, type Stripe } from '@stripe/stripe-js';
+import { AlertTriangle, ChevronLeft, CreditCard, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import CardForm from '../../components/billing/CardForm';
+import { cardSummary } from '../../components/billing/format';
 import PaymentMethodCard from '../../components/billing/PaymentMethodCard';
+import { Dialog, EmptyState, PanelError, SkeletonRows } from '../../components/ui';
 import { billingClient } from '../../services/grpc-client';
+import { getTenantContext } from '../../store/auth';
+import { Panel } from '../settings/parts';
 
-const stripePromise = loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '');
+const STRIPE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY ?? '';
+let stripePromise: Promise<Stripe | null> | null = null;
+
+/** Loads Stripe.js on first use, so other pages never fetch it. */
+function getStripe(): Promise<Stripe | null> | null {
+  if (!STRIPE_KEY) return null;
+  stripePromise ??= loadStripe(STRIPE_KEY);
+  return stripePromise;
+}
 
 export default function PaymentMethodsPage() {
-  const { paymentMethods, loading, error, fetchPaymentMethods, clearError } = useBillingStore();
+  const paymentMethods = useBillingStore((s) => s.paymentMethods);
+  const loaded = useBillingStore((s) => s.loaded.paymentMethods ?? false);
+  const loadError = useBillingStore((s) => s.errors.paymentMethods);
+  const fetchPaymentMethods = useBillingStore((s) => s.fetchPaymentMethods);
+  const [removeId, setRemoveId] = useState<string | null>(null);
 
   const [showAddForm, setShowAddForm] = useState(false);
   const [clientSecret, setClientSecret] = useState<string | null>(null);
@@ -25,7 +38,7 @@ export default function PaymentMethodsPage() {
   const [localError, setLocalError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchPaymentMethods();
+    fetchPaymentMethods().catch(() => undefined);
   }, [fetchPaymentMethods]);
 
   const handleAddCard = async () => {
@@ -33,16 +46,10 @@ export default function PaymentMethodsPage() {
     setSetupLoading(true);
     setLocalError(null);
     try {
-      // Use checkout session to get a client secret for adding a card
-      const response = await billingClient.createCheckoutSession({
-        planId: '', // Empty for setup mode
-        successUrl: `${window.location.origin}/billing/payment-methods?success=true`,
-        cancelUrl: `${window.location.origin}/billing/payment-methods`,
-      });
-      // Note: In practice, you'd want a dedicated CreateSetupIntent endpoint
-      setClientSecret(response.sessionId);
+      const response = await billingClient.createSetupIntent({ context: getTenantContext() });
+      setClientSecret(response.clientSecret || null);
     } catch {
-      setLocalError('Failed to create setup intent. Please try again.');
+      setLocalError("The card form couldn't be opened. Please try again.");
     } finally {
       setSetupLoading(false);
     }
@@ -53,14 +60,15 @@ export default function PaymentMethodsPage() {
     setLocalError(null);
     try {
       await billingClient.addPaymentMethod({
+        context: getTenantContext(),
         setupIntentId,
-        setAsDefault: paymentMethods.length === 0, // Set as default if first card
+        setAsDefault: paymentMethods.length === 0,
       });
       await fetchPaymentMethods();
       setShowAddForm(false);
       setClientSecret(null);
     } catch {
-      setLocalError('Failed to attach payment method. Please try again.');
+      setLocalError("The card couldn't be saved. Please try again.");
     } finally {
       setActionLoading(false);
     }
@@ -70,154 +78,169 @@ export default function PaymentMethodsPage() {
     setLocalError(errorMessage);
   };
 
-  const handleSetDefault = async (id: string) => {
+  const handleDelete = async (id: string) => {
     setActionLoading(true);
     setLocalError(null);
     try {
-      // Note: The proto uses setupIntentId, but for setting default we pass the payment method ID
-      // The backend should handle this case
-      await billingClient.addPaymentMethod({
-        setupIntentId: id,
-        setAsDefault: true,
+      await billingClient.removePaymentMethod({
+        context: getTenantContext(),
+        paymentMethodId: id,
       });
       await fetchPaymentMethods();
+      setRemoveId(null);
     } catch {
-      setLocalError('Failed to set default payment method. Please try again.');
+      setLocalError("The card couldn't be removed. Please try again.");
     } finally {
       setActionLoading(false);
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('Are you sure you want to remove this payment method?')) {
-      return;
-    }
-
-    setActionLoading(true);
-    setLocalError(null);
-    try {
-      await billingClient.removePaymentMethod({ paymentMethodId: id });
-      await fetchPaymentMethods();
-    } catch {
-      setLocalError('Failed to delete payment method. Please try again.');
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const displayError = localError || error;
-  const clearDisplayError = () => {
-    setLocalError(null);
-    clearError();
+  const removing = paymentMethods.find((pm) => pm.id === removeId) ?? null;
+  const closeForm = () => {
+    setShowAddForm(false);
+    setClientSecret(null);
   };
 
   return (
-    <div className="h-[calc(100vh-56px)] overflow-auto bg-gray-50 dark:bg-gray-950 bg-grid">
-      <div className="mx-auto max-w-2xl px-6 py-8">
-        <div className="mb-8">
-          <Link
-            to="/billing"
-            className="mb-4 inline-flex items-center gap-1 text-xs font-mono font-bold uppercase tracking-wide text-ink/60 hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Back to Billing
-          </Link>
-          <h1 className="text-2xl font-display uppercase tracking-tight text-gray-900 dark:text-gray-100">
-            Payment Methods
-          </h1>
-          <p className="mt-1 text-gray-500 dark:text-gray-400">
-            Manage your saved payment methods
-          </p>
-        </div>
+    <div className="page max-w-[720px]">
+      <Link
+        to="/settings/plan"
+        className="mb-2 inline-flex items-center gap-0.5 text-[13px] text-accent hover:underline"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        Plan and usage
+      </Link>
+      <h1 className="m-0 text-[21px] leading-tight">Payment methods</h1>
+      <p className="mb-4 mt-[3px] text-[12.5px] text-fg-3">
+        {CLOSED_BETA
+          ? "You won't need a card until paid plans open after the beta."
+          : 'The default card pays for your plan.'}
+      </p>
 
-        {displayError && (
-          <div className="mb-6 border-2 border-ink bg-red-50 p-4 dark:bg-red-900/20">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-mono text-red-600 dark:text-red-400">{displayError}</p>
-              <button
-                onClick={clearDisplayError}
-                className="text-xs font-mono font-bold uppercase tracking-wide text-red-600 hover:text-red-700 dark:text-red-400"
-              >
-                Dismiss
-              </button>
-            </div>
-          </div>
-        )}
-
-        {loading && !paymentMethods.length ? (
-          <div className="flex justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {paymentMethods.map((pm) => (
-              <PaymentMethodCard
-                key={pm.id}
-                paymentMethod={pm}
-                onSetDefault={handleSetDefault}
-                onDelete={handleDelete}
-                loading={actionLoading}
-              />
-            ))}
-
-            {paymentMethods.length === 0 && !showAddForm && (
-              <div className="border-2 border-ink bg-white p-8 text-center dark:border-gray-700 dark:bg-gray-900">
-                <p className="text-gray-500 dark:text-gray-400">
-                  No payment methods saved yet.
-                </p>
-              </div>
-            )}
-          </div>
-        )}
-
-        {!showAddForm && (
+      {localError && (
+        <div
+          role="alert"
+          className="mb-3 flex items-center gap-2.5 rounded-[8px] border border-risk-line bg-risk-soft px-3 py-2.5 text-[12.5px] text-fg-2"
+        >
+          <AlertTriangle className="h-4 w-4 flex-none text-risk" />
+          <span className="min-w-0 flex-1">{localError}</span>
           <button
-            onClick={handleAddCard}
-            className="mt-6 flex w-full items-center justify-center gap-2 border-2 border-dashed border-ink/40 bg-white py-4 text-xs font-mono font-bold uppercase tracking-wide text-ink/60 hover:border-ink hover:text-ink dark:border-gray-600 dark:bg-gray-900 dark:hover:border-gray-500 dark:hover:text-gray-400"
+            type="button"
+            className="btn btn-ghost btn-sm"
+            onClick={() => setLocalError(null)}
           >
-            <Plus className="h-5 w-5" />
-            Add a new card
+            Dismiss
           </button>
-        )}
+        </div>
+      )}
 
-        {showAddForm && (
-          <div className="mt-6 border-2 border-ink shadow-[4px_4px_0_#0d0d0d] bg-white p-6 dark:border-gray-700 dark:bg-gray-900">
-            <h2 className="mb-4 text-lg font-display uppercase tracking-tight text-gray-900 dark:text-gray-100">
-              Add New Card
-            </h2>
-
-            {setupLoading ? (
-              <div className="flex justify-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
-              </div>
-            ) : clientSecret ? (
-              <Elements stripe={stripePromise}>
-                <CardForm
-                  clientSecret={clientSecret}
-                  onSuccess={handleCardSuccess}
-                  onError={handleCardError}
-                  submitLabel="Save Card"
+      <div className="grid gap-3">
+        <Panel title="Saved cards">
+          {!loaded ? (
+            <SkeletonRows rows={2} cols={2} />
+          ) : loadError ? (
+            <PanelError
+              title="Saved cards couldn't be loaded"
+              onRetry={() => {
+                fetchPaymentMethods().catch(() => undefined);
+              }}
+            />
+          ) : paymentMethods.length === 0 ? (
+            <EmptyState
+              icon={CreditCard}
+              title="No card on file"
+              body="Cards you add appear here. Stripe keeps the card details."
+            />
+          ) : (
+            <div className="divide-y divide-line">
+              {paymentMethods.map((pm) => (
+                <PaymentMethodCard
+                  key={pm.id}
+                  paymentMethod={pm}
+                  onDelete={setRemoveId}
                   loading={actionLoading}
                 />
-              </Elements>
-            ) : (
-              <div className="text-center py-4 text-gray-500">
-                Failed to initialize payment form. Please try again.
-              </div>
-            )}
+              ))}
+            </div>
+          )}
+        </Panel>
 
-            <button
-              onClick={() => {
-                setShowAddForm(false);
-                setClientSecret(null);
-              }}
-              className="mt-4 w-full text-center text-xs font-mono font-bold uppercase tracking-wide text-ink/60 hover:text-ink dark:text-gray-400 dark:hover:text-gray-200"
-            >
-              Cancel
-            </button>
-          </div>
+        {showAddForm ? (
+          <Panel
+            title="Add a card"
+            aside={
+              <button type="button" className="text-fg-3 hover:text-fg" onClick={closeForm}>
+                Cancel
+              </button>
+            }
+          >
+            <div className="px-3.5 py-3">
+              {setupLoading ? (
+                <SkeletonRows rows={2} cols={1} />
+              ) : clientSecret ? (
+                <Elements stripe={getStripe()}>
+                  <CardForm
+                    clientSecret={clientSecret}
+                    onSuccess={(id) => {
+                      handleCardSuccess(id).catch(() => undefined);
+                    }}
+                    onError={handleCardError}
+                    submitLabel="Save card"
+                    loading={actionLoading}
+                  />
+                </Elements>
+              ) : (
+                <p className="m-0 text-[12.5px] text-fg-2">
+                  The card form couldn&apos;t be opened. Close this and try again.
+                </p>
+              )}
+            </div>
+          </Panel>
+        ) : STRIPE_KEY ? (
+          <button
+            type="button"
+            className="btn btn-secondary justify-self-start"
+            onClick={() => {
+              handleAddCard().catch(() => undefined);
+            }}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add a card
+          </button>
+        ) : (
+          <p className="m-0 text-[12.5px] text-fg-3">
+            Adding a card isn&apos;t set up on this server yet.
+          </p>
         )}
       </div>
+
+      <Dialog
+        open={removing !== null}
+        onClose={() => setRemoveId(null)}
+        title="Remove this card?"
+        footer={
+          <>
+            <button type="button" className="btn btn-secondary" onClick={() => setRemoveId(null)}>
+              Keep it
+            </button>
+            <button
+              type="button"
+              className="btn btn-danger"
+              disabled={actionLoading}
+              onClick={() => {
+                if (removing) handleDelete(removing.id).catch(() => undefined);
+              }}
+            >
+              Remove
+            </button>
+          </>
+        }
+      >
+        <p className="m-0 text-[13px] text-fg-2">
+          {removing ? cardSummary(removing.cardBrand, removing.cardLast4) : 'This card'} will be
+          removed from your account.
+        </p>
+      </Dialog>
     </div>
   );
 }

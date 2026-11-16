@@ -1,5 +1,7 @@
-import { ArrowUp, History, Plus, Settings, Sparkles } from 'lucide-react-native';
-import { useEffect, useRef, useState } from 'react';
+import type { Timestamp } from '@llamatrade/core/proto/common_pb';
+import { MessageRole, useAgentStore, type AgentMessage } from '@llamatrade/core/stores/agent';
+import { Check, History, Send, Sparkles, X } from 'lucide-react-native';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -10,20 +12,15 @@ import {
   ScrollView,
   TextInput,
   View,
-  type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-import { MessageRole, useAgentStore, type AgentMessage } from '@llamatrade/core/stores/agent';
-import type { Timestamp } from '@llamatrade/core/proto/common_pb';
 
 import { ArtifactCard } from '../../src/copilot/ArtifactCard';
 import { HistorySheet } from '../../src/copilot/HistorySheet';
 import { Markdown } from '../../src/copilot/Markdown';
 import { ThinkingBlock } from '../../src/copilot/ThinkingBlock';
-import { useAuthStore } from '../../src/stores/auth';
-import { fonts, palette } from '../../src/theme';
-import { Badge, Body, GridBackground, Mono } from '../../src/ui';
+import { fonts, makeStyles, radius, space, useTheme } from '../../src/theme';
+import { Button, Card, Notice, ScreenHeader, Text } from '../../src/ui';
 
 const DEFAULT_PROMPTS = [
   'Build a momentum rotation across the 11 sector ETFs, monthly',
@@ -31,19 +28,9 @@ const DEFAULT_PROMPTS = [
   'Add a bond hedge below the 200-day',
 ];
 
-/** Hard brutalist offset shadow (iOS). */
-function hardShadow(color: string): ViewStyle {
-  return { shadowColor: color, shadowOffset: { width: 4, height: 4 }, shadowOpacity: 1, shadowRadius: 0, elevation: 6 };
-}
-
-function fmtTime(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
-}
-
-function tsToMs(ts?: Timestamp): number {
-  const s = ts?.seconds;
-  return s ? Number(s) * 1000 : Date.now();
+function fmtTime(ts?: Timestamp): string {
+  const d = ts?.seconds ? new Date(Number(ts.seconds) * 1000) : new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 /** Human labels for confirmation-gated tools; falls back to the de-underscored name. */
@@ -52,7 +39,7 @@ function humanizeTool(name: string): string {
   return TOOL_LABELS[name] ?? name.replace(/_/g, ' ');
 }
 
-/** Drop the raw strategy-DSL fence from prose — the rich artifact card is the canonical preview. */
+/** Drops the raw strategy DSL fence from prose; the artifact card shows it instead. */
 function stripStrategyFences(content: string): string {
   return content
     .replace(/```[a-z]*\n?[\s\S]*?```/gi, (block) => (/\(\s*strategy/i.test(block) ? '' : block))
@@ -60,48 +47,8 @@ function stripStrategyFences(content: string): string {
     .trim();
 }
 
-/* --------------------------------------------------------------- avatar ---- */
-function Avatar({ user, initial }: { user?: boolean; initial?: string }) {
-  return (
-    <View
-      style={{
-        width: 32,
-        height: 32,
-        borderWidth: 2,
-        borderColor: palette.ink,
-        backgroundColor: user ? palette.orange[500] : palette.ink,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      {user ? (
-        <Body size={13} color={palette.ink} style={{ fontFamily: fonts.display }}>
-          {initial}
-        </Body>
-      ) : (
-        <Sparkles color={palette.orange[500]} size={15} strokeWidth={2} />
-      )}
-    </View>
-  );
-}
-
-/* ----------------------------------------------------------- caret / dots -- */
-function Blink({ children }: { children: React.ReactNode }) {
-  const v = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    const a = Animated.loop(
-      Animated.sequence([
-        Animated.timing(v, { toValue: 0, duration: 500, useNativeDriver: true }),
-        Animated.timing(v, { toValue: 1, duration: 500, useNativeDriver: true }),
-      ]),
-    );
-    a.start();
-    return () => a.stop();
-  }, [v]);
-  return <Animated.Text style={{ opacity: v, color: palette.orange[500], fontFamily: fonts.mono }}>{children}</Animated.Text>;
-}
-
 function Dot({ delay }: { delay: number }) {
+  const { c } = useTheme();
   const v = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     const a = Animated.loop(
@@ -119,98 +66,49 @@ function Dot({ delay }: { delay: number }) {
   return (
     <Animated.View
       style={{
-        width: 7,
-        height: 7,
-        backgroundColor: palette.orange[500],
-        transform: [{ translateY: v.interpolate({ inputRange: [0, 1], outputRange: [0, -5] }) }],
-        opacity: v.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }),
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: c.fg3,
+        opacity: v.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1] }),
       }}
     />
   );
 }
 
-/* ---------------------------------------------------------------- bubbles -- */
-function Bubble({ tone, label, children }: { tone: 'ink' | 'bone'; label: string; children: React.ReactNode }) {
-  const me = tone === 'bone';
-  const initial = useAuthStore((s) => (s.user?.firstName ?? s.user?.email ?? 'Y').charAt(0).toUpperCase());
+function Bubble({ me, time, children }: { me: boolean; time?: string; children: ReactNode }) {
+  const s = useStyles();
   return (
-    <View style={{ flexDirection: me ? 'row-reverse' : 'row', gap: 10, alignItems: 'flex-start' }}>
-      <Avatar user={me} initial={initial} />
-      <View style={{ flex: 1, alignItems: me ? 'flex-end' : 'flex-start', gap: 5 }}>
-        <Mono size={8.5} color={palette.gray[500]} style={{ letterSpacing: 1 }}>
-          {label}
-        </Mono>
-        <View
-          style={[
-            {
-              maxWidth: '96%',
-              borderWidth: 2,
-              borderColor: me ? palette.orange[500] : palette.ink,
-              backgroundColor: me ? palette.ink : palette.paper,
-              paddingHorizontal: 12,
-              paddingVertical: 9,
-            },
-            hardShadow(me ? palette.orange[500] : palette.ink),
-          ]}
-        >
-          {children}
-        </View>
-      </View>
+    <View style={[s.msg, me ? s.msgMe : null]}>
+      <View style={[s.bubble, me ? s.bubbleMe : s.bubbleAi]}>{children}</View>
+      {time ? <Text variant="caption" tone="fg3" style={me ? s.timeMe : null}>{time}</Text> : null}
     </View>
   );
 }
 
 function ToolRow({ name, status }: { name: string; status: 'running' | 'complete' | 'error' }) {
-  const spin = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    if (status !== 'running') return;
-    const a = Animated.loop(Animated.timing(spin, { toValue: 1, duration: 1400, easing: Easing.linear, useNativeDriver: true }));
-    a.start();
-    return () => a.stop();
-  }, [spin, status]);
-  const chip = status === 'error' ? 'red' : status === 'complete' ? 'green' : 'orange';
+  const { c } = useTheme();
+  const s = useStyles();
   return (
-    <View style={{ flexDirection: 'row', gap: 42 }}>
-      <View style={{ width: 32 }} />
-      <View
-        style={{
-          flex: 1,
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 7,
-          borderWidth: 1.5,
-          borderStyle: 'dashed',
-          borderColor: palette.ink,
-          paddingHorizontal: 9,
-          paddingVertical: 6,
-        }}
-      >
-        <Animated.View style={{ transform: [{ rotate: spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }}>
-          <Settings color={palette.ink} size={12} strokeWidth={2} />
-        </Animated.View>
-        <Mono size={9.5} style={{ fontWeight: '700', flexShrink: 1 }} numberOfLines={1}>
-          {name}
-        </Mono>
-        <View style={{ marginLeft: 'auto' }}>
-          <Badge label={status === 'running' ? 'running…' : status} variant={chip} />
-        </View>
-      </View>
+    <View style={s.tool}>
+      {status === 'running' ? (
+        <ActivityIndicator size="small" color={c.fg3} />
+      ) : status === 'complete' ? (
+        <Check color={c.accent} size={13} strokeWidth={2} />
+      ) : (
+        <X color={c.risk} size={13} strokeWidth={2} />
+      )}
+      <Text variant="numSmall" tone={status === 'error' ? 'risk' : 'fg2'} numberOfLines={1} style={s.toolName}>
+        {name}
+      </Text>
+      <Text variant="caption" tone="fg3">{status === 'running' ? 'Running' : status === 'complete' ? 'Done' : 'Failed'}</Text>
     </View>
   );
 }
 
-/* Indented row (aligned under the avatar column) for tool rows / artifacts. */
-function Indented({ children }: { children: React.ReactNode }) {
-  return (
-    <View style={{ flexDirection: 'row', gap: 42 }}>
-      <View style={{ width: 32 }} />
-      <View style={{ flex: 1 }}>{children}</View>
-    </View>
-  );
-}
-
-/* ----------------------------------------------------------------- screen -- */
 export default function CopilotScreen() {
+  const { c, mode } = useTheme();
+  const s = useStyles();
   const {
     messages,
     pendingArtifacts,
@@ -223,7 +121,6 @@ export default function CopilotScreen() {
     suggestedPrompts,
     error,
     serviceUnavailable,
-    startNewChat,
     loadSessions,
     sendMessage,
     confirmToolCall,
@@ -236,8 +133,8 @@ export default function CopilotScreen() {
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
-    void getSuggestedPrompts({ page: 'copilot' });
-    void loadSessions();
+    getSuggestedPrompts({ page: 'copilot' });
+    loadSessions();
   }, [getSuggestedPrompts, loadSessions]);
 
   const prompts = suggestedPrompts.length ? suggestedPrompts.slice(0, 4) : DEFAULT_PROMPTS;
@@ -245,123 +142,73 @@ export default function CopilotScreen() {
 
   const send = (text: string) => {
     const t = text.trim();
-    if (!t || isStreaming) return;
+    if (!t || isStreaming || serviceUnavailable) return;
     setDraft('');
-    void sendMessage(t, undefined, undefined, 'copilot');
+    sendMessage(t, undefined, undefined, 'copilot');
   };
 
   const empty = messages.length === 0 && !isStreaming;
+  const canSend = !!draft.trim() && !isStreaming && !serviceUnavailable;
 
   return (
-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: palette.bone }}>
-      <GridBackground />
-      {/* App bar */}
-      <View
-        style={{
-          height: 46,
-          borderBottomWidth: 2,
-          borderColor: palette.ink,
-          backgroundColor: palette.paper,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingHorizontal: 12,
-        }}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Sparkles color={palette.orange[500]} size={16} strokeWidth={2} />
-          <Body size={16} style={{ fontFamily: fonts.display, textTransform: 'uppercase' }}>
-            Copilot
-          </Body>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Pressable onPress={() => setHistoryOpen(true)} hitSlop={6} style={{ width: 30, height: 30, borderWidth: 2, borderColor: palette.ink, alignItems: 'center', justifyContent: 'center' }}>
-            <History color={palette.ink} size={15} strokeWidth={2} />
-          </Pressable>
-          <Pressable
-            onPress={startNewChat}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 3, borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.orange[500], paddingHorizontal: 8, height: 30 }}
-          >
-            <Plus color={palette.ink} size={12} strokeWidth={2.5} />
-            <Mono size={9} style={{ fontWeight: '700' }}>
-              NEW
-            </Mono>
-          </Pressable>
-        </View>
+    <SafeAreaView edges={['top']} style={s.safe}>
+      <View style={s.header}>
+        <ScreenHeader
+          title="Copilot"
+          right={
+            <Pressable accessibilityLabel="Conversation history" onPress={() => setHistoryOpen(true)} hitSlop={10}>
+              <History color={c.fg2} size={20} strokeWidth={1.6} />
+            </Pressable>
+          }
+        />
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={s.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           ref={scrollRef}
-          contentContainerStyle={{ padding: 12, gap: 14 }}
+          contentContainerStyle={s.body}
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
           keyboardShouldPersistTaps="handled"
         >
           {serviceUnavailable ? (
-            <View style={{ borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.bone2, padding: 10 }}>
-              <Mono size={10} color={palette.gray[600]}>
-                Copilot service offline — is the agent running?
-              </Mono>
-            </View>
+            <Notice
+              title="Copilot is unavailable."
+              detail="Your conversations are still here. Sending is paused until the service is back."
+            />
           ) : null}
 
-          {error ? (
-            <Pressable onPress={clearError} style={{ borderWidth: 2, borderColor: palette.red[500], backgroundColor: palette.red[50], padding: 10 }}>
-              <Mono size={10} color={palette.red[600]}>
-                {error} · tap to dismiss
-              </Mono>
-            </Pressable>
-          ) : null}
+          {error ? <Notice title="Something went wrong." detail={`${error} Tap to dismiss.`} onPress={clearError} /> : null}
 
           {empty ? (
-            <View style={{ gap: 11, marginTop: 8 }}>
-              <View style={[{ borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.ink, padding: 16 }, hardShadow(palette.orange[500])]}>
-                <Sparkles color={palette.orange[500]} size={24} strokeWidth={2} />
-                <Body size={20} color={palette.bone} style={{ fontFamily: fonts.display, textTransform: 'uppercase', marginTop: 10 }}>
-                  LlamaTrade Copilot
-                </Body>
-                <Markdown
-                  tone="bone"
-                  size={13}
-                  content={'Describe, build, edit or explain a strategy. I write **real DSL** and run it on your paper account.'}
-                />
+            <View style={s.emptyWrap}>
+              <View style={s.emptyIcon}>
+                <Sparkles color={c.accent} size={20} strokeWidth={1.6} />
               </View>
-              {prompts.map((p) => (
-                <Pressable
-                  key={p}
-                  onPress={() => send(p)}
-                  style={{ borderWidth: 1.5, borderColor: palette.ink, backgroundColor: palette.paper, paddingHorizontal: 11, paddingVertical: 11, flexDirection: 'row', gap: 8, alignItems: 'center' }}
-                >
-                  <Mono size={13} color={palette.orange[500]} style={{ fontWeight: '700' }}>
-                    ＋
-                  </Mono>
-                  <Body size={12.5} style={{ flexShrink: 1 }}>
-                    {p}
-                  </Body>
-                </Pressable>
-              ))}
+              <Text variant="heading" style={s.center}>Ask about a strategy</Text>
+              <Text variant="small" tone="fg2" style={s.center}>
+                Describe, build, edit or explain a strategy. It runs on your paper account.
+              </Text>
+              <View style={s.prompts}>
+                {prompts.map((p) => (
+                  <Card key={p} onPress={() => send(p)}>
+                    <Text variant="small">{p}</Text>
+                  </Card>
+                ))}
+              </View>
             </View>
           ) : (
             <>
               {messages.map((m: AgentMessage) => {
                 const isUser = m.role === MessageRole.USER;
                 return (
-                  <View key={m.id} style={{ gap: 12 }}>
-                    {!isUser && m.thinking ? (
-                      <Indented>
-                        <ThinkingBlock content={m.thinking} autoExpanded={false} />
-                      </Indented>
-                    ) : null}
-                    <Bubble tone={isUser ? 'bone' : 'ink'} label={`${isUser ? 'YOU' : 'COPILOT'} · ${fmtTime(tsToMs(m.createdAt))}`}>
-                      <Markdown content={m.inlineArtifactIds.length ? stripStrategyFences(m.content) : m.content} tone={isUser ? 'bone' : 'ink'} />
+                  <View key={m.id} style={s.turn}>
+                    {!isUser && m.thinking ? <ThinkingBlock content={m.thinking} autoExpanded={false} /> : null}
+                    <Bubble me={isUser} time={fmtTime(m.createdAt)}>
+                      <Markdown content={m.inlineArtifactIds.length ? stripStrategyFences(m.content) : m.content} />
                     </Bubble>
                     {m.inlineArtifactIds.map((id) => {
                       const a = artifactFor(id);
-                      return a ? (
-                        <Indented key={id}>
-                          <ArtifactCard artifact={a} />
-                        </Indented>
-                      ) : null;
+                      return a ? <ArtifactCard key={id} artifact={a} /> : null;
                     })}
                   </View>
                 );
@@ -371,106 +218,65 @@ export default function CopilotScreen() {
 
               {pendingArtifactIdsForCurrentMessage.map((id) => {
                 const a = artifactFor(id);
-                return a ? (
-                  <Indented key={`live-${id}`}>
-                    <ArtifactCard artifact={a} />
-                  </Indented>
-                ) : null;
+                return a ? <ArtifactCard key={`live-${id}`} artifact={a} /> : null;
               })}
 
               {!isStreaming && pendingConfirmation ? (
-                <Indented>
-                  <View style={[{ borderWidth: 2, borderColor: palette.orange[500], backgroundColor: palette.paper, padding: 11, gap: 9 }, hardShadow(palette.ink)]}>
-                    <Mono size={9} color={palette.gray[500]} style={{ fontWeight: '700', letterSpacing: 1 }}>
-                      APPROVE ACTION
-                    </Mono>
-                    <Body size={13} style={{ fontWeight: '700' }}>
-                      {humanizeTool(pendingConfirmation.toolName)}
-                    </Body>
-                    <View style={{ flexDirection: 'row', gap: 8 }}>
-                      <Pressable
-                        onPress={() => void confirmToolCall(true)}
-                        style={{ flex: 1, backgroundColor: palette.orange[500], borderWidth: 2, borderColor: palette.ink, paddingVertical: 10, alignItems: 'center' }}
-                      >
-                        <Mono size={11} style={{ fontWeight: '700' }}>APPROVE & RUN</Mono>
-                      </Pressable>
-                      <Pressable
-                        onPress={() => void confirmToolCall(false)}
-                        style={{ flex: 1, backgroundColor: palette.paper, borderWidth: 2, borderColor: palette.ink, paddingVertical: 10, alignItems: 'center' }}
-                      >
-                        <Mono size={11} style={{ fontWeight: '700' }}>DECLINE</Mono>
-                      </Pressable>
-                    </View>
-                  </View>
-                </Indented>
+                <View style={s.turn}>
+                  <Card style={s.approve}>
+                    <Text variant="label" tone="fg3">Approve action</Text>
+                    <Text variant="subhead">{humanizeTool(pendingConfirmation.toolName)}</Text>
+                  </Card>
+                  <Button label="Approve and run" onPress={() => confirmToolCall(true)} />
+                  <Button label="Decline" variant="secondary" onPress={() => confirmToolCall(false)} />
+                </View>
               ) : null}
 
               {isStreaming && thinkingContent ? (
-                <Indented>
-                  <ThinkingBlock
-                    content={thinkingContent}
-                    autoExpanded={streamingContent.length === 0}
-                    streaming
-                  />
-                </Indented>
+                <ThinkingBlock content={thinkingContent} autoExpanded={streamingContent.length === 0} streaming />
               ) : null}
 
               {isStreaming ? (
                 streamingContent ? (
-                  <Bubble tone="ink" label="COPILOT">
-                    <Markdown content={stripStrategyFences(streamingContent)} tone="ink" />
-                    <Blink>▋</Blink>
+                  <Bubble me={false}>
+                    <Markdown content={stripStrategyFences(streamingContent)} />
                   </Bubble>
                 ) : currentToolCall ? null : (
-                  <Indented>
-                    <View style={[{ alignSelf: 'flex-start', flexDirection: 'row', gap: 4, borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.paper, paddingHorizontal: 11, paddingVertical: 11 }, hardShadow(palette.ink)]}>
-                      <Dot delay={0} />
-                      <Dot delay={150} />
-                      <Dot delay={300} />
-                    </View>
-                  </Indented>
+                  <View style={[s.bubble, s.bubbleAi, s.typing]}>
+                    <Dot delay={0} />
+                    <Dot delay={150} />
+                    <Dot delay={300} />
+                  </View>
                 )
               ) : null}
             </>
           )}
         </ScrollView>
 
-        {/* Composer */}
-        <View style={{ borderTopWidth: 2, borderColor: palette.ink, backgroundColor: palette.paper, padding: 8, flexDirection: 'row', gap: 8, alignItems: 'flex-end' }}>
+        <View style={s.composer}>
           <TextInput
             value={draft}
             onChangeText={setDraft}
-            placeholder={serviceUnavailable ? 'Copilot offline…' : 'Ask Copilot to build, edit, or explain…'}
-            placeholderTextColor={palette.gray[400]}
+            placeholder={serviceUnavailable ? 'Copilot is unavailable' : 'Message Copilot'}
+            placeholderTextColor={c.fg3}
             editable={!serviceUnavailable}
             multiline
-            style={{
-              flex: 1,
-              maxHeight: 120,
-              borderWidth: 2,
-              borderColor: palette.ink,
-              backgroundColor: palette.bone,
-              fontFamily: fonts.mono,
-              fontSize: 12,
-              color: palette.ink,
-              paddingHorizontal: 10,
-              paddingVertical: 9,
-            }}
+            keyboardAppearance={mode}
+            selectionColor={c.accent}
+            style={s.input}
           />
           <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Send"
             onPress={() => send(draft)}
-            disabled={!draft.trim() || isStreaming || serviceUnavailable}
-            style={{
-              width: 40,
-              height: 40,
-              backgroundColor: !draft.trim() || isStreaming ? palette.orange[300] : palette.orange[500],
-              borderWidth: 2,
-              borderColor: palette.ink,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
+            disabled={!canSend}
+            style={[s.send, canSend ? null : s.sendOff]}
           >
-            {isStreaming ? <ActivityIndicator size="small" color={palette.ink} /> : <ArrowUp color={palette.ink} size={18} strokeWidth={2.5} />}
+            {isStreaming ? (
+              <ActivityIndicator size="small" color={c.accentInk} />
+            ) : (
+              <Send color={c.accentInk} size={16} strokeWidth={1.8} />
+            )}
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -479,3 +285,71 @@ export default function CopilotScreen() {
     </SafeAreaView>
   );
 }
+
+const useStyles = makeStyles((t) => ({
+  safe: { flex: 1, backgroundColor: t.c.canvas },
+  flex: { flex: 1 },
+  header: { paddingHorizontal: space.gutter, paddingTop: 10, paddingBottom: 6 },
+  body: { paddingHorizontal: space.gutter, paddingTop: 6, paddingBottom: 20, gap: space.gap },
+  emptyWrap: { alignItems: 'center', gap: 8, paddingTop: 36 },
+  emptyIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: t.c.lineStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  center: { textAlign: 'center' },
+  prompts: { alignSelf: 'stretch', gap: 10, marginTop: 18 },
+  turn: { gap: 10 },
+  msg: { alignSelf: 'flex-start', maxWidth: '88%', gap: 4 },
+  msgMe: { alignSelf: 'flex-end', maxWidth: '80%' },
+  timeMe: { textAlign: 'right' },
+  bubble: { borderRadius: radius.sm, paddingHorizontal: 12, paddingVertical: 8 },
+  bubbleMe: { backgroundColor: t.c.sunk },
+  bubbleAi: { backgroundColor: t.c.panel, borderWidth: 1, borderColor: t.c.line },
+  typing: { alignSelf: 'flex-start', flexDirection: 'row', gap: 5, paddingVertical: 12 },
+  tool: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  toolName: { flexShrink: 1 },
+  approve: { gap: 4 },
+  composer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 10,
+    borderTopWidth: 1,
+    borderColor: t.c.line,
+    backgroundColor: t.c.canvas,
+  },
+  input: {
+    flex: 1,
+    minHeight: 42,
+    maxHeight: 120,
+    borderRadius: 21,
+    borderWidth: 1,
+    borderColor: t.c.lineStrong,
+    backgroundColor: t.c.panel,
+    paddingHorizontal: 16,
+    paddingTop: 11,
+    paddingBottom: 11,
+    fontFamily: fonts.sans,
+    fontSize: 15,
+    color: t.c.fg,
+  },
+  send: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginBottom: 1,
+    backgroundColor: t.c.accentFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sendOff: { opacity: 0.45 },
+}));

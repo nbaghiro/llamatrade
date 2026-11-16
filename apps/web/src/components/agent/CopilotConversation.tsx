@@ -1,14 +1,11 @@
 /**
- * Shared Copilot conversation core — the message thread + composer, driven by
- * the global agent store. This is the single source of chat UI/logic reused by
- * every Copilot surface (full page, side panel, New Strategy modal) so they stay
- * behaviourally identical; each surface supplies only its own shell (sidebar,
- * resize, header) around this.
+ * The Copilot thread and composer, shared by the full page, the side panel and the New Strategy
+ * dialog. Each surface supplies only its own frame around this.
  */
 
-import { useAgentStore } from '@llamatrade/core/stores/agent';
-import { useEffect, useMemo, useRef, type ReactNode } from 'react';
-
+import { useAgentStore, type ResolvedConfirmation } from '@llamatrade/core/stores/agent';
+import { AlertTriangle } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
 import { ChatInput } from './ChatInput';
 import { ChatMessage } from './ChatMessage';
@@ -20,57 +17,57 @@ import { ToolConfirmationCard } from './ToolConfirmationCard';
 
 type Variant = 'page' | 'panel' | 'modal';
 
-interface Sizing {
-  threadInner: string;
-  msgSpace: string;
-  composerPad: string;
-  composerInner: string;
-  chip: string;
-  footer: string;
-}
-
-const SIZING: Record<Variant, Sizing> = {
-  page: {
-    threadInner: 'mx-auto max-w-[820px] px-6 py-7',
-    msgSpace: 'space-y-5',
-    composerPad: 'px-6 py-4',
-    composerInner: 'mx-auto max-w-[820px]',
-    chip: 'px-2.5 py-1.5 text-[10.5px]',
-    footer: 'text-[10px]',
-  },
-  panel: {
-    threadInner: 'px-4 py-4',
-    msgSpace: 'space-y-4',
-    composerPad: 'px-4 py-3',
-    composerInner: '',
-    chip: 'px-2 py-1 text-[9.5px]',
-    footer: 'text-[9px]',
-  },
-  modal: {
-    threadInner: 'mx-auto max-w-[760px] px-6 py-6',
-    msgSpace: 'space-y-4',
-    composerPad: 'px-6 py-4',
-    composerInner: 'mx-auto max-w-[760px]',
-    chip: 'px-2.5 py-1.5 text-[10.5px]',
-    footer: 'text-[10px]',
-  },
+const COLUMN: Record<Variant, string> = {
+  page: 'mx-auto w-full max-w-[700px] px-4 md:px-0',
+  panel: 'w-full px-4',
+  modal: 'mx-auto w-full max-w-[760px] px-6',
 };
+
+const DEFAULT_NOTE =
+  'Copilot writes the strategy language. Nothing runs or trades until you approve it.';
 
 interface CopilotConversationProps {
   variant: Variant;
-  /** UI context string threaded to sendMessage + getSuggestedPrompts. */
+  /** UI context passed to sendMessage and getSuggestedPrompts. */
   page: string;
-  /** Rendered when the conversation is empty and not streaming. */
+  /** Shown while the thread is empty. */
   emptyState: ReactNode;
   placeholder?: string;
-  /** Trailing hint shown next to the ⏎/⇧⏎ keys in the composer footer. */
   footerNote?: ReactNode;
-  /** Suggested-prompt chips to show when the service returns none. */
+  /** Starter prompts when the service suggests none. */
   fallbackPrompts?: string[];
-  /** Prefill the composer from the store's one-shot seedPrompt (full page). */
+  /** Takes the store's one-shot seed prompt into the composer. */
   consumeSeed?: boolean;
-  /** Grid backdrop behind the thread (full page). */
-  gridBackdrop?: boolean;
+}
+
+/** The outage notice that sits above the disabled composer. */
+export function CopilotUnavailableNotice({
+  onRetry,
+  historyShown,
+}: {
+  onRetry: () => void;
+  /** Whether any saved conversation is on screen, which decides what the notice can promise. */
+  historyShown: boolean;
+}) {
+  return (
+    <div
+      role="status"
+      className="mb-2.5 flex items-start gap-3 rounded-[8px] border border-risk-line bg-risk-soft px-3.5 py-2.5 text-[13px] text-fg"
+    >
+      <AlertTriangle className="mt-0.5 h-4 w-4 flex-none text-risk" />
+      <span className="min-w-0 flex-1">
+        <b className="font-semibold">Copilot isn&apos;t responding.</b>{' '}
+        <span className="text-fg-2">
+          {historyShown
+            ? 'Your conversations are saved and you can read them. New messages are paused, and the rest of the app works as usual.'
+            : "Your conversations are saved and will show here when it's back. The rest of the app works as usual."}
+        </span>
+      </span>
+      <button type="button" className="btn btn-secondary btn-sm flex-none" onClick={onRetry}>
+        Try again
+      </button>
+    </div>
+  );
 }
 
 export function CopilotConversation({
@@ -78,10 +75,9 @@ export function CopilotConversation({
   page,
   emptyState,
   placeholder,
-  footerNote,
+  footerNote = DEFAULT_NOTE,
   fallbackPrompts = [],
-  consumeSeed = false,
-  gridBackdrop = false,
+  consumeSeed = true,
 }: CopilotConversationProps) {
   const {
     messages,
@@ -92,40 +88,43 @@ export function CopilotConversation({
     thinkingContent,
     currentToolCall,
     pendingConfirmation,
+    resolvedConfirmations,
     suggestedPrompts,
     seedPrompt,
     serviceUnavailable,
+    loading,
     error,
     sendMessage,
     getSuggestedPrompts,
     clearError,
     clearSeedPrompt,
     loadSessions,
+    sessions,
   } = useAgentStore();
+  const sessionsCount = sessions.length;
 
-  const threadEndRef = useRef<HTMLDivElement>(null);
-  const prevStreaming = useRef(false);
+  const endRef = useRef<HTMLDivElement>(null);
+  const wasStreaming = useRef(false);
+  const [draft, setDraft] = useState({ text: '', key: 0 });
 
-  // One-shot: capture the seed on mount, then clear it from the store.
-  const initialValue = useRef(consumeSeed ? seedPrompt : '').current;
   useEffect(() => {
-    if (consumeSeed && seedPrompt) clearSeedPrompt();
+    if (!consumeSeed || !seedPrompt) return;
+    setDraft((d) => ({ text: seedPrompt, key: d.key + 1 }));
+    clearSeedPrompt();
   }, [consumeSeed, seedPrompt, clearSeedPrompt]);
 
   useEffect(() => {
     getSuggestedPrompts({ page });
   }, [page, getSuggestedPrompts]);
 
-  // Refresh the session list once a streamed reply finishes (title resolves /
-  // a new session may exist).
   useEffect(() => {
-    if (prevStreaming.current && !isStreaming) loadSessions();
-    prevStreaming.current = isStreaming;
+    if (wasStreaming.current && !isStreaming) loadSessions();
+    wasStreaming.current = isStreaming;
   }, [isStreaming, loadSessions]);
 
-  // Auto-scroll to the latest turn as tokens / tools / artifacts arrive.
   useEffect(() => {
-    threadEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    endRef.current?.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'end' });
   }, [
     messages,
     streamingContent,
@@ -135,127 +134,149 @@ export function CopilotConversation({
     pendingConfirmation,
   ]);
 
-  const artifactMap = useMemo(() => {
-    const map = new Map<string, (typeof pendingArtifacts)[number]>();
-    for (const a of pendingArtifacts) map.set(a.id, a);
-    return map;
-  }, [pendingArtifacts]);
+  const artifactMap = useMemo(
+    () => new Map(pendingArtifacts.map((a) => [a.id, a] as const)),
+    [pendingArtifacts]
+  );
 
-  // Artifacts that belong to no message and aren't mid-stream (e.g. reloaded).
-  const unlinkedArtifacts = useMemo(() => {
+  const unlinked = useMemo(() => {
     const linked = new Set<string>();
     for (const m of messages) for (const id of m.inlineArtifactIds ?? []) linked.add(id);
     const inFlight = new Set(pendingArtifactIdsForCurrentMessage);
     return pendingArtifacts.filter((a) => !linked.has(a.id) && !inFlight.has(a.id));
   }, [messages, pendingArtifacts, pendingArtifactIdsForCurrentMessage]);
 
-  const size = SIZING[variant];
-  const chips = (suggestedPrompts.length > 0 ? suggestedPrompts : fallbackPrompts).slice(0, 3);
-  const disabled = isStreaming || serviceUnavailable;
-  const handleSend = (content: string) => sendMessage(content, undefined, undefined, page);
+  const answeredAfter = useMemo(() => {
+    const map = new Map<string | null, ResolvedConfirmation[]>();
+    for (const r of resolvedConfirmations) {
+      map.set(r.afterMessageId, [...(map.get(r.afterMessageId) ?? []), r]);
+    }
+    return map;
+  }, [resolvedConfirmations]);
+
+  const answered = (after: string | null) =>
+    answeredAfter
+      .get(after)
+      ?.map((r) => (
+        <ToolConfirmationCard key={r.confirmationId} confirmation={r} decision={r.decision} />
+      ));
+
+  const column = COLUMN[variant];
+  const chips = (suggestedPrompts.length ? suggestedPrompts : fallbackPrompts).slice(0, 3);
+  const empty = messages.length === 0 && !isStreaming && resolvedConfirmations.length === 0;
+  const send = (content: string) => sendMessage(content, undefined, undefined, page);
 
   return (
     <>
-      {/* Thread */}
-      <div
-        className={`min-h-0 flex-1 overflow-x-hidden overflow-y-auto ${gridBackdrop ? 'bg-grid' : ''}`}
-      >
-        <div className={size.threadInner}>
-          {messages.length === 0 && !isStreaming ? (
-            emptyState
+      <div className="relative min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        <div className={`${column} ${variant === 'page' ? 'py-[30px]' : 'py-5'}`}>
+          {loading && messages.length === 0 ? (
+            <div className="grid gap-3" aria-busy="true">
+              <span className="sr-only" role="status">
+                Loading the conversation
+              </span>
+              <div className="ml-auto h-9 w-2/3 rounded-[12px] bg-sunk motion-safe:animate-pulse" />
+              <div className="h-16 w-full rounded-[8px] bg-sunk motion-safe:animate-pulse" />
+            </div>
+          ) : empty ? (
+            serviceUnavailable ? null : (
+              emptyState
+            )
           ) : (
-            <div className={size.msgSpace}>
+            <div className="grid gap-[18px]">
+              {answered(null)}
               {messages.map((m) => (
-                <ChatMessage key={m.id} message={m} artifacts={artifactMap} />
+                <div key={m.id} className="grid gap-[18px]">
+                  <ChatMessage message={m} artifacts={artifactMap} />
+                  {answered(m.id)}
+                </div>
               ))}
 
-              {!isStreaming &&
-                unlinkedArtifacts.map((a) => (
-                  <div key={a.id} className="pl-[50px]">
-                    <PendingArtifactCard artifact={a} />
-                  </div>
-                ))}
+              {!isStreaming && unlinked.map((a) => <PendingArtifactCard key={a.id} artifact={a} />)}
 
-              {!isStreaming && <ToolConfirmationCard />}
+              {!isStreaming && pendingConfirmation && (
+                <>
+                  <ToolConfirmationCard confirmation={pendingConfirmation} />
+                  <ToolCallIndicator toolName={pendingConfirmation.toolName} status="waiting" />
+                </>
+              )}
 
               {isStreaming && (
-                <div className="space-y-2.5">
+                <div className="grid gap-2.5">
                   {thinkingContent && (
-                    <div className="pl-[50px]">
-                      <ThinkingBlock
-                        content={thinkingContent}
-                        autoExpanded={streamingContent.length === 0}
-                        streaming
-                      />
-                    </div>
+                    <ThinkingBlock
+                      content={thinkingContent}
+                      autoExpanded={streamingContent.length === 0}
+                      streaming
+                    />
+                  )}
+                  {currentToolCall && (
+                    <ToolCallIndicator
+                      toolName={currentToolCall.name}
+                      status={currentToolCall.status}
+                      resultPreview={currentToolCall.resultPreview}
+                    />
                   )}
                   <StreamingIndicator content={streamingContent} />
-                  {currentToolCall && (
-                    <div className="pl-[50px]">
-                      <ToolCallIndicator
-                        toolName={currentToolCall.name}
-                        status={currentToolCall.status}
-                        resultPreview={currentToolCall.resultPreview}
-                      />
-                    </div>
-                  )}
                 </div>
               )}
             </div>
           )}
-
-          <div ref={threadEndRef} />
+          <div ref={endRef} />
         </div>
       </div>
 
-      {/* Composer */}
-      <div className={`flex-none border-t-2 border-ink bg-paper/70 ${size.composerPad}`}>
-        <div className={size.composerInner}>
+      <div
+        className={`flex-none ${variant === 'page' ? 'pb-5' : 'border-t border-line pb-3 pt-3'}`}
+      >
+        <div className={column}>
+          {serviceUnavailable && (
+            <CopilotUnavailableNotice
+              onRetry={() => loadSessions()}
+              historyShown={!empty || sessionsCount > 0}
+            />
+          )}
           {error && !serviceUnavailable && (
-            <div className="mb-2.5 flex items-start justify-between gap-3 border-2 border-ink bg-red-50 px-3 py-2 text-[13px] text-red-700">
+            <div
+              role="alert"
+              className="mb-2.5 flex items-start justify-between gap-3 rounded-[8px] border border-risk-line bg-risk-soft px-3 py-2 text-[13px]"
+            >
               <span>{error}</span>
-              <button onClick={clearError} className="font-mono text-xs underline">
+              <button type="button" onClick={clearError} className="btn btn-ghost btn-sm">
                 Dismiss
               </button>
             </div>
           )}
-
-          {chips.length > 0 && (
-            <div className="mb-2.5 flex flex-nowrap gap-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {empty && chips.length > 0 && !serviceUnavailable && (
+            <div className="no-scrollbar mb-2.5 flex gap-2 overflow-x-auto md:flex-wrap md:overflow-visible">
               {chips.map((prompt) => (
                 <button
                   key={prompt}
-                  onClick={() => handleSend(prompt)}
-                  disabled={disabled}
-                  className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap border-2 border-ink bg-paper font-mono font-bold uppercase tracking-[0.03em] text-ink shadow-[2px_2px_0_rgb(var(--lt-ink))] transition-transform hover:-translate-y-0.5 disabled:opacity-40 disabled:shadow-none ${size.chip}`}
+                  type="button"
+                  onClick={() => send(prompt)}
+                  disabled={isStreaming}
+                  className="inline-flex h-7 flex-none items-center rounded-full border border-line-strong px-3 text-[12.5px] text-fg-2 hover:border-accent hover:text-fg disabled:opacity-45"
                 >
-                  <span className="text-orange-500">＋</span>
                   {prompt}
                 </button>
               ))}
             </div>
           )}
-
           <ChatInput
-            onSend={handleSend}
-            disabled={disabled}
-            initialValue={initialValue}
+            key={draft.key}
+            initialValue={draft.text}
+            onSend={send}
+            disabled={serviceUnavailable}
+            busy={isStreaming}
             placeholder={
               serviceUnavailable
-                ? 'Copilot service unavailable…'
-                : (placeholder ?? 'Ask Copilot to build, edit, or explain a strategy')
+                ? 'Copilot is unavailable'
+                : (placeholder ?? 'Ask Copilot to build, edit or explain a strategy')
             }
           />
-
-          <div
-            className={`mt-2 flex flex-wrap items-center gap-3 font-mono uppercase tracking-[0.05em] text-ink/40 ${size.footer}`}
-          >
-            <span>
-              <span className="border border-line px-1 py-px">⏎</span> Send{' '}
-              <span className="border border-line px-1 py-px">⇧⏎</span> Newline
-            </span>
-            {footerNote && <span>{footerNote}</span>}
-          </div>
+          {footerNote && (
+            <div className="mt-2 text-center text-[12.5px] text-fg-3">{footerNote}</div>
+          )}
         </div>
       </div>
     </>

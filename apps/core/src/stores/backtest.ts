@@ -3,8 +3,8 @@
  * Manages backtest state, execution, and progress streaming.
  */
 
-import { Code, ConnectError } from '@connectrpc/connect';
-import { create } from 'zustand';
+import { Code, ConnectError } from "@connectrpc/connect";
+import { create } from "zustand";
 
 import {
   BacktestStatus,
@@ -12,13 +12,13 @@ import {
   type BacktestMetrics,
   type BacktestTrade,
   type EquityPoint,
-} from '@llamatrade/core/proto/backtest_pb';
-import type { Decimal, Timestamp } from '@llamatrade/core/proto/common_pb';
-import type { Strategy } from '@llamatrade/core/proto/strategy_pb';
-import { money, num } from '../format';
-import { backtestClient, strategyClient } from '../net';
+} from "@llamatrade/core/proto/backtest_pb";
+import type { Decimal, Timestamp } from "@llamatrade/core/proto/common_pb";
+import type { Strategy } from "@llamatrade/core/proto/strategy_pb";
+import { money, num } from "../format";
+import { backtestClient, strategyClient } from "../net";
 
-import { getTenantContext } from '../net';
+import { getTenantContext } from "../net";
 
 // ============================================================================
 // Type Conversions
@@ -67,6 +67,34 @@ export interface BacktestConfig {
   benchmarkSymbol: string;
 }
 
+/** One StreamBacktestProgress update as received, for the run log. */
+export interface RunProgressEvent {
+  status: BacktestStatus;
+  percent: number;
+  currentDate: string;
+  message: string;
+  atMs: number;
+}
+
+export interface BacktestHistory {
+  runs: BacktestRun[];
+  total: number;
+  /** Metrics for the completed runs on the page, from CompareBacktests. */
+  metrics: Record<string, BacktestMetrics>;
+  loading: boolean;
+  loaded: boolean;
+  error: string | null;
+}
+
+export interface BacktestComparison {
+  ids: string[];
+  /** Fully hydrated runs (curves included), in the requested order. */
+  runs: BacktestRun[];
+  metrics: Record<string, BacktestMetrics>;
+  loading: boolean;
+  error: string | null;
+}
+
 interface BacktestState {
   // Current backtest being run/viewed
   currentBacktest: BacktestRun | null;
@@ -96,6 +124,14 @@ interface BacktestState {
   // Stream abort controller
   abortController: AbortController | null;
 
+  // Progress updates for the run being watched, and the latest partial metrics
+  progressEvents: RunProgressEvent[];
+  partialMetrics: BacktestMetrics | null;
+  runSubmittedAt: number | null;
+
+  history: BacktestHistory;
+  comparison: BacktestComparison;
+
   // Full trade log, fetched on demand when GetBacktest returns a capped preview (14B)
   fullTrades: BacktestTrade[] | null;
   tradesLoading: boolean;
@@ -107,40 +143,75 @@ interface BacktestState {
   loadAllTrades: (id: string) => Promise<void>;
   listBacktests: (strategyId?: string, page?: number) => Promise<void>;
   fetchRecentRuns: (limit?: number) => Promise<void>;
-  fetchLatestCompletedBacktest: (strategyId: string) => Promise<BacktestRun | null>;
+  fetchLatestCompletedBacktest: (
+    strategyId: string,
+  ) => Promise<BacktestRun | null>;
   cancelBacktest: (id: string) => Promise<void>;
   streamProgress: (id: string) => Promise<void>;
   stopStreaming: () => void;
   fetchStrategies: () => Promise<void>;
+  loadHistory: (page?: number, pageSize?: number) => Promise<void>;
+  loadComparison: (ids: string[]) => Promise<void>;
+  fetchVersionDsl: (
+    strategyId: string,
+    version: number,
+  ) => Promise<string | null>;
+  clearRun: () => void;
   clearError: () => void;
   reset: () => void;
 }
+
+const emptyHistory: BacktestHistory = {
+  runs: [],
+  total: 0,
+  metrics: {},
+  loading: false,
+  loaded: false,
+  error: null,
+};
+
+const emptyComparison: BacktestComparison = {
+  ids: [],
+  runs: [],
+  metrics: {},
+  loading: false,
+  error: null,
+};
+
+const runTime = (b: BacktestRun): number =>
+  (toDate(b.completedAt) ?? toDate(b.createdAt) ?? new Date(0)).getTime();
 
 // ============================================================================
 // Default Config
 // ============================================================================
 
+/** Flat commission per fill and slippage fraction a run uses unless changed. */
+export const DEFAULT_BACKTEST_COSTS = {
+  commission: 0.001,
+  slippage: 0.001,
+} as const;
+
 const defaultConfig: BacktestConfig = {
-  strategyId: '',
+  strategyId: "",
   strategyVersion: undefined,
   startDate: getDefaultStartDate(),
   endDate: getDefaultEndDate(),
-  initialCapital: 100000,
+  initialCapital: 25000,
   symbols: [],
-  commission: 0.001,
-  slippage: 0.001,
-  timeframe: '1D',
-  benchmarkSymbol: 'SPY',
+  commission: DEFAULT_BACKTEST_COSTS.commission,
+  slippage: DEFAULT_BACKTEST_COSTS.slippage,
+  timeframe: "1D",
+  benchmarkSymbol: "SPY",
 };
 
 function getDefaultStartDate(): string {
   const date = new Date();
-  date.setFullYear(date.getFullYear() - 1);
-  return date.toISOString().split('T')[0];
+  date.setFullYear(date.getFullYear() - 2);
+  return date.toISOString().split("T")[0];
 }
 
 function getDefaultEndDate(): string {
-  return new Date().toISOString().split('T')[0];
+  return new Date().toISOString().split("T")[0];
 }
 
 // ============================================================================
@@ -151,25 +222,25 @@ function getErrorMessage(error: unknown): string {
   if (error instanceof ConnectError) {
     switch (error.code) {
       case Code.NotFound:
-        return 'Strategy or backtest not found';
+        return "The strategy or backtest could not be found.";
       case Code.InvalidArgument:
-        return error.message || 'Invalid configuration';
+        return error.message || "The backtest settings aren't valid.";
       case Code.Unauthenticated:
-        return 'Please log in to run backtests';
+        return "Please log in to run backtests.";
       case Code.PermissionDenied:
-        return 'You do not have permission to run this backtest';
+        return "You don't have permission to run this backtest.";
       case Code.ResourceExhausted:
-        return 'Rate limit exceeded. Please try again later.';
+        return "Rate limit exceeded. Please try again later.";
       case Code.Unavailable:
-        return 'Backtest service is temporarily unavailable';
+        return "The backtest service is unavailable right now.";
       default:
-        return error.message || 'An error occurred';
+        return error.message || "Something went wrong.";
     }
   }
   if (error instanceof Error) {
     return error.message;
   }
-  return 'An unexpected error occurred';
+  return "Something went wrong.";
 }
 
 // ============================================================================
@@ -189,9 +260,14 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
   loading: false,
   streaming: false,
   progress: 0,
-  progressMessage: '',
+  progressMessage: "",
   error: null,
   abortController: null,
+  progressEvents: [],
+  partialMetrics: null,
+  runSubmittedAt: null,
+  history: { ...emptyHistory },
+  comparison: { ...emptyComparison },
   fullTrades: null,
   tradesLoading: false,
 
@@ -241,13 +317,13 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
 
     // Validation
     if (!config.strategyId) {
-      set({ error: 'Please select a strategy' });
+      set({ error: "Please select a strategy" });
       return null;
     }
 
     const context = getTenantContext();
     if (!context) {
-      set({ error: 'Please log in to run backtests' });
+      set({ error: "Please log in to run backtests." });
       return null;
     }
 
@@ -255,15 +331,21 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
     const endDate = new Date(config.endDate);
 
     if (endDate <= startDate) {
-      set({ error: 'End date must be after start date' });
+      set({ error: "End date must be after start date" });
       return null;
     }
 
+    get().stopStreaming();
     set({
       loading: true,
       error: null,
       progress: 0,
-      progressMessage: 'Starting backtest...',
+      progressMessage: "Starting backtest...",
+      currentBacktest: null,
+      fullTrades: null,
+      progressEvents: [],
+      partialMetrics: null,
+      runSubmittedAt: Date.now(),
     });
 
     try {
@@ -283,13 +365,13 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
           useAdjustedPrices: true,
           parameters: {},
           benchmarkSymbol: config.benchmarkSymbol,
-          includeBenchmark: config.benchmarkSymbol !== '',
+          includeBenchmark: config.benchmarkSymbol !== "",
         },
       });
 
       const backtest = response.backtest;
       if (!backtest) {
-        throw new Error('Failed to start backtest');
+        throw new Error("Failed to start backtest");
       }
 
       set({
@@ -314,13 +396,16 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
   getBacktest: async (id) => {
     const context = getTenantContext();
     if (!context) {
-      set({ error: 'Please log in to view backtests', loading: false });
+      set({ error: "Please log in to view backtests.", loading: false });
       return;
     }
 
     set({ loading: true, error: null, fullTrades: null });
     try {
-      const response = await backtestClient.getBacktest({ context, backtestId: id });
+      const response = await backtestClient.getBacktest({
+        context,
+        backtestId: id,
+      });
       set({
         currentBacktest: response.backtest ?? null,
         loading: false,
@@ -339,7 +424,7 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
   loadAllTrades: async (id) => {
     const context = getTenantContext();
     if (!context) {
-      set({ error: 'Please log in to view backtests' });
+      set({ error: "Please log in to view backtests." });
       return;
     }
 
@@ -379,12 +464,13 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
     try {
       const response = await backtestClient.listBacktests({
         context,
-        strategyId: strategyId ?? '',
+        strategyId: strategyId ?? "",
         pagination: { page, pageSize: 20 },
       });
       set({
         backtests: response.backtests,
-        totalCount: response.pagination?.totalItems ?? response.backtests.length,
+        totalCount:
+          response.pagination?.totalItems ?? response.backtests.length,
         loading: false,
       });
     } catch (error) {
@@ -407,12 +493,9 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
     try {
       const response = await backtestClient.listBacktests({
         context,
-        strategyId: '',
+        strategyId: "",
         pagination: { page: 1, pageSize: 50 },
       });
-
-      const runTime = (b: BacktestRun): number =>
-        (toDate(b.completedAt) ?? toDate(b.createdAt) ?? new Date(0)).getTime();
 
       const completed = response.backtests
         .filter((b) => b.status === BacktestStatus.COMPLETED)
@@ -424,8 +507,8 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
           backtestClient
             .getBacktest({ context, backtestId: b.id })
             .then((r) => r.backtest ?? null)
-            .catch(() => null)
-        )
+            .catch(() => null),
+        ),
       );
 
       set({
@@ -450,15 +533,15 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
         pagination: { page: 1, pageSize: 50 },
       });
 
-      const runTime = (b: BacktestRun): number =>
-        (toDate(b.completedAt) ?? toDate(b.createdAt) ?? new Date(0)).getTime();
-
       const latest = response.backtests
         .filter((b) => b.status === BacktestStatus.COMPLETED)
         .sort((a, b) => runTime(b) - runTime(a))[0];
       if (!latest) return null;
 
-      const detail = await backtestClient.getBacktest({ context, backtestId: latest.id });
+      const detail = await backtestClient.getBacktest({
+        context,
+        backtestId: latest.id,
+      });
       return detail.backtest ?? null;
     } catch {
       return null;
@@ -471,7 +554,10 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
     if (!context) return;
 
     try {
-      const response = await backtestClient.cancelBacktest({ context, backtestId: id });
+      const response = await backtestClient.cancelBacktest({
+        context,
+        backtestId: id,
+      });
       const backtest = response.backtest;
       if (backtest) {
         set((state) => ({
@@ -495,17 +581,20 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
     get().stopStreaming();
 
     const abortController = new AbortController();
-    set({
+    set((state) => ({
       streaming: true,
       abortController,
       progress: 0,
-      progressMessage: 'Initializing...',
-    });
+      progressMessage: "Initializing...",
+      progressEvents: [],
+      partialMetrics: null,
+      runSubmittedAt: state.runSubmittedAt ?? Date.now(),
+    }));
 
     try {
       const stream = backtestClient.streamBacktestProgress(
         { context, backtestId },
-        { signal: abortController.signal }
+        { signal: abortController.signal },
       );
 
       for await (const update of stream) {
@@ -515,9 +604,21 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
         }
 
         const current = get().currentBacktest;
+        const event: RunProgressEvent = {
+          status: update.status,
+          percent: update.progressPercent,
+          currentDate: update.currentDate,
+          message: update.message,
+          atMs: Date.now(),
+        };
+        set((state) => ({
+          progressEvents: [...state.progressEvents, event],
+          partialMetrics: update.partialMetrics ?? state.partialMetrics,
+        }));
         set({
           progress: update.progressPercent,
-          progressMessage: update.message || getProgressPhaseMessage(update.progressPercent),
+          progressMessage:
+            update.message || getProgressPhaseMessage(update.progressPercent),
           ...(current && {
             currentBacktest: {
               ...current,
@@ -558,6 +659,137 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
     }
   },
 
+  // History page: one ListBacktests page, newest first, with metrics for its completed runs.
+  loadHistory: async (page = 1, pageSize = 50) => {
+    const context = getTenantContext();
+    if (!context) {
+      set({
+        history: {
+          ...emptyHistory,
+          loaded: true,
+          error: "Please log in to view backtests.",
+        },
+      });
+      return;
+    }
+    set((state) => ({
+      history: { ...state.history, loading: true, error: null },
+    }));
+    try {
+      const response = await backtestClient.listBacktests({
+        context,
+        strategyId: "",
+        pagination: { page, pageSize },
+      });
+      const runs = [...response.backtests].sort(
+        (a, b) => runTime(b) - runTime(a),
+      );
+      const completedIds = runs
+        .filter((r) => r.status === BacktestStatus.COMPLETED)
+        .map((r) => r.id);
+      const metrics = completedIds.length
+        ? await backtestClient
+            .compareBacktests({ context, backtestIds: completedIds })
+            .then((r) => r.metricsById)
+            .catch(() => ({}) as Record<string, BacktestMetrics>)
+        : {};
+      set({
+        history: {
+          runs,
+          total: response.pagination?.totalItems ?? runs.length,
+          metrics,
+          loading: false,
+          loaded: true,
+          error: null,
+        },
+      });
+    } catch (error) {
+      set((state) => ({
+        history: {
+          ...state.history,
+          loading: false,
+          loaded: true,
+          error: getErrorMessage(error),
+        },
+      }));
+    }
+  },
+
+  // Compare page: metrics from CompareBacktests, curves from each run's GetBacktest.
+  loadComparison: async (ids) => {
+    const context = getTenantContext();
+    if (!context) {
+      set({
+        comparison: {
+          ...emptyComparison,
+          ids,
+          error: "Please log in to view backtests.",
+        },
+      });
+      return;
+    }
+    set({ comparison: { ...emptyComparison, ids, loading: true } });
+    try {
+      const [compared, detailed] = await Promise.all([
+        backtestClient.compareBacktests({ context, backtestIds: ids }),
+        Promise.all(
+          ids.map((id) =>
+            backtestClient
+              .getBacktest({ context, backtestId: id })
+              .then((r) => r.backtest ?? null)
+              .catch(() => null),
+          ),
+        ),
+      ]);
+      if (get().comparison.ids !== ids) return;
+      set({
+        comparison: {
+          ids,
+          runs: detailed.filter((b): b is BacktestRun => b !== null),
+          metrics: compared.metricsById,
+          loading: false,
+          error: null,
+        },
+      });
+    } catch (error) {
+      if (get().comparison.ids !== ids) return;
+      set({
+        comparison: { ...emptyComparison, ids, error: getErrorMessage(error) },
+      });
+    }
+  },
+
+  // The DSL source of one strategy version, for the indicators a run used.
+  fetchVersionDsl: async (strategyId, version) => {
+    const context = getTenantContext();
+    if (!context || !strategyId) return null;
+    try {
+      const response = await strategyClient.getStrategy({
+        context,
+        strategyId,
+        version,
+      });
+      return response.strategy?.dslCode ?? null;
+    } catch {
+      return null;
+    }
+  },
+
+  // Forget the watched run so the setup page starts clean.
+  clearRun: () => {
+    get().stopStreaming();
+    set({
+      currentBacktest: null,
+      fullTrades: null,
+      progress: 0,
+      progressMessage: "",
+      progressEvents: [],
+      partialMetrics: null,
+      runSubmittedAt: null,
+      error: null,
+    });
+  },
+
   // Clear error
   clearError: () => {
     set({ error: null });
@@ -576,8 +808,13 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
       loading: false,
       streaming: false,
       progress: 0,
-      progressMessage: '',
+      progressMessage: "",
       error: null,
+      progressEvents: [],
+      partialMetrics: null,
+      runSubmittedAt: null,
+      history: { ...emptyHistory },
+      comparison: { ...emptyComparison },
       fullTrades: null,
       tradesLoading: false,
     });
@@ -589,11 +826,11 @@ export const useBacktestStore = create<BacktestState>((set, get) => ({
 // ============================================================================
 
 function getProgressPhaseMessage(percent: number): string {
-  if (percent < 5) return 'Loading strategy...';
-  if (percent < 15) return 'Fetching market data...';
-  if (percent < 90) return 'Running simulation...';
-  if (percent < 100) return 'Calculating metrics...';
-  return 'Complete';
+  if (percent < 5) return "Loading strategy...";
+  if (percent < 15) return "Fetching market data...";
+  if (percent < 90) return "Running simulation...";
+  if (percent < 100) return "Calculating metrics...";
+  return "Complete";
 }
 
 // ============================================================================
@@ -601,7 +838,9 @@ function getProgressPhaseMessage(percent: number): string {
 // ============================================================================
 
 /** Extract and format metrics for display */
-export function formatMetrics(metrics: BacktestMetrics | undefined): Record<string, string> {
+export function formatMetrics(
+  metrics: BacktestMetrics | undefined,
+): Record<string, string> {
   if (!metrics) return {};
 
   return {
@@ -628,9 +867,12 @@ export function formatMetrics(metrics: BacktestMetrics | undefined): Record<stri
 }
 
 /** Format equity curve for charting */
-export function formatEquityCurve(
-  points: EquityPoint[]
-): Array<{ date: Date; equity: number; drawdown: number; dailyReturn: number }> {
+export function formatEquityCurve(points: EquityPoint[]): Array<{
+  date: Date;
+  equity: number;
+  drawdown: number;
+  dailyReturn: number;
+}> {
   return points.map((p) => ({
     date: toDate(p.timestamp) ?? new Date(),
     equity: toNumber(p.equity),
@@ -640,9 +882,7 @@ export function formatEquityCurve(
 }
 
 /** Format trades for table display */
-export function formatTrades(
-  trades: BacktestTrade[]
-): Array<{
+export function formatTrades(trades: BacktestTrade[]): Array<{
   symbol: string;
   side: string;
   quantity: number;
@@ -657,7 +897,7 @@ export function formatTrades(
 }> {
   return trades.map((t) => ({
     symbol: t.symbol,
-    side: t.side === 1 ? 'BUY' : 'SELL',
+    side: t.side === 1 ? "BUY" : "SELL",
     quantity: toNumber(t.quantity),
     entryPrice: toNumber(t.entryPrice),
     exitPrice: toNumber(t.exitPrice),
@@ -671,7 +911,6 @@ export function formatTrades(
 }
 
 function formatPercent(value: number): string {
-  const sign = value >= 0 ? '+' : '';
+  const sign = value >= 0 ? "+" : "";
   return `${sign}${(value * 100).toFixed(2)}%`;
 }
-

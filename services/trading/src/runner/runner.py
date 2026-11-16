@@ -240,6 +240,9 @@ class StrategyRunner:
         self._halted_symbols: set[str] = set()
         self.bar_stream = bar_stream
         self.order_executor = order_executor
+        # Serializes the runner's loops on the executor's one AsyncSession.
+        self._executor_lock = asyncio.Lock()
+        self._executor_closed = False
         self.risk_manager = risk_manager
         self.alpaca_client = alpaca_client
         self.alerts = alert_service
@@ -388,9 +391,10 @@ class StrategyRunner:
 
         # Reconcile orders a prior crash left PENDING with no broker id: adopt those the broker placed, reject those it never received. Best-effort — a hiccup must not block session start.
         try:
-            recovered = await self.order_executor.recover_stranded_orders(
-                self.config.tenant_id, self.config.execution_id
-            )
+            async with self._executor_op() as executor:
+                recovered = await executor.recover_stranded_orders(
+                    self.config.tenant_id, self.config.execution_id
+                )
             if recovered:
                 logger.info("Recovered %d stranded order(s) at startup", recovered)
         except Exception as e:
@@ -402,11 +406,12 @@ class StrategyRunner:
         # Re-emit ledger events for recently-terminal orders whose original publish may have failed before a crash (4A safety net); idempotent at the ledger.
         if self.config.sleeve_id is not None:
             try:
-                republished = await self.order_executor.republish_ledger_for_terminal_orders(
-                    self.config.tenant_id,
-                    self.config.execution_id,
-                    since=datetime.now(UTC) - timedelta(days=1),
-                )
+                async with self._executor_op() as executor:
+                    republished = await executor.republish_ledger_for_terminal_orders(
+                        self.config.tenant_id,
+                        self.config.execution_id,
+                        since=datetime.now(UTC) - timedelta(days=1),
+                    )
                 if republished:
                     logger.info("Re-published ledger events for %d terminal order(s)", republished)
             except Exception as e:
@@ -518,6 +523,34 @@ class StrategyRunner:
                 except asyncio.CancelledError:
                     pass
             logger.info("Runner stopped")
+
+    @contextlib.asynccontextmanager
+    async def _executor_op(self) -> AsyncIterator[OrderExecutor]:
+        """Run one executor operation, then return its DB connection to the pool.
+
+        The connection is released whether the call succeeds, raises, or is
+        cancelled, so the runner holds none between operations.
+        """
+        async with self._executor_lock:
+            try:
+                yield self.order_executor
+            finally:
+                await self.order_executor.release_connection()
+
+    async def aclose(self) -> None:
+        """Release the order executor the runner owns (idempotent, never raises)."""
+        async with self._executor_lock:
+            if self._executor_closed:
+                return
+            self._executor_closed = True
+            try:
+                await self.order_executor.aclose()
+            except Exception:
+                logger.warning(
+                    "Failed to close the order executor for execution %s",
+                    self.config.execution_id,
+                    exc_info=True,
+                )
 
     async def stop(self, reason: str | None = None, notify: bool = True) -> None:
         """Stop the strategy runner.
@@ -1023,13 +1056,14 @@ class StrategyRunner:
                 return
 
             # signal_timestamp makes the client_order_id deterministic, so a retry after a crash collapses onto the same broker order.
-            result = await self.order_executor.submit_order(
-                tenant_id=self.config.tenant_id,
-                session_id=self.config.execution_id,
-                order=order,
-                signal_timestamp=signal.timestamp,
-                risk_result=risk_result,
-            )
+            async with self._executor_op() as executor:
+                result = await executor.submit_order(
+                    tenant_id=self.config.tenant_id,
+                    session_id=self.config.execution_id,
+                    order=order,
+                    signal_timestamp=signal.timestamp,
+                    risk_result=risk_result,
+                )
             self._orders_submitted += 1
             logger.info("Order submitted: %s status=%s", result.id, result.status)
 
@@ -1193,9 +1227,10 @@ class StrategyRunner:
         a failure is retried on the next pass. Returns the orders updated.
         """
         try:
-            updated = await self.order_executor.sync_all_pending_orders(
-                self.config.tenant_id, self.config.execution_id
-            )
+            async with self._executor_op() as executor:
+                updated = await executor.sync_all_pending_orders(
+                    self.config.tenant_id, self.config.execution_id
+                )
         except Exception as e:
             logger.warning("Open-order sync (%s) failed: %s", context, e)
             return 0
@@ -1218,11 +1253,12 @@ class StrategyRunner:
                 break
             await self._sync_open_orders(context="periodic drain")
             try:
-                await self.order_executor.republish_ledger_for_terminal_orders(
-                    self.config.tenant_id,
-                    self.config.execution_id,
-                    since=datetime.now(UTC) - window,
-                )
+                async with self._executor_op() as executor:
+                    await executor.republish_ledger_for_terminal_orders(
+                        self.config.tenant_id,
+                        self.config.execution_id,
+                        since=datetime.now(UTC) - window,
+                    )
             except Exception as e:
                 logger.warning("Periodic ledger re-publish failed: %s", e)
 
@@ -2078,6 +2114,7 @@ class RunnerManager:
                 await runner.start()
         finally:
             otel_context.detach(token)
+            await runner.aclose()
 
     async def stop_runner(self, execution_id: UUID, notify: bool = True) -> bool:
         """Stop a runner and drop it from the registry.
@@ -2109,6 +2146,7 @@ class RunnerManager:
             self._runners.pop(execution_id, None)
             self._tasks.pop(execution_id, None)
             update_runner_gauge(len(self.active_runners))
+            await runner.aclose()
 
         return True
 

@@ -13,6 +13,9 @@ import { defineConfig } from 'vite';
  */
 export default defineConfig({
   plugins: [react()],
+  define: {
+    'import.meta.env.VITE_MARKETING_STANDALONE': JSON.stringify('1'),
+  },
   build: {
     outDir: 'dist-marketing',
     emptyOutDir: true,

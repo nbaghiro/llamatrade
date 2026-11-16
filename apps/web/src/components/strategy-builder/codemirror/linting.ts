@@ -2,11 +2,21 @@
 
 import { linter, type Diagnostic } from '@codemirror/lint';
 import type { EditorView } from '@codemirror/view';
-import { tokenizeWithPositions, type TokenWithPosition } from '@llamatrade/core/strategy/serializer';
+import {
+  tokenizeWithPositions,
+  type TokenWithPosition,
+} from '@llamatrade/core/strategy/serializer';
 
 const VALID_WEIGHT_METHODS = new Set([
-  'equal', 'specified', 'momentum', 'inverse-volatility', 'min-variance', 'risk-parity',
-  'inverse_volatility', 'min_variance', 'risk_parity',
+  'equal',
+  'specified',
+  'momentum',
+  'inverse-volatility',
+  'min-variance',
+  'risk-parity',
+  'inverse_volatility',
+  'min_variance',
+  'risk_parity',
 ]);
 
 const VALID_SELECTIONS = new Set(['top', 'bottom']);
@@ -31,7 +41,7 @@ function checkBrackets(tokens: TokenWithPosition[]): Diagnostic[] {
             from: token.start,
             to: token.end,
             severity: 'error',
-            message: `Unmatched closing bracket '${token.value}'`,
+            message: `This '${token.value}' has no opening bracket.`,
           });
         }
       }
@@ -44,7 +54,7 @@ function checkBrackets(tokens: TokenWithPosition[]): Diagnostic[] {
       from: item.token.start,
       to: item.token.end,
       severity: 'error',
-      message: `Unclosed bracket '${item.char}'`,
+      message: `This '${item.char}' is never closed.`,
     });
   }
 
@@ -65,7 +75,7 @@ function checkStrings(_code: string, tokens: TokenWithPosition[]): Diagnostic[] 
           from: token.start,
           to: token.end,
           severity: 'error',
-          message: 'Unclosed string literal',
+          message: 'This text is missing its closing quote.',
         });
       }
     }
@@ -92,7 +102,7 @@ function checkWeightMethods(tokens: TokenWithPosition[]): Diagnostic[] {
             from: next.start,
             to: next.end,
             severity: 'error',
-            message: `Invalid weight method '${next.value}'. Valid methods: equal, specified, momentum, inverse-volatility, min-variance, risk-parity`,
+            message: `The engine can’t run '${next.value}' weighting. It supports equal, specified, momentum, inverse-volatility, min-variance and risk-parity.`,
           });
         }
       }
@@ -107,7 +117,7 @@ function checkWeightMethods(tokens: TokenWithPosition[]): Diagnostic[] {
             from: next.start,
             to: next.end,
             severity: 'error',
-            message: `Invalid selection '${next.value}'. Valid values: top, bottom`,
+            message: `Use top or bottom here, not '${next.value}'.`,
           });
         }
       }
@@ -135,7 +145,7 @@ function checkCounts(tokens: TokenWithPosition[]): Diagnostic[] {
             from: next.start,
             to: next.end,
             severity: 'error',
-            message: 'Count must be at least 1',
+            message: 'Pick at least 1.',
           });
         }
       }
@@ -164,7 +174,8 @@ function checkWeights(tokens: TokenWithPosition[]): Diagnostic[] {
             from: next.start,
             to: next.end,
             severity: 'warning',
-            message: 'Weight is a percent from 0 to 100 (sibling weights should sum to 100).',
+            message:
+              'A weight is a percent from 0 to 100, and the weights beside it should add up to 100.',
           });
         }
       }
@@ -202,7 +213,14 @@ export function checkWeightSums(tokens: TokenWithPosition[]): Diagnostic[] {
 
     if (token.type === 'bracket') {
       if (token.value === '(') {
-        stack.push({ head: null, isSpecified: false, anchor: null, sum: 0, count: 0, awaitingHead: true });
+        stack.push({
+          head: null,
+          isSpecified: false,
+          anchor: null,
+          sum: 0,
+          count: 0,
+          awaitingHead: true,
+        });
       } else if (token.value === ')') {
         const scope = stack.pop();
         if (
@@ -217,7 +235,7 @@ export function checkWeightSums(tokens: TokenWithPosition[]): Diagnostic[] {
             from: anchor.start,
             to: anchor.end,
             severity: 'warning',
-            message: `Specified weights sum to ${total}, not 100 — adjust the ${scope.count} weights to total 100.`,
+            message: `These weights add up to ${total}, not 100. Adjust the ${scope.count} weights so they add up to 100.`,
           });
         }
       }
@@ -275,7 +293,7 @@ function checkSymbols(tokens: TokenWithPosition[]): Diagnostic[] {
             from: next.start,
             to: next.end,
             severity: 'error',
-            message: 'Symbol cannot be empty',
+            message: 'Enter a ticker here.',
           });
         }
       }

@@ -730,7 +730,11 @@ async def create_live_session_service(tenant_id: UUID | None = None) -> LiveSess
         raise ValueError("create_live_session_service requires a tenant_id (RLS scope)")
     db = get_session_maker()()
     bind_tenant_guc(db, tenant_id)
-    order_executor = await create_order_executor(tenant_id=tenant_id)
+    try:
+        order_executor = await create_order_executor(tenant_id=tenant_id)
+    except BaseException:
+        await db.close()
+        raise
     return LiveSessionService(
         db=db,
         runner_manager=get_runner_manager(),

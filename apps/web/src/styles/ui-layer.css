@@ -1,44 +1,48 @@
-/* ============================================
-   LlamaTrade Design System — "Monolith"
-   Brutalist / Swiss-grid, light-only.
-   bone/ink/orange · Anton · Archivo · Space Mono
-
-   The Monolith design-system @layer. Contains NO `@tailwind
-   base/components/utilities` directives — those stay in the entry CSS, which
-   imports this AFTER them:
-
-       @tailwind base;
-       @tailwind components;
-       @tailwind utilities;
-       @import './styles/ui-layer.css';
-
-   (index.css for the app; src/marketing/marketing-base.css for the standalone
-   marketing build.) Vite inlines the `@import` (built-in postcss-import) before
-   Tailwind runs, so every `@apply` / `@layer` below resolves against the app's
-   Tailwind context, which loads the token layer (styles/monolith.css) + preset.
-   ============================================ */
+/* Shared base and component classes. Values come from tokens.css through the Tailwind preset. */
 
 @layer base {
   html {
     @apply antialiased;
+    background: rgb(var(--canvas));
   }
 
   body {
-    @apply bg-bone text-ink font-sans;
+    @apply bg-canvas text-fg font-sans;
+    font-size: 13.5px;
+    line-height: 1.45;
+    font-variant-numeric: tabular-nums;
   }
 
-  /* Real heading tags get the condensed display face. */
-  h1, h2 {
-    @apply font-display tracking-tight;
+  h1,
+  h2,
+  h3 {
+    @apply font-display;
+    font-weight: 600;
+    letter-spacing: -0.02em;
   }
 
-  /* Monospace tabular numerics for data/figures */
   .font-data {
     @apply font-mono tabular-nums;
   }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-canvas;
+  }
+
+  input:focus,
+  input:focus-visible,
+  textarea:focus,
+  textarea:focus-visible,
+  select:focus-visible {
+    @apply outline-none ring-0 ring-offset-0;
+  }
+
+  ::selection {
+    background: rgb(var(--accent) / 0.3);
+    color: rgb(var(--fg));
+  }
 }
 
-/* Scrollbar — ink thumb on bone, auto-hide */
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
@@ -48,24 +52,24 @@
 }
 *::-webkit-scrollbar-thumb {
   background-color: transparent;
-  border-radius: 0;
-  transition: background-color 0.2s;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 *:hover::-webkit-scrollbar-thumb {
-  background-color: rgb(var(--lt-ink) / 0.25);
+  background-color: rgb(var(--fg) / 0.18);
 }
 *::-webkit-scrollbar-thumb:hover {
-  background-color: rgb(var(--lt-ink) / 0.5);
+  background-color: rgb(var(--fg) / 0.32);
 }
 * {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
 }
 *:hover {
-  scrollbar-color: rgb(var(--lt-ink) / 0.25) transparent;
+  scrollbar-color: rgb(var(--fg) / 0.18) transparent;
 }
 
-/* Fully hidden scrollbar (scrolling still works) — opt in with .no-scrollbar */
 .no-scrollbar {
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -74,182 +78,154 @@
   display: none;
 }
 
-/* Focus — sharp orange ring (follows the now-zero radius) */
-:focus-visible {
-  @apply outline-none ring-2 ring-orange-500 ring-offset-2 ring-offset-bone;
-}
-
-/* Text fields show focus via border color (their 2px border is the affordance),
-   not the global offset ring — which otherwise reads as a stray orange outline
-   inside the field. Buttons/links keep the ring above for keyboard a11y. */
-input:focus,
-input:focus-visible,
-textarea:focus,
-textarea:focus-visible {
-  @apply outline-none ring-0 ring-offset-0;
-}
-
-/* Selection — signal orange */
-::selection {
-  background: rgb(var(--lt-orange-500));
-  color: rgb(var(--lt-ink));
-}
-
-/* ============================================
-   Component Layer
-   ============================================ */
-
 @layer components {
-  /* ---------- Buttons ---------- */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2 font-mono font-bold text-xs uppercase tracking-wider;
-    @apply border-2 border-ink transition-transform duration-75;
-    @apply disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:translate-x-0 disabled:translate-y-0;
+    @apply inline-flex items-center justify-center gap-2 h-8 px-3 rounded-[7px] border text-[13px] font-medium whitespace-nowrap;
+    @apply transition-colors duration-100 disabled:opacity-45 disabled:cursor-not-allowed;
   }
 
+  /* Ink pill for the main action, outline pill beside it; the accent stays in charts and art. */
   .btn-primary {
-    @apply bg-orange-500 text-ink shadow-[3px_3px_0_rgb(var(--lt-ink))];
-    @apply hover:bg-ink hover:text-orange-500 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[5px_5px_0_rgb(var(--lt-ink))];
-    @apply active:translate-x-0 active:translate-y-0 active:shadow-[1px_1px_0_rgb(var(--lt-ink))];
+    @apply rounded-full border-fg bg-fg px-3.5 text-canvas hover:bg-fg/85;
   }
 
   .btn-secondary {
-    @apply bg-bone text-ink shadow-[3px_3px_0_rgb(var(--lt-ink))];
-    @apply hover:bg-ink hover:text-bone hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[5px_5px_0_rgb(var(--lt-ink))];
-    @apply active:translate-x-0 active:translate-y-0 active:shadow-[1px_1px_0_rgb(var(--lt-ink))];
+    @apply rounded-full border-line-strong bg-panel px-3.5 text-fg hover:border-fg-3;
   }
 
   .btn-ghost {
-    @apply border-transparent text-ink/70 shadow-none hover:text-ink hover:bg-ink/5;
+    @apply bg-transparent border-transparent text-fg-2 hover:text-fg hover:bg-sunk;
   }
 
   .btn-danger {
-    @apply bg-red-500 text-bone shadow-[3px_3px_0_rgb(var(--lt-ink))];
-    @apply hover:bg-ink hover:text-red-500 hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[5px_5px_0_rgb(var(--lt-ink))];
-    @apply active:translate-x-0 active:translate-y-0 active:shadow-[1px_1px_0_rgb(var(--lt-ink))];
+    @apply bg-panel border-risk-line text-risk hover:bg-risk-soft;
   }
 
   .btn-sm {
-    @apply text-[10px] px-3 py-1.5;
+    @apply h-7 px-2.5 text-xs;
   }
 
   .btn-lg {
-    @apply text-sm px-5 py-2.5;
+    @apply h-10 px-4 text-sm;
   }
 
-  /* ---------- Cards / surfaces ---------- */
-  .card {
-    @apply bg-paper border-2 border-ink;
+  .page {
+    @apply mx-auto w-full max-w-content px-4 py-5 md:px-9 md:py-[26px];
+  }
+
+  .card,
+  .panel {
+    @apply bg-panel border border-line rounded-panel;
   }
 
   .card-shadow {
-    @apply bg-paper border-2 border-ink shadow-[4px_4px_0_rgb(var(--lt-ink))];
+    @apply bg-panel border border-line rounded-panel shadow;
   }
 
-  /* ---------- Form inputs ---------- */
   .input {
-    @apply w-full px-3 py-2 font-sans transition-colors;
-    @apply bg-paper border-2 border-ink text-ink;
-    @apply focus:outline-none focus:border-orange-500;
+    @apply w-full h-9 px-3 rounded-[6px] bg-panel border border-line-strong text-fg text-[13px] transition-colors;
+    @apply focus:outline-none focus:border-accent;
+  }
+
+  .input:focus {
+    box-shadow: 0 0 0 3px var(--accent-soft);
   }
 
   .input::placeholder {
-    @apply text-ink/40 font-mono text-xs;
+    @apply text-fg-3;
   }
 
   .input:-webkit-autofill,
   .input:-webkit-autofill:hover,
   .input:-webkit-autofill:focus,
   .input:-webkit-autofill:active {
-    -webkit-box-shadow: 0 0 0 30px rgb(var(--lt-paper)) inset !important;
-    -webkit-text-fill-color: rgb(var(--lt-ink)) !important;
+    -webkit-box-shadow: 0 0 0 30px rgb(var(--panel)) inset !important;
+    -webkit-text-fill-color: rgb(var(--fg)) !important;
   }
 
   .input-error {
-    @apply border-red-500 focus:border-red-500;
+    @apply border-risk focus:border-risk;
   }
 
   .label {
-    @apply block text-[11px] font-mono font-bold uppercase tracking-wider mb-1.5 text-ink/70;
+    @apply block mb-1.5 text-xs font-medium text-fg-2;
   }
 
-  /* ---------- Select ---------- */
+  .kicker {
+    @apply font-mono font-medium text-fg-3;
+    font-size: var(--label-size);
+    letter-spacing: var(--label-tracking);
+    text-transform: var(--label-transform);
+  }
+
+  .num {
+    @apply font-mono tabular-nums;
+    letter-spacing: -0.01em;
+  }
+
+  .rule-total {
+    border-top: var(--total-top);
+    border-bottom: var(--total-bottom);
+  }
+
   .select {
-    @apply input appearance-none bg-no-repeat pr-10;
-    /* THEME EXCEPTION: this chevron color (%230d0d0d = ink) is baked into a
-       data-URI, which cannot reference a CSS custom property. It is the one
-       documented spot the token layer does not drive; keep it in sync with
-       --lt-ink by hand if the ink hue ever changes. */
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%230d0d0d' stroke-linecap='square' stroke-linejoin='miter' stroke-width='2' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    @apply input appearance-none bg-no-repeat pr-9;
+    /* Data URIs cannot read tokens; this mid grey reads on every surface. */
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%238a9099' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.6' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
     background-position: right 0.5rem center;
-    background-size: 1.4em 1.4em;
+    background-size: 1.25em 1.25em;
   }
 
-  /* ---------- Badges / tags ---------- */
   .badge {
-    @apply inline-flex items-center px-2 py-0.5 border border-ink text-[10px] font-mono font-bold uppercase tracking-wide;
+    @apply inline-flex items-center gap-1 h-5 px-1.5 rounded-[4px] border border-line-strong text-[10.5px] font-mono font-medium text-fg-2 whitespace-nowrap;
   }
 
-  .badge-primary {
-    @apply bg-orange-500 text-ink border-ink;
-  }
-
+  .badge-primary,
   .badge-accent {
-    @apply bg-blue-500 text-bone border-ink;
+    @apply bg-accent-soft text-accent border-accent/45;
   }
 
   .badge-gray {
-    @apply bg-bone text-ink border-ink;
+    @apply bg-sunk;
   }
 
   .badge-success {
-    @apply bg-green-600 text-bone border-ink;
+    @apply bg-accent-soft text-accent border-accent/45;
   }
 
   .badge-danger {
-    @apply bg-red-500 text-bone border-ink;
+    @apply bg-risk-soft text-risk border-risk-line;
   }
 
-  /* ---------- Dividers ---------- */
   .divider {
-    @apply border-t border-ink/15;
+    @apply border-t border-line;
   }
 
-  /* ---------- Dropdown menu ---------- */
   .dropdown {
-    @apply absolute z-50 py-0 bg-paper border-2 border-ink shadow-[4px_4px_0_rgb(var(--lt-ink))];
+    @apply absolute z-50 py-1 bg-panel border border-line-strong rounded-[10px] shadow-lg overflow-hidden;
   }
 
   .dropdown-item {
-    @apply flex items-center gap-3 px-4 py-2.5 text-sm cursor-pointer;
-    @apply text-ink hover:bg-ink hover:text-bone;
+    @apply flex w-full items-center gap-3 px-3 py-2 text-[13px] text-fg-2 cursor-pointer text-left;
+    @apply hover:bg-sunk hover:text-fg;
   }
 
   .dropdown-item-icon {
-    @apply w-5 h-5;
+    @apply w-4 h-4;
   }
 
-  /* ---------- Nav links ---------- */
   .nav-link {
-    @apply px-3 py-2 text-[11px] font-mono font-bold uppercase tracking-wider transition-colors;
-    @apply text-ink/60 hover:text-ink hover:bg-ink/5;
+    @apply px-[11px] py-1.5 rounded-[7px] text-[13.5px] font-medium text-fg-2 whitespace-nowrap transition-colors hover:text-fg;
   }
 
   .nav-link-active {
-    @apply text-bone bg-ink pointer-events-none;
-    box-shadow: inset 3px 0 0 rgb(var(--lt-orange-500));
+    @apply text-fg bg-sunk;
   }
 }
 
-/* ============================================
-   Canvas / Grid Background (Strategy Builder)
-   ============================================ */
-
 @layer utilities {
-  /* Exposed 12-column grid — the marketing site's vertical hairline scaffold.
-     Collapses to 6 columns on narrow viewports (marketing parity). */
   .bg-grid {
-    background-image: linear-gradient(90deg, var(--lt-grid-line) 0 1px, transparent 1px);
+    background-image: linear-gradient(90deg, rgb(var(--grid)) 0 1px, transparent 1px);
     background-size: calc(100% / 12) 100%;
   }
   @media (max-width: 720px) {
@@ -258,22 +234,113 @@ textarea:focus-visible {
     }
   }
 
-  /* Dotted node canvas (strategy builder). */
-  .bg-canvas {
-    @apply bg-bone;
-    background-image: radial-gradient(circle, var(--lt-grid-dot) 1px, transparent 1px);
+  .bg-dots {
+    background-color: rgb(var(--canvas));
+    background-image: radial-gradient(circle, rgb(var(--fg) / 0.1) 1px, transparent 1px);
     background-size: 22px 22px;
   }
 
-  /* Dotted node canvas on the dark (ink) ground — light dots, mirrors .bg-canvas. */
-  .bg-canvas-ink {
-    @apply bg-ink;
-    background-image: radial-gradient(circle, rgb(var(--lt-bone) / 0.07) 1px, transparent 1px);
-    background-size: 22px 22px;
+  .bg-hatch {
+    background-image: repeating-linear-gradient(135deg, var(--hatch) 0 3px, transparent 3px 7px);
   }
+}
 
-  /* Tree connector lines */
-  .bg-connector {
-    @apply bg-ink;
+/* Auth screens: the site's chart art and rim light. */
+.auth-aside {
+  background:
+    radial-gradient(55% 45% at 55% 40%, rgb(var(--accent) / 0.16), transparent 72%),
+    rgb(var(--panel));
+}
+.auth-art {
+  position: absolute;
+  inset: 0;
+  color: rgb(var(--accent));
+  pointer-events: none;
+  -webkit-mask-image: radial-gradient(
+    ellipse 46% 40% at 50% 50%,
+    transparent 0,
+    rgb(0 0 0 / 0.35) 60%,
+    #000 100%
+  );
+  mask-image: radial-gradient(
+    ellipse 46% 40% at 50% 50%,
+    transparent 0,
+    rgb(0 0 0 / 0.35) 60%,
+    #000 100%
+  );
+}
+.auth-art svg {
+  display: block;
+}
+.auth-art .sa {
+  opacity: 0.2;
+}
+.auth-art .sa.acc {
+  opacity: 0.6;
+}
+:root[data-mode='light'] .auth-art .sa {
+  opacity: 0.15;
+}
+:root[data-mode='light'] .auth-art .sa.acc {
+  opacity: 0.5;
+}
+.auth-card {
+  border-color: color-mix(in srgb, rgb(var(--accent)) 40%, rgb(var(--line)));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, rgb(var(--accent)) 20%, transparent),
+    0 40px 120px -40px color-mix(in srgb, rgb(var(--accent)) 50%, transparent),
+    0 30px 60px -30px rgb(0 0 0 / 0.35);
+}
+.auth-card::before {
+  content: '';
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  top: -1px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, rgb(var(--accent)) 90%, #fff),
+    transparent
+  );
+}
+
+/* Page art: the site's background chart behind the top of a page. */
+.page-art {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  z-index: -1;
+  width: 100vw;
+  height: 460px;
+  transform: translateX(-50%);
+  color: rgb(var(--accent));
+  pointer-events: none;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 45%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0, #000 45%, transparent 100%);
+}
+.page-art svg {
+  display: block;
+}
+.page-art .sa {
+  opacity: 0.14;
+}
+.page-art .sa.acc {
+  opacity: 0.45;
+}
+:root[data-mode='light'] .page-art .sa {
+  opacity: 0.11;
+}
+:root[data-mode='light'] .page-art .sa.acc {
+  opacity: 0.4;
+}
+@media (max-width: 767px) {
+  .page-art .sa {
+    opacity: 0.08;
+  }
+  .page-art .sa.acc {
+    opacity: 0.25;
   }
 }

@@ -8,29 +8,34 @@
  * strategy sleeve and never touches the allocatable pool.
  */
 
-import { create } from 'zustand';
+import { create } from "zustand";
 
-import { TransactionType, type Transaction } from '@llamatrade/core/proto/portfolio_pb';
-import { portfolioClient } from '../net';
-import { money, num } from '../format';
+import {
+  TransactionType,
+  type Transaction,
+} from "@llamatrade/core/proto/portfolio_pb";
+import { portfolioClient } from "../net";
+import { money, num } from "../format";
 
-import { getTenantContext } from '../net';
+import { getTenantContext } from "../net";
 
 const PAGE_SIZE = 25;
+/** Upper bound on pages loadAll will walk, so a runaway cursor can't loop forever. */
+const MAX_PAGES = 200;
 
 export type ActivityKind =
-  | 'deposit'
-  | 'withdrawal'
-  | 'allocation'
-  | 'release'
-  | 'buy'
-  | 'sell'
-  | 'dividend'
-  | 'interest'
-  | 'fee'
-  | 'other';
+  | "deposit"
+  | "withdrawal"
+  | "allocation"
+  | "release"
+  | "buy"
+  | "sell"
+  | "dividend"
+  | "interest"
+  | "fee"
+  | "other";
 
-export type ActivityGroup = 'funding' | 'allocations' | 'trades';
+export type ActivityGroup = "funding" | "allocations" | "trades" | "income";
 
 export interface ActivityRow {
   id: string;
@@ -54,8 +59,8 @@ function toDate(ts?: { seconds: bigint }): Date {
 function tradeSublabel(t: Transaction): string {
   const qty = toNumber(t.quantity);
   const price = toNumber(t.price);
-  if (qty && price) return `${qty} @ ${money(price, 2)}`;
-  return t.symbol || '—';
+  if (qty && price) return `${qty} at ${money(price, 2).replace("$", "")}`;
+  return t.symbol;
 }
 
 function mapRow(t: Transaction): ActivityRow {
@@ -65,19 +70,19 @@ function mapRow(t: Transaction): ActivityRow {
     case TransactionType.DEPOSIT:
       return {
         ...base,
-        kind: 'deposit',
-        group: 'funding',
-        label: 'Deposit',
-        sublabel: t.description || 'Paper credit',
+        kind: "deposit",
+        group: "funding",
+        label: "Deposit",
+        sublabel: t.description || "Paper credit",
         signed: amount,
       };
     case TransactionType.WITHDRAWAL:
       return {
         ...base,
-        kind: 'withdrawal',
-        group: 'funding',
-        label: 'Withdrawal',
-        sublabel: t.description || 'Paper credit',
+        kind: "withdrawal",
+        group: "funding",
+        label: "Withdrawal",
+        sublabel: t.description || "Paper credit",
         signed: -amount,
       };
     case TransactionType.TRANSFER_IN:
@@ -85,30 +90,30 @@ function mapRow(t: Transaction): ActivityRow {
       // An allocation moves free cash into a strategy sleeve; a release returns
       // it. The row is described by the sleeve it concerns — a release names the
       // Unallocated sleeve, an allocation names the strategy.
-      const isRelease = /unalloc/i.test(t.description || '');
+      const isRelease = /unalloc/i.test(t.description || "");
       return isRelease
         ? {
             ...base,
-            kind: 'release',
-            group: 'allocations',
-            label: 'Released to cash',
-            sublabel: 'From strategy sleeve',
+            kind: "release",
+            group: "allocations",
+            label: "Released to cash",
+            sublabel: "From strategy sleeve",
             signed: amount,
           }
         : {
             ...base,
-            kind: 'allocation',
-            group: 'allocations',
-            label: 'Allocated',
-            sublabel: t.description || 'Strategy sleeve',
+            kind: "allocation",
+            group: "allocations",
+            label: "Allocated",
+            sublabel: t.description || "Strategy sleeve",
             signed: -amount,
           };
     }
     case TransactionType.BUY:
       return {
         ...base,
-        kind: 'buy',
-        group: 'trades',
+        kind: "buy",
+        group: "trades",
         label: `Buy ${t.symbol}`.trim(),
         sublabel: tradeSublabel(t),
         signed: 0,
@@ -116,8 +121,8 @@ function mapRow(t: Transaction): ActivityRow {
     case TransactionType.SELL:
       return {
         ...base,
-        kind: 'sell',
-        group: 'trades',
+        kind: "sell",
+        group: "trades",
         label: `Sell ${t.symbol}`.trim(),
         sublabel: tradeSublabel(t),
         signed: 0,
@@ -125,37 +130,37 @@ function mapRow(t: Transaction): ActivityRow {
     case TransactionType.DIVIDEND:
       return {
         ...base,
-        kind: 'dividend',
-        group: 'trades',
-        label: 'Dividend',
-        sublabel: t.symbol || '—',
+        kind: "dividend",
+        group: "income",
+        label: "Dividend",
+        sublabel: t.symbol || t.description,
         signed: 0,
       };
     case TransactionType.INTEREST:
       return {
         ...base,
-        kind: 'interest',
-        group: 'trades',
-        label: 'Interest',
-        sublabel: '—',
+        kind: "interest",
+        group: "income",
+        label: "Interest",
+        sublabel: t.description,
         signed: 0,
       };
     case TransactionType.FEE:
       return {
         ...base,
-        kind: 'fee',
-        group: 'trades',
-        label: 'Fee',
-        sublabel: t.symbol || '—',
+        kind: "fee",
+        group: "trades",
+        label: "Fee",
+        sublabel: t.symbol || t.description,
         signed: 0,
       };
     default:
       return {
         ...base,
-        kind: 'other',
-        group: 'trades',
-        label: 'Activity',
-        sublabel: '—',
+        kind: "other",
+        group: "trades",
+        label: "Activity",
+        sublabel: t.description,
         signed: 0,
       };
   }
@@ -170,9 +175,13 @@ interface ActivityState {
   hasMore: boolean;
   fetch: () => Promise<void>;
   loadMore: () => Promise<void>;
+  /** Loads every remaining page; resolves true when the full history is in memory. */
+  loadAll: () => Promise<boolean>;
 }
 
-async function fetchPage(page: number): Promise<{ rows: ActivityRow[]; hasMore: boolean }> {
+async function fetchPage(
+  page: number,
+): Promise<{ rows: ActivityRow[]; hasMore: boolean }> {
   const context = getTenantContext();
   const res = await portfolioClient.listTransactions({
     context,
@@ -198,7 +207,10 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
       const { rows, hasMore } = await fetchPage(1);
       set({ rows, hasMore, page: 1, loading: false });
     } catch (e) {
-      set({ loading: false, error: e instanceof Error ? e.message : 'Failed to load activity' });
+      set({
+        loading: false,
+        error: e instanceof Error ? e.message : "Failed to load activity",
+      });
     }
   },
 
@@ -209,9 +221,26 @@ export const useActivityStore = create<ActivityState>((set, get) => ({
     try {
       const next = page + 1;
       const { rows, hasMore: more } = await fetchPage(next);
-      set((s) => ({ rows: [...s.rows, ...rows], hasMore: more, page: next, loadingMore: false }));
+      set((s) => ({
+        rows: [...s.rows, ...rows],
+        hasMore: more,
+        page: next,
+        loadingMore: false,
+      }));
     } catch (e) {
-      set({ loadingMore: false, error: e instanceof Error ? e.message : 'Failed to load activity' });
+      set({
+        loadingMore: false,
+        error: e instanceof Error ? e.message : "Failed to load activity",
+      });
     }
+  },
+
+  loadAll: async () => {
+    if (get().loadingMore) return false;
+    for (let i = 0; get().hasMore && i < MAX_PAGES; i++) {
+      await get().loadMore();
+      if (get().error) return false;
+    }
+    return !get().hasMore;
   },
 }));

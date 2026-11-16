@@ -34,6 +34,8 @@ beforeEach(() => {
     loaded: false,
     loading: false,
     connecting: false,
+    checking: false,
+    lastCheck: null,
     error: null,
   });
   listAlpacaCredentials.mockResolvedValue({ credentials: [{ id: 'c1' }] });
@@ -127,19 +129,94 @@ describe('remove', () => {
   it('drops the credential locally after the server accepts', async () => {
     useBrokerStore.setState({ credentials: [{ id: 'c1' }, { id: 'c2' }] as never });
 
+    const ok = await useBrokerStore.getState().remove('c1');
+
+    expect(ok).toBe(true);
+    expect(useBrokerStore.getState().credentials.map((c) => c.id)).toEqual(['c2']);
+  });
+
+  it('forgets the last check once the keys are gone', async () => {
+    useBrokerStore.setState({
+      credentials: [{ id: 'c1' }] as never,
+      lastCheck: { at: new Date(), valid: true, isPaper: true, accountStatus: '', message: '' },
+    });
+
     await useBrokerStore.getState().remove('c1');
 
-    expect(useBrokerStore.getState().credentials.map((c) => c.id)).toEqual(['c2']);
+    expect(useBrokerStore.getState().lastCheck).toBeNull();
   });
 
   it('keeps the credential listed when deletion is refused', async () => {
     useBrokerStore.setState({ credentials: [{ id: 'c1' }] as never });
     deleteAlpacaCredentials.mockRejectedValue(new ConnectError('in use by a running session'));
 
-    await useBrokerStore.getState().remove('c1');
+    const ok = await useBrokerStore.getState().remove('c1');
 
+    expect(ok).toBe(false);
     // The guard exists server-side; the UI must not pretend the key is gone.
     expect(useBrokerStore.getState().credentials.map((c) => c.id)).toEqual(['c1']);
     expect(useBrokerStore.getState().error).toContain('in use');
+  });
+});
+
+describe('check', () => {
+  it('validates without storing and records when this browser asked', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-16T15:40:00Z'));
+    validateAlpacaCredentials.mockResolvedValue({ valid: true, accountStatus: 'ACTIVE' });
+
+    const result = await useBrokerStore
+      .getState()
+      .check({ apiKey: 'AK', apiSecret: 'SK', isPaper: true });
+
+    expect(createAlpacaCredentials).not.toHaveBeenCalled();
+    expect(validateAlpacaCredentials).toHaveBeenCalledWith({
+      apiKey: 'AK',
+      apiSecret: 'SK',
+      isPaper: true,
+    });
+    expect(result).toEqual({
+      at: new Date('2026-11-16T15:40:00Z'),
+      valid: true,
+      isPaper: true,
+      accountStatus: 'ACTIVE',
+      message: '',
+    });
+    expect(useBrokerStore.getState().lastCheck).toEqual(result);
+    expect(useBrokerStore.getState().checking).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it("records a rejection with Alpaca's reason, or a plain one when none is given", async () => {
+    validateAlpacaCredentials.mockResolvedValueOnce({
+      valid: false,
+      message: 'These look like live keys',
+    });
+    const first = await useBrokerStore
+      .getState()
+      .check({ apiKey: 'AK', apiSecret: 'SK', isPaper: true });
+    expect(first?.valid).toBe(false);
+    expect(first?.message).toBe('These look like live keys');
+
+    validateAlpacaCredentials.mockResolvedValueOnce({ valid: false });
+    const second = await useBrokerStore
+      .getState()
+      .check({ apiKey: 'AK', apiSecret: 'SK', isPaper: true });
+    expect(second?.message).toMatch(/rejected by Alpaca/i);
+  });
+
+  it('keeps the previous result when Alpaca cannot be reached', async () => {
+    const earlier = { at: new Date(0), valid: true, isPaper: true, accountStatus: '', message: '' };
+    useBrokerStore.setState({ lastCheck: earlier });
+    validateAlpacaCredentials.mockRejectedValue(new ConnectError('Could not reach Alpaca'));
+
+    const result = await useBrokerStore
+      .getState()
+      .check({ apiKey: 'AK', apiSecret: 'SK', isPaper: true });
+
+    expect(result).toBeNull();
+    expect(useBrokerStore.getState().lastCheck).toBe(earlier);
+    expect(useBrokerStore.getState().error).toContain('Could not reach Alpaca');
+    expect(useBrokerStore.getState().checking).toBe(false);
   });
 });

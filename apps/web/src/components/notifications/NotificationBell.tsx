@@ -1,112 +1,143 @@
-import { NotificationSeverity } from '@llamatrade/core/proto/events_pb';
+import { toDate } from '@llamatrade/core/format';
 import { useNotificationsStore } from '@llamatrade/core/stores/notifications';
-import { Bell, CheckCheck } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { AlertTriangle, Bell, Info, Settings } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 
-import { severityBadge } from '../../types/notifications';
-import { Badge } from '../common/Badge';
+import { needsAttention, noticeTime } from '../../lib/notifications';
+import { Popover } from '../ui/Popover';
 
 const POLL_INTERVAL_MS = 60_000;
-
-function timeAgo(seconds: bigint | undefined): string {
-  if (!seconds) return '';
-  const delta = Math.max(0, Date.now() / 1000 - Number(seconds));
-  if (delta < 60) return 'just now';
-  if (delta < 3600) return `${Math.floor(delta / 60)}m ago`;
-  if (delta < 86400) return `${Math.floor(delta / 3600)}h ago`;
-  return `${Math.floor(delta / 86400)}d ago`;
-}
+const SHOWN_AT_FIRST = 6;
 
 export function NotificationBell() {
-  const [open, setOpen] = useState(false);
-  const { notifications, unreadCount, fetchNotifications, markAsRead, markAllAsRead } =
-    useNotificationsStore();
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const notifications = useNotificationsStore((s) => s.notifications);
+  const unreadCount = useNotificationsStore((s) => s.unreadCount);
+  const fetchNotifications = useNotificationsStore((s) => s.fetchNotifications);
+  const markAsRead = useNotificationsStore((s) => s.markAsRead);
+  const markAllAsRead = useNotificationsStore((s) => s.markAllAsRead);
+  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
-    void fetchNotifications();
-    timer.current = setInterval(() => void fetchNotifications(), POLL_INTERVAL_MS);
-    return () => {
-      if (timer.current) clearInterval(timer.current);
+    const load = () => {
+      fetchNotifications().catch(() => undefined);
     };
+    load();
+    const timer = setInterval(load, POLL_INTERVAL_MS);
+    return () => clearInterval(timer);
   }, [fetchNotifications]);
 
+  const now = new Date();
+  const shown = showAll ? notifications : notifications.slice(0, SHOWN_AT_FIRST);
+  const hidden = notifications.length - shown.length;
+
   return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen(!open)}
-        title="Notifications"
-        aria-label="Notifications"
-        className={`relative grid h-9 w-9 place-items-center border-2 transition-colors ${
-          open
-            ? 'border-ink bg-ink/5 text-ink'
-            : 'border-transparent text-ink/60 hover:bg-ink/5 hover:text-ink'
-        }`}
-      >
-        <Bell className="h-[18px] w-[18px]" />
-        {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 grid place-items-center bg-orange-500 border-2 border-ink text-[10px] font-mono font-bold text-ink">
-            {unreadCount > 99 ? '99+' : unreadCount}
-          </span>
-        )}
-      </button>
-
-      {open && (
+    <Popover
+      width={400}
+      label="Notifications"
+      className="max-sm:fixed max-sm:inset-x-3 max-sm:top-[60px] max-sm:mt-0 max-sm:max-h-[calc(100dvh-72px)] max-sm:!w-auto max-sm:overflow-y-auto"
+      trigger={(props) => (
+        <button
+          type="button"
+          {...props}
+          aria-label={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+          className={`relative grid h-8 w-8 place-items-center rounded-[8px] transition-colors ${
+            props['aria-expanded'] ? 'bg-sunk text-fg' : 'text-fg-2 hover:text-fg'
+          }`}
+        >
+          <Bell className="h-[18px] w-[18px]" />
+          {unreadCount > 0 && (
+            <b className="absolute right-px top-0.5 h-4 min-w-4 rounded-lg bg-accent px-1 text-center font-mono text-[10px] font-semibold leading-4 text-accent-ink">
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </b>
+          )}
+        </button>
+      )}
+    >
+      {(close) => (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="dropdown right-0 top-full mt-2 w-96 max-h-[70vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-4 py-3 border-b-2 border-ink">
-              <p className="text-sm font-medium text-ink">Notifications</p>
-              {unreadCount > 0 && (
-                <button
-                  onClick={() => void markAllAsRead()}
-                  className="flex items-center gap-1 text-[11px] font-mono uppercase tracking-wide text-ink/60 hover:text-ink"
-                >
-                  <CheckCheck className="w-3.5 h-3.5" />
-                  Mark all read
-                </button>
-              )}
-            </div>
+          <div className="flex items-center justify-between gap-2.5 border-b border-line px-4 py-3">
+            <b className="font-semibold">Notifications</b>
+            {unreadCount > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  markAllAsRead().catch(() => undefined);
+                }}
+                className="text-[12.5px] text-fg-3 hover:text-fg"
+              >
+                Mark all read
+              </button>
+            )}
+          </div>
 
+          <div className="max-h-[min(60vh,480px)] overflow-y-auto">
             {notifications.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-ink/60">Nothing yet.</p>
+              <p className="m-0 px-4 py-8 text-center text-[13px] text-fg-3">
+                Nothing yet. Fills, finished backtests and anything that needs a look will show
+                here.
+              </p>
             ) : (
-              notifications.map((n) => {
-                const severity = Number(n.metadata['severity'] ?? 0) as NotificationSeverity;
+              shown.map((n) => {
+                const attention = needsAttention(n);
+                const Icon = attention ? AlertTriangle : Info;
                 return (
                   <button
                     key={n.id}
+                    type="button"
                     onClick={() => {
-                      if (!n.isRead) void markAsRead(n.id);
+                      if (!n.isRead) markAsRead(n.id).catch(() => undefined);
                     }}
-                    className={`w-full text-left px-4 py-3 border-b border-ink/10 hover:bg-ink/5 transition-colors ${
-                      n.isRead ? 'opacity-60' : ''
-                    }`}
+                    className="grid w-full grid-cols-[22px_minmax(0,1fr)_auto] items-start gap-2.5 border-b border-line px-4 py-[11px] text-left last:border-b-0 hover:bg-sunk"
                   >
-                    <div className="flex items-center gap-2">
-                      {!n.isRead && <span className="h-2 w-2 bg-orange-500 shrink-0" />}
-                      <p className="text-sm font-medium text-ink truncate">{n.title}</p>
-                      <Badge variant={severityBadge(severity)} className="ml-auto shrink-0">
-                        {timeAgo(n.createdAt?.seconds)}
-                      </Badge>
-                    </div>
-                    <p className="mt-1 text-[13px] text-ink/70 line-clamp-2">{n.message}</p>
+                    <Icon className={`mt-0.5 h-4 w-4 ${attention ? 'text-risk' : 'text-fg-3'}`} />
+                    <span className="min-w-0">
+                      <b className={`block font-semibold ${attention ? 'text-risk' : 'text-fg'}`}>
+                        {n.title}
+                      </b>
+                      <span className="mt-0.5 block text-[12.5px] text-fg-2 line-clamp-2">
+                        {n.message}
+                      </span>
+                    </span>
+                    <em className="flex items-center gap-1.5 whitespace-nowrap font-mono text-[11.5px] not-italic text-fg-3">
+                      {noticeTime(toDate(n.createdAt), now)}
+                      {!n.isRead && (
+                        <i
+                          aria-label="Unread"
+                          className={`h-[7px] w-[7px] rounded-full ${attention ? 'bg-risk' : 'bg-accent'}`}
+                        />
+                      )}
+                    </em>
                   </button>
                 );
               })
             )}
+            {hidden > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowAll(true)}
+                className="w-full border-t border-line px-4 py-2.5 text-[12.5px] text-fg-2 hover:bg-sunk hover:text-fg"
+              >
+                Show all {notifications.length}
+              </button>
+            )}
+          </div>
 
-            <NavLink
-              to="/settings?tab=notifications"
-              onClick={() => setOpen(false)}
-              className="block px-4 py-2.5 text-[11px] font-mono uppercase tracking-wide text-ink/60 hover:text-ink hover:bg-ink/5"
+          <div className="flex items-center justify-between gap-2.5 border-t border-line px-4 py-3 text-[12.5px]">
+            <Link to="/notifications" onClick={close} className="text-accent hover:underline">
+              See all notifications
+            </Link>
+            <Link
+              to="/settings/notifications"
+              onClick={close}
+              className="flex items-center gap-1.5 text-fg-3 hover:text-fg"
             >
-              Notification settings
-            </NavLink>
+              Email settings
+              <Settings className="h-4 w-4" />
+            </Link>
           </div>
         </>
       )}
-    </div>
+    </Popover>
   );
 }

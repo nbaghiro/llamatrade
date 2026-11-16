@@ -9,6 +9,7 @@
     "android": "expo run:android",
     "proto": "cd ../../libs/proto && buf generate --template buf.gen.core.yaml",
     "typecheck": "tsc --noEmit",
+    "test": "node --test 'src/**/__tests__/*.test.ts'",
     "postinstall": "node scripts/patch-expo-xcode26.mjs"
   },
   "dependencies": {

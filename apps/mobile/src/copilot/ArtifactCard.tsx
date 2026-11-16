@@ -1,21 +1,18 @@
-import { Check, FlaskConical, Sparkles } from 'lucide-react-native';
-import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, View } from 'react-native';
-
+import { buildMeta, formatDSL, parsePreview } from '@llamatrade/core/agent/artifact';
 import { ArtifactType, type PendingArtifact } from '@llamatrade/core/proto/agent_pb';
 import { useAgentStore } from '@llamatrade/core/stores/agent';
-import { palette } from '../theme';
-import { Badge, Body, Mono } from '../ui';
-import { buildMeta, formatDSL, parsePreview } from '@llamatrade/core/agent/artifact';
+import { router } from 'expo-router';
+import { useMemo, useState } from 'react';
+import { View } from 'react-native';
+
+import { makeStyles } from '../theme';
+import { Button, Card, Pill, Text } from '../ui';
 import { DslBlock } from './DslBlock';
 
-/**
- * Inline draft-strategy card — the "approve" surface. Save commits the artifact
- * server-side (agent.commitArtifact); editing/backtesting stay on the desktop
- * builder (deep-linked from there).
- */
+/** A drafted strategy in the conversation: Save commits it, Open shows the saved strategy. */
 export function ArtifactCard({ artifact }: { artifact: PendingArtifact }) {
-  const commit = useAgentStore((s) => s.commitArtifact);
+  const s = useStyles();
+  const commit = useAgentStore((st) => st.commitArtifact);
   const [saving, setSaving] = useState(false);
 
   const preview = useMemo(() => parsePreview(artifact), [artifact]);
@@ -24,96 +21,57 @@ export function ArtifactCard({ artifact }: { artifact: PendingArtifact }) {
 
   const isStrategy = artifact.artifactType === ArtifactType.STRATEGY;
   const isSaved = artifact.isCommitted;
+  const savedId = artifact.committedResourceId;
 
   const onSave = async () => {
     if (isSaved || saving) return;
     setSaving(true);
-    await commit(artifact.id);
-    setSaving(false);
+    try {
+      await commit(artifact.id);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <View
-      style={{
-        alignSelf: 'stretch',
-        borderWidth: 2,
-        borderColor: palette.ink,
-        backgroundColor: palette.paper,
-      }}
-    >
-      {/* Header */}
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 7,
-          borderBottomWidth: 2,
-          borderColor: palette.ink,
-          backgroundColor: palette.bone,
-          paddingHorizontal: 11,
-          paddingVertical: 9,
-        }}
-      >
-        <Sparkles color={palette.orange[500]} size={13} strokeWidth={2} />
-        <Mono size={9} color={palette.gray[500]} style={{ fontWeight: '700' }}>
-          {isStrategy ? 'STRATEGY' : 'ARTIFACT'}
-        </Mono>
-        <Body size={13} style={{ fontWeight: '700', flexShrink: 1 }} numberOfLines={1}>
-          {artifact.name || 'Strategy'}
-        </Body>
-        <View style={{ marginLeft: 'auto' }}>
-          <Badge label={isSaved ? 'Saved' : 'Draft'} variant={isSaved ? 'green' : 'orange'} />
-        </View>
+    <Card style={s.card}>
+      <View style={s.head}>
+        <Text variant="subhead" numberOfLines={1} style={s.name}>
+          {artifact.name || (isStrategy ? 'Strategy' : 'Draft')}
+        </Text>
+        <Pill label={isSaved ? 'Saved' : 'Draft'} tone="accent" />
       </View>
-
-      {meta ? (
-        <Mono size={9.5} color={palette.gray[500]} style={{ paddingHorizontal: 11, paddingTop: 9, textTransform: 'uppercase' }}>
-          {meta}
-        </Mono>
-      ) : null}
-
+      {meta ? <Text variant="small" tone="fg3">{meta}</Text> : null}
       {dsl ? (
-        <View style={{ margin: 11 }}>
-          <DslBlock code={dsl} />
-        </View>
+        <DslBlock code={dsl} />
       ) : artifact.description ? (
-        <Body size={13} color={palette.gray[600]} style={{ paddingHorizontal: 11, paddingVertical: 11 }}>
-          {artifact.description}
-        </Body>
+        <Text variant="small" tone="fg2">{artifact.description}</Text>
       ) : null}
-
-      {/* Actions */}
-      <View style={{ borderTopWidth: 2, borderColor: palette.ink, padding: 11, gap: 8 }}>
-        <Pressable
+      <View style={s.actions}>
+        <Button
+          label={isSaved ? 'Saved' : saving ? 'Saving' : 'Save'}
           onPress={onSave}
-          disabled={isSaved || saving || !dsl}
-          style={{
-            backgroundColor: isSaved ? palette.green[500] : palette.orange[500],
-            borderWidth: 2,
-            borderColor: palette.ink,
-            paddingVertical: 10,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 7,
-            opacity: !dsl ? 0.4 : 1,
-          }}
-        >
-          {saving ? (
-            <ActivityIndicator size="small" color={palette.ink} />
-          ) : isSaved ? (
-            <Check color={palette.bone} size={14} strokeWidth={2.5} />
-          ) : (
-            <FlaskConical color={palette.ink} size={14} strokeWidth={2} />
-          )}
-          <Mono size={11} color={isSaved ? palette.bone : palette.ink} style={{ fontWeight: '700' }}>
-            {isSaved ? 'SAVED' : saving ? 'SAVING…' : 'SAVE STRATEGY'}
-          </Mono>
-        </Pressable>
-        <Mono size={9} color={palette.gray[500]} style={{ textAlign: 'center' }}>
-          Open in the desktop builder to edit or backtest
-        </Mono>
+          loading={saving}
+          disabled={isSaved || !dsl}
+          style={s.action}
+        />
+        <Button
+          label="Open"
+          variant="secondary"
+          onPress={() => router.push(`/strategy/${savedId}`)}
+          disabled={!isSaved || !savedId}
+          style={s.action}
+        />
       </View>
-    </View>
+      <Text variant="caption" tone="fg3">Edit it or run a backtest in the web builder.</Text>
+    </Card>
   );
 }
+
+const useStyles = makeStyles(() => ({
+  card: { alignSelf: 'stretch', gap: 10 },
+  head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  name: { flexShrink: 1 },
+  actions: { flexDirection: 'row', gap: 8 },
+  action: { flex: 1 },
+}));

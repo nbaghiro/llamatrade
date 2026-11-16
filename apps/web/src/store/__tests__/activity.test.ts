@@ -93,9 +93,21 @@ describe('row mapping', () => {
     expect(row.kind).toBe(kind);
     expect(row.group).toBe('trades');
     expect(row.label).toBe(label);
-    expect(row.sublabel).toContain('10 @');
+    expect(row.sublabel).toBe('10 at 150.00');
     // A trade moves holdings, not cash: it must not sign the running balance.
     expect(row.signed).toBe(0);
+  });
+
+  it("shows interest with the ledger's description, or nothing", async () => {
+    const described = await rowFor({
+      type: TransactionType.INTEREST,
+      description: 'Cash interest',
+      amount: { value: '12.4' },
+    });
+    const bare = await rowFor({ type: TransactionType.INTEREST, amount: { value: '1' } });
+
+    expect(described.sublabel).toBe('Cash interest');
+    expect(bare.sublabel).toBe('');
   });
 
   it('falls back to the symbol when a trade carries no quantity or price', async () => {
@@ -208,5 +220,39 @@ describe('paging', () => {
 
     expect(useActivityStore.getState().loading).toBe(false);
     expect(useActivityStore.getState().error).toBe('down');
+  });
+});
+
+describe('income and loadAll', () => {
+  it('files dividends and interest under income, and fees under trades', async () => {
+    expect((await rowFor({ type: TransactionType.DIVIDEND, symbol: 'VGLT' })).group).toBe('income');
+    expect((await rowFor({ type: TransactionType.INTEREST })).group).toBe('income');
+    expect((await rowFor({ type: TransactionType.FEE })).group).toBe('trades');
+  });
+
+  it('walks every remaining page and reports a complete history', async () => {
+    listTransactions
+      .mockResolvedValueOnce({ transactions: [txn({ id: 'a' })], pagination: { hasNext: true } })
+      .mockResolvedValueOnce({ transactions: [txn({ id: 'b' })], pagination: { hasNext: true } })
+      .mockResolvedValueOnce({ transactions: [txn({ id: 'c' })], pagination: { hasNext: false } });
+    await useActivityStore.getState().fetch();
+    const complete = await useActivityStore.getState().loadAll();
+    expect(complete).toBe(true);
+    expect(useActivityStore.getState().rows.map((r) => r.id)).toEqual(['a', 'b', 'c']);
+    expect(listTransactions).toHaveBeenCalledTimes(3);
+  });
+
+  it('stops and reports an incomplete history when a page fails', async () => {
+    listTransactions
+      .mockResolvedValueOnce({ transactions: [txn({ id: 'a' })], pagination: { hasNext: true } })
+      .mockRejectedValueOnce(new Error('down'));
+    await useActivityStore.getState().fetch();
+    expect(await useActivityStore.getState().loadAll()).toBe(false);
+    expect(useActivityStore.getState().rows.map((r) => r.id)).toEqual(['a']);
+  });
+
+  it('is complete straight away when there are no more pages', async () => {
+    expect(await useActivityStore.getState().loadAll()).toBe(true);
+    expect(listTransactions).not.toHaveBeenCalled();
   });
 });

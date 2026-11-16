@@ -69,6 +69,8 @@ services:
       - --advertise-kafka-addr=internal://redpanda:29092,external://localhost:9092
       - --mode=dev-container
       - --smp=1
+      - --memory=1G
+      - --reserve-memory=0M
       - --default-log-level=info
     volumes:
       - llamatrade_redpanda_data:/var/lib/redpanda/data
@@ -278,6 +280,10 @@ services:
     environment:
       ALPACA_API_KEY: ${ALPACA_API_KEY:-}
       ALPACA_API_SECRET: ${ALPACA_API_SECRET:-}
+      # Universe refresh reads live-session symbols from the main database.
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/llamatrade
+      DB_POOL_SIZE: "2"
+      DB_MAX_OVERFLOW: "2"
       REDIS_URL: redis://redis:6379
       KAFKA_BOOTSTRAP_SERVERS: redpanda:29092
       MARKET_DATA_DB_URL: postgresql+asyncpg://postgres:postgres@timescaledb:5432/market_data
@@ -289,6 +295,8 @@ services:
       MARKET_DATA_MINUTE_LOOKBACK_DAYS: ${MARKET_DATA_MINUTE_LOOKBACK_DAYS:-5}
       MARKET_DATA_DAILY_LOOKBACK_DAYS: ${MARKET_DATA_DAILY_LOOKBACK_DAYS:-365}
     depends_on:
+      db-migrate:
+        condition: service_completed_successfully
       market-data-migrate:
         condition: service_completed_successfully
       redis:

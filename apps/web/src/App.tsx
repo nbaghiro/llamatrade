@@ -10,19 +10,31 @@ import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import ResetPasswordPage from './pages/auth/ResetPasswordPage';
 import VerifyEmailPage from './pages/auth/VerifyEmailPage';
-import BillingPage from './pages/billing/BillingPage';
+import BacktestComparePage from './pages/backtests/BacktestComparePage';
+import BacktestHistoryPage from './pages/backtests/BacktestHistoryPage';
+import BacktestRunPage from './pages/backtests/BacktestRunPage';
 import PaymentMethodsPage from './pages/billing/PaymentMethodsPage';
-import SubscribePage from './pages/billing/SubscribePage';
+import PlansPage from './pages/billing/PlansPage';
+import ConnectAlpacaPage from './pages/connect/ConnectAlpacaPage';
 import CopilotPage from './pages/copilot/CopilotPage';
 import DashboardPage from './pages/dashboard/DashboardPage';
+import NotificationsPage from './pages/notifications/NotificationsPage';
+import WelcomePage from './pages/onboarding/WelcomePage';
+import WelcomeResultPage from './pages/onboarding/WelcomeResultPage';
+import WelcomeTemplatePage from './pages/onboarding/WelcomeTemplatePage';
+import ActivityPage from './pages/portfolio/ActivityPage';
 import PortfolioPage from './pages/portfolio/PortfolioPage';
+import SleevePage from './pages/portfolio/SleevePage';
+import OrderCheckPage from './pages/sessions/OrderCheckPage';
+import SessionPage from './pages/sessions/SessionPage';
 import SettingsPage from './pages/settings/SettingsPage';
 import StrategiesPage from './pages/strategies/StrategiesPage';
+import StrategyDetailPage from './pages/strategies/StrategyDetailPage';
 import StrategyEditorPage from './pages/strategies/StrategyEditorPage';
+import StrategyVersionsPage from './pages/strategies/StrategyVersionsPage';
 import TemplatesPage from './pages/strategies/TemplatesPage';
 import BacktestPage from './pages/trading/BacktestPage';
 import TradingPage from './pages/trading/TradingPage';
-import WalletPage from './pages/wallet/WalletPage';
 import { isTokenExpired, useAuthStore } from './store/auth';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -71,9 +83,42 @@ export default function App() {
       <Route path="/oauth/alpaca/callback" element={<AlpacaCallbackPage />} />
       <Route path="/signup/complete" element={<CompleteSignupPage />} />
 
+      {/* Protected pages with their own top bar, outside the app shell. */}
+      <Route
+        path="/welcome"
+        element={
+          <ProtectedRoute>
+            <WelcomePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/welcome/template/:id"
+        element={
+          <ProtectedRoute>
+            <WelcomeTemplatePage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/welcome/result/:runId"
+        element={
+          <ProtectedRoute>
+            <WelcomeResultPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/connect/alpaca"
+        element={
+          <ProtectedRoute>
+            <ConnectAlpacaPage />
+          </ProtectedRoute>
+        }
+      />
+
       {/* Protected app pages — pathless parent renders the app shell (Layout),
-          children use absolute paths. `/` requires auth (unauthenticated users
-          are redirected to /login by ProtectedRoute) and lands on the dashboard. */}
+          children use absolute paths. */}
       <Route
         element={
           <ProtectedRoute>
@@ -82,18 +127,39 @@ export default function App() {
         }
       >
         <Route path="/dashboard" element={<DashboardPage />} />
+
         <Route path="/strategies" element={<StrategiesPage />} />
         <Route path="/strategies/templates" element={<TemplatesPage />} />
         <Route path="/strategies/builder" element={<StrategyEditorPage />} />
-        <Route path="/strategies/:id" element={<StrategyEditorPage />} />
+        <Route path="/strategies/:id" element={<StrategyDetailPage />} />
+        <Route path="/strategies/:id/edit" element={<StrategyEditorPage />} />
+        <Route path="/strategies/:id/versions" element={<StrategyVersionsPage />} />
+        <Route path="/strategies/:id/:tab" element={<StrategyDetailPage />} />
+
         <Route path="/backtest" element={<BacktestPage />} />
-        <Route path="/copilot" element={<CopilotPage />} />
+        <Route path="/backtest/:runId" element={<BacktestRunPage />} />
+        <Route path="/backtests" element={<BacktestHistoryPage />} />
+        <Route path="/backtests/compare" element={<BacktestComparePage />} />
+
         <Route path="/trading" element={<TradingPage />} />
+        <Route path="/trading/orders/:orderId" element={<OrderCheckPage />} />
+        <Route path="/trading/:sessionId" element={<SessionPage />} />
+        <Route path="/sessions" element={<Navigate to="/trading" replace />} />
+
         <Route path="/portfolio" element={<PortfolioPage />} />
-        <Route path="/wallet" element={<WalletPage />} />
+        <Route path="/portfolio/sleeves/:sleeveId" element={<SleevePage />} />
+        <Route path="/portfolio/activity" element={<ActivityPage />} />
+        <Route path="/wallet" element={<Navigate to="/portfolio/activity" replace />} />
+
+        <Route path="/copilot" element={<CopilotPage />} />
+        <Route path="/copilot/:sessionId" element={<CopilotPage />} />
+
         <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/billing" element={<BillingPage />} />
-        <Route path="/billing/subscribe" element={<SubscribePage />} />
+        <Route path="/settings/plans" element={<PlansPage />} />
+        <Route path="/settings/:section" element={<SettingsPage />} />
+        <Route path="/notifications" element={<NotificationsPage />} />
+        <Route path="/billing" element={<Navigate to="/settings/plan" replace />} />
+        <Route path="/billing/subscribe" element={<PlansPage />} />
         <Route path="/billing/payment-methods" element={<PaymentMethodsPage />} />
       </Route>
 

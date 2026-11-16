@@ -18,12 +18,12 @@ export { AssetClass, TemplateCategory, TemplateDifficulty };
  */
 export const CATEGORY_LABELS: Record<TemplateCategory, string> = {
   [TemplateCategory.UNSPECIFIED]: 'Unknown',
-  [TemplateCategory.BUY_AND_HOLD]: 'Buy & Hold',
+  [TemplateCategory.BUY_AND_HOLD]: 'Buy and hold',
   [TemplateCategory.TACTICAL]: 'Tactical',
   [TemplateCategory.FACTOR]: 'Factor',
   [TemplateCategory.INCOME]: 'Income',
   [TemplateCategory.TREND]: 'Trend',
-  [TemplateCategory.MEAN_REVERSION]: 'Mean Reversion',
+  [TemplateCategory.MEAN_REVERSION]: 'Mean reversion',
   [TemplateCategory.ALTERNATIVES]: 'Alternatives',
 };
 

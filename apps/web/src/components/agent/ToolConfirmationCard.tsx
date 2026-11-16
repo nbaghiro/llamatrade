@@ -1,81 +1,110 @@
-/** Inline approval card for a write action the agent has proposed (draft + confirm). */
+import { describeConfirmation } from '@llamatrade/core/agent/confirmation';
+import { StrategyStatus } from '@llamatrade/core/proto/strategy_pb';
+import {
+  useAgentStore,
+  type ConfirmationDecision,
+  type PendingConfirmation,
+} from '@llamatrade/core/stores/agent';
+import { useStrategiesStore } from '@llamatrade/core/stores/strategies';
+import { Play } from 'lucide-react';
+import { useEffect, useMemo } from 'react';
 
-import { useAgentStore } from '@llamatrade/core/stores/agent';
-import { Check, Play, X } from 'lucide-react';
-import { useMemo } from 'react';
+import { Pill } from '../ui';
 
+interface ToolConfirmationCardProps {
+  confirmation: PendingConfirmation;
+  /** Set once answered; the card then stays in the thread as a record. */
+  decision?: ConfirmationDecision;
+}
 
-/** Human labels for confirmation-gated tools; falls back to the de-underscored name. */
-const TOOL_LABELS: Record<string, string> = {
-  run_backtest: 'Run a backtest',
+const DECISION_LABEL: Record<ConfirmationDecision, string> = {
+  approved: 'Approved',
+  declined: 'Declined',
+  change: 'You asked for changes',
 };
 
-function humanizeTool(name: string): string {
-  return TOOL_LABELS[name] ?? name.replace(/_/g, ' ');
-}
-
-function summarizeArgs(argumentsJson: string): Array<[string, string]> {
-  try {
-    const args = JSON.parse(argumentsJson) as Record<string, unknown>;
-    return Object.entries(args)
-      .filter(([, v]) => v !== '' && v != null)
-      .map(([k, v]) => [k.replace(/_/g, ' '), String(v)]);
-  } catch {
-    return [];
-  }
-}
-
-export function ToolConfirmationCard() {
-  const pending = useAgentStore((s) => s.pendingConfirmation);
+/** A proposed action in the thread: its exact arguments, what it will and won't do, and the answer. */
+export function ToolConfirmationCard({ confirmation, decision }: ToolConfirmationCardProps) {
   const confirmToolCall = useAgentStore((s) => s.confirmToolCall);
   const isStreaming = useAgentStore((s) => s.isStreaming);
+  const artifacts = useAgentStore((s) => s.pendingArtifacts);
+  const strategies = useStrategiesStore((s) => s.strategies);
+  const fetchStrategies = useStrategiesStore((s) => s.fetchStrategies);
+  const pending = decision === undefined;
+  const namesStrategy = confirmation.argumentsJson.includes('"strategy_id"');
 
-  const args = useMemo(() => (pending ? summarizeArgs(pending.argumentsJson) : []), [pending]);
+  useEffect(() => {
+    if (pending && namesStrategy && strategies.length === 0) fetchStrategies();
+  }, [pending, namesStrategy, strategies.length, fetchStrategies]);
 
-  if (!pending) return null;
+  const view = useMemo(() => {
+    const names: Record<string, string> = {};
+    for (const st of strategies) {
+      names[st.id] = st.status === StrategyStatus.DRAFT ? `${st.name} (draft)` : st.name;
+    }
+    for (const a of artifacts) {
+      if (a.committedResourceId) names[a.committedResourceId] = `${a.name} (draft)`;
+    }
+    return describeConfirmation(confirmation.toolName, confirmation.argumentsJson, names);
+  }, [confirmation, artifacts, strategies]);
 
   return (
-    <div className="pl-[50px]">
-      <div className="w-full min-w-0 max-w-full border-2 border-orange-500 bg-paper shadow-[4px_4px_0_rgb(var(--lt-ink))]">
-        <div className="flex items-center gap-2 border-b-2 border-ink bg-orange-500/15 px-3.5 py-2.5">
-          <Play className="h-3.5 w-3.5 text-orange-600" />
-          <span className="font-mono text-[10px] font-bold uppercase tracking-[0.12em] text-ink/60">
-            Approve action
-          </span>
-          <span className="text-sm font-black tracking-tight text-ink">
-            {humanizeTool(pending.toolName)}
-          </span>
-        </div>
-
-        {args.length > 0 && (
-          <div className="flex flex-wrap gap-x-4 gap-y-1 px-3.5 py-2.5 font-mono text-[11px] text-ink/70">
-            {args.map(([k, v]) => (
-              <span key={k}>
-                <span className="uppercase tracking-[0.04em] text-ink/45">{k}:</span> {v}
-              </span>
-            ))}
-          </div>
+    <section
+      aria-label={view.title}
+      className={`min-w-0 overflow-hidden rounded-panel border bg-panel ${
+        pending ? 'border-accent/55 shadow-[0_0_0_3px_var(--accent-soft)]' : 'border-line-strong'
+      }`}
+    >
+      <div className="flex items-center justify-between gap-2.5 border-b border-line px-3.5 py-[11px]">
+        <b className="font-semibold">{view.title}</b>
+        {pending ? (
+          <Pill tone="accent">Needs your approval</Pill>
+        ) : (
+          <Pill>{DECISION_LABEL[decision]}</Pill>
         )}
-
-        <div className="flex flex-wrap gap-2.5 border-t-2 border-ink px-3.5 py-3">
+      </div>
+      <div className="grid gap-3 px-3.5 py-3">
+        {view.args.length > 0 && (
+          <dl className="m-0 grid grid-cols-[96px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px]">
+            {view.args.map((a, i) => (
+              <div key={`${a.label}-${i}`} className="contents">
+                <dt className="text-fg-3">{a.label}</dt>
+                <dd className="m-0 break-words font-mono text-[12.5px]">{a.value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+        <span className="text-[12.5px] text-fg-3">{view.effect}</span>
+      </div>
+      {pending && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-line bg-sunk px-3.5 py-2.5">
           <button
+            type="button"
+            className="btn btn-primary"
             onClick={() => confirmToolCall(true)}
             disabled={isStreaming}
-            className="flex items-center gap-1.5 border-2 border-ink bg-orange-500 px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-[0.04em] text-ink shadow-[3px_3px_0_rgb(var(--lt-ink))] transition-all hover:bg-orange-600 disabled:opacity-40 disabled:shadow-none"
           >
-            <Check className="h-3.5 w-3.5" />
-            Approve &amp; run
+            <Play className="h-3.5 w-3.5" />
+            Approve and run
           </button>
           <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => confirmToolCall(false, 'change')}
+            disabled={isStreaming}
+          >
+            Change settings
+          </button>
+          <button
+            type="button"
+            className="btn btn-ghost"
             onClick={() => confirmToolCall(false)}
             disabled={isStreaming}
-            className="flex items-center gap-1.5 border-2 border-ink bg-paper px-3 py-2 font-mono text-[11px] font-bold uppercase tracking-[0.04em] text-ink shadow-[3px_3px_0_rgb(var(--lt-ink))] transition-all hover:bg-bone disabled:opacity-40 disabled:shadow-none"
           >
-            <X className="h-3.5 w-3.5" />
             Decline
           </button>
         </div>
-      </div>
-    </div>
+      )}
+    </section>
   );
 }

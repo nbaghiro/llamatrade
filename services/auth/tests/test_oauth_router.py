@@ -78,7 +78,7 @@ async def test_callback_error_redirects(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setenv("WEB_APP_URL", "http://web")
     resp = await alpaca_oauth_callback(error="access_denied")
     assert resp.status_code == 302
-    assert "error=access_denied" in resp.headers["location"]
+    assert resp.headers["location"] == "http://web/connect/alpaca?error=access_denied"
 
 
 async def test_callback_invalid_state_returns_400() -> None:

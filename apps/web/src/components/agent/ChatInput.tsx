@@ -1,75 +1,84 @@
-/** Copilot composer input box; Enter sends, Shift+Enter inserts a newline. */
-
-import { ArrowRight, Loader2 } from 'lucide-react';
-import { KeyboardEvent, useRef, useState } from 'react';
+import { ArrowUp } from 'lucide-react';
+import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 interface ChatInputProps {
   onSend: (message: string) => void;
   disabled?: boolean;
+  /** True while a reply streams; the composer stays editable but won't send. */
+  busy?: boolean;
   placeholder?: string;
-  /** Prefill the input on mount (e.g. a prompt seeded from the New Strategy console). */
+  /** Prefills the input on mount. Remount with a new key to replace it. */
   initialValue?: string;
 }
 
+const MAX_HEIGHT = 160;
+
+/** Copilot's composer. Enter sends, Shift+Enter starts a new line. */
 export function ChatInput({
   onSend,
   disabled = false,
-  placeholder = 'Ask Copilot to build, edit, or explain a strategy',
+  busy = false,
+  placeholder = 'Ask Copilot to build, edit or explain a strategy',
   initialValue = '',
 }: ChatInputProps) {
   const [value, setValue] = useState(initialValue);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const canSend = !disabled && !busy && value.trim().length > 0;
 
-  const handleSubmit = () => {
-    const trimmed = value.trim();
-    if (trimmed && !disabled) {
-      onSend(trimmed);
-      setValue('');
-      if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
-      }
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT)}px`;
+  }, [value]);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el && initialValue) {
+      el.focus();
+      el.setSelectionRange(initialValue.length, initialValue.length);
     }
+  }, [initialValue]);
+
+  const submit = () => {
+    if (!canSend) return;
+    onSend(value.trim());
+    setValue('');
   };
 
-  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+  const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      handleSubmit();
-    }
-  };
-
-  const handleInput = () => {
-    const textarea = textareaRef.current;
-    if (textarea) {
-      textarea.style.height = 'auto';
-      textarea.style.height = `${Math.min(textarea.scrollHeight, 160)}px`;
+      submit();
     }
   };
 
   return (
-    <div className="flex items-end gap-3 border-2 border-ink bg-paper px-4 py-3 shadow-[4px_4px_0_rgb(var(--lt-ink))]">
+    <div
+      className={`flex items-end gap-2 rounded-[12px] border border-line-strong bg-panel py-2 pl-3.5 pr-2 focus-within:border-accent ${
+        disabled ? 'opacity-60' : ''
+      }`}
+    >
       <textarea
-        ref={textareaRef}
+        ref={ref}
         value={value}
-        onChange={(e) => {
-          setValue(e.target.value);
-          handleInput();
-        }}
-        onKeyDown={handleKeyDown}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={onKeyDown}
         placeholder={placeholder}
         disabled={disabled}
-        autoFocus={Boolean(initialValue)}
         rows={1}
-        className="flex-1 resize-none bg-transparent text-sm text-ink placeholder-ink/40 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-        style={{ minHeight: '44px', maxHeight: '160px' }}
+        aria-label="Message Copilot"
+        className="min-h-[32px] flex-1 resize-none bg-transparent py-1.5 text-[14px] leading-5 text-fg outline-none placeholder:text-fg-3 disabled:cursor-not-allowed"
+        style={{ maxHeight: MAX_HEIGHT }}
       />
       <button
-        onClick={handleSubmit}
-        disabled={disabled || !value.trim()}
-        className="flex-shrink-0 grid h-11 w-11 place-items-center border-2 border-ink bg-orange-500 text-ink shadow-[3px_3px_0_rgb(var(--lt-ink))] transition-all hover:bg-orange-600 disabled:opacity-40 disabled:shadow-none"
-        title="Send message"
+        type="button"
+        onClick={submit}
+        disabled={!canSend}
+        aria-label="Send"
+        className="grid h-8 w-8 flex-none place-items-center rounded-full bg-fg text-canvas transition-opacity disabled:opacity-40"
       >
-        {disabled ? <Loader2 className="h-5 w-5 animate-spin" /> : <ArrowRight className="h-5 w-5" />}
+        <ArrowUp className="h-4 w-4" strokeWidth={2} />
       </button>
     </div>
   );

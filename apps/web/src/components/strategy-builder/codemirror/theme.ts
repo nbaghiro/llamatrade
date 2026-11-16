@@ -1,132 +1,100 @@
-// CodeMirror DSL theme: a Monolith dark terminal (matches marketing/auth snippets), intentionally dark inside the light app.
+// CodeMirror theme for the strategy language, drawn from the app's tokens so it follows mode and accent.
 
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { EditorView } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 
-const MONO_FONT = '"Space Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace';
+const tok = (name: string, alpha?: number) =>
+  alpha === undefined ? `rgb(var(--${name}))` : `rgb(var(--${name}) / ${alpha})`;
 
-// Monolith terminal palette (from the marketing snippet: --orange keywords,
-// #3ddc6b symbols, #8ea79b :params, bone-dim parens).
-const INK = '#0d0d0d';
-const BONE = 'rgb(var(--lt-bone))';
-const ORANGE = '#ff4d1c';
-const SYM = '#3ddc6b'; // tickers + strings
-const PARAM = '#8ea79b'; // :params (sage)
-const NUM = '#6ea8ff'; // numbers (readable blue on ink)
-const boneA = (a: number) => `rgb(var(--lt-bone) / ${a})`;
+const MONO = 'var(--font-mono)';
 
-// Selection — a solid theme-orange band with white text, via native ::selection
-// (which recolours the text too, unlike a drawSelection overlay). Every block
-// reads the same when highlighted; matching occurrences keep their own token
-// colour, marked by a faint orange box.
-const SELECTION_BG = ORANGE;
-const SELECTION_FG = '#ffffff';
-const SELECTION_MATCH_BG = 'rgba(255, 77, 28, 0.16)';
-const SELECTION_MATCH_OUTLINE = 'rgba(255, 77, 28, 0.6)';
-
-const terminalTheme = EditorView.theme(
-  {
-    '&': {
-      color: BONE,
-      backgroundColor: INK,
-      fontSize: '14px',
-      fontFamily: MONO_FONT,
-    },
-    '.cm-scroller': { overflow: 'auto', fontFamily: MONO_FONT, scrollbarWidth: 'none' },
-    '.cm-scroller::-webkit-scrollbar': { display: 'none' },
-    '.cm-content': { caretColor: ORANGE, padding: '16px 0' },
-    '.cm-cursor, .cm-dropCursor': { borderLeftColor: ORANGE, borderLeftWidth: '2px' },
-    '.cm-content ::selection, .cm-line ::selection': {
-      backgroundColor: SELECTION_BG,
-      color: SELECTION_FG,
-    },
-    '.cm-selectionMatch': {
-      backgroundColor: SELECTION_MATCH_BG,
-      outline: `1px solid ${SELECTION_MATCH_OUTLINE}`,
-    },
-    '.cm-activeLine': { backgroundColor: boneA(0.05) },
-    '.cm-activeLineGutter': { backgroundColor: boneA(0.07) },
-    '.cm-gutters': {
-      backgroundColor: INK,
-      color: boneA(0.32),
-      border: 'none',
-      borderRight: `2px solid ${boneA(0.16)}`,
-    },
-    '.cm-foldPlaceholder': {
-      backgroundColor: boneA(0.12),
-      border: 'none',
-      color: BONE,
-      padding: '0 4px',
-      borderRadius: '0',
-    },
-    '.cm-tooltip': {
-      backgroundColor: '#141414',
-      border: `2px solid ${boneA(0.35)}`,
-      borderRadius: '0',
-      boxShadow: `4px 4px 0 ${ORANGE}`,
-      color: BONE,
-    },
-    '.cm-tooltip-autocomplete': {
-      '& > ul': { fontFamily: MONO_FONT },
-      '& > ul > li': { color: BONE },
-      '& > ul > li[aria-selected]': { backgroundColor: ORANGE, color: INK },
-    },
-    '.cm-matchingBracket': {
-      backgroundColor: boneA(0.16),
-      outline: `1px solid ${boneA(0.6)}`,
-      borderRadius: '0',
-    },
-    '.cm-nonmatchingBracket': {
-      backgroundColor: 'rgba(200, 30, 30, 0.3)',
-      outline: '1px solid rgba(200, 30, 30, 0.6)',
-    },
-    '.cm-panels': { backgroundColor: INK, borderTop: `2px solid ${boneA(0.16)}`, color: BONE },
-    '.cm-searchMatch': { backgroundColor: 'rgba(255, 77, 28, 0.25)', borderRadius: '0' },
-    '.cm-searchMatch.cm-searchMatch-selected': { backgroundColor: 'rgba(255, 77, 28, 0.45)' },
-    '.cm-line': { padding: '0 16px' },
+const tokenTheme = EditorView.theme({
+  '&': {
+    color: tok('fg'),
+    backgroundColor: tok('panel'),
+    fontSize: '13px',
+    fontFamily: MONO,
   },
-  { dark: true }
-);
+  '&.cm-focused': { outline: 'none' },
+  '.cm-scroller': { overflow: 'auto', fontFamily: MONO, lineHeight: '1.8' },
+  '.cm-content': { caretColor: tok('accent'), padding: '12px 0' },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: tok('accent'), borderLeftWidth: '2px' },
+  '.cm-content ::selection, .cm-line ::selection': { backgroundColor: tok('accent', 0.28) },
+  '&.cm-focused .cm-selectionBackground, .cm-selectionBackground': {
+    backgroundColor: tok('accent', 0.22),
+  },
+  '.cm-selectionMatch': { backgroundColor: 'var(--accent-soft)' },
+  '.cm-activeLine': { backgroundColor: tok('sunk', 0.6) },
+  '.cm-activeLineGutter': { backgroundColor: tok('sunk', 0.6) },
+  '.cm-gutters': {
+    backgroundColor: tok('panel'),
+    color: tok('fg-3'),
+    border: 'none',
+  },
+  '.cm-lineNumbers .cm-gutterElement': { padding: '0 14px 0 12px', opacity: '0.75' },
+  '.cm-foldPlaceholder': {
+    backgroundColor: tok('sunk'),
+    border: 'none',
+    color: tok('fg-2'),
+    padding: '0 4px',
+  },
+  '.cm-tooltip': {
+    backgroundColor: tok('panel'),
+    border: `1px solid ${tok('line-strong')}`,
+    borderRadius: '8px',
+    boxShadow: 'var(--shadow-lg)',
+    color: tok('fg'),
+  },
+  '.cm-tooltip-autocomplete': {
+    '& > ul': { fontFamily: MONO },
+    '& > ul > li': { color: tok('fg-2') },
+    '& > ul > li[aria-selected]': { backgroundColor: 'var(--accent-soft)', color: tok('accent') },
+  },
+  '.cm-matchingBracket': {
+    backgroundColor: tok('sunk'),
+    outline: `1px solid ${tok('line-strong')}`,
+  },
+  '.cm-nonmatchingBracket': {
+    backgroundColor: 'var(--risk-soft)',
+    outline: '1px solid var(--risk-line)',
+  },
+  '.cm-panels': {
+    backgroundColor: tok('panel'),
+    borderTop: `1px solid ${tok('line')}`,
+    color: tok('fg'),
+  },
+  '.cm-searchMatch': { backgroundColor: 'var(--accent-soft)' },
+  '.cm-searchMatch.cm-searchMatch-selected': { backgroundColor: tok('accent', 0.3) },
+  '.cm-line': { padding: '0 16px' },
+  '.cm-lintRange-error': {
+    backgroundImage: 'none',
+    textDecoration: `underline wavy ${tok('risk')}`,
+    textUnderlineOffset: '4px',
+  },
+  '.cm-lintRange-warning': {
+    backgroundImage: 'none',
+    textDecoration: `underline dotted ${tok('risk')}`,
+    textUnderlineOffset: '4px',
+  },
+  '.cm-diagnostic-error': { borderLeftColor: tok('risk') },
+  '.cm-diagnostic-warning': { borderLeftColor: tok('risk') },
+});
 
-// Syntax highlighting — matches the marketing DSL terminal token colors.
-const terminalHighlightStyle = HighlightStyle.define([
-  // Keywords: strategy, weight, asset, group, if, else, filter → orange
-  { tag: tags.keyword, color: ORANGE, fontWeight: 'bold' },
-  // `:params` (:method, :weight, :rebalance, :benchmark, :by …) → sage.
-  // language.ts tags these as propertyName so they read distinct from keywords.
-  { tag: tags.propertyName, color: PARAM },
-  { tag: tags.definitionKeyword, color: PARAM },
-  // Method/enum values (equal, specified, risk-parity, momentum) → soft bone (plain)
-  { tag: tags.typeName, color: boneA(0.8) },
-  // Fallback identifiers → bone
-  { tag: tags.variableName, color: BONE },
-  // Indicators: sma, ema, rsi, price → orange (function-like)
-  { tag: [tags.special(tags.variableName)], color: ORANGE, fontWeight: 'bold' },
-  // Operators: >, <, cross-above → orange
-  { tag: tags.operator, color: ORANGE, fontWeight: 'bold' },
-  { tag: tags.logicOperator, color: ORANGE, fontWeight: 'bold' },
-  // Strings: "Strategy Name" → green
-  { tag: tags.string, color: SYM },
-  // Numbers: 50, 0.05 → blue
-  { tag: tags.number, color: NUM },
-  // Comments: ; comment → dim bone italic
-  { tag: tags.comment, color: boneA(0.42), fontStyle: 'italic' },
-  // Symbols / tickers: SPY, VTI (atoms) → green
-  { tag: tags.atom, color: SYM, fontWeight: '600' },
-  // Brackets / parens → dim bone (marketing `.tp`)
-  { tag: [tags.bracket, tags.paren, tags.squareBracket, tags.brace], color: boneA(0.4) },
+const tokenHighlight = HighlightStyle.define([
+  { tag: tags.keyword, color: tok('accent') },
+  { tag: [tags.propertyName, tags.definitionKeyword], color: tok('fg-2') },
+  { tag: tags.typeName, color: tok('fg') },
+  { tag: tags.variableName, color: tok('fg') },
+  { tag: tags.special(tags.variableName), color: tok('accent') },
+  { tag: [tags.operator, tags.logicOperator], color: tok('accent') },
+  { tag: tags.string, color: tok('fg-2') },
+  { tag: tags.number, color: tok('fg') },
+  { tag: tags.comment, color: tok('fg-3'), fontStyle: 'italic' },
+  { tag: tags.atom, color: tok('fg'), fontWeight: '600' },
+  { tag: [tags.bracket, tags.paren, tags.squareBracket, tags.brace], color: tok('fg-3') },
 ]);
 
-/**
- * Get the CodeMirror theme extensions. The code view is always the Monolith dark
- * terminal (the `isDark` argument is accepted for API compatibility but ignored).
- */
-export function getEditorTheme(_isDark?: boolean) {
-  return [terminalTheme, syntaxHighlighting(terminalHighlightStyle)];
+export function getEditorTheme() {
+  return [tokenTheme, syntaxHighlighting(tokenHighlight)];
 }
-
-// Back-compat exports (both point at the single terminal theme).
-const lightTheme = terminalTheme;
-const darkTheme = terminalTheme;
-export { lightTheme, darkTheme, terminalTheme, terminalHighlightStyle };

@@ -112,11 +112,14 @@ describe('resolveAccount', () => {
   });
 
   it('does not issue a second call while one is in flight', async () => {
-    useFundingStore.setState({ resolving: true });
+    listAlpacaCredentials.mockResolvedValue({ credentials: [] });
 
-    await useFundingStore.getState().resolveAccount();
+    await Promise.all([
+      useFundingStore.getState().resolveAccount(),
+      useFundingStore.getState().resolveAccount(),
+    ]);
 
-    expect(listAlpacaCredentials).not.toHaveBeenCalled();
+    expect(listAlpacaCredentials).toHaveBeenCalledTimes(1);
   });
 });
 

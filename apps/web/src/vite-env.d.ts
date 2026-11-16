@@ -25,6 +25,13 @@ interface ImportMetaEnv {
   // Optional OTLP/HTTP JSON collector for browser telemetry. When unset,
   // telemetry falls back to console (dev) or a no-op (prod).
   readonly VITE_TELEMETRY_OTLP_URL?: string;
+
+  // Loops form id for the marketing invite form.
+  readonly VITE_LOOPS_FORM_ID?: string;
+
+  // Marketing: '1' in the standalone build, and the app origin its links point to.
+  readonly VITE_MARKETING_STANDALONE?: string;
+  readonly VITE_APP_URL?: string;
 }
 
 interface ImportMeta {

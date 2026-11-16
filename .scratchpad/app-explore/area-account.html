@@ -1,0 +1,1692 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Account</title>
+<script>try{document.documentElement.dataset.mode=localStorage.getItem("ax-mode")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark")}catch(e){document.documentElement.dataset.mode="dark"}</script>
+<link rel="stylesheet" href="kit.css">
+<style>
+  /* Shared bits for this page (prefixed acx- to stay clear of kit names) */
+  .acx-au { position: relative; height: 100%; background: var(--bg); overflow: hidden; }
+  .acx-top { position: absolute; z-index: 3; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 28px; height: 78px; padding: 0 44px; }
+  .acx-top .end { margin-left: auto; display: flex; align-items: center; gap: 18px; font-size: 13.5px; color: var(--fg-2); }
+  .acx-foot { position: absolute; z-index: 3; bottom: 0; left: 0; right: 0; display: flex; align-items: center; gap: 22px; padding: 22px 44px; font-size: 12px; color: var(--fg-3); }
+  .acx-kick { font: 500 12.5px var(--mono); color: var(--fg-3); letter-spacing: 0.01em; }
+  .acx-kick .a { color: var(--acc); }
+  .acx-or { display: flex; align-items: center; gap: 12px; color: var(--fg-3); font-size: 12px; }
+  .acx-or::before, .acx-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .acx-link { color: var(--acc); font-weight: 500; }
+  .acx-fl { font-size: 12.5px; font-weight: 500; color: var(--fg-2); }
+  .acx-in { height: 44px; border-radius: 10px; font-size: 15px; padding: 0 14px; }
+  .acx-in .mono { letter-spacing: 0.12em; }
+  .acx-in.lock { background: var(--sunk); color: var(--fg-2); border-color: var(--line); }
+  .acx-alp { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: var(--fg); color: var(--bg); font: 700 12px/1 var(--sans); flex: none; }
+  .acx-alp.lg { width: 56px; height: 56px; border-radius: 15px; font-size: 26px; }
+  .acx-alp.md { width: 40px; height: 40px; border-radius: 11px; font-size: 19px; }
+  .acx-ck { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--fg); }
+  .acx-ck .b0 { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; flex: none; background: var(--acc-soft); color: var(--acc); }
+  .acx-ck .b0 .ic { width: 12px; height: 12px; }
+  .acx-ck.no .b0 { background: var(--sunk); color: var(--fg-3); }
+  .acx-ck.warn .b0 { background: var(--risk-soft); color: var(--risk); }
+  .acx-ck .d { margin-left: auto; font: 400 12px var(--mono); color: var(--fg-3); }
+  .acx-num { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; font: 600 11.5px var(--mono); border: 1px solid var(--line-2); color: var(--fg-2); flex: none; }
+  .acx-num.on { background: var(--ink); color: var(--ink-text); border-color: var(--ink); }
+  .acx-num.done { background: var(--acc-soft); color: var(--acc); border-color: transparent; }
+  .acx-kv { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 0; font-size: 13px; }
+  .acx-kv > * { padding: 11px 0; border-bottom: 1px solid var(--line); }
+  .acx-kv > :nth-last-child(-n+2) { border-bottom: 0; }
+  .acx-kv > :nth-child(odd) { color: var(--fg-3); }
+  .acx-sw { display: inline-block; width: 26px; height: 26px; border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 1px rgba(127, 127, 127, 0.35); flex: none; }
+  .acx-sw.on { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--fg); }
+  .acx-ph-auth { padding-top: 10px; }
+  .acx-ph-auth .m-body { gap: 16px; }
+  .acx-row { display: flex; flex: 1; min-height: 0; }
+  .acx-row > .side { width: 240px; }
+  .acx-pwd { font-size: 16px; letter-spacing: 0.06em; color: var(--fg); }
+</style>
+<style>
+  /* 1. Sign in */
+  .si-a .acx-mid { position: relative; z-index: 2; width: 420px; margin: 0 auto; padding-top: 150px; text-align: center; }
+  .si-a .card { margin-top: 30px; padding: 26px 26px 24px; text-align: left; display: flex; flex-direction: column; gap: 16px; }
+  .si-b { display: grid; grid-template-columns: 600px minmax(0, 1fr); }
+  .si-b .left { position: relative; padding: 0 92px; display: flex; flex-direction: column; justify-content: center; gap: 18px; }
+  .si-b .right { position: relative; background: var(--sunk); border-left: 1px solid var(--line); overflow: hidden; }
+  .si-b .win { position: absolute; left: 60px; top: 140px; width: 760px; padding: 0; overflow: hidden; }
+  .si-b .win .wh { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 18px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  .si-b .cap { position: absolute; left: 60px; top: 650px; max-width: 520px; font-size: 13.5px; color: var(--fg-2); }
+  .si-c .acx-mid { position: relative; z-index: 2; width: 640px; margin: 0 auto; padding-top: 250px; text-align: center; }
+  .si-c h1 { font: 600 54px/1.04 var(--sans); letter-spacing: -0.04em; margin: 16px 0 14px; }
+  .si-c .email-pill { width: 470px; margin: 34px auto 0; text-align: left; }
+  .si-d .hero { position: absolute; inset: 78px 0 0; text-align: center; padding-top: 120px; }
+  .si-d .hero h1 { font: 600 60px/1.04 var(--sans); letter-spacing: -0.045em; }
+  .si-d .dlg { width: 440px; padding: 30px 30px 26px; display: flex; flex-direction: column; gap: 16px; border-radius: 18px; }
+  .si-d .mk-nav { display: flex; gap: 26px; font-size: 14px; color: var(--fg-2); }
+
+  /* 2. Create account */
+  .ca-a { display: grid; grid-template-columns: minmax(0, 1fr) 520px; gap: 0; }
+  .ca-a .story { position: relative; padding: 170px 80px 0 120px; }
+  .ca-a .story h1 { font: 600 46px/1.06 var(--sans); letter-spacing: -0.04em; margin: 14px 0 16px; max-width: 560px; }
+  .ca-a .steps { margin-top: 40px; display: flex; flex-direction: column; gap: 0; max-width: 520px; }
+  .ca-a .steps .s { display: flex; gap: 16px; padding: 16px 0; border-top: 1px solid var(--line); }
+  .ca-a .formcol { position: relative; padding: 112px 64px 0 0; }
+  .ca-a .card { padding: 28px; display: flex; flex-direction: column; gap: 15px; }
+  .ca-b .acx-mid { position: relative; z-index: 2; width: 480px; margin: 0 auto; padding-top: 118px; }
+  .ca-b .link2 { display: flex; align-items: center; justify-content: center; gap: 14px; }
+  .ca-b .link2 .dots { width: 72px; border-top: 1.5px dashed var(--acc-line); }
+  .ca-b .card { margin-top: 26px; padding: 26px; display: flex; flex-direction: column; gap: 15px; }
+  .ca-c .bar { position: absolute; top: 78px; left: 0; right: 0; height: 2px; background: var(--line); }
+  .ca-c .bar i { display: block; height: 100%; width: 40%; background: var(--acc); }
+  .ca-c .q { position: relative; z-index: 2; width: 640px; margin: 0 auto; padding-top: 240px; }
+  .ca-c .q h1 { font: 600 40px/1.1 var(--sans); letter-spacing: -0.035em; margin: 14px 0 10px; }
+  .ca-c .big-in { height: 64px; border-radius: 14px; font-size: 22px; padding: 0 20px; }
+  .ca-c .crumbs { display: flex; gap: 22px; font-size: 13px; color: var(--fg-3); }
+  .ca-c .crumbs .on { color: var(--fg); }
+  .ca-c .crumbs .done { color: var(--acc); }
+</style>
+<style>
+  /* 3. Onboarding: how to start */
+  .ob-top { display: flex; align-items: center; gap: 22px; height: 64px; padding: 0 32px; border-bottom: 1px solid var(--line); flex: none; position: relative; z-index: 2; background: var(--bg); }
+  .ob-top .end { margin-left: auto; display: flex; align-items: center; gap: 16px; font-size: 13px; color: var(--fg-2); }
+  .ob-a .wrap { position: relative; z-index: 1; width: 1180px; margin: 0 auto; padding-top: 96px; }
+  .ob-a .doors { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; margin-top: 40px; }
+  .ob-a .door { padding: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .ob-a .door .vis { height: 270px; padding: 20px; background: var(--sunk); border-bottom: 1px solid var(--line); position: relative; overflow: hidden; }
+  .ob-a .door .txt { padding: 20px 22px 22px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+  .ob-a .door.rim .vis { background: var(--acc-soft); }
+  .ob-b .acx-mid { position: relative; z-index: 2; width: 760px; margin: 0 auto; padding-top: 110px; text-align: center; }
+  .ob-b .acx-mid h1 { font: 600 48px/1.05 var(--sans); letter-spacing: -0.04em; margin: 14px 0 12px; }
+  .ob-b .ask { margin-top: 32px; padding: 18px 18px 14px 22px; text-align: left; border-radius: 22px; }
+  .ob-b .ask .t { font-size: 17px; line-height: 1.5; color: var(--fg); min-height: 52px; }
+  .ob-b .ask .t .cur { display: inline-block; width: 2px; height: 19px; background: var(--acc); vertical-align: -3px; margin-left: 1px; }
+  .ob-b .ideas { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 18px; }
+  .ob-b .tpl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 54px; text-align: left; }
+  .ob-b .tpl .panel { padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
+  .ob-c { display: flex; flex-direction: column; }
+  .ob-c .body { flex: 1; min-height: 0; display: grid; grid-template-columns: 470px minmax(0, 1fr); }
+  .ob-c .lst { border-right: 1px solid var(--line); padding: 28px 28px 0; display: flex; flex-direction: column; gap: 4px; }
+  .ob-c .it { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 4px 16px; padding: 14px 16px; border-radius: 10px; border: 1px solid transparent; }
+  .ob-c .it.on { background: var(--panel); border-color: var(--acc-line); box-shadow: 0 0 0 3px var(--acc-soft); }
+  .ob-c .it .st2 { grid-column: 1 / -1; display: flex; gap: 16px; font: 400 12px var(--mono); color: var(--fg-3); }
+  .ob-c .pv { padding: 30px 44px 0; display: flex; flex-direction: column; gap: 20px; position: relative; }
+  .ob-d .wrap { width: 980px; margin: 0 auto; padding-top: 44px; position: relative; z-index: 1; }
+  .ob-d .cl .row1 { display: flex; gap: 16px; padding: 18px 22px; border-top: 1px solid var(--line); align-items: flex-start; }
+  .ob-d .cl .row1:first-child { border-top: 0; }
+  .ob-d .cl .row1.on { background: color-mix(in srgb, var(--acc-soft) 60%, transparent); }
+  .ob-d .ways { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+  .ob-d .ways .panel { padding: 13px 14px; display: flex; flex-direction: column; gap: 4px; }
+
+  /* 4. First backtest result */
+  .fr-a .wrap { position: relative; z-index: 1; width: 1040px; margin: 0 auto; padding-top: 46px; text-align: center; }
+  .fr-a .huge { font-size: 76px; letter-spacing: -0.05em; }
+  .fr-a .chart { margin-top: 26px; padding: 18px 20px 12px; text-align: left; }
+  .fr-b .body { display: grid; grid-template-columns: 430px minmax(0, 1fr); gap: 0; flex: 1; min-height: 0; }
+  .fr-b .rules { border-right: 1px solid var(--line); padding: 26px 28px; display: flex; flex-direction: column; gap: 16px; background: var(--panel); }
+  .fr-b .res { padding: 26px 32px; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .fr-c .wrap { position: relative; z-index: 1; width: 1100px; margin: 0 auto; padding-top: 56px; display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 36px; }
+  .fr-c .say { font: 400 26px/1.4 var(--sans); letter-spacing: -0.02em; color: var(--fg-2); margin-top: 14px; }
+  .fr-c .say b { color: var(--fg); font-weight: 600; }
+  .fr-c .next .s { display: flex; gap: 14px; padding: 16px 20px; border-top: 1px solid var(--line); }
+  .fr-c .next .s:first-child { border-top: 0; }
+</style>
+<style>
+  /* 5. Connect Alpaca */
+  .cn-a .acx-mid { position: relative; z-index: 2; width: 520px; margin: 0 auto; padding-top: 96px; }
+  .cn-a .pair { display: flex; align-items: center; justify-content: center; gap: 16px; }
+  .cn-a .pair .ln { width: 70px; border-top: 1.5px dashed var(--acc-line); }
+  .cn-a .card { margin-top: 26px; padding: 0; overflow: hidden; }
+  .cn-a .card .sec2 { padding: 18px 24px; display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); }
+  .cn-a .card .sec2:first-child { border-top: 0; }
+  .cn-a .can, .cn-a .cant { display: flex; gap: 10px; font-size: 13px; align-items: flex-start; }
+  .cn-a .can .ic { color: var(--acc); }
+  .cn-a .cant .ic { color: var(--fg-3); }
+  .cn-a .envs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .cn-a .env { border: 1px solid var(--line-2); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 3px; }
+  .cn-a .env.on { border-color: var(--acc); box-shadow: 0 0 0 3px var(--acc-soft); }
+  .cn-b .body { display: grid; grid-template-columns: minmax(0, 1fr) 460px; gap: 24px; }
+  .cn-c .accts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .cn-c .acct { padding: 24px; display: flex; flex-direction: column; gap: 16px; }
+  .cn-d-drawer { width: 500px; display: flex; flex-direction: column; }
+  .cn-d-drawer .dh2 { padding: 22px 24px 16px; border-bottom: 1px solid var(--line); }
+  .cn-d-drawer .db2 { padding: 20px 24px; display: flex; flex-direction: column; gap: 16px; flex: 1; }
+  .cn-d-drawer .df2 { padding: 16px 24px; border-top: 1px solid var(--line); display: flex; gap: 8px; justify-content: flex-end; }
+  .cn-d .step { display: flex; gap: 14px; align-items: flex-start; }
+
+  /* 6. Settings shell (broker content) */
+  .st-a .side { width: 250px; }
+  .st-a .content { padding: 30px 40px; max-width: 900px; display: flex; flex-direction: column; gap: 20px; }
+  .st-b .hub { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .st-b .hc { padding: 20px 22px; display: flex; flex-direction: column; gap: 12px; min-height: 196px; }
+  .st-b .hc .hh { display: flex; align-items: center; gap: 10px; }
+  .st-b .hc .ic0 { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: var(--sunk); color: var(--fg-2); }
+  .st-b .hc.rim .ic0 { background: var(--acc-soft); color: var(--acc); }
+  .st-b .hc .ft { margin-top: auto; display: flex; align-items: center; font-size: 12.5px; color: var(--fg-3); }
+  .st-c .wrap { display: grid; grid-template-columns: minmax(0, 1fr) 220px; gap: 56px; width: 1100px; margin: 0 auto; padding-top: 34px; }
+  .st-c .idx { position: relative; display: flex; flex-direction: column; gap: 2px; font-size: 13px; padding-top: 6px; }
+  .st-c .idx a { padding: 6px 12px; border-left: 1.5px solid var(--line); color: var(--fg-3); }
+  .st-c .idx a.on { border-color: var(--acc); color: var(--fg); }
+  .st-c .blk { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 32px; padding: 26px 0; border-top: 1px solid var(--line); }
+  .st-c .blk:first-of-type { border-top: 0; padding-top: 6px; }
+</style>
+<style>
+  /* 7. Notifications */
+  .nt-a .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; }
+  .nt-a .tbl td.c, .nt-a .tbl th.c { text-align: center; width: 86px; }
+  .nt-a .tbl .grp td { background: var(--sunk); font-size: var(--lbl-size); letter-spacing: var(--lbl-track); text-transform: var(--lbl-tf); color: var(--fg-3); font-weight: 500; padding-top: 7px; padding-bottom: 7px; }
+  .nt-a .cell { display: inline-block; width: 15px; height: 15px; border-radius: 4px; border: 1.5px solid var(--line-2); vertical-align: middle; }
+  .nt-a .cell.on { background: var(--acc-fill) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4 8.5 2.5 2.5L12 5.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/100% no-repeat; border-color: var(--acc-fill); }
+  .nt-a .cell.lock { background: var(--sunk) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4 8.5 2.5 2.5L12 5.5' fill='none' stroke='%237f8994' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/100% no-repeat; border-color: var(--line-2); }
+  .nt-b .presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .nt-b .pr { padding: 22px; display: flex; flex-direction: column; gap: 12px; }
+  .nt-b .pr.on { border-color: var(--acc); box-shadow: 0 0 0 3px var(--acc-soft); }
+  .nt-b .pr ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 7px; font-size: 12.5px; color: var(--fg-2); }
+  .nt-b .pr li { display: flex; gap: 8px; align-items: center; }
+  .nt-b .pr li .ic { width: 13px; height: 13px; color: var(--acc); }
+  .nt-b .pr li.off { color: var(--fg-4); }
+  .nt-b .pr li.off .ic { color: var(--fg-4); }
+  .nt-c .split { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 24px; }
+  .nt-c .ev { display: flex; gap: 14px; padding: 16px 18px; border-top: 1px solid var(--line); align-items: flex-start; }
+  .nt-c .ev:first-child { border-top: 0; }
+  .nt-c .ev .ico { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--sunk); color: var(--fg-2); flex: none; }
+  .nt-c .ev .ico.r { background: var(--risk-soft); color: var(--risk); }
+  .nt-c .ev .chans { display: flex; gap: 6px; margin-top: 8px; }
+  .nt-c .mail { padding: 0; overflow: hidden; }
+  .nt-c .mail .mh { padding: 14px 20px; border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--fg-3); display: flex; flex-direction: column; gap: 3px; }
+  .nt-c .mail .mb { padding: 22px 24px; display: flex; flex-direction: column; gap: 14px; font-size: 13.5px; color: var(--fg-2); line-height: 1.55; }
+
+  /* 8. Appearance */
+  .ap-a .split { display: grid; grid-template-columns: 420px minmax(0, 1fr); gap: 36px; }
+  .ap-a .ctl { display: flex; flex-direction: column; gap: 24px; }
+  .ap-a .stage { position: relative; border-radius: 16px; background: var(--sunk); border: 1px solid var(--line); height: 640px; overflow: hidden; }
+  .acx-mini { position: absolute; border-radius: 10px; overflow: hidden; background: var(--mb); border: 1px solid var(--ml); color: var(--mf); font-size: 11px; }
+  .acx-bars { display: flex; align-items: flex-end; gap: 5px; height: 110px; border-bottom: 1px solid var(--line); }
+  .acx-bars > i { flex: 1; background: var(--acc); opacity: 0.85; border-radius: 2px 2px 0 0; }
+  .acx-bars > i.f { height: 2px; background: var(--line-2); }
+  .ap-a .acx-sw { width: 22px; height: 22px; }
+  .ap-b .th .pv { overflow: hidden; }
+  .acx-mini .logo { color: var(--mf); }
+  .acx-mini .mt { display: flex; align-items: center; gap: 12px; height: 34px; padding: 0 14px; border-bottom: 1px solid var(--ml); }
+  .acx-mini .mt .w { font: 600 8.5px var(--sans); letter-spacing: 0.16em; }
+  .acx-mini .mt i { display: block; width: 34px; height: 6px; border-radius: 3px; background: var(--ml); }
+  .acx-mini .mt i.on { background: var(--ma); opacity: 0.6; }
+  .acx-mini .mc { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .acx-mini .mp { border: 1px solid var(--ml); background: var(--mpn); border-radius: 8px; padding: 12px 14px; }
+  .acx-mini .mv { font: 600 22px/1 var(--mono); letter-spacing: -0.04em; }
+  .acx-mini .mbtn { display: inline-flex; align-items: center; height: 22px; padding: 0 10px; border-radius: 999px; background: var(--mf); color: var(--mb); font-size: 10px; font-weight: 600; }
+  .acx-mini svg { display: block; width: 100%; }
+  .acx-th-slate { --mb: #0f1316; --mpn: #151a1f; --ml: #252c34; --mf: #e6eaee; --ma: #8fa4cf; }
+  .acx-th-black { --mb: #000000; --mpn: #0c0c0d; --ml: #222225; --mf: #ececee; --ma: #dbe3f0; }
+  .acx-th-white { --mb: #fdfdfd; --mpn: #ffffff; --ml: #e6e8ec; --mf: #111418; --ma: #1d4e89; }
+  .acx-th-warm { --mb: #f7f4ee; --mpn: #fbf9f5; --ml: #e5dfd3; --mf: #1d1a16; --ma: #a8520a; }
+  .ap-b .themes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
+  .ap-b .th { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .ap-b .th .pv { position: relative; height: 200px; border-bottom: 1px solid var(--line); background: var(--sunk); }
+  .ap-b .th .pv .acx-mini { left: 18px; top: 18px; right: -40px; bottom: -40px; }
+  .ap-b .th.on { border-color: var(--acc); box-shadow: 0 0 0 3px var(--acc-soft); }
+  .ap-b .th .tt { padding: 14px 16px; display: flex; align-items: center; gap: 10px; }
+  .ap-c .rows .r { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 24px; padding: 22px 0; border-top: 1px solid var(--line); align-items: start; }
+  .ap-c .rows .r:first-child { border-top: 0; }
+  .ap-c .swatches { display: flex; flex-wrap: wrap; gap: 12px; }
+  .ap-c .surf { display: flex; gap: 10px; }
+  .ap-c .surf .o { width: 132px; border-radius: 10px; border: 1px solid var(--line-2); overflow: hidden; }
+  .ap-c .surf .o .c0 { height: 54px; }
+  .ap-c .surf .o .n { padding: 8px 10px; font-size: 12.5px; display: flex; align-items: center; justify-content: space-between; }
+  .ap-c .surf .o.on { border-color: var(--acc); box-shadow: 0 0 0 3px var(--acc-soft); }
+</style>
+<style>
+  /* 9. Plan, usage and billing */
+  .pl-a .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
+  .pl-a .meters { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+  .pl-a .meters .m { padding: 20px 22px; display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); }
+  .pl-a .meters .m:nth-child(odd) { border-right: 1px solid var(--line); }
+  .pl-a .meters .m:nth-child(-n+2) { border-top: 0; }
+  .pl-b .wrap { position: relative; z-index: 1; width: 1120px; margin: 0 auto; padding-top: 40px; }
+  .pl-b .cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 30px; align-items: stretch; }
+  .pl-b .pc { padding: 26px; display: flex; flex-direction: column; gap: 16px; }
+  .pl-b .pc ul { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; font-size: 13px; }
+  .pl-b .pc li { display: flex; justify-content: space-between; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); }
+  .pl-b .pc li span:first-child { color: var(--fg-3); }
+  .pl-c .sheet2 { width: 820px; margin: 0 auto; padding-top: 36px; position: relative; z-index: 1; }
+  .pl-c .stmt { padding: 0; overflow: hidden; }
+  .pl-c .stmt .top { padding: 26px 28px; display: flex; align-items: flex-start; gap: 20px; border-bottom: 1px solid var(--line); }
+  .pl-c .stmt .ur { display: grid; grid-template-columns: 200px minmax(0, 1fr) 150px 84px; gap: 18px; align-items: center; padding: 15px 28px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .pl-c .stmt .ur:last-child { border-bottom: 0; }
+
+  /* Phone helpers */
+  .acx-mseg { display: flex; }
+  .acx-mseg > * { flex: 1; justify-content: center; }
+  .acx-mtitle { font: 600 30px/1.08 var(--sans); letter-spacing: -0.03em; }
+  .acx-msub { color: var(--fg-2); font-size: 15px; line-height: 1.5; }
+</style>
+</head>
+<body data-title="Sign in, onboarding and account" data-desc="Everything around the trading: getting in, the first backtest, connecting Alpaca, settings, plan and billing. Each surface has three or four directions in the marketing site's language.">
+
+<!-- ============================================================ 1. Sign in -->
+<section class="ax-surface" id="account-sign-in"
+  data-surface="account/sign-in"
+  data-area="Account"
+  data-title="Sign in"
+  data-why="The door back in. It should feel like the marketing site you just left, ask for as little as possible and offer Alpaca as a second way in.">
+
+  <div class="ax-opt" data-opt="A" data-rec data-name="Centred over the art"
+    data-note="The site's hero carried over: chart art behind, the bold mark, one rim-lit card with email, password and an Alpaca button. Recommended because it is the calmest hand-off from the marketing page and works the same on a phone.">
+    <div data-frame="desktop" data-path="login">
+      <div class="acx-au si-a">
+        <div class="glow"></div>
+        <div class="art center" data-art="candles" data-seed="311" data-base="612.5" style="height:620px"></div>
+        <div class="acx-top"><span data-logo data-size="40" class="overhang"></span><div class="end"><span>New to LlamaTrade?</span><span class="btn round sm">Request an invite</span></div></div>
+        <div class="acx-mid">
+          <div class="acx-kick">Closed beta · paper and live trading on Alpaca</div>
+          <div class="display" style="margin-top:14px">Welcome back</div>
+          <div class="muted" style="margin-top:8px;font-size:15px">Sign in to your strategies, backtests and sessions.</div>
+          <div class="panel rim card">
+            <div class="field"><label>Email address</label><div class="input acx-in">sam.rivera@fastmail.com</div></div>
+            <div class="field"><div class="row"><span class="acx-fl">Password</span><span class="sp"></span><span class="acx-link xs">Forgot password?</span></div><div class="input acx-in focus"><span class="acx-pwd">••••••••••••</span></div></div>
+            <span class="btn pri round lg block" style="margin-top:4px">Sign in</span>
+            <div class="acx-or">or</div>
+            <span class="btn round lg block"><span class="acx-alp">A</span>Continue with Alpaca</span>
+          </div>
+        </div>
+        <div class="acx-foot"><span>© 2026 LlamaTrade</span><span>Privacy</span><span>Terms</span><span class="sp"></span><span>Trading involves risk. Backtests show past prices, not future results.</span></div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-body acx-ph-auth" style="padding-top:0">
+        <div class="glow" style="height:360px"></div>
+        <div class="art center" data-art="candles" data-seed="312" style="height:300px"></div>
+        <div class="over" style="text-align:center;padding-top:44px">
+          <span data-logo="mark" data-size="52"></span>
+          <div class="acx-mtitle" style="margin-top:18px">Welcome back</div>
+          <div class="acx-msub" style="margin-top:6px">Sign in to your strategies and sessions.</div>
+        </div>
+        <div class="over col" style="gap:14px;margin-top:10px">
+          <div class="field"><label>Email address</label><div class="input acx-in">sam.rivera@fastmail.com</div></div>
+          <div class="field"><div class="row"><span class="acx-fl">Password</span><span class="sp"></span><span class="acx-link" style="font-size:13px">Forgot?</span></div><div class="input acx-in focus"><span class="acx-pwd">••••••••••••</span></div></div>
+        </div>
+        <div class="m-btn over">Sign in</div>
+        <div class="acx-or over">or</div>
+        <div class="m-btn sec over"><span class="acx-alp">A</span>Continue with Alpaca</div>
+        <div class="sp"></div>
+        <div class="over dim" style="text-align:center;font-size:13px;padding-bottom:14px">New here? <span class="acx-link">Request an invite</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ax-opt" data-opt="B" data-name="Split with a real result"
+    data-note="A plain form on the left, a rim-lit Recession Radar backtest on the right. It reminds a returning person what the product does, at the cost of a busier first frame and a smaller form.">
+    <div data-frame="desktop" data-path="login">
+      <div class="acx-au si-b">
+        <div class="left">
+          <div style="position:absolute;top:30px;left:92px"><span data-logo data-size="40" class="overhang"></span></div>
+          <div class="h1" style="font-size:32px">Sign in</div>
+          <div class="muted" style="margin-top:-8px">Welcome back to LlamaTrade.</div>
+          <div class="field" style="margin-top:12px"><label>Email address</label><div class="input acx-in">sam.rivera@fastmail.com</div></div>
+          <div class="field"><div class="row"><span class="acx-fl">Password</span><span class="sp"></span><span class="acx-link xs">Forgot password?</span></div><div class="input acx-in"><span class="acx-pwd">••••••••••••</span></div></div>
+          <label class="check on sm muted">Keep me signed in on this computer</label>
+          <span class="btn pri round lg block" style="margin-top:6px">Sign in</span>
+          <span class="btn round lg block"><span class="acx-alp">A</span>Continue with Alpaca</span>
+          <div class="dim sm" style="margin-top:10px">LlamaTrade is in closed beta. <span class="acx-link">Request an invite</span></div>
+        </div>
+        <div class="right">
+          <div class="glow" style="height:700px"></div>
+          <div class="art" data-art="candles" data-seed="88" data-base="612.5" style="height:520px"></div>
+          <div class="panel rim win over">
+            <div class="wh"><span data-logo="mark" data-size="20"></span><b>Recession Radar</b><span class="dim">Backtest · version 3</span><span class="sp"></span><span class="st ok">Completed in 3.8 s</span></div>
+            <div class="figs" style="--n:4;border-bottom:1px solid var(--line)">
+              <div class="fig"><div class="lbl">Total return</div><div class="v gain">+21.4%</div><div class="s">SPY +24.8%</div></div>
+              <div class="fig"><div class="lbl">CAGR</div><div class="v">+10.2%</div><div class="s">SPY +11.7%</div></div>
+              <div class="fig"><div class="lbl">Sharpe</div><div class="v">0.79</div><div class="s">SPY 0.77</div></div>
+              <div class="fig"><div class="lbl">Max drawdown</div><div class="v loss">−12.3%</div><div class="s">SPY −18.8%</div></div>
+            </div>
+            <div style="padding:16px 18px 10px"><div data-chart="area" data-seed="42" data-ret="0.214" data-bench="0.248" data-start="25000" data-axis="xy" data-from="2024-11" data-to="2026-10" data-dip="0.45:0.12" data-h="230" data-mark></div></div>
+            <div style="padding:0 18px 16px"><div data-chart="drawdown" data-seed="42" data-ret="0.214" data-dip="0.45:0.12" data-h="62"></div></div>
+          </div>
+          <div class="cap over">Recession Radar holds bonds and gold when SPY looks overbought. Nov 2024 to Oct 2026, $25,000 start. It returned less than SPY with a shallower worst drop.</div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-body acx-ph-auth">
+        <span data-logo data-size="34" class="overhang" style="margin-top:6px"></span>
+        <div class="m-card rim" style="padding:14px 16px 8px;margin-top:6px">
+          <div class="row sm"><b>Recession Radar</b><span class="sp"></span><span class="dim xs">Backtest</span></div>
+          <div class="row base" style="margin-top:6px"><span class="mono gain" style="font-size:24px;font-weight:600">+21.4%</span><span class="mono xs dim">SPY +24.8%</span></div>
+          <div data-chart="area" data-seed="42" data-ret="0.214" data-bench="0.248" data-dip="0.45:0.12" data-h="92"></div>
+        </div>
+        <div class="acx-mtitle" style="font-size:26px;margin-top:6px">Sign in</div>
+        <div class="field"><label>Email address</label><div class="input acx-in">sam.rivera@fastmail.com</div></div>
+        <div class="field"><div class="row"><span class="acx-fl">Password</span><span class="sp"></span><span class="acx-link" style="font-size:13px">Forgot?</span></div><div class="input acx-in"><span class="acx-pwd">••••••••••••</span></div></div>
+        <div class="m-btn">Sign in</div>
+        <div class="m-btn sec"><span class="acx-alp">A</span>Continue with Alpaca</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ax-opt" data-opt="C" data-name="Email pill, then password"
+    data-note="Reuses the hero's inline email pill so signing in looks like the site's own call to action. Email first, password on the next step. Elegant and familiar to the site, but it adds a step for everyone.">
+    <div data-frame="desktop" data-path="login">
+      <div class="acx-au si-c">
+        <div class="glow"></div>
+        <div class="art center" data-art="candles" data-seed="4242" data-base="612.5" style="height:640px"></div>
+        <div class="acx-top"><span data-logo data-size="40" class="overhang"></span><div class="end"><span>Build</span><span>Backtest</span><span>Copilot</span><span>Sessions</span><span class="btn pri round sm" style="margin-left:6px">Request an invite</span></div></div>
+        <div class="acx-mid">
+          <div class="acx-kick">Closed beta · invite only · paper and live</div>
+          <h1>Sign in to LlamaTrade</h1>
+          <div class="muted" style="font-size:17px">Enter your email and we'll ask for your password next.</div>
+          <div class="email-pill"><input value="sam.rivera@fastmail.com" aria-label="Email address"><span class="btn pri">Continue<span data-icon="arrow-right"></span></span></div>
+          <div class="row" style="justify-content:center;margin-top:22px;gap:8px"><span class="dim sm">or</span><span class="btn ghost round"><span class="acx-alp">A</span>Continue with Alpaca</span></div>
+        </div>
+        <div class="acx-foot" style="justify-content:center"><span>Trading involves risk. Backtests show past prices, not future results.</span></div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Step 1 · email">
+      <div class="m-body acx-ph-auth" style="padding-top:0">
+        <div class="glow" style="height:420px"></div>
+        <div class="art center" data-art="candles" data-seed="4243" style="height:340px"></div>
+        <div class="over" style="padding-top:8px"><span data-logo data-size="32" class="overhang"></span></div>
+        <div class="over" style="text-align:center;margin-top:90px">
+          <div class="acx-kick">Closed beta</div>
+          <div class="acx-mtitle" style="margin-top:10px">Sign in to LlamaTrade</div>
+        </div>
+        <div class="over col" style="gap:10px;margin-top:16px">
+          <div class="input acx-in" style="border-radius:999px;height:50px;padding:0 20px">sam.rivera@fastmail.com</div>
+          <div class="m-btn">Continue<span data-icon="arrow-right"></span></div>
+        </div>
+        <div class="over dim" style="text-align:center;font-size:14px">or <span class="acx-link">continue with Alpaca</span></div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Step 2 · password">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Back</span><span></span><span></span></div>
+      <div class="m-body acx-ph-auth">
+        <div class="acx-mtitle">Enter your password</div>
+        <div class="row" style="gap:10px"><span class="avatar">SR</span><div style="flex:1;min-width:0"><div style="font-size:14.5px">sam.rivera@fastmail.com</div><div class="dim" style="font-size:12.5px">Not you? <span class="acx-link">Change</span></div></div></div>
+        <div class="field"><div class="row"><span class="acx-fl">Password</span><span class="sp"></span><span class="acx-link" style="font-size:13px">Forgot?</span></div><div class="input acx-in focus"><span class="acx-pwd">••••••••••••</span></div></div>
+        <div class="m-btn">Sign in</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ax-opt" data-opt="D" data-name="Sheet over the site"
+    data-note="Sign in opens as a dialog over the marketing hero, and as a bottom sheet on the phone, so the site stays visible behind it. Quick and contextual, but a direct link to /login has to fake the page behind.">
+    <div data-frame="desktop" data-path="">
+      <div class="acx-au si-d">
+        <div class="glow"></div>
+        <div class="art center" data-art="candles" data-seed="7012" data-base="612.5" style="height:700px"></div>
+        <div class="acx-top" style="border-bottom:1px solid var(--line)"><span data-logo data-size="40" class="overhang"></span><nav class="mk-nav"><span>Build</span><span>Backtest</span><span>Copilot</span><span>Sessions</span></nav><div class="end"><span>Sign in</span><span class="btn pri round sm">Request an invite</span></div></div>
+        <div class="hero">
+          <div class="acx-kick">Closed beta · invite only · paper and live</div>
+          <h1 style="margin-top:16px">Algorithmic trading on your own account.</h1>
+          <div class="muted" style="font-size:18px;margin-top:14px">Build a strategy, backtest it, then run it on Alpaca.</div>
+        </div>
+        <div class="scrim" style="backdrop-filter:blur(2px)"></div>
+        <div class="dialog rim dlg">
+          <div class="row"><span data-logo="mark" data-size="36"></span><span class="sp"></span><span class="btn icon ghost sm" data-icon="x"></span></div>
+          <div><div class="h2" style="font-size:22px">Sign in</div><div class="dim" style="margin-top:4px">Welcome back to LlamaTrade.</div></div>
+          <span class="btn pri round lg block"><span class="acx-alp" style="background:var(--ink-text);color:var(--ink)">A</span>Continue with Alpaca</span>
+          <div class="acx-or">or with email</div>
+          <div class="field"><label>Email address</label><div class="input acx-in">sam.rivera@fastmail.com</div></div>
+          <div class="field"><div class="row"><span class="acx-fl">Password</span><span class="sp"></span><span class="acx-link xs">Forgot password?</span></div><div class="input acx-in focus"><span class="acx-pwd">••••••••••••</span></div></div>
+          <span class="btn round lg block">Sign in with email</span>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-body" style="padding-top:0">
+        <div class="glow" style="height:420px"></div>
+        <div class="art center" data-art="candles" data-seed="7013" style="height:360px"></div>
+        <div class="over row" style="padding-top:8px"><span data-logo data-size="32" class="overhang"></span><span class="sp"></span><span data-icon="menu" style="width:22px;height:22px"></span></div>
+        <div class="over" style="text-align:center;margin-top:40px"><div class="acx-mtitle" style="font-size:32px">Algorithmic trading on your own account.</div></div>
+        <div class="scrim"></div>
+        <div class="sheet" style="display:flex;flex-direction:column;gap:14px">
+          <div class="h2">Sign in</div>
+          <div class="m-btn"><span class="acx-alp" style="background:var(--ink-text);color:var(--ink)">A</span>Continue with Alpaca</div>
+          <div class="acx-or">or with email</div>
+          <div class="input acx-in">sam.rivera@fastmail.com</div>
+          <div class="input acx-in"><span class="acx-pwd">••••••••••••</span></div>
+          <div class="m-btn sec">Sign in with email</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="ax-surface" id="account-create"
+  data-surface="account/create"
+  data-area="Account"
+  data-title="Create an account"
+  data-why="Where an invite turns into an account. It should say what happens next and keep Alpaca optional until the first backtest is done.">
+
+  <div class="ax-opt" data-opt="A" data-rec data-name="Invite beside what comes next"
+    data-note="The form sits in a rim-lit card on the right, and the left side explains the three steps: backtest, paper, live. Recommended because it answers the question people have at this point (do I need a broker yet?) without a separate page.">
+    <div data-frame="desktop" data-path="register?invite=7KQ2">
+      <div class="acx-au ca-a">
+        <div class="glow" style="width:60%"></div>
+        <div class="art" data-art="candles" data-seed="1201" data-base="612.5" style="height:560px;right:520px"></div>
+        <div class="acx-top"><span data-logo data-size="40" class="overhang"></span><div class="end" style="margin-right:0"><span>Already have an account?</span><span class="acx-link">Sign in</span></div></div>
+        <div class="story over">
+          <div class="acx-kick"><span class="a">Invite accepted</span> · closed beta</div>
+          <h1>Here is what happens after you sign up.</h1>
+          <div class="muted" style="font-size:16px;max-width:480px">Backtests don't need a broker, so you'll see a result before anything asks for Alpaca.</div>
+          <div class="steps">
+            <div class="s"><span class="acx-num on">1</span><div><div class="b">Backtest a strategy</div><div class="dim sm" style="margin-top:2px">Start from a template, a sentence or your own rules. No broker needed.</div></div></div>
+            <div class="s"><span class="acx-num">2</span><div><div class="b">Run it on paper</div><div class="dim sm" style="margin-top:2px">Connect an Alpaca paper account and let it trade with simulated money.</div></div></div>
+            <div class="s"><span class="acx-num">3</span><div><div class="b">Go live when you're ready</div><div class="dim sm" style="margin-top:2px">Connect your live account. Every order passes seven risk checks first.</div></div></div>
+          </div>
+        </div>
+        <div class="formcol over">
+          <div class="panel rim card">
+            <div><div class="h2">Create an account</div><div class="dim sm" style="margin-top:4px">Start building and testing strategies.</div></div>
+            <div class="g2" style="gap:12px"><div class="field"><label>First name</label><div class="input acx-in">Sam</div></div><div class="field"><label>Last name</label><div class="input acx-in">Rivera</div></div></div>
+            <div class="field"><label>Email address</label><div class="input acx-in lock">sam.rivera@fastmail.com<span class="sp"></span><span data-icon="lock" style="width:13px;height:13px"></span></div><div class="help">From your invite. You can change it later in Settings.</div></div>
+            <div class="field"><label>Password</label><div class="input acx-in focus"><span class="acx-pwd">••••••••••</span></div><div class="row" style="gap:6px"><div class="meter" style="flex:1;height:4px"><i style="width:72%"></i></div><span class="xs dim">Good</span></div></div>
+            <div class="field"><label>Workspace name <span class="dim" style="font-weight:400">· optional</span></label><div class="input acx-in"><span class="ph">Rivera</span></div></div>
+            <span class="btn pri round lg block" style="margin-top:4px">Create account</span>
+            <div class="acx-or">or</div>
+            <span class="btn round lg block"><span class="acx-alp">A</span>Sign up with Alpaca</span>
+            <div class="xs dim" style="text-align:center">By creating an account you agree to the <span class="acx-link">terms</span> and <span class="acx-link">privacy policy</span>.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-body acx-ph-auth" style="gap:14px">
+        <span data-logo data-size="32" class="overhang" style="margin-top:4px"></span>
+        <div><div class="acx-kick"><span class="a">Invite accepted</span></div><div class="acx-mtitle" style="margin-top:8px">Create an account</div><div class="acx-msub" style="margin-top:6px">You'll backtest first. Alpaca comes later.</div></div>
+        <div class="g2" style="gap:10px"><div class="field"><label>First name</label><div class="input acx-in">Sam</div></div><div class="field"><label>Last name</label><div class="input acx-in">Rivera</div></div></div>
+        <div class="field"><label>Email address</label><div class="input acx-in lock">sam.rivera@fastmail.com<span class="sp"></span><span data-icon="lock" style="width:13px;height:13px"></span></div></div>
+        <div class="field"><label>Password</label><div class="input acx-in focus"><span class="acx-pwd">••••••••••</span></div><div class="help">At least 8 characters.</div></div>
+        <div class="m-btn">Create account</div>
+        <div class="m-btn sec"><span class="acx-alp">A</span>Sign up with Alpaca</div>
+        <div class="m-card rows" style="margin-top:2px">
+          <div class="m-row"><span class="acx-num on" style="width:22px;height:22px">1</span><span style="font-size:14px">Backtest a strategy</span></div>
+          <div class="m-row"><span class="acx-num" style="width:22px;height:22px">2</span><span class="muted" style="font-size:14px">Run it on paper</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ax-opt" data-opt="B" data-name="Back from Alpaca"
+    data-note="The round trip from Sign up with Alpaca: the two marks joined, a confirmed paper account, and only the fields Alpaca could not fill. Good when most people come in through Alpaca, but it shows the broker before the first backtest.">
+    <div data-frame="desktop" data-path="signup/complete">
+      <div class="acx-au ca-b">
+        <div class="glow"></div>
+        <div class="art center" data-art="candles" data-seed="1209" data-base="612.5" style="height:620px"></div>
+        <div class="acx-top"><span data-logo data-size="40" class="overhang"></span></div>
+        <div class="acx-mid">
+          <div class="link2"><span data-logo="mark" data-size="48"></span><span class="dots"></span><span class="acx-alp lg">A</span></div>
+          <div style="text-align:center;margin-top:22px"><div class="acx-kick">Closed beta · invite only · paper and live trading on Alpaca</div><div class="h1" style="font-size:32px;margin-top:12px">Finish creating your account</div></div>
+          <div class="panel rim card">
+            <div class="callout acc"><span data-icon="check"></span><div><b>Alpaca account connected.</b> Paper account PA3XK7Q2M1ZB, $100,000.00 in simulated cash.</div></div>
+            <div class="g2" style="gap:12px"><div class="field"><label>First name</label><div class="input acx-in lock">Sam</div></div><div class="field"><label>Last name</label><div class="input acx-in lock">Rivera</div></div></div>
+            <div class="field"><label>Email address</label><div class="input acx-in lock">sam.rivera@fastmail.com</div><div class="help">Filled in from Alpaca.</div></div>
+            <div class="field"><label>Password</label><div class="input acx-in focus"><span class="ph">At least 8 characters</span></div><div class="help">So you can also sign in without Alpaca.</div></div>
+            <span class="btn pri round lg block">Create account</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-body acx-ph-auth" style="padding-top:0">
+        <div class="glow" style="height:360px"></div>
+        <div class="over" style="padding-top:34px;display:flex;align-items:center;justify-content:center;gap:12px"><span data-logo="mark" data-size="40"></span><span style="width:40px;border-top:1.5px dotted var(--line-2)"></span><span class="acx-alp md">A</span></div>
+        <div class="over" style="text-align:center"><div class="acx-mtitle" style="font-size:26px">Finish creating your account</div></div>
+        <div class="callout acc over"><span data-icon="check"></span><div><b>Alpaca connected.</b> Paper account PA3XK7Q2M1ZB.</div></div>
+        <div class="field over"><label>Name</label><div class="input acx-in lock">Sam Rivera</div></div>
+        <div class="field over"><label>Email address</label><div class="input acx-in lock">sam.rivera@fastmail.com</div></div>
+        <div class="field over"><label>Password</label><div class="input acx-in focus"><span class="ph">At least 8 characters</span></div></div>
+        <div class="sp"></div>
+        <div class="m-btn over" style="margin-bottom:10px">Create account</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ax-opt" data-opt="C" data-name="One question at a time"
+    data-note="A large single field per step with a thin accent progress line, like a short conversation. Very calm and easy on a phone, but four steps feel slower than one form for people who type quickly.">
+    <div data-frame="desktop" data-path="register">
+      <div class="acx-au ca-c">
+        <div class="glow"></div>
+        <div class="art" data-art="candles" data-seed="1222" data-base="612.5" style="height:520px"></div>
+        <div class="acx-top"><span data-logo data-size="40" class="overhang"></span><div class="end"><div class="crumbs"><span class="done">Name</span><span class="on">Email</span><span>Password</span><span>Workspace</span></div></div></div>
+        <div class="bar"><i></i></div>
+        <div class="q">
+          <div class="acx-kick">Step 2 of 4</div>
+          <h1>Where should we reach you, Sam?</h1>
+          <div class="muted" style="font-size:16px">We'll send a link to confirm it. Sleeve and order notices also go here.</div>
+          <div class="input big-in focus" style="margin-top:30px">sam.rivera@fastmail.com</div>
+          <div class="row" style="margin-top:22px"><span class="btn pri round lg">Continue<span data-icon="arrow-right"></span></span><span class="dim sm">or press <span class="kbd">Enter</span></span><span class="sp"></span><span class="btn ghost round">Back</span></div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Step 2 · email">
+      <div style="height:2px;background:var(--line);margin:0 20px"><i style="display:block;height:100%;width:50%;background:var(--acc)"></i></div>
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Name</span><span class="dim" style="font-weight:400;font-size:13px">2 of 4</span><span style="width:40px"></span></div>
+      <div class="m-body acx-ph-auth">
+        <div class="acx-mtitle">Where should we reach you, Sam?</div>
+        <div class="acx-msub">We'll send a link to confirm it.</div>
+        <div class="input acx-in focus" style="height:54px;font-size:17px">sam.rivera@fastmail.com</div>
+        <div class="sp"></div>
+        <div class="m-btn" style="margin-bottom:10px">Continue</div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Step 4 · workspace">
+      <div style="height:2px;background:var(--line);margin:0 20px"><i style="display:block;height:100%;width:100%;background:var(--acc)"></i></div>
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Password</span><span class="dim" style="font-weight:400;font-size:13px">4 of 4</span><span style="width:40px"></span></div>
+      <div class="m-body acx-ph-auth">
+        <div class="acx-mtitle">Name your workspace</div>
+        <div class="acx-msub">It holds your strategies, backtests and sessions. You can rename it later.</div>
+        <div class="input acx-in focus" style="height:54px;font-size:17px">Rivera</div>
+        <div class="sp"></div>
+        <div class="m-btn" style="margin-bottom:10px">Create account</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="ax-surface" id="onboarding-start"
+  data-surface="onboarding/start"
+  data-area="Onboarding"
+  data-title="How would you like to start?"
+  data-why="The first screen after creating an account. Three ways to a first strategy (a template, a sentence or your own rules), all ending in a real backtest before any broker is involved.">
+
+  <div class="ax-opt" data-opt="A" data-name="Three doors"
+    data-note="Three equal cards, each with a small preview of what that path looks like. Fair to every path and easy to grasp, but nobody gets a strategy until they pick and read a second screen.">
+    <div data-frame="desktop" data-path="welcome">
+      <div class="app ob-a">
+        <div class="ob-top"><span data-logo data-size="34" class="overhang"></span><span class="dim sm">Your first backtest · step 1 of 3</span><div class="end"><span>Skip to Home</span></div></div>
+        <div class="main">
+          <div class="glow"></div>
+          <div class="art" data-art="candles" data-seed="1301" style="height:380px"></div>
+          <div class="wrap">
+            <div class="acx-kick">Welcome, Sam</div>
+            <div class="display" style="margin-top:12px">How would you like to start?</div>
+            <div class="muted" style="margin-top:10px;font-size:16px;max-width:640px">Backtests don't need a broker, so you'll see a result before anything asks for Alpaca.</div>
+            <div class="doors">
+              <div class="panel door rim">
+                <div class="vis">
+                  <div class="list" style="font-size:12.5px">
+                    <div class="li" style="padding:9px 0"><span class="b">Recession Radar</span><span class="sp"></span><span data-chart="spark" data-seed="42" data-ret="0.21" data-vol="0.02"></span></div>
+                    <div class="li" style="padding:9px 0"><span class="b">All-Weather Portfolio</span><span class="sp"></span><span data-chart="spark" data-seed="7" data-ret="0.12" data-vol="0.012"></span></div>
+                    <div class="li" style="padding:9px 0"><span class="b">Momentum Sectors</span><span class="sp"></span><span data-chart="spark" data-seed="33" data-ret="0.28" data-vol="0.03"></span></div>
+                    <div class="li" style="padding:9px 0"><span class="b">Risk Parity</span><span class="sp"></span><span data-chart="spark" data-seed="12" data-ret="0.09" data-vol="0.01"></span></div>
+                  </div>
+                </div>
+                <div class="txt"><div class="h3">Start from a template</div><div class="dim sm">Eight tested strategies you can read in a minute and change later.</div><div class="sp"></div><span class="btn pri round" style="align-self:flex-start;margin-top:10px">Browse templates</span></div>
+              </div>
+              <div class="panel door">
+                <div class="vis" style="display:flex;flex-direction:column;justify-content:center;gap:12px">
+                  <div class="msg me" style="max-width:100%"><div class="bub" style="font-size:12.5px">Hold bonds when SPY is overbought, otherwise the strongest sector fund.</div></div>
+                  <div class="msg bot" style="max-width:100%"><div class="who">Copilot</div><div class="bub sm muted">I've drafted Recession Radar with an RSI test on SPY and TLT, GLD as the safe side. Want to backtest it?</div></div>
+                </div>
+                <div class="txt"><div class="h3">Describe it in a sentence</div><div class="dim sm">Copilot drafts the rules. You read them before anything runs.</div><div class="sp"></div><span class="btn round" style="align-self:flex-start;margin-top:10px">Describe a strategy</span></div>
+              </div>
+              <div class="panel door">
+                <div class="vis" style="padding:18px 8px">
+                  <div class="code" style="font-size:11.5px"><span class="ln">(<span class="k">strategy</span> <span class="s">"My first"</span></span><span class="ln">  <span class="kw">:rebalance</span> <span class="kw">:monthly</span></span><span class="ln">  (<span class="k">weight</span> <span class="kw">:equal</span></span><span class="ln">    <span class="n">VTI</span> <span class="n">BND</span> <span class="n">GLD</span>))</span><span class="ln"><span class="c">; or build it with blocks</span></span></div>
+                </div>
+                <div class="txt"><div class="h3">Write it yourself</div><div class="dim sm">Blocks or the strategy language, with a check as you type.</div><div class="sp"></div><span class="btn round" style="align-self:flex-start;margin-top:10px">Open the editor</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-head"><div class="row"><span data-logo="mark" data-size="30"></span><span class="sp"></span><span class="dim" style="font-size:14px">Skip</span></div></div>
+      <div class="m-body">
+        <div><div class="acx-mtitle">How would you like to start?</div><div class="acx-msub" style="margin-top:6px">You'll see a backtest before anything asks for Alpaca.</div></div>
+        <div class="m-card rim col" style="gap:6px"><div class="row"><span data-icon="blocks" class="acc"></span><b>Start from a template</b></div><div class="dim" style="font-size:13.5px">Eight tested strategies to read and change.</div></div>
+        <div class="m-card col" style="gap:6px"><div class="row"><span data-icon="copilot" class="acc"></span><b>Describe it in a sentence</b></div><div class="dim" style="font-size:13.5px">Copilot drafts the rules for you to read.</div></div>
+        <div class="m-card col" style="gap:6px"><div class="row"><span data-icon="code" class="acc"></span><b>Write it yourself</b></div><div class="dim" style="font-size:13.5px">Blocks or the strategy language.</div></div>
+        <div class="sp"></div>
+        <div class="m-btn" style="margin-bottom:10px">Continue with templates</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ax-opt" data-opt="B" data-name="Sentence first"
+    data-note="One large Copilot box over the chart art, with example sentences as chips and templates as a quiet row below. The most inviting first moment, but it leans on Copilot drafting well on the first try.">
+    <div data-frame="desktop" data-path="welcome">
+      <div class="app ob-b">
+        <div class="ob-top"><span data-logo data-size="34" class="overhang"></span><div class="end"><span>Skip to Home</span></div></div>
+        <div class="main">
+          <div class="glow"></div>
+          <div class="art center" data-art="candles" data-seed="1310" style="height:560px"></div>
+          <div class="acx-mid">
+            <div class="acx-kick">Welcome, Sam · your first backtest</div>
+            <h1>Describe a strategy you'd like to test.</h1>
+            <div class="muted" style="font-size:17px">Copilot drafts the rules, then a backtest runs them over past prices. No broker needed.</div>
+            <div class="panel rim ask">
+              <div class="t">Hold bonds and gold when SPY is overbought, otherwise the strongest sector fund<span class="cur"></span></div>
+              <div class="row" style="margin-top:8px"><span class="chip sym">SPY</span><span class="chip sym">TLT</span><span class="chip sym">GLD</span><span class="dim xs">Symbols found</span><span class="sp"></span><span class="btn pri round">Draft and backtest<span data-icon="arrow-right"></span></span></div>
+            </div>
+            <div class="ideas"><span class="chip">60/40 that rebalances monthly</span><span class="chip">Top 3 sector funds by 90 day momentum</span><span class="chip">Equal weight VTI, BND, GLD</span></div>
+            <div class="tpl">
+              <div class="panel"><div class="lbl">Template</div><div class="b">Recession Radar</div><div class="row xs mono dim" style="white-space:nowrap">CAGR +10.2%<span class="sp"></span><span data-chart="spark" data-seed="42" data-ret="0.21" data-vol="0.02" style="width:60px;height:20px"></span></div></div>
+              <div class="panel"><div class="lbl">Template</div><div class="b">All-Weather Portfolio</div><div class="row xs mono dim" style="white-space:nowrap">CAGR +6.8%<span class="sp"></span><span data-chart="spark" data-seed="7" data-ret="0.12" data-vol="0.012" style="width:60px;height:20px"></span></div></div>
+              <div class="panel"><div class="lbl">Template</div><div class="b">Momentum Sectors</div><div class="row xs mono dim" style="white-space:nowrap">CAGR +14.6%<span class="sp"></span><span data-chart="spark" data-seed="33" data-ret="0.28" data-vol="0.03" style="width:60px;height:20px"></span></div></div>
+              <div class="panel"><div class="lbl">Or</div><div class="b">Write it yourself</div><div class="row xs dim">Blocks or code<span class="sp"></span><span data-icon="arrow-right"></span></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-body" style="padding-top:0">
+        <div class="glow" style="height:380px"></div>
+        <div class="art center" data-art="candles" data-seed="1311" style="height:320px"></div>
+        <div class="over row" style="padding-top:8px"><span data-logo="mark" data-size="30"></span><span class="sp"></span><span class="dim" style="font-size:14px">Skip</span></div>
+        <div class="over" style="margin-top:30px"><div class="acx-mtitle">Describe a strategy you'd like to test.</div><div class="acx-msub" style="margin-top:8px">Copilot drafts the rules. A backtest runs them.</div></div>
+        <div class="m-card rim over" style="border-radius:18px"><div style="font-size:15px;line-height:1.5">Hold bonds and gold when SPY is overbought, otherwise the strongest sector fund</div><div class="row" style="margin-top:12px"><span class="chip sym">SPY</span><span class="chip sym">TLT</span><span class="sp"></span><span class="btn pri icon round" data-icon="arrow-up-right" style="width:36px;height:36px"></span></div></div>
+        <div class="over row wrap" style="gap:8px"><span class="chip">60/40, monthly</span><span class="chip">Top 3 sectors</span></div>
+        <div class="sp"></div>
+        <div class="over dim" style="text-align:center;font-size:14px;padding-bottom:12px">or <span class="acx-link">start from a template</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ax-opt" data-opt="C" data-rec data-name="Template gallery with a reader"
+    data-note="A list of templates with honest five-year figures, and the selected one shown in full as rules and an outline, with one Run a backtest button. Recommended because it reaches a real result in two clicks, while Describe and Write stay one tab away.">
+    <div data-frame="desktop" data-path="welcome/templates/recession-radar">
+      <div class="app ob-c">
+        <div class="ob-top"><span data-logo data-size="34" class="overhang"></span><div class="seg round" style="margin-left:18px"><span class="on">Templates</span><span>Describe it</span><span>Write it</span></div><div class="end"><span class="dim">Step 1 of 3</span><span>Skip to Home</span></div></div>
+        <div class="body">
+          <div class="lst">
+            <div class="row" style="padding:0 16px 10px"><div class="h3">Templates</div><span class="sp"></span><span class="xs dim mono">5 years · to Oct 2026</span></div>
+            <div class="it on"><div class="b">Recession Radar</div><span data-chart="spark" data-seed="42" data-ret="0.6" data-vol="0.02"></span><div class="st2"><span>CAGR +10.2%</span><span>Max DD −12.3%</span><span>Sharpe 0.79</span></div></div>
+            <div class="it"><div class="b">All-Weather Portfolio</div><span data-chart="spark" data-seed="7" data-ret="0.38" data-vol="0.012"></span><div class="st2"><span>CAGR +6.8%</span><span>Max DD −9.1%</span><span>Sharpe 0.71</span></div></div>
+            <div class="it"><div class="b">Momentum Sectors</div><span data-chart="spark" data-seed="33" data-ret="0.95" data-vol="0.03"></span><div class="st2"><span>CAGR +14.6%</span><span>Max DD −21.4%</span><span>Sharpe 0.83</span></div></div>
+            <div class="it"><div class="b">Risk Parity</div><span data-chart="spark" data-seed="12" data-ret="0.33" data-vol="0.01"></span><div class="st2"><span>CAGR +5.9%</span><span>Max DD −8.2%</span><span>Sharpe 0.66</span></div></div>
+            <div class="it"><div class="b">Tech Momentum Rotation</div><span data-chart="spark" data-seed="51" data-ret="1.2" data-vol="0.04"></span><div class="st2"><span>CAGR +17.9%</span><span>Max DD −27.5%</span><span>Sharpe 0.74</span></div></div>
+            <div class="xs dim" style="padding:12px 16px">Past results from the backtest engine, before fees and taxes.</div>
+          </div>
+          <div class="pv">
+            <div class="glow" style="height:400px"></div>
+            <div class="over row top"><div><div class="acx-kick">Template · daily · benchmark SPY</div><div class="h1" style="margin-top:8px">Recession Radar</div><div class="muted" style="margin-top:6px;max-width:620px">Holds long bonds and gold while SPY looks overbought, otherwise the strongest of three sector funds by 90 day momentum.</div></div><span class="sp"></span><span class="btn pri round lg">Run a backtest<span data-icon="play"></span></span></div>
+            <div class="g2 over" style="grid-template-columns:minmax(0,1fr) 340px">
+              <div class="panel rim"><div class="panel-h">Rules<span class="aside">recession-radar.llt</span></div><div class="panel-b" style="padding:14px 6px">
+                <div class="code"><span class="ln">(<span class="k">strategy</span> <span class="s">"Recession Radar"</span></span><span class="ln">  <span class="kw">:rebalance</span> <span class="kw">:daily</span></span><span class="ln">  <span class="kw">:benchmark</span> <span class="n">SPY</span></span><span class="ln">  (<span class="k">if</span> (<span class="k">&gt;</span> (<span class="k">rsi</span> <span class="n">SPY</span> <span class="n">14</span>) <span class="n">70</span>)</span><span class="ln">    <span class="c">; overbought: step aside</span></span><span class="ln">    (<span class="k">weight</span> <span class="kw">:equal</span> <span class="n">TLT</span> <span class="n">GLD</span>)</span><span class="ln">    <span class="c">; otherwise: strongest sector</span></span><span class="ln">    (<span class="k">filter</span> <span class="kw">:top</span> <span class="n">1</span> (<span class="k">momentum</span> <span class="n">90</span>)</span><span class="ln">      <span class="n">XLK</span> <span class="n">SMH</span> <span class="n">IWM</span>)))</span></div>
+              </div></div>
+              <div class="col" style="gap:16px">
+                <div class="panel"><div class="panel-h">In plain words</div><div class="panel-b col sm muted" style="gap:10px">
+                  <div class="row top"><span class="acx-num" style="width:20px;height:20px;font-size:10px">1</span><span>Each day, check SPY's 14 day RSI.</span></div>
+                  <div class="row top"><span class="acx-num" style="width:20px;height:20px;font-size:10px">2</span><span>Above 70, hold TLT and GLD in equal parts.</span></div>
+                  <div class="row top"><span class="acx-num" style="width:20px;height:20px;font-size:10px">3</span><span>Otherwise hold whichever of XLK, SMH or IWM rose most over 90 days.</span></div>
+                </div></div>
+                <div class="callout"><span data-icon="info"></span><div>This is the whole strategy. A backtest runs it over past prices, with no broker involved.</div></div>
+              </div>
+            </div>
+            <div class="panel over"><div class="panel-h">Last published backtest<span class="aside">Oct 2021 to Oct 2026 · $25,000 start · vs SPY</span></div><div class="panel-b"><div data-chart="line" data-seed="1342" data-ret="0.62" data-bench="0.71" data-start="25000" data-axis="xy" data-from="2021-10" data-to="2026-10" data-h="150" data-fill data-mark></div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-head"><div class="t" style="font-size:26px">Templates</div><div class="s">Five years to Oct 2026, before fees</div></div>
+      <div class="m-body">
+        <div class="seg round acx-mseg"><span class="on">Templates</span><span>Describe</span><span>Write</span></div>
+        <div class="m-card rim col" style="gap:8px">
+          <div class="row"><b>Recession Radar</b><span class="sp"></span><span data-chart="spark" data-seed="42" data-ret="0.6" data-vol="0.02" style="width:70px;height:24px"></span></div>
+          <div class="dim" style="font-size:13px">Bonds and gold when SPY looks overbought, otherwise the strongest sector fund.</div>
+          <div class="row mono" style="font-size:12px;gap:14px"><span>CAGR +10.2%</span><span class="dim">DD −12.3%</span><span class="dim">Sharpe 0.79</span></div>
+          <div class="m-btn" style="height:42px;font-size:14.5px;margin-top:4px">Run a backtest</div>
+        </div>
+        <div class="m-card rows">
+          <div class="m-row"><div style="flex:1"><div>All-Weather Portfolio</div><div class="d mono">CAGR +6.8% · DD −9.1%</div></div><span data-chart="spark" data-seed="7" data-ret="0.38" data-vol="0.012" style="width:60px"></span></div>
+          <div class="m-row"><div style="flex:1"><div>Momentum Sectors</div><div class="d mono">CAGR +14.6% · DD −21.4%</div></div><span data-chart="spark" data-seed="33" data-ret="0.95" data-vol="0.03" style="width:60px"></span></div>
+          <div class="m-row"><div style="flex:1"><div>Risk Parity</div><div class="d mono">CAGR +5.9% · DD −8.2%</div></div><span data-chart="spark" data-seed="12" data-ret="0.33" data-vol="0.01" style="width:60px"></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ax-opt" data-opt="D" data-name="Setup checklist on Home"
+    data-note="No separate onboarding: Home opens with a four step checklist, and the current step shows the three ways to start inline. Honest about the whole path to live, but Home looks unfinished until the list is done.">
+    <div data-frame="desktop" data-path="home">
+      <div class="app ob-d">
+        <div class="topbar"><span data-logo data-size="34" class="overhang"></span><nav class="nav"><a class="on">Home</a><a>Strategies</a><a>Backtests</a><a>Sessions</a><a>Portfolio</a><a>Copilot</a></nav><div class="end"><span class="mkt">Market open · 10:42 ET</span><span class="avatar">SR</span></div></div>
+        <div class="main">
+          <div class="glow" style="height:360px"></div>
+          <div class="wrap">
+            <div class="row base"><div><div class="h1">Good morning, Sam</div><div class="dim" style="margin-top:4px">Four steps from here to a running strategy. Each one is optional after the first.</div></div><span class="sp"></span><span class="mono sm dim">0 of 4 done</span></div>
+            <div class="meter" style="margin:16px 0 22px;height:4px"><i style="width:4%"></i></div>
+            <div class="panel rim cl">
+              <div class="row1 on"><span class="acx-num on">1</span><div style="flex:1"><div class="h3">Run your first backtest</div><div class="dim sm" style="margin-top:3px">See how a strategy would have done over past prices. No broker needed.</div>
+                <div class="ways">
+                  <div class="panel"><span data-icon="blocks" class="acc"></span><b class="sm">Start from a template</b><span class="xs dim">Recession Radar, All-Weather and six more</span></div>
+                  <div class="panel"><span data-icon="copilot" class="acc"></span><b class="sm">Describe it in a sentence</b><span class="xs dim">Copilot drafts the rules for you to read</span></div>
+                  <div class="panel"><span data-icon="code" class="acc"></span><b class="sm">Write it yourself</b><span class="xs dim">Blocks or the strategy language</span></div>
+                </div></div></div>
+              <div class="row1"><span class="acx-num">2</span><div style="flex:1"><div class="h3 muted">Connect Alpaca paper</div><div class="dim sm" style="margin-top:3px">A free simulated account at Alpaca. LlamaTrade can place orders but can't move money.</div></div><span class="btn sm round">Connect</span></div>
+              <div class="row1"><span class="acx-num">3</span><div style="flex:1"><div class="h3 muted">Start a paper session</div><div class="dim sm" style="margin-top:3px">Your strategy trades simulated money on a schedule, with its own sleeve in the ledger.</div></div></div>
+              <div class="row1"><span class="acx-num">4</span><div style="flex:1"><div class="h3 muted">Go live, when you're ready</div><div class="dim sm" style="margin-top:3px">Connect your live account. Every order passes seven risk checks first.</div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-head"><div class="row"><span data-logo="mark" data-size="30"></span><span class="sp"></span><span class="ic" data-icon="bell" style="width:22px;height:22px"></span></div></div>
+      <div class="m-body">
+        <div><div class="acx-mtitle" style="font-size:26px">Good morning, Sam</div><div class="row" style="margin-top:10px"><div class="meter" style="flex:1;height:4px"><i style="width:4%"></i></div><span class="mono dim" style="font-size:12px">0 of 4</span></div></div>
+        <div class="m-card rim col" style="gap:10px"><div class="row"><span class="acx-num on">1</span><b>Run your first backtest</b></div><div class="dim" style="font-size:13.5px">See how a strategy would have done. No broker needed.</div><div class="m-btn" style="height:42px;font-size:14.5px">Choose how to start</div></div>
+        <div class="m-card rows">
+          <div class="m-row"><span class="acx-num">2</span><span class="muted">Connect Alpaca paper</span></div>
+          <div class="m-row"><span class="acx-num">3</span><span class="muted">Start a paper session</span></div>
+          <div class="m-row"><span class="acx-num">4</span><span class="muted">Go live, when you're ready</span></div>
+        </div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+  </div>
+</section>
+
+<section class="ax-surface" id="onboarding-result"
+  data-surface="onboarding/first-result"
+  data-area="Onboarding"
+  data-title="Your first backtest result"
+  data-why="The payoff of onboarding: a real result from the engine, read honestly against SPY, and one clear next step to run it on paper.">
+
+  <div class="ax-opt" data-opt="A" data-name="The number first"
+    data-note="One large total return over the art, the curve against SPY beneath, four figures and the next step. Striking and quick to read, but a big green number can oversell a strategy that trailed its benchmark.">
+    <div data-frame="desktop" data-path="welcome/result">
+      <div class="app fr-a">
+        <div class="ob-top"><span data-logo data-size="34" class="overhang"></span><span class="dim sm">Your first backtest · step 2 of 3</span><div class="end"><span>Skip to Home</span></div></div>
+        <div class="main">
+          <div class="glow"></div>
+          <div class="art center" data-art="candles" data-seed="1401" style="height:420px"></div>
+          <div class="wrap">
+            <div class="acx-kick">Recession Radar · Nov 2024 to Oct 2026 · $25,000 start</div>
+            <div class="huge gain" style="margin-top:14px">+21.4%</div>
+            <div class="muted" style="margin-top:8px">$25,000 would have become <b style="color:var(--fg)">$30,350</b>. SPY returned +24.8% over the same period.</div>
+            <div class="panel rim chart">
+              <div class="row xs dim" style="gap:16px;margin-bottom:6px"><span class="row gap-6"><i class="dot acc"></i>Recession Radar</span><span class="row gap-6"><i style="width:14px;border-top:1.5px dashed var(--fg-3)"></i>SPY</span><span class="sp"></span><span>Daily, before fees</span></div>
+              <div data-chart="area" data-seed="42" data-ret="0.214" data-bench="0.248" data-start="25000" data-axis="xy" data-from="2024-11" data-to="2026-10" data-dip="0.45:0.12" data-h="250" data-mark></div>
+            </div>
+            <div class="figs boxed" style="--n:4;margin-top:16px;text-align:left">
+              <div class="fig"><div class="lbl">CAGR</div><div class="v">+10.2%</div><div class="s">SPY +11.7%</div></div>
+              <div class="fig"><div class="lbl">Sharpe</div><div class="v">0.79</div><div class="s">SPY 0.77</div></div>
+              <div class="fig"><div class="lbl">Max drawdown</div><div class="v loss">−12.3%</div><div class="s">SPY −18.8%</div></div>
+              <div class="fig"><div class="lbl">Trades</div><div class="v">58</div><div class="s">24 rebalances</div></div>
+            </div>
+            <div class="row" style="justify-content:center;margin-top:22px"><span class="btn pri round lg">Run it on paper next<span data-icon="arrow-right"></span></span><span class="btn round lg">Open in the editor</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Templates</span><span>Result</span><span style="width:60px"></span></div>
+      <div class="m-body" style="padding-top:0">
+        <div class="glow" style="height:300px"></div>
+        <div class="over" style="text-align:center;padding-top:14px"><div class="acx-kick">Recession Radar · 2 years</div><div class="huge gain" style="margin-top:10px">+21.4%</div><div class="dim" style="font-size:13.5px;margin-top:6px">$25,000 → $30,350 · SPY +24.8%</div></div>
+        <div data-chart="area" data-seed="42" data-ret="0.214" data-bench="0.248" data-dip="0.45:0.12" data-h="150" data-mark class="over"></div>
+        <div class="figs boxed over" style="--n:3"><div class="fig" style="padding:12px"><div class="lbl">Sharpe</div><div class="v" style="font-size:17px">0.79</div></div><div class="fig" style="padding:12px"><div class="lbl">Max DD</div><div class="v loss" style="font-size:17px">−12.3%</div></div><div class="fig" style="padding:12px"><div class="lbl">Trades</div><div class="v" style="font-size:17px">58</div></div></div>
+        <div class="sp"></div>
+        <div class="m-btn over" style="margin-bottom:8px">Run it on paper next</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ax-opt" data-opt="B" data-name="Rules beside the result"
+    data-note="The strategy's rules stay on the left while the result fills the right with curve, drawdown and monthly returns. Teaches cause and effect and feels like the real product, but it is dense for someone's first minute.">
+    <div data-frame="desktop" data-path="welcome/result">
+      <div class="app fr-b">
+        <div class="ob-top"><span data-logo data-size="34" class="overhang"></span><span class="dim sm">Recession Radar · backtest</span><div class="end"><span class="st ok">Completed in 3.8 s</span><span class="btn round sm">Open in the editor</span><span class="btn pri round sm">Run it on paper next</span></div></div>
+        <div class="body">
+          <div class="rules">
+            <div class="h3">The rules</div>
+            <div class="code" style="font-size:12px;margin-left:-8px"><span class="ln">(<span class="k">strategy</span> <span class="s">"Recession Radar"</span></span><span class="ln">  <span class="kw">:rebalance</span> <span class="kw">:daily</span></span><span class="ln">  (<span class="k">if</span> (<span class="k">&gt;</span> (<span class="k">rsi</span> <span class="n">SPY</span> <span class="n">14</span>) <span class="n">70</span>)</span><span class="ln">    (<span class="k">weight</span> <span class="kw">:equal</span> <span class="n">TLT</span> <span class="n">GLD</span>)</span><span class="ln">    (<span class="k">filter</span> <span class="kw">:top</span> <span class="n">1</span></span><span class="ln">      (<span class="k">momentum</span> <span class="n">90</span>)</span><span class="ln">      <span class="n">XLK</span> <span class="n">SMH</span> <span class="n">IWM</span>)))</span></div>
+            <div class="hr"></div>
+            <div class="lbl">Time in each branch</div>
+            <div data-chart="alloc" data-items="Sector fund:71,TLT and GLD:29"></div>
+            <div class="hr"></div>
+            <div class="callout"><span data-icon="info"></span><div>This is the real result from the backtest engine. It's saved with your strategy.</div></div>
+          </div>
+          <div class="res">
+            <div class="figs boxed" style="--n:5">
+              <div class="fig"><div class="lbl">Total return</div><div class="v gain">+21.4%</div><div class="s">SPY +24.8%</div></div>
+              <div class="fig"><div class="lbl">CAGR</div><div class="v">+10.2%</div><div class="s">SPY +11.7%</div></div>
+              <div class="fig"><div class="lbl">Sharpe</div><div class="v">0.79</div><div class="s">SPY 0.77</div></div>
+              <div class="fig"><div class="lbl">Max drawdown</div><div class="v loss">−12.3%</div><div class="s">SPY −18.8%</div></div>
+              <div class="fig"><div class="lbl">Volatility</div><div class="v">12.9%</div><div class="s">SPY 15.7%</div></div>
+            </div>
+            <div class="panel"><div class="panel-h">Equity<span class="aside"><span class="row gap-6"><i class="dot acc"></i>Strategy</span><span class="row gap-6"><i style="width:14px;border-top:1.5px dashed var(--fg-3)"></i>SPY</span></span></div><div class="panel-b">
+              <div data-chart="area" data-seed="42" data-ret="0.214" data-bench="0.248" data-start="25000" data-axis="xy" data-from="2024-11" data-to="2026-10" data-dip="0.45:0.12" data-h="220" data-mark></div>
+              <div data-chart="drawdown" data-seed="42" data-ret="0.214" data-dip="0.45:0.12" data-h="60" style="margin-top:10px"></div>
+            </div></div>
+            <div class="panel"><div class="panel-h">Monthly returns, %<span class="aside">Year compounds</span></div><div class="panel-b"><div data-chart="heat" data-years="2024-2026" data-upto="10" data-seed="21"></div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Back</span><span>Recession Radar</span><span style="width:50px"></span></div>
+      <div class="m-body">
+        <div class="tabs" style="font-size:14px"><a class="on">Result</a><a>Rules</a><a>Monthly</a></div>
+        <div class="row base"><span class="big gain">+21.4%</span><span class="sp"></span><span class="mono dim" style="font-size:13px">SPY +24.8%</span></div>
+        <div data-chart="area" data-seed="42" data-ret="0.214" data-bench="0.248" data-dip="0.45:0.12" data-h="140" data-mark></div>
+        <div data-chart="drawdown" data-seed="42" data-ret="0.214" data-dip="0.45:0.12" data-h="46" data-axis=""></div>
+        <div class="m-card rows">
+          <div class="m-row"><span class="dim">CAGR</span><span class="sp"></span><span class="mono">+10.2%</span></div>
+          <div class="m-row"><span class="dim">Sharpe</span><span class="sp"></span><span class="mono">0.79</span></div>
+          <div class="m-row"><span class="dim">Max drawdown</span><span class="sp"></span><span class="mono loss">−12.3%</span></div>
+        </div>
+        <div class="m-btn">Run it on paper next</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ax-opt" data-opt="C" data-rec data-name="Plain summary, then the next step"
+    data-note="A two sentence reading of the result, including where it trailed SPY, with the chart below and a short path to paper on the right. Recommended because it is honest by default and makes the next step obvious without making the result look better than it is.">
+    <div data-frame="desktop" data-path="welcome/result">
+      <div class="app fr-c">
+        <div class="ob-top"><span data-logo data-size="34" class="overhang"></span><span class="dim sm">Your first backtest · step 2 of 3</span><div class="end"><span>Skip to Home</span></div></div>
+        <div class="main">
+          <div class="glow"></div>
+          <div class="art" data-art="candles" data-seed="1420" style="height:340px"></div>
+          <div class="wrap">
+            <div>
+              <div class="acx-kick"><span class="a">Backtest complete</span> · Recession Radar · Nov 2024 to Oct 2026</div>
+              <p class="say">Starting with $25,000, Recession Radar would have ended at <b>$30,350</b>, a <b class="gain">+21.4%</b> return. That's <b>less than SPY's +24.8%</b>, but its worst drop was <b>12.3%</b> against SPY's 18.8%.</p>
+              <div class="panel" style="margin-top:22px"><div class="panel-b">
+                <div class="row xs dim" style="gap:16px;margin-bottom:6px"><span class="row gap-6"><i class="dot acc"></i>Recession Radar</span><span class="row gap-6"><i style="width:14px;border-top:1.5px dashed var(--fg-3)"></i>SPY</span><span class="sp"></span><span class="seg mono"><span>1Y</span><span class="on">All</span></span></div>
+                <div data-chart="area" data-seed="42" data-ret="0.214" data-bench="0.248" data-start="25000" data-axis="xy" data-from="2024-11" data-to="2026-10" data-dip="0.45:0.12" data-h="230" data-mark></div>
+              </div>
+              <div class="figs" style="--n:4;border-top:1px solid var(--line)">
+                <div class="fig"><div class="lbl">CAGR</div><div class="v">+10.2%</div></div>
+                <div class="fig"><div class="lbl">Sharpe</div><div class="v">0.79</div></div>
+                <div class="fig"><div class="lbl">Max drawdown</div><div class="v loss">−12.3%</div></div>
+                <div class="fig"><div class="lbl">Trades</div><div class="v">58</div></div>
+              </div></div>
+            </div>
+            <div class="col" style="gap:16px;padding-top:30px">
+              <div class="panel rim next">
+                <div class="panel-h">Next: run it on paper</div>
+                <div class="s"><span class="acx-num done"><span data-icon="check" style="width:12px;height:12px"></span></span><div><div class="b sm">Backtest</div><div class="xs dim">Saved with your strategy</div></div></div>
+                <div class="s"><span class="acx-num on">2</span><div style="flex:1"><div class="b sm">Connect Alpaca paper</div><div class="xs dim" style="margin-top:2px">Simulated money. Takes about a minute.</div><span class="btn pri round block" style="margin-top:12px">Connect Alpaca</span></div></div>
+                <div class="s"><span class="acx-num">3</span><div><div class="b sm muted">Start the session</div><div class="xs dim">Trades daily at 15:50 ET</div></div></div>
+              </div>
+              <div class="xs dim" style="padding:0 4px">Backtests use past prices and assume fills at the close. Real results will differ.</div>
+              <span class="btn ghost round" style="align-self:flex-start">Change the rules first</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Back</span><span>Backtest</span><span style="width:50px"></span></div>
+      <div class="m-body">
+        <div class="acx-kick"><span class="a">Backtest complete</span></div>
+        <div style="font-size:19px;line-height:1.45;letter-spacing:-0.01em;color:var(--fg-2)">$25,000 would have become <b style="color:var(--fg)">$30,350</b>, <b class="gain">+21.4%</b>. Less than SPY's +24.8%, with a smaller worst drop: <b style="color:var(--fg)">12.3%</b> against 18.8%.</div>
+        <div data-chart="area" data-seed="42" data-ret="0.214" data-bench="0.248" data-dip="0.45:0.12" data-h="140" data-mark></div>
+        <div class="m-card rim col" style="gap:8px"><b>Next: run it on paper</b><div class="dim" style="font-size:13.5px">Connect an Alpaca paper account. Simulated money, about a minute.</div><div class="m-btn" style="height:42px;font-size:14.5px;margin-top:4px">Connect Alpaca</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="ax-surface" id="account-connect"
+  data-surface="account/connect-alpaca"
+  data-area="Account"
+  data-title="Connect Alpaca"
+  data-why="Linking the person's own Alpaca account, paper or live. It has to say plainly what LlamaTrade can and can't do with it before anyone leaves for Alpaca's site.">
+
+  <div class="ax-opt" data-opt="A" data-rec data-name="Consent card"
+    data-note="The two marks joined, a paper or live choice, and two short lists of what LlamaTrade will and won't be able to do, then one Continue to Alpaca button. Recommended because it reads like a promise you can check, and pasting keys stays available for people who prefer it.">
+    <div data-frame="desktop" data-path="connect/alpaca">
+      <div class="acx-au cn-a">
+        <div class="glow"></div>
+        <div class="art center" data-art="candles" data-seed="1501" data-base="612.5" style="height:560px"></div>
+        <div class="acx-top"><span data-logo data-size="40" class="overhang"></span><div class="end"><span>Back to Home</span></div></div>
+        <div class="acx-mid">
+          <div class="pair"><span data-logo="mark" data-size="52"></span><span class="ln"></span><span class="acx-alp lg">A</span></div>
+          <div style="text-align:center;margin-top:20px"><div class="h1">Connect your Alpaca account</div><div class="muted" style="margin-top:8px">Orders are placed in your own account. Your money stays at Alpaca.</div></div>
+          <div class="panel rim card">
+            <div class="sec2">
+              <div class="envs">
+                <div class="env on"><b>Paper</b><span class="xs dim">Simulated money. Good for a first session.</span></div>
+                <div class="env"><b>Live</b><span class="xs dim">Real money. Each order passes seven risk checks.</span></div>
+              </div>
+            </div>
+            <div class="sec2">
+              <div class="lbl">LlamaTrade will be able to</div>
+              <div class="can"><span data-icon="check"></span>See balances, positions and order history</div>
+              <div class="can"><span data-icon="check"></span>Place and cancel orders for your sessions</div>
+              <div class="lbl" style="margin-top:6px">LlamaTrade won't be able to</div>
+              <div class="cant"><span data-icon="x"></span>Move money in or out of your account</div>
+              <div class="cant"><span data-icon="x"></span>See your bank details or change Alpaca settings</div>
+            </div>
+            <div class="sec2" style="gap:12px">
+              <span class="btn pri round lg block">Continue to Alpaca<span data-icon="arrow-up-right"></span></span>
+              <div class="row xs dim" style="justify-content:center">You'll sign in on Alpaca's site and come back here.<span class="acx-link">Paste API keys instead</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Back</span><span></span><span></span></div>
+      <div class="m-body">
+        <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-top:4px"><span data-logo="mark" data-size="40"></span><span style="width:40px;border-top:1.5px dashed var(--acc-line)"></span><span class="acx-alp md">A</span></div>
+        <div style="text-align:center"><div class="acx-mtitle" style="font-size:25px">Connect your Alpaca account</div><div class="acx-msub" style="margin-top:6px;font-size:14px">Your money stays at Alpaca.</div></div>
+        <div class="seg round acx-mseg"><span class="on">Paper</span><span>Live</span></div>
+        <div class="m-card col" style="gap:9px;font-size:14px">
+          <div class="lbl">LlamaTrade will be able to</div>
+          <div class="row top" style="gap:8px"><span data-icon="check" class="acc"></span>See balances, positions and orders</div>
+          <div class="row top" style="gap:8px"><span data-icon="check" class="acc"></span>Place and cancel orders for sessions</div>
+          <div class="lbl" style="margin-top:4px">It won't be able to</div>
+          <div class="row top muted" style="gap:8px"><span data-icon="x"></span>Move money in or out</div>
+        </div>
+        <div class="sp"></div>
+        <div class="m-btn">Continue to Alpaca</div>
+        <div class="dim" style="text-align:center;font-size:13.5px;padding-bottom:8px">or <span class="acx-link">paste API keys</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ax-opt" data-opt="B" data-name="Keys with live checks"
+    data-note="For people who paste API keys: the form on the left, and on the right each check turns over as Alpaca answers, ending in the account it found. Very transparent, but it starts from keys, which is the harder path for most people.">
+    <div data-frame="desktop" data-path="settings/broker/connect">
+      <div class="acx-shell cn-b" data-side="none">
+        <div class="page narrow" style="max-width:1100px">
+          <div class="page-head"><div><div class="acx-kick">Broker</div><div class="h1" style="margin-top:6px">Connect with API keys</div><div class="sub">Create a key pair in Alpaca's dashboard under API keys, then paste both here.</div></div><div class="act"><span class="btn round"><span class="acx-alp">A</span>Sign in with Alpaca instead</span></div></div>
+          <div class="body">
+            <div><div class="panel"><div class="panel-b col" style="gap:18px;padding:24px">
+              <div class="field"><label>Account type</label><div class="seg" style="align-self:flex-start"><span class="on">Paper</span><span>Live</span></div></div>
+              <div class="field"><label>API key ID</label><div class="input acx-in"><span class="mono">PKTX7Y3M9QW2HD4F2Q</span></div></div>
+              <div class="field"><label>Secret key</label><div class="input acx-in"><span class="acx-pwd">••••••••••••••••••••••••••••</span><span class="sp"></span><span data-icon="eye" class="dim"></span></div><div class="help">Stored encrypted. Only the last four characters are shown again.</div></div>
+              <div class="callout"><span data-icon="shield"></span><div>Keys from Alpaca can trade but can't withdraw money. You can remove them here or revoke them at Alpaca at any time.</div></div>
+              <div class="row"><span class="btn pri round lg">Save and connect</span><span class="btn ghost round lg">Cancel</span></div>
+            </div></div>
+            <div class="panel flat" style="margin-top:16px"><div class="panel-h">Where to find your keys</div><div class="panel-b col sm muted" style="gap:10px">
+              <div class="row top"><span class="acx-num" style="width:20px;height:20px;font-size:10px">1</span><span>Sign in at Alpaca and switch to the paper or live account you want to use.</span></div>
+              <div class="row top"><span class="acx-num" style="width:20px;height:20px;font-size:10px">2</span><span>Open API keys on the dashboard and choose Generate new keys.</span></div>
+              <div class="row top"><span class="acx-num" style="width:20px;height:20px;font-size:10px">3</span><span>Copy both values now. Alpaca shows the secret only once.</span></div>
+            </div></div></div>
+            <div class="col" style="gap:16px">
+              <div class="panel rim"><div class="panel-h">Checking with Alpaca<span class="aside"><span class="st run">Done in 1.2 s</span></span></div><div class="panel-b col" style="gap:14px">
+                <div class="acx-ck"><span class="b0"><span data-icon="check"></span></span>Keys stored and active<span class="d">10:41:08</span></div>
+                <div class="acx-ck"><span class="b0"><span data-icon="check"></span></span>Credentials accepted by Alpaca<span class="d">10:41:09</span></div>
+                <div class="acx-ck"><span class="b0"><span data-icon="check"></span></span>Account is paper<span class="d">matches</span></div>
+                <div class="acx-ck"><span class="b0"><span data-icon="check"></span></span>Market data<span class="d">IEX feed</span></div>
+              </div></div>
+              <div class="panel"><div class="panel-h">Account found<span class="aside"><span class="pill paper">Paper</span></span></div><div class="panel-b" style="padding-top:4px;padding-bottom:4px"><div class="acx-kv">
+                <span>Account</span><span class="mono">PA3XK7Q2M1ZB</span>
+                <span>Equity</span><span class="mono">$100,000.00</span>
+                <span>Buying power</span><span class="mono">$200,000.00</span>
+                <span>Status</span><span>Active</span>
+              </div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Broker</span><span>API keys</span><span style="width:60px"></span></div>
+      <div class="m-body">
+        <div class="seg round acx-mseg"><span class="on">Paper</span><span>Live</span></div>
+        <div class="field"><label>API key ID</label><div class="input acx-in"><span class="mono" style="font-size:13px">PKTX7Y3M9QW2HD4F2Q</span></div></div>
+        <div class="field"><label>Secret key</label><div class="input acx-in"><span class="acx-pwd">••••••••••••••••••</span></div></div>
+        <div class="m-card col" style="gap:12px">
+          <div class="acx-ck"><span class="b0"><span data-icon="check"></span></span>Keys stored and active</div>
+          <div class="acx-ck"><span class="b0"><span data-icon="check"></span></span>Accepted by Alpaca</div>
+          <div class="acx-ck"><span class="b0"><span data-icon="check"></span></span>Account is paper<span class="d">PA3X…M1ZB</span></div>
+        </div>
+        <div class="sp"></div>
+        <div class="m-btn" style="margin-bottom:8px">Save and connect</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ax-opt" data-opt="C" data-name="Paper and live, side by side"
+    data-note="Both accounts as equal cards: paper already connected with its figures, live waiting with a plain account of what changes. Makes going live a visible, deliberate step, though it's a status page more than a connect flow.">
+    <div data-frame="desktop" data-path="connect">
+      <div class="acx-shell cn-c" data-side="none">
+        <div class="page narrow" style="max-width:1080px">
+          <div class="page-head"><div><div class="h1">Alpaca accounts</div><div class="sub">Connect paper, live or both. Each session chooses which account it trades in.</div></div></div>
+          <div class="accts">
+            <div class="panel acct">
+              <div class="row"><span class="acx-alp md">A</span><div><div class="h3">Paper account</div><div class="xs dim mono">PA3XK7Q2M1ZB</div></div><span class="sp"></span><span class="pill paper">Paper</span></div>
+              <div><div class="lbl">Equity</div><div class="big" style="margin-top:4px">$80,195.57</div><div class="mono sm gain" style="margin-top:4px">+$418.96 today</div></div>
+              <div data-chart="area" data-seed="61" data-ret="0.041" data-vol="0.005" data-h="90"></div>
+              <div class="acx-kv"><span>Sessions</span><span>1 running · 1 frozen · 1 stopped</span><span>Connected</span><span>Sep 3, 2026</span></div>
+              <div class="row"><span class="btn round sm">Manage keys</span><span class="sp"></span><span class="st ok">Checks passed</span></div>
+            </div>
+            <div class="panel rim acct">
+              <div class="row"><span class="acx-alp md" style="background:var(--sunk);color:var(--fg-2)">A</span><div><div class="h3">Live account</div><div class="xs dim">Not connected</div></div><span class="sp"></span><span class="pill live">Live</span></div>
+              <div class="muted" style="font-size:14px;line-height:1.55">Live sessions place real orders with your money at Alpaca. Here's what changes:</div>
+              <div class="col" style="gap:12px">
+                <div class="acx-ck"><span class="b0"><span data-icon="shield"></span></span>Every order passes seven risk checks first</div>
+                <div class="acx-ck"><span class="b0"><span data-icon="ledger"></span></span>Each strategy gets its own sleeve in the ledger</div>
+                <div class="acx-ck"><span class="b0"><span data-icon="refresh"></span></span>Positions are checked against Alpaca, and a sleeve pauses if they differ</div>
+                <div class="acx-ck"><span class="b0"><span data-icon="check2"></span></span>You confirm before each session starts</div>
+              </div>
+              <div class="sp"></div>
+              <span class="btn pri round lg block">Connect live account</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-head"><div class="t" style="font-size:26px">Alpaca accounts</div><div class="s">Each session picks one</div></div>
+      <div class="m-body">
+        <div class="m-card col" style="gap:8px"><div class="row"><b>Paper</b><span class="mono dim" style="font-size:12px">PA3X…M1ZB</span><span class="sp"></span><span class="st ok">Connected</span></div><div class="row base"><span class="mono" style="font-size:22px;font-weight:600">$80,195.57</span><span class="sp"></span><span class="mono gain" style="font-size:13px">+$418.96</span></div></div>
+        <div class="m-card rim col" style="gap:10px"><b>Live</b><div class="dim" style="font-size:13.5px">Real orders with your money. Every order passes seven risk checks, and you confirm each session.</div><div class="m-btn" style="height:42px;font-size:14.5px">Connect live account</div></div>
+      </div>
+      <nav data-tabs="account"></nav>
+    </div>
+  </div>
+
+  <div class="ax-opt" data-opt="D" data-name="Inside the run flow"
+    data-note="No connect page at all: when you start a paper session without a broker, a side drawer walks through connecting and returns you to the strategy. Asks at the moment it matters, but people can't easily find it again later.">
+    <div data-frame="desktop" data-path="strategies/recession-radar">
+      <div class="acx-shell cn-d" data-side="none" data-nav="strategies">
+        <div class="page">
+          <div class="page-head"><div><div class="acx-kick">Strategy · version 3</div><div class="h1" style="margin-top:6px">Recession Radar</div></div><div class="act"><span class="btn round">Backtest</span><span class="btn pri round">Run on paper</span></div></div>
+          <div class="figs boxed" style="--n:4"><div class="fig"><div class="lbl">Total return</div><div class="v gain">+21.4%</div></div><div class="fig"><div class="lbl">CAGR</div><div class="v">+10.2%</div></div><div class="fig"><div class="lbl">Sharpe</div><div class="v">0.79</div></div><div class="fig"><div class="lbl">Max drawdown</div><div class="v loss">−12.3%</div></div></div>
+          <div class="panel" style="margin-top:16px"><div class="panel-b"><div data-chart="area" data-seed="42" data-ret="0.214" data-bench="0.248" data-start="25000" data-axis="xy" data-from="2024-11" data-to="2026-10" data-dip="0.45:0.12" data-h="300"></div></div></div>
+        </div>
+        <div class="scrim"></div>
+        <div class="drawer cn-d-drawer">
+          <div class="dh2"><div class="row"><div class="h2">Run Recession Radar on paper</div><span class="sp"></span><span class="btn icon ghost sm" data-icon="x"></span></div><div class="dim sm" style="margin-top:4px">One thing first: a paper account to trade in.</div></div>
+          <div class="db2">
+            <div class="step"><span class="acx-num on">1</span><div style="flex:1"><div class="b">Connect Alpaca paper</div><div class="sm dim" style="margin-top:3px">You'll sign in at Alpaca and come straight back here. LlamaTrade can place orders but can't move money.</div><span class="btn pri round" style="margin-top:12px"><span class="acx-alp" style="background:var(--ink-text);color:var(--ink)">A</span>Continue to Alpaca</span><div class="xs dim" style="margin-top:10px">No Alpaca account yet? Paper accounts are free. <span class="acx-link">Open one at Alpaca</span></div></div></div>
+            <div class="hr"></div>
+            <div class="step"><span class="acx-num">2</span><div style="flex:1"><div class="b muted">Choose how much to allocate</div><div class="sm dim" style="margin-top:3px">The session gets its own sleeve, for example $25,000 of the $100,000 paper cash.</div></div></div>
+            <div class="hr"></div>
+            <div class="step"><span class="acx-num">3</span><div style="flex:1"><div class="b muted">Review and start</div><div class="sm dim" style="margin-top:3px">Trades daily at 15:50 ET. Every order passes seven risk checks.</div></div></div>
+          </div>
+          <div class="df2"><span class="btn ghost round">Cancel</span><span class="btn round off">Start session</span></div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Strategies</span><span>Recession Radar</span><span style="width:60px"></span></div>
+      <div class="m-body">
+        <div class="row base"><span class="big gain">+21.4%</span><span class="sp"></span><span class="mono dim" style="font-size:13px">2 yr backtest</span></div>
+        <div data-chart="area" data-seed="42" data-ret="0.214" data-bench="0.248" data-dip="0.45:0.12" data-h="140"></div>
+        <div class="scrim"></div>
+        <div class="sheet" style="display:flex;flex-direction:column;gap:14px">
+          <div class="h2">Run on paper</div>
+          <div class="row top" style="gap:12px"><span class="acx-num on">1</span><div><b style="font-size:15px">Connect Alpaca paper</b><div class="dim" style="font-size:13.5px;margin-top:2px">Sign in at Alpaca and come back. LlamaTrade can't move money.</div></div></div>
+          <div class="row" style="gap:12px"><span class="acx-num">2</span><span class="muted" style="font-size:15px">Allocate and start</span></div>
+          <div class="m-btn"><span class="acx-alp" style="background:var(--ink-text);color:var(--ink)">A</span>Continue to Alpaca</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="ax-surface" id="settings-shell"
+  data-surface="settings/shell"
+  data-area="Settings"
+  data-title="Settings and the broker page"
+  data-why="How settings are organised (profile, broker, notifications, appearance, plan), shown on the section that matters most: whether both Alpaca accounts are connected and healthy.">
+
+  <div class="ax-opt" data-opt="A" data-rec data-name="Sidebar sections"
+    data-note="A quiet sidebar with three groups, and the broker page as two account rows with their checks and keys. Recommended because five sections fit a sidebar comfortably, it matches today's routes, and the frozen sleeve is visible where the broker is.">
+    <div data-frame="desktop" data-path="settings/broker">
+      <div class="acx-shell st-a" data-side="broker">
+        <div class="content">
+          <div><div class="h1">Broker</div><div class="dim" style="margin-top:4px">Your Alpaca accounts. Sessions choose one when they start.</div></div>
+          <div class="callout risk"><span data-icon="frozen"></span><div><b>Momentum Sectors is frozen.</b> Alpaca shows 12 more SMH shares than the ledger. Orders for that sleeve wait until you review it.</div><span class="sp"></span><span class="btn sm">Review</span></div>
+          <div class="panel">
+            <div class="panel-h"><span class="acx-alp">A</span>Paper account<span class="pill paper">Paper</span><span class="aside"><span class="st ok">Connected</span></span></div>
+            <div class="panel-b g2" style="grid-template-columns:minmax(0,1fr) 300px;gap:32px">
+              <div class="acx-kv"><span>Account</span><span class="mono">PA3XK7Q2M1ZB</span><span>Key</span><span class="mono">PKTX ···· 4F2Q</span><span>Market data</span><span>IEX feed</span><span>Connected on</span><span>Sep 3, 2026</span><span>Sessions running</span><span>1 running · 1 frozen</span></div>
+              <div class="col" style="gap:12px;padding-top:8px"><div class="lbl">Checks</div>
+                <div class="acx-ck"><span class="b0"><span data-icon="check"></span></span>Keys stored and active</div>
+                <div class="acx-ck"><span class="b0"><span data-icon="check"></span></span>Credentials accepted by Alpaca</div>
+                <div class="acx-ck"><span class="b0"><span data-icon="check"></span></span>Account is paper</div>
+                <div class="acx-ck warn"><span class="b0"><span data-icon="alert"></span></span>Ledger matches Alpaca<span class="d">1 sleeve</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="panel-h"><span class="acx-alp">A</span>Live account<span class="pill live">Live</span><span class="aside"><span class="st ok">Connected</span></span></div>
+            <div class="panel-b g2" style="grid-template-columns:minmax(0,1fr) 300px;gap:32px">
+              <div class="acx-kv"><span>Account</span><span class="mono">6KX19302</span><span>Key</span><span class="mono">AKLM ···· 9Z1R</span><span>Connected on</span><span>Oct 14, 2026</span><span>Sessions running</span><span>1 running</span></div>
+              <div class="col" style="gap:12px;padding-top:8px"><div class="lbl">Checks</div>
+                <div class="acx-ck"><span class="b0"><span data-icon="check"></span></span>Keys stored and active</div>
+                <div class="acx-ck"><span class="b0"><span data-icon="check"></span></span>Credentials accepted by Alpaca</div>
+                <div class="acx-ck"><span class="b0"><span data-icon="check"></span></span>Ledger matches Alpaca<span class="d">10:40 ET</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="row"><span class="btn round">Replace keys</span><span class="btn ghost round">Disconnect an account</span></div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Settings list">
+      <div class="m-head"><div class="t">Account</div></div>
+      <div class="m-body">
+        <div class="m-card row" style="gap:12px"><span class="avatar" style="width:44px;height:44px;font-size:14px">SR</span><div style="flex:1"><b>Sam Rivera</b><div class="dim" style="font-size:13px">sam.rivera@fastmail.com</div></div><span data-icon="chevron-right" class="dim"></span></div>
+        <div class="m-card rows">
+          <div class="m-row"><span data-icon="link" class="dim"></span><span style="flex:1">Broker</span><span class="st frozen" style="font-size:12.5px">1 frozen</span><span data-icon="chevron-right" class="dim"></span></div>
+          <div class="m-row"><span data-icon="bell" class="dim"></span><span style="flex:1">Notifications</span><span data-icon="chevron-right" class="dim"></span></div>
+          <div class="m-row"><span data-icon="sun" class="dim"></span><span style="flex:1">Appearance</span><span class="d">Dark</span><span data-icon="chevron-right" class="dim"></span></div>
+          <div class="m-row"><span data-icon="card" class="dim"></span><span style="flex:1">Plan and usage</span><span class="d">Pro</span><span data-icon="chevron-right" class="dim"></span></div>
+        </div>
+        <div class="m-card rows"><div class="m-row"><span class="dim" style="flex:1">Sign out</span></div></div>
+      </div>
+      <nav data-tabs="account"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Broker">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Account</span><span>Broker</span><span style="width:70px"></span></div>
+      <div class="m-body">
+        <div class="callout risk" style="font-size:13.5px"><span data-icon="frozen"></span><div><b>Momentum Sectors is frozen.</b> Review the SMH difference.</div></div>
+        <div class="m-card col" style="gap:10px"><div class="row"><b>Paper</b><span class="mono dim" style="font-size:12px">PA3XK7Q2M1ZB</span><span class="sp"></span><span class="st ok">Connected</span></div><div class="acx-ck"><span class="b0"><span data-icon="check"></span></span>Keys and credentials</div><div class="acx-ck warn"><span class="b0"><span data-icon="alert"></span></span>Ledger matches Alpaca<span class="d">1 sleeve</span></div></div>
+        <div class="m-card col" style="gap:10px"><div class="row"><b>Live</b><span class="mono dim" style="font-size:12px">6KX19302</span><span class="sp"></span><span class="st ok">Connected</span></div><div class="acx-ck"><span class="b0"><span data-icon="check"></span></span>Keys and credentials</div><div class="acx-ck"><span class="b0"><span data-icon="check"></span></span>Ledger matches Alpaca</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ax-opt" data-opt="B" data-name="Overview hub"
+    data-note="Settings opens on a grid of section cards, each with its current state, so you can see everything is in order at a glance. Good for checking, slower for changing one thing, since every edit is a click deeper.">
+    <div data-frame="desktop" data-path="settings">
+      <div class="acx-shell st-b" data-side="none">
+        <div class="glow" style="height:380px"></div>
+        <div class="page narrow over" style="max-width:1160px">
+          <div class="page-head"><div class="row" style="gap:16px"><span class="avatar" style="width:52px;height:52px;font-size:16px">SR</span><div><div class="h1">Sam Rivera</div><div class="sub">sam.rivera@fastmail.com · workspace Rivera · member since Sep 2026</div></div></div><div class="act"><span class="btn round">Sign out</span></div></div>
+          <div class="hub">
+            <div class="panel rim hc"><div class="hh"><span class="ic0"><span data-icon="link"></span></span><b>Broker</b><span class="sp"></span><span class="st frozen">1 frozen sleeve</span></div>
+              <div class="col" style="gap:8px;font-size:13px"><div class="row"><span class="pill paper">Paper</span><span class="mono dim">PA3XK7Q2M1ZB</span><span class="sp"></span><span class="mono">$80,195.57</span></div><div class="row"><span class="pill live">Live</span><span class="mono dim">6KX19302</span><span class="sp"></span><span class="mono">$48,210.55</span></div></div>
+              <div class="ft">Last checked against Alpaca at 10:40 ET<span class="sp"></span><span class="acx-link">Open</span></div></div>
+            <div class="panel hc"><div class="hh"><span class="ic0"><span data-icon="account"></span></span><b>Profile and security</b></div>
+              <div class="col" style="gap:6px;font-size:13px"><div class="row"><span class="dim">Password</span><span class="sp"></span><span>Changed Sep 3</span></div><div class="row"><span class="dim">Two-factor sign-in</span><span class="sp"></span><span class="dim">Coming later</span></div></div>
+              <div class="ft">Name and email<span class="sp"></span><span class="acx-link">Open</span></div></div>
+            <div class="panel hc"><div class="hh"><span class="ic0"><span data-icon="card"></span></span><b>Plan and usage</b><span class="sp"></span><span class="pill acc soft">Pro · beta</span></div>
+              <div class="col" style="gap:8px;font-size:12.5px"><div class="row"><span class="dim" style="width:110px">Backtests</span><div class="meter" style="flex:1"><i style="width:42%"></i></div><span class="mono" style="width:64px;text-align:right">212/500</span></div><div class="row"><span class="dim" style="width:110px">Live sessions</span><div class="meter" style="flex:1"><i style="width:33%"></i></div><span class="mono" style="width:64px;text-align:right">1/3</span></div></div>
+              <div class="ft">No charge during the closed beta<span class="sp"></span><span class="acx-link">Open</span></div></div>
+            <div class="panel hc"><div class="hh"><span class="ic0"><span data-icon="bell"></span></span><b>Notifications</b></div>
+              <div class="sm muted">In the app for everything. Email for frozen sleeves, rejected orders, failed sessions and 4 more.</div>
+              <div class="ft">1 webhook · 2 price alerts<span class="sp"></span><span class="acx-link">Open</span></div></div>
+            <div class="panel hc"><div class="hh"><span class="ic0"><span data-icon="sun"></span></span><b>Appearance</b></div>
+              <div class="row" style="gap:8px"><span class="acx-sw" style="--c:#0f1316"></span><span class="acx-sw" style="--c:#475f8a"></span><span class="sm muted">Dark · Slate · Slate blue</span></div>
+              <div class="ft">Saved on this device<span class="sp"></span><span class="acx-link">Open</span></div></div>
+            <div class="panel hc"><div class="hh"><span class="ic0"><span data-icon="shield"></span></span><b>Risk limits</b></div>
+              <div class="sm muted">Seven checks on every order. Default limits: $5,000 an order, $10,000 a position, $1,000 daily loss.</div>
+              <div class="ft">Read only for now<span class="sp"></span><span class="acx-link">View</span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-head"><div class="row" style="gap:12px"><span class="avatar" style="width:44px;height:44px;font-size:14px">SR</span><div><div class="t" style="font-size:22px">Sam Rivera</div><div class="s" style="margin-top:2px">Rivera · Pro beta</div></div></div></div>
+      <div class="m-body">
+        <div class="m-card rim col" style="gap:8px"><div class="row"><b>Broker</b><span class="sp"></span><span class="st frozen">1 frozen</span></div><div class="row" style="font-size:13.5px"><span class="pill paper">Paper</span><span class="sp"></span><span class="mono">$80,195.57</span></div><div class="row" style="font-size:13.5px"><span class="pill live">Live</span><span class="sp"></span><span class="mono">$48,210.55</span></div></div>
+        <div class="g2" style="gap:12px">
+          <div class="m-card col" style="gap:4px"><b style="font-size:14px">Plan</b><span class="dim" style="font-size:12.5px">Pro · 212 of 500 backtests</span></div>
+          <div class="m-card col" style="gap:4px"><b style="font-size:14px">Alerts</b><span class="dim" style="font-size:12.5px">Email for 7 kinds</span></div>
+          <div class="m-card col" style="gap:4px"><b style="font-size:14px">Appearance</b><span class="dim" style="font-size:12.5px">Dark · Slate</span></div>
+          <div class="m-card col" style="gap:4px"><b style="font-size:14px">Security</b><span class="dim" style="font-size:12.5px">Password set</span></div>
+        </div>
+      </div>
+      <nav data-tabs="account"></nav>
+    </div>
+  </div>
+
+  <div class="ax-opt" data-opt="C" data-name="One page with an index"
+    data-note="Every section on one long, centred page with a small index that tracks your place. Easy to scan and search with the browser, but the broker's health competes with profile fields for attention.">
+    <div data-frame="desktop" data-path="settings#broker">
+      <div class="acx-shell st-c" data-side="none">
+        <div class="wrap">
+          <div>
+            <div class="h1" style="margin-bottom:22px">Settings</div>
+            <div class="blk"><div><div class="h3">Profile</div><div class="sm dim" style="margin-top:4px">Read only for now.</div></div>
+              <div class="acx-kv"><span>Name</span><span>Sam Rivera</span><span>Email</span><span>sam.rivera@fastmail.com</span><span>Role</span><span>Owner</span><span>Member since</span><span>Sep 3, 2026</span></div></div>
+            <div class="blk"><div><div class="h3">Broker</div><div class="sm dim" style="margin-top:4px">Sessions choose an account when they start.</div></div>
+              <div class="col" style="gap:12px">
+                <div class="panel"><div class="panel-b row" style="gap:14px"><span class="pill paper">Paper</span><span class="mono">PA3XK7Q2M1ZB</span><span class="sp"></span><span class="st frozen">1 sleeve frozen</span><span class="btn sm round">Review</span></div></div>
+                <div class="panel"><div class="panel-b row" style="gap:14px"><span class="pill live">Live</span><span class="mono">6KX19302</span><span class="sp"></span><span class="st ok">All checks passed</span><span class="btn sm round">Keys</span></div></div>
+              </div></div>
+            <div class="blk"><div><div class="h3">Notifications</div><div class="sm dim" style="margin-top:4px">Critical notices always email.</div></div>
+              <div class="col" style="gap:12px;font-size:13px"><div class="row"><span style="flex:1">Email me about money and failures</span><span class="toggle on"></span></div><div class="row"><span style="flex:1">Email me about every fill</span><span class="toggle"></span></div><div class="row"><span style="flex:1">Send to a webhook</span><span class="dim mono xs">hooks.rivera.dev</span><span class="toggle on"></span></div></div></div>
+            <div class="blk"><div><div class="h3">Appearance</div></div>
+              <div class="row"><div class="seg"><span>System</span><span>Light</span><span class="on">Dark</span></div><span class="sp"></span><span class="acx-sw on" style="--c:#475f8a;width:20px;height:20px"></span><span class="acx-sw" style="--c:#dbe3f0;width:20px;height:20px"></span><span class="acx-sw" style="--c:#2dd4bf;width:20px;height:20px"></span><span class="acx-sw" style="--c:#a78bfa;width:20px;height:20px"></span></div></div>
+          </div>
+          <nav class="idx"><div class="lbl" style="padding:0 12px 8px">On this page</div><a>Profile</a><a class="on">Broker</a><a>Notifications</a><a>Appearance</a><a>Plan and usage</a><a>Billing</a></nav>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-head"><div class="t">Settings</div></div>
+      <div class="m-body">
+        <div class="lbl">Broker</div>
+        <div class="m-card rows"><div class="m-row"><span class="pill paper">Paper</span><span class="mono" style="font-size:13px">PA3X…M1ZB</span><span class="sp"></span><span class="st frozen">Frozen</span></div><div class="m-row"><span class="pill live">Live</span><span class="mono" style="font-size:13px">6KX19302</span><span class="sp"></span><span class="st ok">OK</span></div></div>
+        <div class="lbl">Notifications</div>
+        <div class="m-card rows"><div class="m-row"><span style="flex:1">Money and failures by email</span><span class="toggle on"></span></div><div class="m-row"><span style="flex:1">Every fill by email</span><span class="toggle"></span></div></div>
+        <div class="lbl">Appearance</div>
+        <div class="seg round acx-mseg"><span>System</span><span>Light</span><span class="on">Dark</span></div>
+      </div>
+      <nav data-tabs="account"></nav>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================================ 7. Notifications -->
+<section class="ax-surface" id="settings-notifications"
+  data-surface="settings/notifications"
+  data-area="Settings"
+  data-title="Notifications"
+  data-why="Choosing what reaches you outside the app: which events email you or call a webhook, plus price alerts. Critical notices about money always email.">
+
+  <div class="ax-opt" data-opt="A" data-rec data-name="Grid by channel"
+    data-note="Events grouped as Money and Trading down the side, In app, Email and Webhook across the top, with locked cells where email is always on. Recommended because it is exact and matches the real preference model, and webhooks and price alerts sit beside it rather than on another page.">
+    <div data-frame="desktop" data-path="settings/notifications">
+      <div class="acx-shell nt-a" data-side="notifications">
+        <div class="page" style="padding-top:28px">
+          <div class="page-head" style="margin-bottom:18px"><div><div class="h1">Notifications</div><div class="sub">Everything appears in the app. Choose what also reaches you by email or webhook.</div></div></div>
+          <div class="grid2">
+            <div class="panel">
+              <table class="tbl compact">
+                <tr><th>Event</th><th class="c">In app</th><th class="c">Email</th><th class="c">Webhook</th></tr>
+                <tr class="grp"><td colspan="4">Money</td></tr>
+                <tr><td>Sleeve frozen <span class="dim xs">· always emails</span></td><td class="c"><i class="cell lock"></i></td><td class="c"><i class="cell lock"></i></td><td class="c"><i class="cell on"></i></td></tr>
+                <tr><td>Fill quarantined</td><td class="c"><i class="cell lock"></i></td><td class="c"><i class="cell lock"></i></td><td class="c"><i class="cell on"></i></td></tr>
+                <tr><td>External trade detected</td><td class="c"><i class="cell lock"></i></td><td class="c"><i class="cell on"></i></td><td class="c"><i class="cell"></i></td></tr>
+                <tr><td>Corporate action pending</td><td class="c"><i class="cell lock"></i></td><td class="c"><i class="cell on"></i></td><td class="c"><i class="cell"></i></td></tr>
+                <tr class="grp"><td colspan="4">Trading</td></tr>
+                <tr><td>Order rejected</td><td class="c"><i class="cell lock"></i></td><td class="c"><i class="cell on"></i></td><td class="c"><i class="cell on"></i></td></tr>
+                <tr><td>Risk gate block</td><td class="c"><i class="cell lock"></i></td><td class="c"><i class="cell on"></i></td><td class="c"><i class="cell"></i></td></tr>
+                <tr><td>Session failed</td><td class="c"><i class="cell lock"></i></td><td class="c"><i class="cell on"></i></td><td class="c"><i class="cell on"></i></td></tr>
+                <tr><td>Connection lost</td><td class="c"><i class="cell lock"></i></td><td class="c"><i class="cell on"></i></td><td class="c"><i class="cell"></i></td></tr>
+                <tr><td>Order filled</td><td class="c"><i class="cell lock"></i></td><td class="c"><i class="cell"></i></td><td class="c"><i class="cell on"></i></td></tr>
+                <tr><td>Session started or stopped</td><td class="c"><i class="cell lock"></i></td><td class="c"><i class="cell"></i></td><td class="c"><i class="cell"></i></td></tr>
+                <tr><td>Position drift</td><td class="c"><i class="cell lock"></i></td><td class="c"><i class="cell"></i></td><td class="c"><i class="cell"></i></td></tr>
+              </table>
+            </div>
+            <div class="col" style="gap:16px">
+              <div class="panel"><div class="panel-h">Webhooks<span class="aside"><span class="btn sm round"><span data-icon="plus"></span>Add</span></span></div><div class="panel-b col" style="gap:8px">
+                <div class="row"><b class="sm">Rivera alerts</b><span class="sp"></span><span class="st run">Active</span></div>
+                <div class="mono xs dim">https://hooks.rivera.dev/llamatrade</div>
+                <div class="row xs dim">Last delivered 10:31 ET<span class="sp"></span><span class="acx-link">Copy secret</span></div>
+              </div></div>
+              <div class="panel"><div class="panel-h">Price alerts<span class="aside"><span class="btn sm round"><span data-icon="plus"></span>Add</span></span></div><div class="panel-b tight list">
+                <div class="li"><div style="flex:1"><div class="t sm">TLT under 88</div><div class="d mono">Price below 88.00</div></div><span class="st run">Active</span></div>
+                <div class="li"><div style="flex:1"><div class="t sm">SPY new high</div><div class="d mono">Price above 690.00</div></div><span class="st pause">Paused</span></div>
+              </div></div>
+              <div class="xs dim" style="padding:0 4px">Email goes to sam.rivera@fastmail.com. Change it in Profile.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Account</span><span>Notifications</span><span style="width:70px"></span></div>
+      <div class="m-body">
+        <div class="seg round acx-mseg"><span class="on">Email</span><span>Webhook</span><span>Alerts</span></div>
+        <div class="lbl">Money</div>
+        <div class="m-card rows">
+          <div class="m-row"><span style="flex:1">Sleeve frozen</span><span class="d">Always</span></div>
+          <div class="m-row"><span style="flex:1">Fill quarantined</span><span class="d">Always</span></div>
+          <div class="m-row"><span style="flex:1">External trade detected</span><span class="toggle on"></span></div>
+        </div>
+        <div class="lbl">Trading</div>
+        <div class="m-card rows">
+          <div class="m-row"><span style="flex:1">Order rejected</span><span class="toggle on"></span></div>
+          <div class="m-row"><span style="flex:1">Session failed</span><span class="toggle on"></span></div>
+          <div class="m-row"><span style="flex:1">Order filled</span><span class="toggle"></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ax-opt" data-opt="B" data-name="Three presets"
+    data-note="Start from a preset that describes a habit (only what needs me, trades and problems, everything) and fine-tune below if you want. Quick for most people, but the exact per-event choices are hidden one level down.">
+    <div data-frame="desktop" data-path="settings/notifications">
+      <div class="acx-shell nt-b" data-side="notifications">
+        <div class="page" style="max-width:1100px">
+          <div class="page-head"><div><div class="h1">How much should reach you?</div><div class="sub">Everything always appears in the app. This sets what also goes to your email.</div></div></div>
+          <div class="presets">
+            <div class="panel pr on rim"><div class="row"><b>Only what needs me</b><span class="sp"></span><span class="check on"></span></div><div class="sm dim">Money problems and failures. About 1 email a week at your current activity.</div><ul><li><span data-icon="check"></span>Sleeve frozen, fill quarantined</li><li><span data-icon="check"></span>Order rejected, risk gate block</li><li><span data-icon="check"></span>Session failed, connection lost</li><li class="off"><span data-icon="x"></span>Fills and session changes</li></ul></div>
+            <div class="panel pr"><div class="row"><b>Trades and problems</b><span class="sp"></span><span class="check"></span></div><div class="sm dim">Adds each fill and session start or stop. About 9 emails a day.</div><ul><li><span data-icon="check"></span>Everything in the first</li><li><span data-icon="check"></span>Order filled</li><li><span data-icon="check"></span>Session started, stopped</li><li class="off"><span data-icon="x"></span>Drift and corporate actions</li></ul></div>
+            <div class="panel pr"><div class="row"><b>Everything</b><span class="sp"></span><span class="check"></span></div><div class="sm dim">Every event we record, as it happens. Best sent to a webhook.</div><ul><li><span data-icon="check"></span>All 21 kinds of event</li><li><span data-icon="check"></span>Includes position drift</li><li><span data-icon="check"></span>Includes corporate actions</li><li><span data-icon="check"></span>Includes strategy deployed</li></ul></div>
+          </div>
+          <div class="panel" style="margin-top:20px"><div class="panel-h"><span data-icon="sliders"></span>Fine-tune events<span class="aside">7 of 21 email you<span data-icon="chevron-down"></span></span></div></div>
+          <div class="g2" style="margin-top:16px">
+            <div class="panel"><div class="panel-b row"><span data-icon="link" class="dim"></span><div style="flex:1"><b class="sm">Webhook</b><div class="xs dim mono">hooks.rivera.dev/llamatrade</div></div><span class="toggle on"></span></div></div>
+            <div class="panel"><div class="panel-b row"><span data-icon="bell" class="dim"></span><div style="flex:1"><b class="sm">Price alerts</b><div class="xs dim">TLT under 88 · 1 paused</div></div><span class="btn sm round">Manage</span></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Account</span><span>Notifications</span><span style="width:70px"></span></div>
+      <div class="m-body">
+        <div class="acx-mtitle" style="font-size:24px">How much should reach you?</div>
+        <div class="m-card rim col" style="gap:4px;border-color:var(--acc)"><div class="row"><b>Only what needs me</b><span class="sp"></span><span class="check on"></span></div><span class="dim" style="font-size:13px">Money problems and failures</span></div>
+        <div class="m-card col" style="gap:4px"><div class="row"><b>Trades and problems</b><span class="sp"></span><span class="check"></span></div><span class="dim" style="font-size:13px">Adds fills and session changes</span></div>
+        <div class="m-card col" style="gap:4px"><div class="row"><b>Everything</b><span class="sp"></span><span class="check"></span></div><span class="dim" style="font-size:13px">Every event, best for a webhook</span></div>
+        <div class="m-card rows"><div class="m-row"><span style="flex:1">Fine-tune events</span><span class="d">7 of 21</span><span data-icon="chevron-right" class="dim"></span></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ax-opt" data-opt="C" data-name="Learn from the feed"
+    data-note="Recent notifications on the left, each with its delivery chips you can switch on the spot, and the email it would send on the right. Concrete and self-explaining, but events that haven't happened yet are harder to find.">
+    <div data-frame="desktop" data-path="settings/notifications">
+      <div class="acx-shell nt-c" data-side="notifications">
+        <div class="page">
+          <div class="page-head"><div><div class="h1">Notifications</div><div class="sub">Your recent notifications, and where each kind is delivered. Change it here and it applies to every event of that kind.</div></div><div class="act"><span class="btn round">All 21 kinds</span></div></div>
+          <div class="split">
+            <div class="panel">
+              <div class="ev"><span class="ico r"><span data-icon="frozen"></span></span><div style="flex:1"><div class="row"><b class="sm">Momentum Sectors is frozen</b><span class="sp"></span><span class="mono xs dim">10:40</span></div><div class="sm dim">Alpaca shows 12 more SMH shares than the ledger.</div><div class="chans"><span class="chip on">In app</span><span class="chip on"><span data-icon="lock" style="width:11px;height:11px"></span>Email</span><span class="chip on">Webhook</span></div></div></div>
+              <div class="ev"><span class="ico"><span data-icon="check2"></span></span><div style="flex:1"><div class="row"><b class="sm">Order filled · TLT</b><span class="sp"></span><span class="mono xs dim">10:31</span></div><div class="sm dim">Recession Radar bought 42 TLT at 90.41.</div><div class="chans"><span class="chip on">In app</span><span class="chip">Email</span><span class="chip on">Webhook</span></div></div></div>
+              <div class="ev"><span class="ico r"><span data-icon="shield"></span></span><div style="flex:1"><div class="row"><b class="sm">Risk gate block · SMH</b><span class="sp"></span><span class="mono xs dim">Yesterday</span></div><div class="sm dim">Position size after the order would pass $10,000.</div><div class="chans"><span class="chip on">In app</span><span class="chip on">Email</span><span class="chip">Webhook</span></div></div></div>
+              <div class="ev"><span class="ico"><span data-icon="stop"></span></span><div style="flex:1"><div class="row"><b class="sm">Session stopped</b><span class="sp"></span><span class="mono xs dim">Nov 12</span></div><div class="sm dim">Tech Momentum Rotation stopped. Positions were closed to cash.</div><div class="chans"><span class="chip on">In app</span><span class="chip">Email</span><span class="chip">Webhook</span></div></div></div>
+            </div>
+            <div class="panel rim mail">
+              <div class="mh"><span>Email preview · Sleeve frozen</span><span>To sam.rivera@fastmail.com</span></div>
+              <div class="mb">
+                <span data-logo data-size="28"></span>
+                <div class="h2" style="color:var(--fg)">Momentum Sectors is frozen</div>
+                <p style="margin:0">Alpaca shows 12 more SMH shares than LlamaTrade's ledger for this sleeve. New orders for Momentum Sectors wait until the difference is resolved. Other sessions keep trading.</p>
+                <div class="acx-kv" style="font-size:12.5px"><span>Account</span><span class="mono">Paper · PA3XK7Q2M1ZB</span><span>Ledger</span><span class="mono">SMH 40</span><span>Alpaca</span><span class="mono">SMH 52</span></div>
+                <span class="btn pri round" style="align-self:flex-start">Review the difference</span>
+                <p class="xs dim" style="margin:0">You get this email because sleeve notices always email. Other notices can be turned off in Settings.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Account</span><span>Notifications</span><span style="width:70px"></span></div>
+      <div class="m-body">
+        <div class="m-card col" style="gap:8px"><div class="row"><span class="st frozen">Momentum Sectors frozen</span><span class="sp"></span><span class="mono dim" style="font-size:12px">10:40</span></div><div class="row wrap" style="gap:6px"><span class="chip on">In app</span><span class="chip on">Email</span><span class="chip on">Webhook</span></div></div>
+        <div class="m-card col" style="gap:8px"><div class="row"><b style="font-size:14.5px">Order filled · TLT</b><span class="sp"></span><span class="mono dim" style="font-size:12px">10:31</span></div><div class="row wrap" style="gap:6px"><span class="chip on">In app</span><span class="chip">Email</span><span class="chip on">Webhook</span></div></div>
+        <div class="m-card col" style="gap:8px"><div class="row"><b style="font-size:14.5px">Risk gate block · SMH</b><span class="sp"></span><span class="mono dim" style="font-size:12px">Yest.</span></div><div class="row wrap" style="gap:6px"><span class="chip on">In app</span><span class="chip on">Email</span><span class="chip">Webhook</span></div></div>
+        <div class="dim" style="font-size:13px;text-align:center">A change applies to every event of that kind.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 8. Appearance -->
+<section class="ax-surface" id="settings-appearance"
+  data-surface="settings/appearance"
+  data-area="Settings"
+  data-title="Appearance"
+  data-why="Mode, the dark and light surfaces and the accent, saved on this device. Light and dark show the same figures; this is only about comfort and taste.">
+
+  <div class="ax-opt" data-opt="A" data-rec data-name="Controls beside a live preview"
+    data-note="Controls on the left and two small app windows on the right, one dark and one light, that update as you choose. Recommended because accents look different on each surface, and seeing both at once is the honest way to pick.">
+    <div data-frame="desktop" data-path="settings/appearance">
+      <div class="acx-shell ap-a" data-side="appearance">
+        <div class="page">
+          <div class="page-head"><div><div class="h1">Appearance</div><div class="sub">Saved on this device. Another device starts from its own setting.</div></div></div>
+          <div class="split">
+            <div class="ctl">
+              <div class="field"><label>Mode</label><div class="seg" style="align-self:flex-start"><span><span data-icon="sun"></span>Light</span><span class="on"><span data-icon="moon"></span>Dark</span><span>System</span></div></div>
+              <div class="field"><label>Dark surface</label><div class="row" style="gap:10px"><span class="chip on"><span class="acx-sw" style="--c:#0f1316;width:14px;height:14px"></span>Slate</span><span class="chip"><span class="acx-sw" style="--c:#000;width:14px;height:14px"></span>Black</span></div></div>
+              <div class="field"><label>Light surface</label><div class="row" style="gap:10px"><span class="chip on"><span class="acx-sw" style="--c:#fdfdfd;width:14px;height:14px"></span>White</span><span class="chip"><span class="acx-sw" style="--c:#f7f4ee;width:14px;height:14px"></span>Warm</span></div></div>
+              <div class="field"><label>Accent in dark</label><div class="row wrap" style="gap:10px">
+                <span class="acx-sw" style="--c:#a1a1aa"></span><span class="acx-sw" style="--c:#dbe3f0"></span><span class="acx-sw" style="--c:#ff9f43"></span><span class="acx-sw" style="--c:#d9f05c"></span><span class="acx-sw" style="--c:#2dd4bf"></span><span class="acx-sw" style="--c:#4cc2ff"></span><span class="acx-sw" style="--c:#2563eb"></span><span class="acx-sw on" style="--c:#475f8a"></span><span class="acx-sw" style="--c:#818cf8"></span><span class="acx-sw" style="--c:#a78bfa"></span><span class="acx-sw" style="--c:#d8b4fe"></span><span class="acx-sw" style="--c:#f472b6"></span>
+              </div><div class="help">Slate blue</div></div>
+              <div class="field"><label>Accent in light</label><div class="row wrap" style="gap:10px">
+                <span class="acx-sw" style="--c:#3a3f47"></span><span class="acx-sw" style="--c:#1b2940"></span><span class="acx-sw" style="--c:#a8520a"></span><span class="acx-sw" style="--c:#1d5c45"></span><span class="acx-sw" style="--c:#0f6b78"></span><span class="acx-sw on" style="--c:#1d4e89"></span><span class="acx-sw" style="--c:#2563eb"></span><span class="acx-sw" style="--c:#1f3b73"></span><span class="acx-sw" style="--c:#475f8a"></span><span class="acx-sw" style="--c:#4a3fd4"></span><span class="acx-sw" style="--c:#6b2d5c"></span><span class="acx-sw" style="--c:#5a1e3c"></span>
+              </div><div class="help">Ocean</div></div>
+              <div class="callout"><span data-icon="info"></span><div>Gains and losses stay green and red, and warnings stay amber, whatever accent you choose.</div></div>
+            </div>
+            <div class="stage">
+              <div class="art" data-art="candles" data-seed="1801" style="height:400px"></div>
+              <div class="acx-mini acx-th-slate" style="left:36px;top:40px;width:560px;height:340px;box-shadow:0 30px 80px -30px rgba(0,0,0,.6), 0 0 0 1px #8fa4cf55">
+                <div class="mt"><span data-logo="mark" data-size="18"></span><span class="w">LLAMATRADE</span><i class="on"></i><i></i><i></i></div>
+                <div class="mc"><div style="color:#7f8994;font-size:10px">Total equity</div><div class="row base"><span class="mv">$128,406.12</span><span style="color:#3fbf7a;font:500 11px var(--mono)">+$612.40</span><span class="sp"></span><span class="mbtn">New strategy</span></div>
+                <svg viewBox="0 0 500 120" preserveAspectRatio="none" style="height:120px"><defs><linearGradient id="acxg1" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#8fa4cf" stop-opacity=".3"/><stop offset="1" stop-color="#8fa4cf" stop-opacity="0"/></linearGradient></defs><path d="M0 95 L40 88 L80 92 L120 76 L160 80 L200 64 L240 70 L280 52 L320 58 L360 40 L400 46 L440 28 L500 18 L500 120 L0 120Z" fill="url(#acxg1)"/><path d="M0 95 L40 88 L80 92 L120 76 L160 80 L200 64 L240 70 L280 52 L320 58 L360 40 L400 46 L440 28 L500 18" fill="none" stroke="#8fa4cf" stroke-width="2"/></svg>
+                <div class="mp row" style="font-size:11px"><span>Recession Radar</span><span style="border:1px dashed #36404a;border-radius:9px;padding:1px 6px;font-size:9px;color:#aab3bd">PAPER</span><span class="sp"></span><span style="font-family:var(--mono);color:#3fbf7a">+0.62%</span></div></div>
+              </div>
+              <div class="acx-mini acx-th-white" style="right:36px;top:250px;width:520px;height:340px;box-shadow:0 30px 80px -30px rgba(17,20,24,.35), 0 0 0 1px #1d4e8944">
+                <div class="mt"><span data-logo="mark" data-size="18" style="color:#111418"></span><span class="w">LLAMATRADE</span><i class="on"></i><i></i><i></i></div>
+                <div class="mc"><div style="color:#858b94;font-size:9px;letter-spacing:.08em">TOTAL EQUITY</div><div class="row base"><span class="mv">$128,406.12</span><span style="color:#17703f;font:500 11px var(--mono)">+$612.40</span><span class="sp"></span><span class="mbtn">New strategy</span></div>
+                <svg viewBox="0 0 500 120" preserveAspectRatio="none" style="height:120px"><defs><linearGradient id="acxg2" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#1d4e89" stop-opacity=".22"/><stop offset="1" stop-color="#1d4e89" stop-opacity="0"/></linearGradient></defs><path d="M0 95 L40 88 L80 92 L120 76 L160 80 L200 64 L240 70 L280 52 L320 58 L360 40 L400 46 L440 28 L500 18 L500 120 L0 120Z" fill="url(#acxg2)"/><path d="M0 95 L40 88 L80 92 L120 76 L160 80 L200 64 L240 70 L280 52 L320 58 L360 40 L400 46 L440 28 L500 18" fill="none" stroke="#1d4e89" stroke-width="2"/></svg>
+                <div class="mp row" style="font-size:11px"><span>Recession Radar</span><span style="border:1px dashed #d5d9de;border-radius:9px;padding:1px 6px;font-size:9px;color:#5b616a">PAPER</span><span class="sp"></span><span style="font-family:var(--mono);color:#17703f">+0.62%</span></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Account</span><span>Appearance</span><span style="width:70px"></span></div>
+      <div class="m-body">
+        <div style="position:relative;height:190px;border-radius:16px;background:var(--sunk);border:1px solid var(--line);overflow:hidden">
+          <div class="acx-mini acx-th-slate" style="left:16px;top:18px;width:230px;height:150px"><div class="mt" style="height:26px"><span data-logo="mark" data-size="14"></span><i class="on" style="width:24px"></i></div><div class="mc" style="padding:10px"><span class="mv" style="font-size:15px">$128,406</span><svg viewBox="0 0 200 50" style="height:50px"><path d="M0 40 L30 34 L60 36 L90 26 L120 28 L150 16 L200 8" fill="none" stroke="#8fa4cf" stroke-width="2"/></svg></div></div>
+          <div class="acx-mini acx-th-white" style="right:14px;top:66px;width:200px;height:140px"><div class="mt" style="height:26px"><span data-logo="mark" data-size="14" style="color:#111418"></span><i class="on" style="width:24px"></i></div><div class="mc" style="padding:10px"><span class="mv" style="font-size:15px">$128,406</span><svg viewBox="0 0 200 50" style="height:44px"><path d="M0 40 L30 34 L60 36 L90 26 L120 28 L150 16 L200 8" fill="none" stroke="#1d4e89" stroke-width="2"/></svg></div></div>
+        </div>
+        <div class="seg round acx-mseg"><span>Light</span><span class="on">Dark</span><span>System</span></div>
+        <div class="m-card rows"><div class="m-row"><span style="flex:1">Dark surface</span><span class="d">Slate</span></div><div class="m-row"><span style="flex:1">Light surface</span><span class="d">White</span></div></div>
+        <div class="lbl">Accent in dark</div>
+        <div class="row wrap" style="gap:12px"><span class="acx-sw" style="--c:#dbe3f0"></span><span class="acx-sw" style="--c:#2dd4bf"></span><span class="acx-sw" style="--c:#4cc2ff"></span><span class="acx-sw on" style="--c:#475f8a"></span><span class="acx-sw" style="--c:#818cf8"></span><span class="acx-sw" style="--c:#a78bfa"></span><span class="acx-sw" style="--c:#f472b6"></span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ax-opt" data-opt="B" data-name="Theme pairs"
+    data-note="Four finished combinations of surface and accent shown as small screens, with custom choices below for anyone who wants them. Fast and hard to get wrong, though it nudges everyone toward four looks.">
+    <div data-frame="desktop" data-path="settings/appearance">
+      <div class="acx-shell ap-b" data-side="appearance">
+        <div class="page">
+          <div class="page-head"><div><div class="h1">Appearance</div><div class="sub">Pick a pairing. Each works in its own mode; System switches between your dark and light picks.</div></div><div class="act"><div class="seg round"><span>Light</span><span>Dark</span><span class="on">System</span></div></div></div>
+          <div class="themes">
+            <div class="panel th on"><div class="pv"><div class="acx-mini acx-th-slate"><div class="mt"><span data-logo="mark" data-size="16"></span><i class="on"></i><i></i></div><div class="mc"><span class="mv">$128,406</span><svg viewBox="0 0 200 60" style="height:60px"><path d="M0 50 L30 42 L60 46 L90 30 L120 34 L150 18 L200 8" fill="none" stroke="#8fa4cf" stroke-width="2"/></svg></div></div></div><div class="tt"><div><b class="sm">Slate and Slate blue</b><div class="xs dim">Dark · the site's own</div></div><span class="sp"></span><span class="check on"></span></div></div>
+            <div class="panel th"><div class="pv"><div class="acx-mini acx-th-black"><div class="mt"><span data-logo="mark" data-size="16"></span><i class="on"></i><i></i></div><div class="mc"><span class="mv">$128,406</span><svg viewBox="0 0 200 60" style="height:60px"><path d="M0 50 L30 42 L60 46 L90 30 L120 34 L150 18 L200 8" fill="none" stroke="#dbe3f0" stroke-width="2"/></svg></div></div></div><div class="tt"><div><b class="sm">Black and Frost</b><div class="xs dim">Dark · highest contrast</div></div><span class="sp"></span><span class="check"></span></div></div>
+            <div class="panel th on"><div class="pv"><div class="acx-mini acx-th-white"><div class="mt"><span data-logo="mark" data-size="16" style="color:#111418"></span><i class="on"></i><i></i></div><div class="mc"><span class="mv">$128,406</span><svg viewBox="0 0 200 60" style="height:60px"><path d="M0 50 L30 42 L60 46 L90 30 L120 34 L150 18 L200 8" fill="none" stroke="#1d4e89" stroke-width="2"/></svg></div></div></div><div class="tt"><div><b class="sm">White and Ocean</b><div class="xs dim">Light · the site's own</div></div><span class="sp"></span><span class="check on"></span></div></div>
+            <div class="panel th"><div class="pv"><div class="acx-mini acx-th-warm"><div class="mt"><span data-logo="mark" data-size="16" style="color:#1d1a16"></span><i class="on"></i><i></i></div><div class="mc"><span class="mv">$128,406</span><svg viewBox="0 0 200 60" style="height:60px"><path d="M0 50 L30 42 L60 46 L90 30 L120 34 L150 18 L200 8" fill="none" stroke="#a8520a" stroke-width="2"/></svg></div></div></div><div class="tt"><div><b class="sm">Warm and Rust</b><div class="xs dim">Light · softer paper</div></div><span class="sp"></span><span class="check"></span></div></div>
+          </div>
+          <div class="panel" style="margin-top:22px"><div class="panel-h"><span data-icon="sliders"></span>Custom<span class="aside">Choose any surface and any of 12 accents per mode<span data-icon="chevron-down"></span></span></div></div>
+          <div class="callout" style="margin-top:16px"><span data-icon="info"></span><div>Gains and losses stay green and red, and warnings stay amber, whatever you pick. Saved on this device only.</div></div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Account</span><span>Appearance</span><span style="width:70px"></span></div>
+      <div class="m-body">
+        <div class="seg round acx-mseg"><span>Light</span><span>Dark</span><span class="on">System</span></div>
+        <div class="g2" style="gap:12px">
+          <div class="m-card" style="padding:0;overflow:hidden;border-color:var(--acc)"><div style="position:relative;height:96px;background:var(--sunk)"><div class="acx-mini acx-th-slate" style="left:12px;top:12px;right:-10px;bottom:-10px"><div class="mc" style="padding:10px"><span class="mv" style="font-size:13px">$128,406</span><svg viewBox="0 0 200 50" style="height:34px"><path d="M0 40 L60 36 L120 28 L200 8" fill="none" stroke="#8fa4cf" stroke-width="3"/></svg></div></div></div><div style="padding:8px 10px;font-size:12.5px"><b>Slate</b> · Slate blue</div></div>
+          <div class="m-card" style="padding:0;overflow:hidden"><div style="position:relative;height:96px;background:var(--sunk)"><div class="acx-mini acx-th-black" style="left:12px;top:12px;right:-10px;bottom:-10px"><div class="mc" style="padding:10px"><span class="mv" style="font-size:13px">$128,406</span><svg viewBox="0 0 200 50" style="height:34px"><path d="M0 40 L60 36 L120 28 L200 8" fill="none" stroke="#dbe3f0" stroke-width="3"/></svg></div></div></div><div style="padding:8px 10px;font-size:12.5px"><b>Black</b> · Frost</div></div>
+          <div class="m-card" style="padding:0;overflow:hidden;border-color:var(--acc)"><div style="position:relative;height:96px;background:var(--sunk)"><div class="acx-mini acx-th-white" style="left:12px;top:12px;right:-10px;bottom:-10px"><div class="mc" style="padding:10px"><span class="mv" style="font-size:13px">$128,406</span><svg viewBox="0 0 200 50" style="height:34px"><path d="M0 40 L60 36 L120 28 L200 8" fill="none" stroke="#1d4e89" stroke-width="3"/></svg></div></div></div><div style="padding:8px 10px;font-size:12.5px"><b>White</b> · Ocean</div></div>
+          <div class="m-card" style="padding:0;overflow:hidden"><div style="position:relative;height:96px;background:var(--sunk)"><div class="acx-mini acx-th-warm" style="left:12px;top:12px;right:-10px;bottom:-10px"><div class="mc" style="padding:10px"><span class="mv" style="font-size:13px">$128,406</span><svg viewBox="0 0 200 50" style="height:34px"><path d="M0 40 L60 36 L120 28 L200 8" fill="none" stroke="#a8520a" stroke-width="3"/></svg></div></div></div><div style="padding:8px 10px;font-size:12.5px"><b>Warm</b> · Rust</div></div>
+        </div>
+        <div class="m-card rows"><div class="m-row"><span style="flex:1">Custom</span><span data-icon="chevron-right" class="dim"></span></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ax-opt" data-opt="C" data-name="Compact rows"
+    data-note="A plain settings list: label and explanation on the left, the control on the right, with surface tiles and accent dots. Efficient and familiar, but you judge an accent by a dot rather than in context.">
+    <div data-frame="desktop" data-path="settings/appearance">
+      <div class="acx-shell ap-c" data-side="appearance">
+        <div class="page" style="max-width:980px">
+          <div class="page-head"><div><div class="h1">Appearance</div><div class="sub">Saved on this device.</div></div></div>
+          <div class="panel"><div class="panel-b rows" style="padding:0 24px">
+            <div class="r"><div><b class="sm">Mode</b><div class="xs dim" style="margin-top:3px">System follows your computer's setting.</div></div><div class="seg" style="justify-self:start"><span>Light</span><span class="on">Dark</span><span>System</span></div></div>
+            <div class="r"><div><b class="sm">Dark surface</b><div class="xs dim" style="margin-top:3px">The page colour in dark mode.</div></div><div class="surf"><div class="o on"><div class="c0" style="background:#0f1316"></div><div class="n">Slate<span class="check on"></span></div></div><div class="o"><div class="c0" style="background:#000"></div><div class="n">Black</div></div></div></div>
+            <div class="r"><div><b class="sm">Light surface</b><div class="xs dim" style="margin-top:3px">The page colour in light mode.</div></div><div class="surf"><div class="o on"><div class="c0" style="background:#fdfdfd;border-bottom:1px solid var(--line)"></div><div class="n">White<span class="check on"></span></div></div><div class="o"><div class="c0" style="background:#f7f4ee;border-bottom:1px solid var(--line)"></div><div class="n">Warm</div></div></div></div>
+            <div class="r"><div><b class="sm">Accent</b><div class="xs dim" style="margin-top:3px">Used for selection, focus and charts. Each mode keeps its own.</div></div><div class="col" style="gap:14px"><div class="row" style="gap:14px"><span class="xs dim" style="width:34px">Dark</span><div class="swatches"><span class="acx-sw" style="--c:#a1a1aa"></span><span class="acx-sw" style="--c:#dbe3f0"></span><span class="acx-sw" style="--c:#ff9f43"></span><span class="acx-sw" style="--c:#d9f05c"></span><span class="acx-sw" style="--c:#2dd4bf"></span><span class="acx-sw" style="--c:#4cc2ff"></span><span class="acx-sw" style="--c:#2563eb"></span><span class="acx-sw on" style="--c:#475f8a"></span><span class="acx-sw" style="--c:#818cf8"></span><span class="acx-sw" style="--c:#a78bfa"></span><span class="acx-sw" style="--c:#d8b4fe"></span><span class="acx-sw" style="--c:#f472b6"></span></div></div><div class="row" style="gap:14px"><span class="xs dim" style="width:34px">Light</span><div class="swatches"><span class="acx-sw" style="--c:#3a3f47"></span><span class="acx-sw" style="--c:#1b2940"></span><span class="acx-sw" style="--c:#a8520a"></span><span class="acx-sw" style="--c:#1d5c45"></span><span class="acx-sw" style="--c:#0f6b78"></span><span class="acx-sw on" style="--c:#1d4e89"></span><span class="acx-sw" style="--c:#2563eb"></span><span class="acx-sw" style="--c:#1f3b73"></span><span class="acx-sw" style="--c:#475f8a"></span><span class="acx-sw" style="--c:#4a3fd4"></span><span class="acx-sw" style="--c:#6b2d5c"></span><span class="acx-sw" style="--c:#5a1e3c"></span></div></div></div></div>
+            <div class="r"><div><b class="sm">Chart art</b><div class="xs dim" style="margin-top:3px">Faint candles behind headers, as on the site.</div></div><div class="row"><span class="toggle on"></span><span class="sm muted">Show</span></div></div>
+          </div></div>
+          <div class="xs dim" style="margin-top:14px">Gains and losses stay green and red, and warnings stay amber, whatever you pick.</div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Account</span><span>Appearance</span><span style="width:70px"></span></div>
+      <div class="m-body">
+        <div class="lbl">Mode</div>
+        <div class="m-card rows"><div class="m-row"><span style="flex:1">Light</span></div><div class="m-row"><span style="flex:1">Dark</span><span data-icon="check" class="acc"></span></div><div class="m-row"><span style="flex:1">System</span></div></div>
+        <div class="lbl">Surfaces</div>
+        <div class="m-card rows"><div class="m-row"><span style="flex:1">Dark</span><span class="d">Slate</span><span data-icon="chevron-right" class="dim"></span></div><div class="m-row"><span style="flex:1">Light</span><span class="d">White</span><span data-icon="chevron-right" class="dim"></span></div></div>
+        <div class="lbl">Accent in dark</div>
+        <div class="row wrap" style="gap:12px"><span class="acx-sw" style="--c:#a1a1aa"></span><span class="acx-sw" style="--c:#dbe3f0"></span><span class="acx-sw" style="--c:#ff9f43"></span><span class="acx-sw" style="--c:#2dd4bf"></span><span class="acx-sw" style="--c:#4cc2ff"></span><span class="acx-sw on" style="--c:#475f8a"></span><span class="acx-sw" style="--c:#818cf8"></span><span class="acx-sw" style="--c:#a78bfa"></span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ 9. Plan, usage and billing -->
+<section class="ax-surface" id="billing-plan"
+  data-surface="billing/plan"
+  data-area="Billing"
+  data-title="Plan, usage and billing"
+  data-why="What you're on, how much of it you've used this month, and what you'll pay. During the closed beta testers are on Pro at no charge, so the page has to say that plainly.">
+
+  <div class="ax-opt" data-opt="A" data-rec data-name="Usage first"
+    data-note="Four usage meters lead, with the plan, card and invoices in a column beside them. Recommended because usage is what changes week to week, and the no-charge beta note sits right next to the price instead of in small print.">
+    <div data-frame="desktop" data-path="settings/plan">
+      <div class="acx-shell pl-a" data-side="plan">
+        <div class="page">
+          <div class="page-head"><div><div class="h1">Plan and usage</div><div class="sub">November 1 to 30 · resets in 14 days</div></div><div class="act"><span class="btn round">Compare plans</span></div></div>
+          <div class="grid2">
+            <div class="col" style="gap:20px">
+              <div class="panel"><div class="meters">
+                <div class="m"><div class="row"><b class="sm">Strategies</b><span class="sp"></span><span class="mono sm">6 <span class="dim">of 10</span></span></div><div class="meter"><i style="width:60%"></i></div><div class="xs dim">Recession Radar, All-Weather and 4 more</div></div>
+                <div class="m"><div class="row"><b class="sm">Backtests this month</b><span class="sp"></span><span class="mono sm">212 <span class="dim">of 500</span></span></div><div class="meter"><i style="width:42%"></i></div><div class="xs dim">About 13 a day so far</div></div>
+                <div class="m"><div class="row"><b class="sm">Copilot messages</b><span class="sp"></span><span class="mono sm">840 <span class="dim">of 2,000</span></span></div><div class="meter"><i style="width:42%"></i></div><div class="xs dim">Drafts and edits both count</div></div>
+                <div class="m"><div class="row"><b class="sm">Live sessions</b><span class="sp"></span><span class="mono sm">1 <span class="dim">of 3</span></span></div><div class="meter"><i style="width:33%"></i></div><div class="xs dim">Paper sessions don't count</div></div>
+              </div></div>
+              <div class="panel"><div class="panel-h">Backtests by day<span class="aside">November</span></div><div class="panel-b"><div class="acx-bars"><i style="height:40%" title="Nov 1: 9"></i><i style="height:63%" title="Nov 2: 14"></i><i style="height:50%" title="Nov 3: 11"></i><i style="height:2%" title="Nov 4: 0"></i><i style="height:2%" title="Nov 5: 0"></i><i style="height:81%" title="Nov 6: 18"></i><i style="height:100%" title="Nov 7: 22"></i><i style="height:72%" title="Nov 8: 16"></i><i style="height:54%" title="Nov 9: 12"></i><i style="height:68%" title="Nov 10: 15"></i><i style="height:2%" title="Nov 11: 0"></i><i style="height:2%" title="Nov 12: 0"></i><i style="height:95%" title="Nov 13: 21"></i><i style="height:86%" title="Nov 14: 19"></i><i style="height:77%" title="Nov 15: 17"></i><i style="height:59%" title="Nov 16: 13"></i><i style="height:50%" title="Nov 17: 11"></i><i style="height:63%" title="Nov 18: 14"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i><i class="f"></i></div><div class="row xs dim mono" style="margin-top:8px"><span>Nov 1</span><span class="sp"></span><span>Nov 30</span></div></div></div>
+            </div>
+            <div class="col" style="gap:16px">
+              <div class="panel rim"><div class="panel-b col" style="gap:10px;padding:22px">
+                <div class="row"><span class="h2">Pro</span><span class="pill acc soft">Closed beta</span></div>
+                <div class="row base"><span class="big" style="font-size:30px">$0</span><span class="dim sm">this month</span></div>
+                <div class="sm muted">No charge during the closed beta. Pro is normally $49 a month. Nothing is billed until you choose a paid plan.</div>
+              </div></div>
+              <div class="panel"><div class="panel-h">Payment method</div><div class="panel-b row"><span data-icon="card" class="dim"></span><span class="mono sm">Visa ···· 4242</span><span class="dim xs">08/28</span><span class="sp"></span><span class="acx-link sm">Change</span></div></div>
+              <div class="panel"><div class="panel-h">Invoices</div><div class="empty" style="padding:28px 18px"><span data-icon="ledger" style="width:20px;height:20px"></span><div class="sm">No invoices yet. You haven't been charged.</div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Account</span><span>Plan</span><span style="width:70px"></span></div>
+      <div class="m-body">
+        <div class="m-card rim col" style="gap:6px"><div class="row"><b style="font-size:18px">Pro</b><span class="pill acc soft">Closed beta</span><span class="sp"></span><span class="mono" style="font-size:18px;font-weight:600">$0</span></div><span class="dim" style="font-size:13px">No charge during the beta. Normally $49 a month.</span></div>
+        <div class="m-sec">This month<span class="a">Resets Dec 1</span></div>
+        <div class="m-card col" style="gap:14px;font-size:14px">
+          <div class="col" style="gap:6px"><div class="row"><span>Strategies</span><span class="sp"></span><span class="mono">6/10</span></div><div class="meter"><i style="width:60%"></i></div></div>
+          <div class="col" style="gap:6px"><div class="row"><span>Backtests</span><span class="sp"></span><span class="mono">212/500</span></div><div class="meter"><i style="width:42%"></i></div></div>
+          <div class="col" style="gap:6px"><div class="row"><span>Copilot</span><span class="sp"></span><span class="mono">840/2,000</span></div><div class="meter"><i style="width:42%"></i></div></div>
+          <div class="col" style="gap:6px"><div class="row"><span>Live sessions</span><span class="sp"></span><span class="mono">1/3</span></div><div class="meter"><i style="width:33%"></i></div></div>
+        </div>
+        <div class="m-card rows"><div class="m-row"><span data-icon="card" class="dim"></span><span style="flex:1" class="mono">Visa ···· 4242</span><span data-icon="chevron-right" class="dim"></span></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ax-opt" data-opt="B" data-name="Plans side by side"
+    data-note="The three plans as columns with a Monthly or Yearly switch and your plan marked, as on a pricing page. Clear for deciding to upgrade, but day-to-day usage drops to one line at the top.">
+    <div data-frame="desktop" data-path="settings/plan/compare">
+      <div class="acx-shell pl-b" data-side="none">
+        <div class="glow" style="height:420px"></div>
+        <div class="art" data-art="candles" data-seed="1901" style="height:300px"></div>
+        <div class="wrap">
+          <div class="row base"><div><div class="acx-kick">Prices in USD · no charge during the closed beta</div><div class="display" style="margin-top:12px;font-size:36px">Plans</div></div><span class="sp"></span><div class="seg round"><span>Monthly</span><span class="on">Yearly, save 17%</span></div></div>
+          <div class="cols">
+            <div class="panel pc"><div><div class="h3">Free</div><div class="dim sm" style="margin-top:2px">Paper trading and exploration</div></div><div class="row base"><span class="big">$0</span><span class="dim sm">Free forever</span></div><ul><li><span>Strategies</span><span>1</span></li><li><span>Trading</span><span>Paper only</span></li><li><span>Backtests a month</span><span>10</span></li><li><span>Copilot</span><span>Basic</span></li><li><span>Support</span><span>Community</span></li></ul><span class="btn round block" style="margin-top:auto">Downgrade</span></div>
+            <div class="panel pc rim"><div class="row"><div><div class="h3">Pro</div><div class="dim sm" style="margin-top:2px">For active strategy builders</div></div><span class="sp"></span><span class="pill acc soft">Your plan</span></div><div class="row base"><span class="big">$41</span><span class="dim sm">a month, billed yearly</span></div><ul><li><span>Strategies</span><span>10</span></li><li><span>Trading</span><span>3 live sessions</span></li><li><span>Backtests a month</span><span>500</span></li><li><span>Copilot</span><span>Writes strategies</span></li><li><span>Support</span><span>Priority email</span></li></ul><span class="btn pri round block off" style="margin-top:auto">Current plan · $0 in beta</span></div>
+            <div class="panel pc"><div><div class="h3">Enterprise</div><div class="dim sm" style="margin-top:2px">Desks, funds and power users</div></div><div class="row base"><span class="big">$165</span><span class="dim sm">a month, billed yearly</span></div><ul><li><span>Strategies</span><span>Unlimited</span></li><li><span>Trading</span><span>Unlimited</span></li><li><span>Backtests a month</span><span>Unlimited</span></li><li><span>Copilot</span><span>With fine-tuning</span></li><li><span>Support</span><span>Dedicated, with an SLA</span></li></ul><span class="btn round block" style="margin-top:auto">Talk to us</span></div>
+          </div>
+          <div class="panel" style="margin-top:18px"><div class="panel-b row" style="gap:28px;font-size:13px"><b>This month on Pro</b><span class="dim">Strategies <span class="mono" style="color:var(--fg)">6/10</span></span><span class="dim">Backtests <span class="mono" style="color:var(--fg)">212/500</span></span><span class="dim">Copilot <span class="mono" style="color:var(--fg)">840/2,000</span></span><span class="dim">Live sessions <span class="mono" style="color:var(--fg)">1/3</span></span><span class="sp"></span><span class="acx-link">Usage details</span></div></div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Plan</span><span>Plans</span><span style="width:50px"></span></div>
+      <div class="m-body">
+        <div class="seg round acx-mseg"><span>Monthly</span><span class="on">Yearly, save 17%</span></div>
+        <div class="m-card rim col" style="gap:8px"><div class="row"><b style="font-size:17px">Pro</b><span class="pill acc soft">Your plan</span><span class="sp"></span><span class="mono" style="font-weight:600">$41/mo</span></div><div class="dim" style="font-size:13px">10 strategies · 3 live sessions · 500 backtests · Copilot writes strategies</div><div class="dim" style="font-size:12.5px">$0 during the closed beta</div></div>
+        <div class="m-card col" style="gap:8px"><div class="row"><b style="font-size:17px">Free</b><span class="sp"></span><span class="mono" style="font-weight:600">$0</span></div><div class="dim" style="font-size:13px">1 strategy · paper only · 10 backtests</div></div>
+        <div class="m-card col" style="gap:8px"><div class="row"><b style="font-size:17px">Enterprise</b><span class="sp"></span><span class="mono" style="font-weight:600">$165/mo</span></div><div class="dim" style="font-size:13px">Unlimited everything · dedicated support</div><div class="m-btn sec" style="height:40px;font-size:14px">Talk to us</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ax-opt" data-opt="C" data-name="One statement"
+    data-note="Plan, usage and billing as a single statement you read top to bottom, like a receipt for the month. Calm and complete on one page, but less suited to comparing plans.">
+    <div data-frame="desktop" data-path="settings/billing">
+      <div class="acx-shell pl-c" data-side="billing">
+        <div class="glow" style="height:360px"></div>
+        <div class="sheet2">
+          <div class="panel rim stmt">
+            <div class="top"><div><div class="acx-kick">Statement · November 2026</div><div class="row base" style="margin-top:10px;gap:14px"><span class="huge" style="font-size:44px">$0.00</span><span class="dim">due Dec 1</span></div><div class="sm muted" style="margin-top:8px">You're on Pro at no charge during the closed beta. Pro is normally $49 a month.</div></div><span class="sp"></span><span class="pill acc soft">Pro · beta</span></div>
+            <div class="ur"><span class="dim">Strategies</span><div class="meter"><i style="width:60%"></i></div><span class="mono sm">6 of 10</span><span class="mono sm dim" style="text-align:right">$0.00</span></div>
+            <div class="ur"><span class="dim">Backtests</span><div class="meter"><i style="width:42%"></i></div><span class="mono sm">212 of 500</span><span class="mono sm dim" style="text-align:right">$0.00</span></div>
+            <div class="ur"><span class="dim">Copilot messages</span><div class="meter"><i style="width:42%"></i></div><span class="mono sm">840 of 2,000</span><span class="mono sm dim" style="text-align:right">$0.00</span></div>
+            <div class="ur"><span class="dim">Live sessions</span><div class="meter"><i style="width:33%"></i></div><span class="mono sm">1 of 3</span><span class="mono sm dim" style="text-align:right">$0.00</span></div>
+            <div class="ur"><span class="dim">Paid with</span><span class="mono sm">Visa ···· 4242 · expires 08/28</span><span></span><span class="acx-link sm" style="text-align:right">Change</span></div>
+            <div class="ur"><span class="dim">Next invoice</span><span class="sm">None scheduled while the beta runs</span><span></span><span></span></div>
+          </div>
+          <div class="row" style="margin-top:18px"><span class="btn round">Compare plans</span><span class="btn ghost round">Download past statements</span><span class="sp"></span><span class="xs dim">Prices in USD.</span></div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Account</span><span>Billing</span><span style="width:70px"></span></div>
+      <div class="m-body">
+        <div class="m-card rim col" style="gap:4px"><div class="acx-kick">November 2026</div><div class="row base"><span class="big">$0.00</span><span class="sp"></span><span class="pill acc soft">Pro · beta</span></div><div class="dim" style="font-size:13px;margin-top:4px">No charge during the closed beta.</div></div>
+        <div class="m-card rows">
+          <div class="m-row"><span style="flex:1">Strategies</span><span class="mono d">6 of 10</span></div>
+          <div class="m-row"><span style="flex:1">Backtests</span><span class="mono d">212 of 500</span></div>
+          <div class="m-row"><span style="flex:1">Copilot</span><span class="mono d">840 of 2,000</span></div>
+          <div class="m-row"><span style="flex:1">Live sessions</span><span class="mono d">1 of 3</span></div>
+          <div class="m-row"><span style="flex:1">Paid with</span><span class="mono d">Visa 4242</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  // Builds the in-app shell (top bar, optional settings sidebar) around .acx-shell blocks before kit.js renders.
+  (function () {
+    var NAV = ["Home", "Strategies", "Backtests", "Sessions", "Portfolio", "Copilot"];
+    var GROUPS = [
+      ["Account", [["profile", "account", "Profile and security"], ["broker", "link", "Broker"]]],
+      ["Preferences", [["notifications", "bell", "Notifications"], ["appearance", "sun", "Appearance"]]],
+      ["Billing", [["plan", "card", "Plan and usage"], ["billing", "wallet", "Billing"]]],
+    ];
+    document.querySelectorAll(".acx-shell").forEach(function (sh) {
+      var on = (sh.dataset.nav || "").toLowerCase();
+      var side = sh.dataset.side || "none";
+      var app = document.createElement("div");
+      app.className = "app " + sh.className.replace("acx-shell", "").trim();
+      var top =
+        '<div class="topbar"><span data-logo data-size="34" class="overhang"></span><nav class="nav">' +
+        NAV.map(function (n) { return '<a' + (n.toLowerCase() === on ? ' class="on"' : "") + ">" + n + "</a>"; }).join("") +
+        '</nav><div class="end"><span class="mkt">Market open · 10:42 ET</span><span class="btn icon ghost sm" data-icon="bell"></span><span class="avatar"' +
+        (side !== "none" ? ' style="box-shadow:0 0 0 2px var(--bg),0 0 0 3.5px var(--acc)"' : "") + ">SR</span></div></div>";
+      var main = document.createElement("div");
+      main.className = "main";
+      while (sh.firstChild) main.appendChild(sh.firstChild);
+      app.innerHTML = top;
+      if (side !== "none") {
+        var row = document.createElement("div");
+        row.className = "acx-row";
+        var aside = '<aside class="side"><span class="h3" style="padding:6px 10px 2px">Settings</span>';
+        GROUPS.forEach(function (g) {
+          aside += '<span class="sec lbl">' + g[0] + "</span>";
+          g[1].forEach(function (it) {
+            aside += "<a" + (it[0] === side ? ' class="on"' : "") + '><span data-icon="' + it[1] + '"></span>' + it[2] + "</a>";
+          });
+        });
+        aside += '<span class="sp"></span><a><span data-icon="arrow-left"></span>Sign out</a></aside>';
+        row.innerHTML = aside;
+        row.appendChild(main);
+        app.appendChild(row);
+      } else {
+        app.appendChild(main);
+      }
+      sh.replaceWith(app);
+    });
+  })();
+</script>
+
+<script src="kit.js"></script>
+</body>
+</html>

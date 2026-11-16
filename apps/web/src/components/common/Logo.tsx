@@ -1,41 +1,82 @@
 export interface LogoProps {
-  /** Square size of the brand mark in px. Defaults to 32. */
+  /** Size of the mark in px. Defaults to 22. */
   size?: number;
-  /** Render the "LlamaTrade" wordmark beside the mark. Defaults to false. */
+  /** Show the LlamaTrade wordmark beside the mark. */
   showText?: boolean;
+  className?: string;
 }
 
-/**
- * Logo — the Monolith brand mark: ink box, orange frame, LT monogram.
- * Optionally followed by the "LlamaTrade" display wordmark.
- */
-export function Logo({ size = 32, showText = false }: LogoProps) {
-  const glyph = Math.round(size * 0.72);
+const BODY: ReadonlyArray<[number, number, number, number]> = [
+  [6.4, 4.5, 3.2, 14],
+  [10.8, 14.5, 3.2, 10],
+  [15.2, 14.5, 3.2, 6],
+  [19.6, 15, 3.2, 5.5],
+  [24, 14.5, 3.2, 10],
+  [28.4, 13, 2, 4.5],
+];
 
+/** The Candlesticks mark: a llama drawn as a run of candles, the first one in the accent. */
+export function LogoMark({
+  size = 22,
+  className = '',
+  bold = false,
+}: {
+  size?: number;
+  className?: string;
+  /** Heavier wicks and slightly wider bodies, for large display sizes. */
+  bold?: boolean;
+}) {
+  const scale = bold ? 1.1 : 1;
   return (
-    <div className="flex items-center gap-2.5">
-      {/* Monolith brand mark: ink box, orange frame, LT monogram */}
-      <div
-        className="flex-shrink-0 grid place-items-center bg-ink border-[3px] border-orange-500"
-        style={{ width: size, height: size }}
-      >
-        <svg width={glyph} height={glyph} viewBox="0 0 120 120" fill="none" aria-hidden="true">
-          {/* L — bone (CSS fill reads the token; SVG fill attrs don't resolve var()) */}
-          <g style={{ fill: 'rgb(var(--lt-bone))' }}>
-            <rect x="30" y="26" width="17" height="52" />
-            <rect x="30" y="61" width="39" height="17" />
-          </g>
-          {/* T — signal orange */}
-          <rect x="54" y="26" width="40" height="17" fill="#ff4d1c" />
-          <rect x="68" y="26" width="17" height="52" fill="#ff4d1c" />
-        </svg>
-      </div>
+    <svg
+      viewBox="0 0 32 32"
+      width={size}
+      height={size}
+      fill="none"
+      aria-hidden="true"
+      className={`block flex-none ${className}`}
+    >
+      <path
+        d="M8 2v20M12.4 13v16.5M25.6 13v16.5M16.8 12.5v10M21.2 13v9"
+        stroke="currentColor"
+        strokeWidth={bold ? 1.4 : 1.1}
+        strokeLinecap="round"
+      />
+      <rect
+        x={2 - (3.2 * scale - 3.2) / 2}
+        y="7"
+        width={3.2 * scale}
+        height="4"
+        rx="0.5"
+        style={{ fill: 'rgb(var(--accent))' }}
+      />
+      {BODY.map(([x, y, w, h]) => (
+        <rect
+          key={x}
+          x={x - (w * scale - w) / 2}
+          y={y}
+          width={w * scale}
+          height={h}
+          rx="0.5"
+          fill="currentColor"
+        />
+      ))}
+    </svg>
+  );
+}
 
+export function Logo({ size = 22, showText = false, className = '' }: LogoProps) {
+  return (
+    <span className={`inline-flex items-center gap-2 text-fg ${className}`}>
+      <LogoMark size={size} />
       {showText && (
-        <span className="font-display text-lg uppercase tracking-tight leading-none text-ink">
+        <span
+          className="font-sans font-semibold leading-none whitespace-nowrap"
+          style={{ fontSize: Math.max(13, Math.round(size * 0.68)), letterSpacing: '-0.01em' }}
+        >
           LlamaTrade
         </span>
       )}
-    </div>
+    </span>
   );
 }

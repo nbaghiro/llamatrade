@@ -330,9 +330,20 @@ function canonIndicator(ind: IndicatorRef): IndicatorJSON {
     case 'adx':
     case 'cci':
     case 'mfi':
-      return { type: 'indicator', name: ind.indicator, symbol: ind.symbol, params: [requirePeriod()] };
+    case 'momentum':
+      return {
+        type: 'indicator',
+        name: ind.indicator,
+        symbol: ind.symbol,
+        params: [requirePeriod()],
+      };
     case 'williams_r':
-      return { type: 'indicator', name: 'williams-r', symbol: ind.symbol, params: [requirePeriod()] };
+      return {
+        type: 'indicator',
+        name: 'williams-r',
+        symbol: ind.symbol,
+        params: [requirePeriod()],
+      };
     case 'macd_line':
     case 'macd_signal': {
       if (ind.fastPeriod == null || ind.slowPeriod == null || ind.signalPeriod == null) {
@@ -458,9 +469,7 @@ describe('DSL vocabulary parity with the backend grammar', () => {
     for (const operator of [...DSL_COMPARISON_OPS, ...DSL_CROSSOVER_OPS]) {
       const dsl = `(strategy "Ops" :rebalance daily (if (${operator} (rsi SPY 14) 50) (asset SPY)))`;
       const parsed = parseOrThrow(dsl);
-      expect(toDSL(parsed.tree, metadataFor(parsed))).toContain(
-        `(${operator} (rsi SPY 14) 50)`
-      );
+      expect(toDSL(parsed.tree, metadataFor(parsed))).toContain(`(${operator} (rsi SPY 14) 50)`);
     }
   });
 

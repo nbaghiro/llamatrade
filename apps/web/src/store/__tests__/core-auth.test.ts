@@ -6,7 +6,6 @@
 import { createAuthStore, isTokenExpired } from '@llamatrade/core/stores/auth';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-
 /** A JWT with only the fields the store reads (signature is never verified here). */
 function jwt(payload: Record<string, unknown>): string {
   return `header.${btoa(JSON.stringify(payload))}.signature`;

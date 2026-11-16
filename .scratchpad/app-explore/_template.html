@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Template</title>
+<script>try{document.documentElement.dataset.mode=localStorage.getItem("ax-mode")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark")}catch(e){document.documentElement.dataset.mode="dark"}</script>
+<link rel="stylesheet" href="kit.css">
+<style>
+  /* Page-specific styles go here. Keep them scoped to a class on the option, e.g. .home-a */
+  .home-a .hero { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 20px; }
+  .home-b .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .home-b .sc { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+  .home-b .sc.frozen { border-color: var(--risk-line); }
+  .home-c .brief { position: relative; padding: 56px 0 40px; text-align: center; }
+  .home-c .brief .sent { max-width: 640px; margin: 14px auto 0; font-size: 17px; color: var(--fg-2); line-height: 1.55; }
+  .home-c .brief .sent b { color: var(--fg); font-weight: 600; }
+</style>
+</head>
+<body data-title="Template" data-desc="A working example of the page contract with one surface and three options. Copy this file to start an area page.">
+
+<section class="ax-surface" id="home-dashboard"
+  data-surface="home/dashboard"
+  data-area="Home"
+  data-title="Home dashboard"
+  data-why="The first screen after sign-in: what your money is doing, which sessions are running and whether anything needs you.">
+
+  <!-- Option A -->
+  <div class="ax-opt" data-opt="A" data-name="Equity first"
+    data-note="Total equity and its curve lead, sessions sit in a rail beside it. Familiar and dense, but the frozen sleeve only gets a banner.">
+
+    <div data-frame="desktop" data-path="home">
+      <div class="app home-a">
+        <div class="topbar">
+          <span data-logo data-size="34" class="overhang"></span>
+          <nav class="nav"><a class="on">Home</a><a>Strategies</a><a>Backtests</a><a>Sessions</a><a>Portfolio</a><a>Copilot</a></nav>
+          <div class="end"><span class="mkt">Market open · 10:42 ET</span><span class="btn icon ghost sm" data-icon="bell"></span><span class="avatar">SR</span></div>
+        </div>
+        <div class="main"><div class="page">
+          <div class="page-head">
+            <div><div class="h1">Home</div><div class="sub">Tuesday, November 17 · 4 sessions on 2 accounts</div></div>
+            <div class="act"><span class="btn">Run a backtest</span><span class="btn pri">New strategy</span></div>
+          </div>
+          <div class="callout risk" style="margin-bottom:18px"><span data-icon="alert"></span><div><b>Momentum Sectors is frozen.</b> Alpaca shows 12 more SMH shares than the ledger. New orders for this sleeve wait until the difference is resolved.</div><span class="sp"></span><span class="btn sm">Review</span></div>
+          <div class="hero">
+            <div class="panel">
+              <div class="panel-h bare" style="padding-top:8px">
+                <div><div class="lbl">Total equity</div><div class="row base" style="gap:12px;margin-top:4px"><span class="big">$128,406.12</span><span class="chg gain">+$612.40 today</span></div></div>
+                <div class="aside"><div class="seg mono"><span>1W</span><span class="on">1M</span><span>3M</span><span>1Y</span><span>All</span></div></div>
+              </div>
+              <div class="panel-b" style="padding-top:6px"><div data-chart="area" data-seed="42" data-ret="0.064" data-vol="0.005" data-bench="0.038" data-start="120700" data-axis="xy" data-x="Oct 17,Oct 24,Oct 31,Nov 7,Nov 14" data-h="250" data-mark></div>
+                <div class="row xs dim" style="margin-top:8px;gap:16px"><span class="row gap-6"><i class="dot acc"></i>Your accounts</span><span class="row gap-6"><i style="width:14px;border-top:1.5px dashed var(--fg-3)"></i>SPY</span></div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-h">Sessions<span class="aside">2 paper · 1 live · 1 stopped</span></div>
+              <div class="panel-b tight list">
+                <div class="li"><div class="col gap-4" style="flex:1"><span class="t">All-Weather Portfolio</span><span class="row gap-6"><span class="pill live">Live</span><span class="st run">Running</span></span></div><div class="col gap-4" style="align-items:flex-end"><span class="mono">$48,210.55</span><span class="mono xs gain">+0.31%</span></div></div>
+                <div class="li"><div class="col gap-4" style="flex:1"><span class="t">Recession Radar</span><span class="row gap-6"><span class="pill paper">Paper</span><span class="st run">Running</span></span></div><div class="col gap-4" style="align-items:flex-end"><span class="mono">$31,904.20</span><span class="mono xs gain">+0.62%</span></div></div>
+                <div class="li"><div class="col gap-4" style="flex:1"><span class="t">Momentum Sectors</span><span class="row gap-6"><span class="pill paper">Paper</span><span class="st frozen">Frozen</span></span></div><div class="col gap-4" style="align-items:flex-end"><span class="mono">$22,118.07</span><span class="mono xs loss">−0.18%</span></div></div>
+                <div class="li"><div class="col gap-4" style="flex:1"><span class="t">Tech Momentum Rotation</span><span class="row gap-6"><span class="pill paper">Paper</span><span class="st stop">Stopped</span></span></div><div class="col gap-4" style="align-items:flex-end"><span class="mono">$26,173.30</span><span class="mono xs dim">0.00%</span></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="panel" style="margin-top:20px">
+            <div class="panel-h">Recent fills<span class="aside">Today</span></div>
+            <table class="tbl compact">
+              <tr><th>Time</th><th>Session</th><th>Symbol</th><th>Side</th><th class="num">Qty</th><th class="num">Price</th><th class="num">Value</th></tr>
+              <tr><td class="mono dim">10:31</td><td>Recession Radar</td><td class="sym">TLT</td><td>Buy</td><td class="num">42</td><td class="num">90.41</td><td class="num">$3,797.22</td></tr>
+              <tr><td class="mono dim">10:31</td><td>Recession Radar</td><td class="sym">GLD</td><td>Sell</td><td class="num">9</td><td class="num">247.86</td><td class="num">$2,230.74</td></tr>
+              <tr><td class="mono dim">09:45</td><td>All-Weather Portfolio</td><td class="sym">VGLT</td><td>Buy</td><td class="num">31</td><td class="num">58.12</td><td class="num">$1,801.72</td></tr>
+            </table>
+          </div>
+        </div></div>
+      </div>
+    </div>
+
+    <div data-frame="phone">
+      <div class="m-head"><div class="row"><span data-logo="mark" data-size="30"></span><span class="sp"></span><span class="ic" data-icon="bell" style="width:22px;height:22px"></span></div></div>
+      <div class="m-body">
+        <div><div class="lbl">Total equity</div><div class="big" style="margin-top:4px">$128,406.12</div><div class="mono gain" style="font-size:14px;margin-top:4px">+$612.40 · +0.48% today</div></div>
+        <div data-chart="area" data-seed="42" data-ret="0.064" data-vol="0.005" data-bench="0.038" data-h="150" data-mark></div>
+        <div class="seg mono round" style="align-self:center"><span>1W</span><span class="on">1M</span><span>3M</span><span>1Y</span><span>All</span></div>
+        <div class="callout risk"><span data-icon="alert"></span><div><b>Momentum Sectors is frozen.</b> Review the SMH difference to resume.</div></div>
+        <div class="m-sec">Sessions<span class="a">See all</span></div>
+        <div class="m-card rows">
+          <div class="m-row"><div style="flex:1"><div>All-Weather Portfolio</div><div class="d">Live · running</div></div><span class="mono gain">+0.31%</span></div>
+          <div class="m-row"><div style="flex:1"><div>Recession Radar</div><div class="d">Paper · running</div></div><span class="mono gain">+0.62%</span></div>
+        </div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+  </div>
+
+  <!-- Option B -->
+  <div class="ax-opt" data-opt="B" data-name="Sessions board"
+    data-note="Each running session is a card with its own curve and holdings. Home reads as a status board; total equity is secondary.">
+
+    <div data-frame="desktop" data-path="home">
+      <div class="app home-b">
+        <div class="topbar">
+          <span data-logo data-size="34" class="overhang"></span>
+          <nav class="nav"><a class="on">Home</a><a>Strategies</a><a>Backtests</a><a>Sessions</a><a>Portfolio</a><a>Copilot</a></nav>
+          <div class="end"><span class="mkt">Market open · 10:42 ET</span><span class="avatar">SR</span></div>
+        </div>
+        <div class="main"><div class="page">
+          <div class="page-head">
+            <div><div class="h1">Sessions</div><div class="sub">$128,406.12 across 4 sleeves · <span class="gain">+$612.40 today</span></div></div>
+            <div class="act"><div class="seg"><span class="on">All</span><span>Paper</span><span>Live</span></div><span class="btn pri round">Start a session</span></div>
+          </div>
+          <div class="cards">
+            <div class="panel sc">
+              <div class="row"><span class="h3">All-Weather Portfolio</span><span class="pill live">Live</span><span class="sp"></span><span class="st run">Running</span></div>
+              <div class="row base"><span class="big" style="font-size:28px">$48,210.55</span><span class="sp"></span><span class="mono sm gain">+6.8% since Aug 4</span></div>
+              <div data-chart="area" data-seed="7" data-ret="0.068" data-vol="0.006" data-h="96"></div>
+              <div data-chart="alloc" data-items="VTI:30,VGLT:40,GLD:15,BND:15"></div>
+            </div>
+            <div class="panel sc">
+              <div class="row"><span class="h3">Recession Radar</span><span class="pill paper">Paper</span><span class="sp"></span><span class="st run">Running</span></div>
+              <div class="row base"><span class="big" style="font-size:28px">$31,904.20</span><span class="sp"></span><span class="mono sm gain">+12.4% since Jun 2</span></div>
+              <div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.009" data-h="96"></div>
+              <div data-chart="alloc" data-items="TLT:60,GLD:40"></div>
+            </div>
+            <div class="panel sc frozen">
+              <div class="row"><span class="h3">Momentum Sectors</span><span class="pill paper">Paper</span><span class="sp"></span><span class="st frozen">Frozen</span></div>
+              <div class="callout risk" style="padding:10px 12px"><span data-icon="frozen"></span><div>Alpaca shows 12 more SMH shares than the ledger. Orders wait until you review it.</div></div>
+              <div data-chart="area" data-seed="33" data-ret="0.031" data-vol="0.011" data-h="66" data-color="muted"></div>
+              <div class="row"><span class="mono">$22,118.07</span><span class="sp"></span><span class="btn sm risk">Review difference</span></div>
+            </div>
+            <div class="panel sc">
+              <div class="row"><span class="h3">Tech Momentum Rotation</span><span class="pill paper">Paper</span><span class="sp"></span><span class="st stop">Stopped</span></div>
+              <div class="row base"><span class="big" style="font-size:28px">$26,173.30</span><span class="sp"></span><span class="mono sm loss">−2.4% since Sep 9</span></div>
+              <div data-chart="area" data-seed="51" data-ret="-0.024" data-vol="0.012" data-h="96" data-color="muted"></div>
+              <div class="row sm dim">Stopped on Nov 12. Positions were closed to cash.<span class="sp"></span><span class="btn sm">Restart</span></div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+
+    <div data-frame="phone">
+      <div class="m-head"><div class="t">Sessions</div><div class="s">$128,406.12 · <span class="gain">+$612.40 today</span></div></div>
+      <div class="m-body">
+        <div class="seg round" style="align-self:flex-start"><span class="on">All</span><span>Paper</span><span>Live</span></div>
+        <div class="m-card col">
+          <div class="row"><b>All-Weather Portfolio</b><span class="sp"></span><span class="pill live">Live</span></div>
+          <div class="row base"><span class="mono lg">$48,210.55</span><span class="sp"></span><span class="mono sm gain">+6.8%</span></div>
+          <div data-chart="spark" data-seed="7" data-ret="0.068" data-vol="0.03" data-fill style="width:100%;height:44px"></div>
+        </div>
+        <div class="m-card col" style="border-color:var(--risk-line)">
+          <div class="row"><b>Momentum Sectors</b><span class="sp"></span><span class="st frozen">Frozen</span></div>
+          <div class="sm muted">Alpaca shows 12 more SMH shares than the ledger.</div>
+          <span class="btn sm risk" style="align-self:flex-start">Review difference</span>
+        </div>
+        <div class="m-card col">
+          <div class="row"><b>Recession Radar</b><span class="sp"></span><span class="pill paper">Paper</span></div>
+          <div class="row base"><span class="mono lg">$31,904.20</span><span class="sp"></span><span class="mono sm gain">+12.4%</span></div>
+          <div data-chart="spark" data-seed="19" data-ret="0.124" data-vol="0.03" data-fill style="width:100%;height:44px"></div>
+        </div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+  </div>
+
+  <!-- Option C -->
+  <div class="ax-opt" data-opt="C" data-name="Quiet brief"
+    data-note="Borrows the marketing hero: bright art, one big number and a plain-language summary, with three short lists below. Calm, but less to scan at a glance.">
+
+    <div data-frame="desktop" data-path="home">
+      <div class="app home-c">
+        <div class="topbar">
+          <span data-logo data-size="34" class="overhang"></span>
+          <nav class="nav"><a class="on">Home</a><a>Strategies</a><a>Backtests</a><a>Sessions</a><a>Portfolio</a><a>Copilot</a></nav>
+          <div class="end"><span class="mkt">Market open · 10:42 ET</span><span class="avatar">SR</span></div>
+        </div>
+        <div class="main">
+          <div class="glow"></div>
+          <div class="art center" data-art="candles" data-seed="4242" style="height:460px"></div>
+          <div class="page narrow over">
+            <div class="brief">
+              <div class="lbl">Total equity · Nov 17, 10:42 ET</div>
+              <div class="huge" style="margin-top:12px">$128,406.12</div>
+              <div class="mono gain" style="margin-top:10px">+$612.40 · +0.48% today</div>
+              <p class="sent">Three sessions are running. <b>Momentum Sectors is frozen</b> until you review a 12 share difference in SMH. Recession Radar rebalances at today's close.</p>
+              <div class="row" style="justify-content:center;margin-top:22px"><span class="btn pri round lg">Review the difference</span><span class="btn round lg">Open sessions</span></div>
+            </div>
+            <div class="g3">
+              <div class="panel rim"><div class="panel-h">Needs you</div><div class="panel-b tight list">
+                <div class="li"><span class="st frozen">Momentum Sectors</span><span class="sp"></span><span class="xs dim">Frozen</span></div>
+                <div class="li"><span class="st warn">Order check</span><span class="sp"></span><span class="xs dim">1 failed</span></div>
+              </div></div>
+              <div class="panel"><div class="panel-h">Next rebalances</div><div class="panel-b tight list">
+                <div class="li"><span>Recession Radar</span><span class="sp"></span><span class="mono xs dim">Today 15:50</span></div>
+                <div class="li"><span>All-Weather Portfolio</span><span class="sp"></span><span class="mono xs dim">Dec 1</span></div>
+              </div></div>
+              <div class="panel"><div class="panel-h">Today</div><div class="panel-b tight list">
+                <div class="li"><span class="sym">TLT</span><span class="dim sm">Buy 42</span><span class="sp"></span><span class="mono xs">$3,797.22</span></div>
+                <div class="li"><span class="sym">GLD</span><span class="dim sm">Sell 9</span><span class="sp"></span><span class="mono xs">$2,230.74</span></div>
+              </div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div data-frame="phone">
+      <div class="m-body" style="padding-top:0">
+        <div class="glow" style="height:360px"></div>
+        <div class="art center" data-art="candles" data-seed="99" style="height:320px"></div>
+        <div class="over" style="text-align:center;padding-top:40px">
+          <span data-logo="mark" data-size="40" style="justify-content:center"></span>
+          <div class="lbl" style="margin-top:18px">Total equity</div>
+          <div class="big" style="margin-top:8px">$128,406.12</div>
+          <div class="mono gain sm" style="margin-top:6px">+$612.40 today</div>
+          <p class="muted" style="margin:16px 4px 0;font-size:15px">Three sessions are running. <b style="color:var(--fg)">Momentum Sectors is frozen</b> until you review a difference in SMH.</p>
+        </div>
+        <div class="m-btn over">Review the difference</div>
+        <div class="m-card rows over">
+          <div class="m-row"><span>Recession Radar</span><span class="sp"></span><span class="d mono">Rebalances 15:50</span></div>
+          <div class="m-row"><span>All-Weather Portfolio</span><span class="sp"></span><span class="d mono">Dec 1</span></div>
+        </div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+  </div>
+</section>
+
+<script src="kit.js"></script>
+</body>
+</html>

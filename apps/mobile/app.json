@@ -5,9 +5,9 @@
     "scheme": "llamatrade",
     "version": "0.1.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "backgroundColor": "#fbf8f1",
+    "backgroundColor": "#0a0a0a",
     "icon": "./assets/icon.png",
     "ios": {
       "supportsTablet": true,
@@ -24,7 +24,7 @@
       "usesCleartextTraffic": true,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0d0d0d"
+        "backgroundColor": "#0a0a0a"
       }
     },
     "plugins": [
@@ -37,7 +37,7 @@
           "image": "./assets/splash-icon.png",
           "imageWidth": 160,
           "resizeMode": "contain",
-          "backgroundColor": "#0d0d0d"
+          "backgroundColor": "#0a0a0a"
         }
       ],
       "expo-status-bar"

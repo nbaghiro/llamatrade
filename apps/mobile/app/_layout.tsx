@@ -2,12 +2,13 @@ import { useFonts } from 'expo-font';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import '../src/net/clients'; // side-effect: configure() the shared @llamatrade/core clients at startup
+import { useAppearanceStore } from '../src/stores/appearance';
 import { isTokenExpired, useAuthStore } from '../src/stores/auth';
-import { palette } from '../src/theme';
+import { useTheme } from '../src/theme';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -46,12 +47,19 @@ function useAuthRedirect(ready: boolean) {
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
-    Anton: require('../assets/fonts/Anton-Regular.ttf'),
-    Archivo: require('../assets/fonts/Archivo-Regular.ttf'),
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+    'Geist-Regular': require('../assets/fonts/Geist-Regular.ttf'),
+    'Geist-Medium': require('../assets/fonts/Geist-Medium.ttf'),
+    'Geist-SemiBold': require('../assets/fonts/Geist-SemiBold.ttf'),
+    'Geist-Bold': require('../assets/fonts/Geist-Bold.ttf'),
+    'GeistMono-Regular': require('../assets/fonts/GeistMono-Regular.ttf'),
+    'GeistMono-Medium': require('../assets/fonts/GeistMono-Medium.ttf'),
+    'GeistMono-SemiBold': require('../assets/fonts/GeistMono-SemiBold.ttf'),
   });
   const hasHydrated = useAuthStore((s) => s.hasHydrated);
-  const ready = (loaded || !!error) && hasHydrated;
+  const { c, mode } = useTheme();
+  const [appearanceReady, setAppearanceReady] = useState(() => useAppearanceStore.persist.hasHydrated());
+  useEffect(() => useAppearanceStore.persist.onFinishHydration(() => setAppearanceReady(true)), []);
+  const ready = (loaded || !!error) && hasHydrated && appearanceReady;
 
   useAuthRedirect(ready);
 
@@ -63,8 +71,8 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: palette.bone } }}>
+      <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.canvas } }}>
         <Stack.Screen name="login" />
         <Stack.Screen name="register" />
         <Stack.Screen name="(tabs)" />

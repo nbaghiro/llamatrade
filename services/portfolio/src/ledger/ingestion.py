@@ -19,7 +19,7 @@ owns the lots; trading reports broker facts only).
 Trading emits proto messages (``LedgerFill`` / ``LedgerReservation``, the §1/§4
 contract); the translation (`fill_to_append` / `reservation_to_append`, routed by
 `append_from_message`) is a pure function so it can be unit-tested. The portfolio
-service drives it from the Redis Streams consumer group
+service drives it from the Kafka ledger-fills consumer group
 (``src.tasks.fill_ingestion``).
 """
 

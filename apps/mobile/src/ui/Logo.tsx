@@ -1,40 +1,62 @@
 import { View } from 'react-native';
-import Svg, { Rect } from 'react-native-svg';
+import Svg, { Path, Rect } from 'react-native-svg';
 
-import { palette } from '../theme';
-import { Display } from './index';
+import { makeStyles, radius, useTheme } from '../theme';
+import { Text } from './Text';
 
-/**
- * Brand mark — ink box, orange frame, LT monogram.
- * Geometry mirrors apps/web/src/components/common/Logo.tsx exactly (viewBox 0 0 120 120).
- */
-export function Logo({ size = 32, showText = false }: { size?: number; showText?: boolean }) {
-  const glyph = Math.round(size * 0.72);
+const BODY: ReadonlyArray<readonly [number, number, number, number]> = [
+  [6.4, 4.5, 3.2, 14],
+  [10.8, 14.5, 3.2, 10],
+  [15.2, 14.5, 3.2, 6],
+  [19.6, 15, 3.2, 5.5],
+  [24, 14.5, 3.2, 10],
+  [28.4, 13, 2, 4.5],
+];
 
+/** The Candlesticks mark: a llama drawn as a run of candles, the first one in the accent. */
+export function LogoMark({ size = 22 }: { size?: number }) {
+  const { c } = useTheme();
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-      <View
-        style={{
-          width: size,
-          height: size,
-          backgroundColor: palette.ink,
-          borderWidth: 3,
-          borderColor: palette.orange[500],
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Svg width={glyph} height={glyph} viewBox="0 0 120 120" fill="none">
-          {/* L — bone */}
-          <Rect x="30" y="26" width="17" height="52" fill="#f2efe6" />
-          <Rect x="30" y="61" width="39" height="17" fill="#f2efe6" />
-          {/* T — signal orange */}
-          <Rect x="54" y="26" width="40" height="17" fill="#ff4d1c" />
-          <Rect x="68" y="26" width="17" height="52" fill="#ff4d1c" />
-        </Svg>
-      </View>
+    <Svg width={size} height={size} viewBox="0 0 32 32" fill="none">
+      <Path
+        d="M8 2v20M12.4 13v16.5M25.6 13v16.5M16.8 12.5v10M21.2 13v9"
+        stroke={c.fg}
+        strokeWidth={1.1}
+        strokeLinecap="round"
+      />
+      <Rect x={2} y={7} width={3.2} height={4} rx={0.5} fill={c.accent} />
+      {BODY.map(([x, y, w, h]) => (
+        <Rect key={x} x={x} y={y} width={w} height={h} rx={0.5} fill={c.fg} />
+      ))}
+    </Svg>
+  );
+}
 
-      {showText ? <Display size={Math.round(size * 0.62)}>LlamaTrade</Display> : null}
+/** Mark in a rounded tile, with the wordmark beside it when `showText`. */
+export function Logo({ size = 40, showText = false }: { size?: number; showText?: boolean }) {
+  const s = useStyles();
+  return (
+    <View style={s.row}>
+      <View style={[s.tile, { width: size, height: size }]}>
+        <LogoMark size={Math.round(size * 0.72)} />
+      </View>
+      {showText ? (
+        <Text variant="subhead" style={{ fontSize: Math.max(15, Math.round(size * 0.45)) }}>
+          LlamaTrade
+        </Text>
+      ) : null}
     </View>
   );
 }
+
+const useStyles = makeStyles((t) => ({
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  tile: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: t.c.panel,
+    borderWidth: 1,
+    borderColor: t.c.lineStrong,
+  },
+}));

@@ -1,10 +1,15 @@
 import { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
+import { AuthCardLayout } from '../../components/auth/AuthCardLayout';
+import { FormHeader } from '../../components/auth/AuthSplitLayout';
+import { authErrorMessage } from '../../components/auth/errors';
+import { Field, FormNote, LINK } from '../../components/auth/fields';
+import { landingAfterSignIn } from '../../components/auth/landing';
 import { completeAlpacaSignup } from '../../services/alpacaOAuth';
 import { useAuthStore } from '../../store/auth';
 
-/** Capture the email/password OAuth can't provide, then finish sign-up-with-Alpaca. */
+/** Collects the email, name and password Alpaca sign-in can't provide, then creates the account. */
 export default function CompleteSignupPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -20,68 +25,85 @@ export default function CompleteSignupPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ticket) {
-      setError('Missing sign-up ticket. Please start again from sign in.');
-      return;
-    }
     setLoading(true);
     setError('');
     try {
       const session = await completeAlpacaSignup({ ticket, email, password, firstName, lastName });
       setSession(session.user, session.accessToken, session.refreshToken);
-      navigate('/dashboard', { replace: true });
+      navigate(await landingAfterSignIn(session.user.id), { replace: true });
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Could not complete sign up.');
-    } finally {
+      setError(authErrorMessage(err, "The account couldn't be created."));
       setLoading(false);
     }
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-6">
-      <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
-        <div>
-          <h1 className="text-xl font-bold">Finish creating your account</h1>
-          <p className="mt-1 text-sm text-ink/60">
-            Your Alpaca account is connected — add your details to finish.
-          </p>
-        </div>
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <input
-          className="input"
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-        />
-        <div className="flex gap-3">
-          <input
-            className="input"
-            placeholder="First name"
-            value={firstName}
-            onChange={(e) => setFirstName(e.target.value)}
+    <AuthCardLayout footnote="Closed beta · invite only · paper and live trading on Alpaca">
+      <FormHeader
+        title="Finish creating your account"
+        subtitle={
+          ticket
+            ? 'Your Alpaca account is connected. Add your details to finish.'
+            : 'This page finishes a sign-up that started on Alpaca.'
+        }
+      />
+      {ticket ? (
+        <FormNote tone="ok">
+          <b>Alpaca account connected.</b> Its keys are stored encrypted.
+        </FormNote>
+      ) : (
+        <FormNote tone="warn">
+          This sign-up link is missing its details. Please start again from{' '}
+          <Link to="/register" className={LINK}>
+            Create an account
+          </Link>
+          .
+        </FormNote>
+      )}
+      {ticket && (
+        <form onSubmit={handleSubmit} className="grid gap-3.5">
+          {error && <FormNote tone="warn">{error}</FormNote>}
+          <Field
+            id="email"
+            label="Email address"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+            required
           />
-          <input
-            className="input"
-            placeholder="Last name"
-            value={lastName}
-            onChange={(e) => setLastName(e.target.value)}
+          <div className="grid grid-cols-2 gap-3">
+            <Field
+              id="firstName"
+              label="First name"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              autoComplete="given-name"
+            />
+            <Field
+              id="lastName"
+              label="Last name"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              autoComplete="family-name"
+            />
+          </div>
+          <Field
+            id="password"
+            label="Password"
+            help="At least 8 characters."
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
+            minLength={8}
+            required
           />
-        </div>
-        <input
-          className="input"
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          minLength={8}
-        />
-        <button type="submit" className="btn btn-primary btn-lg w-full" disabled={loading}>
-          {loading ? 'Creating account…' : 'Create account'}
-        </button>
-      </form>
-    </div>
+          <button type="submit" className="btn btn-primary btn-lg w-full" disabled={loading}>
+            {loading ? 'Creating account…' : 'Create account'}
+          </button>
+        </form>
+      )}
+    </AuthCardLayout>
   );
 }

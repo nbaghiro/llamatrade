@@ -1,11 +1,12 @@
-/* Standalone marketing build entry CSS — theme tokens + shared @layer + Tailwind.
-   The EMBEDDED marketing page (rendered at "/" inside the app) gets these from
-   apps/web/src/index.css; this file exists only for the marketing-only
-   `build:marketing` bundle. The bespoke layout (marketing.css) is imported by
-   MarketingPage.tsx, so it is not repeated here. */
-@import '../styles/monolith.css';
+/* Standalone marketing entry: the token layer, the shared layer and Tailwind. Inside the app these
+   come from src/index.css; the page's own styles (marketing.css) load with MarketingPage. */
+@import '../styles/tokens.css';
 @import '../styles/ui-layer.css';
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+body.site {
+  background: rgb(var(--p-bg));
+}

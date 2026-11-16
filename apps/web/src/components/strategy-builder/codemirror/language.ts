@@ -4,25 +4,71 @@ import { StreamLanguage, LanguageSupport } from '@codemirror/language';
 
 // Token classification sets (must match strategy-serializer.ts)
 const DSL_KEYWORDS = new Set([
-  'strategy', 'weight', 'asset', 'group', 'if', 'else', 'filter',
-  'then', 'allocation', 'universe', 'close', 'open', 'high', 'low', 'volume', 'price',
+  'strategy',
+  'weight',
+  'asset',
+  'group',
+  'if',
+  'else',
+  'filter',
+  'then',
+  'allocation',
+  'universe',
+  'close',
+  'open',
+  'high',
+  'low',
+  'volume',
+  'price',
 ]);
 
 const DSL_METHODS = new Set([
-  'specified', 'equal', 'momentum', 'inverse-volatility', 'min-variance',
-  'risk-parity', 'inverse_volatility', 'min_variance', 'risk_parity',
-  'top', 'bottom',
+  'specified',
+  'equal',
+  'momentum',
+  'inverse-volatility',
+  'min-variance',
+  'risk-parity',
+  'inverse_volatility',
+  'min_variance',
+  'risk_parity',
+  'top',
+  'bottom',
 ]);
 
 const DSL_INDICATORS = new Set([
-  'sma', 'ema', 'rsi', 'macd', 'macd-line', 'macd-signal',
-  'bbands', 'bb-upper', 'bb-middle', 'bb-lower',
-  'atr', 'adx', 'stochastic', 'cci', 'williams-r', 'obv', 'mfi', 'vwap', 'roc',
+  'sma',
+  'ema',
+  'rsi',
+  'macd',
+  'macd-line',
+  'macd-signal',
+  'bbands',
+  'bb-upper',
+  'bb-middle',
+  'bb-lower',
+  'atr',
+  'adx',
+  'stochastic',
+  'cci',
+  'williams-r',
+  'obv',
+  'mfi',
+  'vwap',
+  'roc',
 ]);
 
 const DSL_OPERATORS = new Set([
-  '>', '<', '>=', '<=', '=', '!=',
-  'cross-above', 'cross-below', 'crosses-above', 'crosses-below',
+  '>',
+  '<',
+  '>=',
+  '<=',
+  '=',
+  '!=',
+  'cross-above',
+  'cross-below',
+  'crosses-above',
+  'crosses-below',
 ]);
 
 const DSL_LOGICAL = new Set(['and', 'or', 'not']);

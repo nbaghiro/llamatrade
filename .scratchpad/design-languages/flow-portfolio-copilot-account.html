@@ -1,0 +1,845 @@
+<!doctype html>
+<html lang="en" data-theme="black" data-acc="cyan">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Portfolio, Copilot, Account</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%2032%2032%22%3E%3Crect%20width%3D%2232%22%20height%3D%2232%22%20rx%3D%227%22%20fill%3D%22%230a0a0a%22/%3E%3Cg%20transform%3D%22translate%283%203%29%20scale%280.8125%29%22%3E%3Cpath%20d%3D%22M8%202v20M12.4%2013v16.5M25.6%2013v16.5M16.8%2012.5v10M21.2%2013v9%22%20stroke%3D%22%23ededed%22%20stroke-width%3D%221.1%22%20stroke-linecap%3D%22round%22/%3E%3Crect%20x%3D%222%22%20y%3D%227%22%20width%3D%223.2%22%20height%3D%224%22%20rx%3D%220.5%22%20fill%3D%22%234cc2ff%22/%3E%3Crect%20x%3D%226.4%22%20y%3D%224.5%22%20width%3D%223.2%22%20height%3D%2214%22%20rx%3D%220.5%22%20fill%3D%22%23ededed%22/%3E%3Crect%20x%3D%2210.8%22%20y%3D%2214.5%22%20width%3D%223.2%22%20height%3D%2210%22%20rx%3D%220.5%22%20fill%3D%22%23ededed%22/%3E%3Crect%20x%3D%2215.2%22%20y%3D%2214.5%22%20width%3D%223.2%22%20height%3D%226%22%20rx%3D%220.5%22%20fill%3D%22%23ededed%22/%3E%3Crect%20x%3D%2219.6%22%20y%3D%2215%22%20width%3D%223.2%22%20height%3D%225.5%22%20rx%3D%220.5%22%20fill%3D%22%23ededed%22/%3E%3Crect%20x%3D%2224%22%20y%3D%2214.5%22%20width%3D%223.2%22%20height%3D%2210%22%20rx%3D%220.5%22%20fill%3D%22%23ededed%22/%3E%3Crect%20x%3D%2228.4%22%20y%3D%2213%22%20width%3D%222%22%20height%3D%224.5%22%20rx%3D%220.5%22%20fill%3D%22%23ededed%22/%3E%3C/g%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chivo+Mono:wght@400;500;600&family=Chivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>try { var d = document.documentElement; d.dataset.theme = localStorage.getItem("lts-theme-b2") || "slate"; d.dataset.acc = localStorage.getItem("lts-acc-b5") || "slate"; } catch (e) { /* storage unavailable */ }</script>
+<style>
+/* B Session, Slate */
+:root {
+--p-bg: #0b0e11; --p-card: #13171b; --p-ink: #e6eaee; --p-ink2: #aab3bd; --p-ink3: #7f8994; --p-line: #20272e; --p-line2: #323b44;
+--a-bg: #0f1316; --a-panel: #151a1f; --a-sunk: #1c2228; --a-line: #252c34; --a-line2: #36404a; --a-text: #e6eaee; --a-text2: #aab3bd; --a-text3: #7f8994;
+--a-gain: #3fbf7a; --a-loss: #f2555a; --a-gain-rgb: 63,191,122; --a-loss-rgb: 242,85,90;
+--a-risk: #f0a63a; --a-risk-soft: rgba(240,166,58,0.1); --a-risk-line: rgba(240,166,58,0.45);
+--a-h1: #e6eaee; --a-h2: #aab3bd; --a-h3: #7f8994; --a-h4: #56606b; --a-h5: #363f48;
+--a-bar: #13171b; --a-dot: #36404a; --a-win-line: #2b343d; --a-hatch: rgba(228,232,236,0.16); --a-scrim: rgba(5,7,9,0.62);
+--a-shadow: 0 40px 80px -40px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.03); --a-phone-shadow: 0 30px 60px -24px rgba(0,0,0,0.8);
+--acc: #4cc2ff; --acc-ink: #04121c; --acc-soft: rgba(76,194,255,0.14);
+--sans: "Chivo", system-ui, sans-serif; --mono: "Chivo Mono", ui-monospace, monospace;
+}
+/* B Session, Black (default) */
+html[data-theme="black"] {
+--p-bg: #000; --p-card: #0e0e0e; --p-ink: #ededed; --p-ink2: #a3a3a3; --p-ink3: #767676; --p-line: #1f1f1f; --p-line2: #2e2e2e;
+--a-bg: #0a0a0a; --a-panel: #111111; --a-sunk: #181818; --a-line: #222222; --a-line2: #2e2e2e; --a-text: #ededed; --a-text2: #a3a3a3; --a-text3: #767676;
+--a-h1: #ededed; --a-h2: #a3a3a3; --a-h3: #767676; --a-h4: #4d4d4d; --a-h5: #2e2e2e;
+--a-bar: #0e0e0e; --a-dot: #333333; --a-win-line: #262626; --a-hatch: rgba(237,237,237,0.16); --a-scrim: rgba(0,0,0,0.66);
+--a-shadow: 0 40px 80px -40px rgba(0,0,0,0.9), 0 0 0 1px rgba(255,255,255,0.04);
+}
+html[data-acc="white"] { --acc: #dbe3f0; --acc-ink: #0b1220; --acc-soft: rgba(219,227,240,0.12); }
+html[data-acc="amber"] { --acc: #ffc24b; --acc-ink: #1f1500; --acc-soft: rgba(255,194,75,0.14); }
+html[data-acc="violet"] { --acc: #a78bfa; --acc-ink: #14082e; --acc-soft: rgba(167,139,250,0.16); }
+html[data-acc="silver"] { --acc: #a1a1aa; --acc-ink: #0a0a0a; --acc-soft: rgba(161,161,170,0.16); }
+html[data-acc="orange"] { --acc: #ff9f43; --acc-ink: #1f1000; --acc-soft: rgba(255,159,67,0.16); }
+html[data-acc="lime"] { --acc: #d9f05c; --acc-ink: #141a00; --acc-soft: rgba(217,240,92,0.16); }
+html[data-acc="teal"] { --acc: #2dd4bf; --acc-ink: #031a17; --acc-soft: rgba(45,212,191,0.16); }
+html[data-acc="indigo"] { --acc: #818cf8; --acc-ink: #0b0b2e; --acc-soft: rgba(129,140,248,0.16); }
+html[data-acc="lilac"] { --acc: #d8b4fe; --acc-ink: #1e0b33; --acc-soft: rgba(216,180,254,0.16); }
+html[data-acc="pink"] { --acc: #f472b6; --acc-ink: #2b0618; --acc-soft: rgba(244,114,182,0.16); }
+html[data-acc="blue"] { --acc: #5b8cff; --acc-fill: #2563eb; --acc-ink: #ffffff; --acc-soft: rgba(91,140,255,0.16); }
+html[data-acc="slate"] { --acc: #8fa4cf; --acc-fill: #475f8a; --acc-ink: #ffffff; --acc-soft: rgba(143,164,207,0.16); }
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; background: var(--p-bg); }
+body { margin: 0; background: var(--p-bg); color: var(--p-ink); font: 400 15px/1.6 var(--sans); overflow-x: hidden; }
+a { color: var(--acc); text-decoration: none; }
+.wrap { max-width: 1400px; margin: 0 auto; padding: 0 28px; }
+
+/* Review page */
+.intro { padding: 60px 0 10px; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr); gap: 56px; align-items: end; }
+.kick { font: 500 13px var(--mono); color: var(--p-ink3); }
+.intro h1 { font: 600 42px/1.08 var(--sans); letter-spacing: -0.025em; margin: 12px 0 16px; }
+.intro p { margin: 0 0 10px; color: var(--p-ink2); font-size: 16px; max-width: 680px; }
+.facts { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--p-line); border-radius: 4px; background: var(--p-card); }
+.facts > div { padding: 14px 16px; border-right: 1px solid var(--p-line); min-width: 0; }
+.facts > div:last-child { border-right: 0; }
+.facts b { display: block; font: 500 19px/1.25 var(--mono); letter-spacing: -0.02em; white-space: nowrap; }
+.facts span { font-size: 12.5px; color: var(--p-ink3); }
+.toc { margin-top: 40px; border-top: 1px solid var(--p-line2); padding-top: 18px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px 28px; }
+.toc h2 { margin: 0 0 6px; font: 600 13px var(--sans); }
+.toc h2 a { color: var(--p-ink); }
+.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.toc li a { color: var(--p-ink2); font-size: 13.5px; display: flex; gap: 8px; }
+.toc li a:hover { color: var(--p-ink); }
+.toc li em { font: 400 12px/1.85 var(--mono); color: var(--p-ink3); font-style: normal; min-width: 22px; }
+.toc li .rec { color: var(--acc); font: 500 11px/1.9 var(--sans); margin-left: auto; }
+
+.flow { padding-top: 96px; }
+.flow-h { border-top: 1px solid var(--p-line2); padding-top: 16px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 12px 48px; align-items: baseline; }
+.flow-h h2 { margin: 0; font: 600 30px/1.15 var(--sans); letter-spacing: -0.02em; }
+.flow-h h2 em { font: 500 14px var(--mono); color: var(--p-ink3); font-style: normal; margin-right: 12px; vertical-align: 6px; }
+.flow-h p { margin: 0; color: var(--p-ink2); font-size: 15px; }
+.var { padding: 56px 0 8px; }
+.var + .var { border-top: 1px dashed var(--p-line); margin-top: 40px; }
+.vh { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.vh .t { display: flex; align-items: baseline; gap: 14px; min-width: 0; }
+.vh .code { font: 500 13px var(--mono); color: var(--p-ink3); }
+.vh h3 { margin: 0; font: 600 21px/1.25 var(--sans); letter-spacing: -0.015em; }
+.vh .recb { display: inline-flex; align-items: center; height: 22px; padding: 0 9px; border-radius: 999px; font: 600 11px/1 var(--sans); color: var(--acc-ink); background: var(--acc-fill, var(--acc)); vertical-align: 3px; margin-left: 4px; white-space: nowrap; }
+.scr-tabs { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--p-line2); }
+.scr-tabs button { border: 0; background: transparent; color: var(--p-ink2); font: 500 12.5px var(--sans); padding: 5px 12px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
+.scr-tabs button:hover { color: var(--p-ink); }
+.scr-tabs button[aria-pressed="true"] { background: var(--p-card); color: var(--p-ink); box-shadow: inset 0 0 0 1px var(--p-line2); }
+.scr-tabs button:focus-visible { outline: 2px solid var(--acc); outline-offset: 1px; }
+.pair { display: grid; grid-template-columns: minmax(0, 3.1fr) minmax(0, 1fr); gap: 32px; align-items: end; }
+.pair > * { min-width: 0; }
+.notes { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; margin-top: 26px; }
+.notes div { border-top: 1px solid var(--p-line); padding-top: 10px; }
+.notes b { display: block; font: 600 12px var(--sans); color: var(--p-ink3); margin-bottom: 4px; }
+.notes p { margin: 0; font-size: 13.5px; color: var(--p-ink2); line-height: 1.6; }
+.verdict { margin-top: 56px; padding: 22px 24px; border-radius: 4px; background: var(--p-card); border: 1px solid var(--p-line2); display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 8px 28px; }
+.verdict .k { font: 500 12px var(--sans); color: var(--acc); }
+.verdict h4 { margin: 2px 0 0; font: 600 18px/1.3 var(--sans); }
+.verdict p { margin: 0 0 6px; color: var(--p-ink2); font-size: 14.5px; }
+.final { padding-top: 110px; }
+.final .flow-h { margin-bottom: 26px; }
+.plan { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
+.plan > div { background: var(--p-card); border: 1px solid var(--p-line); border-radius: 4px; padding: 20px 22px; }
+.plan h4 { margin: 0 0 4px; font: 600 16px var(--sans); }
+.plan .pick { font: 500 12.5px var(--mono); color: var(--acc); margin-bottom: 10px; display: block; }
+.plan p { margin: 0 0 10px; font-size: 13.5px; color: var(--p-ink2); }
+.plan ol { margin: 0; padding-left: 18px; font-size: 13.5px; color: var(--p-ink2); display: grid; gap: 4px; }
+.shared { margin-top: 20px; padding: 18px 22px; border: 1px dashed var(--p-line2); border-radius: 4px; color: var(--p-ink2); font-size: 14px; }
+.shared b { color: var(--p-ink); }
+.foot { padding: 80px 0 64px; color: var(--p-ink3); font-size: 13px; }
+.foot .wrap > div { border-top: 1px solid var(--p-line); padding-top: 18px; }
+
+/* Frames */
+.fr { position: relative; }
+.fr > .in { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.win { width: 1240px; background: var(--a-bg); color: var(--a-text); border-radius: 10px; overflow: hidden; box-shadow: var(--a-shadow); border: 1px solid var(--a-win-line); }
+.win-bar { height: 34px; display: flex; align-items: center; padding: 0 14px; background: var(--a-bar); border-bottom: 1px solid var(--a-line); font: 400 11.5px var(--sans); color: var(--a-text3); }
+.win-bar .dots { display: flex; gap: 6px; width: 60px; }
+.win-bar .dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--a-dot); display: block; }
+.win-bar .url { margin: 0 auto; transform: translateX(-30px); min-width: 340px; height: 22px; border-radius: 6px; background: var(--a-sunk); display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; }
+.win-bar .url svg { width: 10px; height: 10px; }
+.phone { width: 412px; position: relative; border-radius: 54px; padding: 11px; background: #0f1013; box-shadow: inset 0 0 0 1.5px #3b3e45, 0 0 0 2px #a3a7ae, 0 0 0 3.5px #2b2d32, var(--a-phone-shadow); }
+.phone::after { content: ""; position: absolute; top: 22px; left: 50%; width: 112px; height: 32px; transform: translateX(-50%); border-radius: 999px; background: #050506; z-index: 9; }
+.phone .scr { border-radius: 44px; overflow: hidden; height: 844px; background: var(--a-bg); position: relative; color: var(--a-text); }
+.cap { margin-top: 12px; font-size: 12.5px; color: var(--p-ink3); text-align: center; }
+
+/* App, shared */
+.app { font: 400 13px/1.45 var(--sans); color: var(--a-text); background: var(--a-bg); position: relative; overflow: hidden; }
+.app.dk { height: 766px; display: flex; flex-direction: column; }
+.app.dk > .main { flex: 1; min-height: 0; }
+.ico { width: 16px; height: 16px; display: block; flex: none; }
+.ltm { width: 19px; height: 19px; color: var(--a-text); --lacc: var(--acc); }
+.app-nav { height: 48px; flex: none; display: flex; align-items: center; gap: 24px; padding: 0 22px; border-bottom: 1px solid var(--a-line); background: var(--a-panel); }
+.app-nav .lg { font: 600 15px var(--sans); letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px; }
+.app-nav nav { display: flex; gap: 2px; }
+.app-nav nav span { padding: 6px 10px; border-radius: 3px; color: var(--a-text2); font-size: 12.5px; }
+.app-nav nav span.on { color: var(--a-text); background: var(--a-sunk); font-weight: 500; }
+.app-nav .end { margin-left: auto; display: flex; gap: 14px; align-items: center; color: var(--a-text3); font-size: 12px; }
+.av { width: 26px; height: 26px; border-radius: 50%; background: var(--acc-soft); color: var(--acc); display: grid; place-items: center; font: 600 10.5px var(--sans); }
+.bell { position: relative; color: var(--a-text2); display: grid; place-items: center; width: 26px; height: 26px; border-radius: 4px; }
+.bell.on { background: var(--a-sunk); color: var(--a-text); }
+.bell b { position: absolute; top: 0; right: -2px; min-width: 14px; height: 14px; border-radius: 999px; background: var(--acc-fill, var(--acc)); color: var(--acc-ink); font: 600 9px/14px var(--mono); text-align: center; padding: 0 3px; }
+.kbd { font: 500 10.5px/1 var(--mono); padding: 3px 5px; box-shadow: inset 0 0 0 1px var(--a-line2); border-radius: 2px; color: var(--a-text3); }
+.mode { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 3px; font: 600 10px/1 var(--sans); letter-spacing: 0.06em; text-transform: uppercase; color: var(--a-text); box-shadow: inset 0 0 0 1px var(--a-line2); background: repeating-linear-gradient(135deg, var(--a-hatch) 0 2px, transparent 2px 5px); white-space: nowrap; }
+.main { padding: 30px 40px; overflow: hidden; position: relative; }
+.main.c { max-width: 1060px; margin: 0 auto; width: 100%; }
+.hd { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; margin-bottom: 24px; }
+.hd h3 { margin: 0; font: 600 24px/1.15 var(--sans); letter-spacing: -0.02em; }
+.hd .meta { font-size: 12.5px; color: var(--a-text3); margin-top: 5px; }
+.hd .acts { display: flex; gap: 8px; align-items: center; }
+.b { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 3px; font: 500 12.5px var(--sans); box-shadow: inset 0 0 0 1px var(--a-line2); background: var(--a-panel); color: var(--a-text); white-space: nowrap; }
+.b .ico { width: 14px; height: 14px; }
+.b.p { background: var(--acc-fill, var(--acc)); color: var(--acc-ink); box-shadow: none; font-weight: 600; }
+.b.gh { background: transparent; box-shadow: none; color: var(--acc); padding: 0 6px; }
+.b.lg { height: 38px; padding: 0 18px; font-size: 13.5px; }
+.b.full { width: 100%; }
+.b.dis { opacity: 0.42; }
+.b.warn { color: var(--a-risk); box-shadow: inset 0 0 0 1px var(--a-risk-line); }
+.pn { background: var(--a-panel); border: 1px solid var(--a-line); border-radius: 4px; min-width: 0; overflow: hidden; }
+.pn-h { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 18px; border-bottom: 1px solid var(--a-line); }
+.pn-h b { font: 600 13.5px var(--sans); }
+.pn-h span { font-size: 12px; color: var(--a-text3); }
+.pn-b { padding: 16px 18px; }
+.pn-f { padding: 12px 18px; border-top: 1px solid var(--a-line); font-size: 12px; color: var(--a-text2); display: flex; justify-content: space-between; gap: 10px; }
+.lbl { font: 500 11.5px var(--sans); color: var(--a-text3); }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums lining-nums; letter-spacing: -0.01em; }
+.gain { color: var(--a-gain); }
+.loss { color: var(--a-loss); }
+.risk { color: var(--a-risk); }
+.t2 { color: var(--a-text2); }
+.t3 { color: var(--a-text3); }
+.sm { font-size: 11.5px; }
+.st { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--a-text2); white-space: nowrap; }
+.st i { width: 7px; height: 7px; border-radius: 50%; display: block; box-shadow: inset 0 0 0 1.5px var(--a-text3); }
+.st.run i { background: var(--a-text); box-shadow: none; }
+.st.frz { color: var(--a-risk); }
+.st.frz i { background: var(--a-risk); box-shadow: none; border-radius: 1px; }
+.st.ping i { position: relative; }
+.st.ping i::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 1px solid var(--a-text); animation: ping 2.4s ease-out infinite; }
+@keyframes ping { 0% { transform: scale(0.4); opacity: 0.9; } 80%, 100% { transform: scale(1.3); opacity: 0; } }
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 21px; padding: 0 8px; border-radius: 999px; font: 500 11px var(--sans); background: var(--a-sunk); color: var(--a-text2); white-space: nowrap; }
+.chip.ok { background: var(--acc-soft); color: var(--acc); }
+.chip.line { background: transparent; box-shadow: inset 0 0 0 1px var(--a-line2); }
+.chip.rk { background: var(--a-risk-soft); color: var(--a-risk); }
+.seg { display: inline-flex; padding: 2px; border-radius: 5px; background: var(--a-sunk); gap: 2px; }
+.seg span { padding: 4px 10px; border-radius: 3px; font: 500 12px var(--sans); color: var(--a-text2); white-space: nowrap; }
+.seg span.on { background: var(--a-panel); color: var(--a-text); box-shadow: 0 0 0 1px var(--a-line2); }
+.row2 { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.stack { display: grid; gap: 16px; align-content: start; min-width: 0; }
+.g2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.kv { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--a-line); font-size: 13px; }
+.kv:last-child { border-bottom: 0; }
+.kv > span:first-child { color: var(--a-text2); }
+.alert { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 12px; padding: 12px 16px; border-radius: 4px; background: var(--a-risk-soft); border: 1px solid var(--a-risk-line); font-size: 12.5px; align-items: center; }
+.alert b { color: var(--a-risk); font-weight: 600; }
+.alert .ico { color: var(--a-risk); }
+.wb { display: flex; gap: 2px; height: 10px; }
+.wb span { display: block; height: 100%; border-radius: 1px; }
+.h1 { background: var(--a-h1); } .h2 { background: var(--a-h2); } .h3 { background: var(--a-h3); } .h4 { background: var(--a-h4); } .h5 { background: var(--a-h5); }
+.hacc { background: var(--acc-fill, var(--acc)); }
+.hfree { background: repeating-linear-gradient(135deg, var(--a-h4) 0 1.5px, transparent 1.5px 5px); box-shadow: inset 0 0 0 1px var(--a-h5); }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 8px; vertical-align: 0; flex: none; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tbl th { text-align: left; font: 500 11.5px var(--sans); color: var(--a-text3); padding: 10px 14px; border-bottom: 1px solid var(--a-line); white-space: nowrap; }
+.tbl td { padding: 0 14px; height: 44px; border-bottom: 1px solid var(--a-line); white-space: nowrap; }
+.tbl.cmp td { height: 34px; }
+.tbl tr:last-child td { border-bottom: 0; }
+.tbl .n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.tbl th.n { font-family: var(--sans); }
+.tbl td:first-child, .tbl th:first-child { padding-left: 20px; }
+.tbl td:last-child, .tbl th:last-child { padding-right: 20px; }
+.tbl tr.rk td { background: var(--a-risk-soft); }
+.tbl tr.rk td:first-child { box-shadow: inset 2px 0 0 var(--a-risk); }
+.tbl tr.dim td { color: var(--a-text2); }
+.tbl tr.sub td { background: var(--a-bg); height: 36px; font-size: 12.5px; }
+.tbl tr.sub td:first-child { padding-left: 46px; }
+.tbl tr.tot td { font-weight: 600; border-top: 1px solid var(--a-text3); border-bottom: 3px double var(--a-text3); }
+.tbl tr.grp td { height: 32px; font: 500 11.5px var(--sans); color: var(--a-text3); background: var(--a-bg); }
+.sym { font: 600 12.5px var(--mono); letter-spacing: 0; }
+.inp { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; background: var(--a-bg); box-shadow: inset 0 0 0 1px var(--a-line2); border-radius: 3px; font: 400 13px var(--sans); color: var(--a-text); white-space: nowrap; overflow: hidden; }
+.inp .ph { color: var(--a-text3); }
+.inp.focus { box-shadow: inset 0 0 0 1px var(--acc), 0 0 0 3px var(--acc-soft); }
+.inp.big { height: 60px; font: 400 28px var(--mono); letter-spacing: -0.02em; }
+.inp.big .af { font-size: 20px; color: var(--a-text3); }
+.caret { display: inline-block; width: 1.5px; height: 1em; background: var(--acc); animation: blink 1s steps(1) infinite; vertical-align: -2px; }
+@keyframes blink { 50% { opacity: 0; } }
+.ovl { position: absolute; inset: 0; background: var(--a-scrim); z-index: 5; display: grid; place-items: center; }
+.ovl.right { place-items: stretch end; }
+.ovl.top { place-items: start center; padding-top: 70px; }
+.modal { width: 480px; background: var(--a-panel); border-radius: 6px; box-shadow: inset 0 0 0 1px var(--a-line2), 0 30px 80px -30px rgba(0,0,0,0.7); overflow: hidden; }
+.modal-h { padding: 16px 20px; border-bottom: 1px solid var(--a-line); display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.modal-h b { font: 600 15px var(--sans); }
+.modal-b { padding: 18px 20px; display: grid; gap: 16px; }
+.modal-f { padding: 14px 20px; border-top: 1px solid var(--a-line); display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
+.modal-f .lft { margin-right: auto; font-size: 12px; color: var(--a-text3); }
+.x { width: 22px; height: 22px; display: grid; place-items: center; color: var(--a-text3); }
+.drawer { width: 460px; height: 100%; background: var(--a-panel); box-shadow: inset 1px 0 0 var(--a-line2), -30px 0 60px -30px rgba(0,0,0,0.5); display: flex; flex-direction: column; }
+.menu { position: absolute; z-index: 6; background: var(--a-panel); border-radius: 6px; box-shadow: inset 0 0 0 1px var(--a-line2), 0 24px 50px -20px rgba(0,0,0,0.6); overflow: hidden; }
+.nt { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--a-line); font-size: 12.5px; align-items: start; }
+.nt:last-child { border-bottom: 0; }
+.nt > i { width: 7px; height: 7px; border-radius: 50%; margin-top: 6px; display: block; }
+.nt > i.u { background: var(--acc-fill, var(--acc)); }
+.nt b { font-weight: 600; display: block; }
+.nt p { margin: 2px 0 0; color: var(--a-text2); font-size: 12px; white-space: normal; }
+.nt .ts { font: 400 11px var(--mono); color: var(--a-text3); white-space: nowrap; }
+.nt.rk b { color: var(--a-risk); }
+.nt.read { opacity: 0.6; }
+.empty { display: grid; justify-items: center; text-align: center; padding: 40px 24px; }
+.empty .eg { width: 48px; height: 48px; border: 1px dashed var(--a-line2); border-radius: 50%; display: grid; place-items: center; color: var(--a-text3); margin-bottom: 14px; }
+.empty h5 { margin: 0 0 6px; font: 600 15px/1.3 var(--sans); }
+.empty p { margin: 0; color: var(--a-text2); max-width: 400px; font-size: 13px; }
+.meter { height: 4px; background: var(--a-sunk); border-radius: 1px; position: relative; overflow: hidden; margin-top: 8px; }
+.meter i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--acc-fill, var(--acc)); border-radius: 1px; }
+.meter.off i { background: var(--a-h4); }
+.cb { width: 15px; height: 15px; border-radius: 3px; box-shadow: inset 0 0 0 1.5px var(--a-line2); display: inline-grid; place-items: center; vertical-align: middle; }
+.cb.on { background: var(--acc-fill, var(--acc)); box-shadow: none; }
+.cb.on::after { content: ""; width: 7px; height: 3.5px; border-left: 1.5px solid var(--acc-ink); border-bottom: 1.5px solid var(--acc-ink); transform: rotate(-45deg) translate(1px, -1px); }
+.cb.lock { opacity: 0.45; }
+.sw { width: 30px; height: 18px; border-radius: 999px; background: var(--a-line2); position: relative; display: inline-block; flex: none; }
+.sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--a-text2); }
+.sw.on { background: var(--acc-fill, var(--acc)); }
+.sw.on::after { left: 14px; background: var(--acc-ink); }
+.sw.lock { opacity: 0.5; }
+
+/* Chat */
+.msg { display: grid; gap: 5px; max-width: 82%; }
+.msg.me { justify-self: end; }
+.msg .bub { padding: 10px 14px; border-radius: 4px; background: var(--a-sunk); font-size: 13px; line-height: 1.55; }
+.msg.ai .bub { background: transparent; padding: 0; }
+.msg .bub p { margin: 0 0 8px; }
+.msg .bub p:last-child { margin: 0; }
+.msg .who { font: 500 11px var(--sans); color: var(--a-text3); }
+.msg.me .who { text-align: right; }
+.tool { display: flex; align-items: center; gap: 8px; font: 400 11.5px var(--mono); color: var(--a-text3); }
+.tool .ico { width: 13px; height: 13px; color: var(--acc); }
+.tool b { color: var(--a-text2); font-weight: 500; }
+.art { border: 1px solid var(--a-line2); border-radius: 6px; background: var(--a-panel); overflow: hidden; }
+.art.ask { border-color: var(--acc); box-shadow: 0 0 0 3px var(--acc-soft); }
+.art-h { padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px; border-bottom: 1px solid var(--a-line); }
+.art-h b { font: 600 14px var(--sans); }
+.art-b { padding: 14px 16px; display: grid; gap: 12px; }
+.art-f { padding: 12px 16px; border-top: 1px solid var(--a-line); display: flex; gap: 8px; align-items: center; }
+.args { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 7px 14px; font-size: 12.5px; }
+.args span:nth-child(odd) { color: var(--a-text3); }
+.args span:nth-child(even) { font-family: var(--mono); }
+.composer { display: flex; gap: 8px; align-items: center; padding: 12px; border: 1px solid var(--a-line2); border-radius: 8px; background: var(--a-panel); }
+.composer .inp { flex: 1; box-shadow: none; background: transparent; padding: 0 4px; }
+.composer .send { width: 32px; height: 32px; border-radius: 6px; background: var(--acc-fill, var(--acc)); color: var(--acc-ink); display: grid; place-items: center; flex: none; }
+.composer .send .ico { width: 15px; height: 15px; }
+.code { font: 400 12.5px/1.8 var(--mono); padding: 12px 0; white-space: pre; color: var(--a-text); }
+.code div { display: grid; grid-template-columns: 40px minmax(0, 1fr); padding-right: 14px; }
+.code .ln { color: var(--a-text3); text-align: right; padding-right: 14px; opacity: 0.7; }
+.code .k { color: var(--acc); }
+.code .s { color: var(--a-text2); }
+.code .del { background: rgba(var(--a-loss-rgb), 0.08); color: var(--a-text3); text-decoration: line-through; text-decoration-color: var(--a-text3); }
+.code .add { background: var(--acc-soft); }
+.code .add .ln, .code .del .ln { opacity: 1; }
+.hist .gh { padding: 14px 18px 6px; font: 500 11.5px var(--sans); color: var(--a-text3); }
+.hist .it { padding: 9px 18px; display: grid; gap: 2px; font-size: 12.5px; }
+.hist .it em { font-style: normal; font-size: 11px; color: var(--a-text3); }
+.hist .it.on { background: var(--a-sunk); box-shadow: inset 2px 0 0 var(--acc); }
+
+/* Mobile */
+.mob { font: 400 15px/1.45 var(--sans); color: var(--a-text); height: 100%; display: flex; flex-direction: column; position: relative; }
+.mob .sb { height: 54px; flex: none; display: flex; justify-content: space-between; align-items: center; padding: 6px 30px 0; font: 600 15px var(--sans); }
+.mob .sb i { display: inline-block; width: 26px; height: 12px; border-radius: 3px; box-shadow: inset 0 0 0 1.5px var(--a-text); position: relative; }
+.mob .sb i::after { content: ""; position: absolute; inset: 2.5px 6px 2.5px 2.5px; background: var(--a-text); border-radius: 1px; }
+.mob .body { flex: 1; min-height: 0; overflow: hidden; padding: 8px 20px 16px; display: grid; gap: 14px; align-content: start; position: relative; }
+.mob .mh { display: flex; justify-content: space-between; align-items: center; min-height: 40px; }
+.mob h4 { margin: 0; font: 600 28px/1.1 var(--sans); letter-spacing: -0.02em; }
+.mob h5 { margin: 0; font: 600 20px/1.2 var(--sans); letter-spacing: -0.01em; }
+.mob .big { font: 500 34px/1.05 var(--mono); letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.mob .card { background: var(--a-panel); border: 1px solid var(--a-line); border-radius: 10px; padding: 14px 16px; }
+.mob .card.flush { padding: 2px 16px; }
+.mob .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 1px solid var(--a-line); font-size: 14.5px; }
+.mob .row:last-child { border-bottom: 0; }
+.mob .row .r { text-align: right; }
+.mob .sub { font-size: 12.5px; color: var(--a-text3); }
+.mob .tabs { height: 84px; flex: none; border-top: 1px solid var(--a-line); background: var(--a-panel); display: grid; grid-template-columns: repeat(5, 1fr); padding: 10px 6px 0; font: 500 10.5px var(--sans); color: var(--a-text3); text-align: center; }
+.mob .tabs .ico { width: 22px; height: 22px; margin: 0 auto 4px; }
+.mob .tabs span.on { color: var(--acc); }
+.mob .mb { height: 48px; border-radius: 10px; background: var(--acc-fill, var(--acc)); color: var(--acc-ink); display: grid; place-items: center; font-weight: 600; font-size: 15px; }
+.mob .mb.s { background: var(--a-panel); color: var(--a-text); box-shadow: inset 0 0 0 1px var(--a-line2); }
+.mob .back { display: flex; align-items: center; gap: 4px; color: var(--acc); font-size: 15px; }
+.mob .back .ico { width: 18px; height: 18px; }
+.mob .glbl { font: 500 12.5px var(--sans); color: var(--a-text3); padding: 0 4px; margin-bottom: -6px; }
+.mob .sheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--a-panel); border-radius: 16px 16px 0 0; box-shadow: 0 -20px 50px -20px rgba(0,0,0,0.6), inset 0 1px 0 var(--a-line2); z-index: 6; display: flex; flex-direction: column; }
+.mob .grab { width: 38px; height: 5px; border-radius: 999px; background: var(--a-line2); margin: 8px auto 6px; flex: none; }
+.mob .scrim { position: absolute; inset: 0; background: var(--a-scrim); z-index: 5; }
+.mob .msg .bub { font-size: 14.5px; }
+.mob .composer { margin: 0 16px 12px; border-radius: 22px; padding: 6px 6px 6px 14px; }
+.mob .composer .send { border-radius: 50%; }
+.mob .alert { font-size: 13.5px; grid-template-columns: 16px minmax(0, 1fr); border-radius: 10px; }
+
+/* Portfolio pieces */
+.hero-n { font: 500 44px/1.05 var(--mono); letter-spacing: -0.035em; font-variant-numeric: tabular-nums; }
+.figs { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr)); gap: 28px; align-items: end; margin-bottom: 26px; }
+.figs .v { font: 500 20px/1.2 var(--mono); letter-spacing: -0.02em; margin-top: 4px; white-space: nowrap; }
+.figs .d { font: 400 12px var(--mono); color: var(--a-text3); margin-top: 3px; white-space: nowrap; }
+.fine { font-size: 12px; color: var(--a-text3); margin-top: 14px; }
+.drow { display: grid; grid-template-columns: 54px minmax(0, 1fr) 56px 64px; gap: 14px; align-items: center; height: 30px; font-size: 12.5px; }
+.drow .tr { position: relative; height: 8px; background: var(--a-sunk); border-radius: 1px; }
+.drow .tr > i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 1px; }
+.drow .tr > u { position: absolute; top: -5px; bottom: -5px; width: 2px; margin-left: -1px; background: var(--acc); border-radius: 1px; }
+.drow .tr > s { position: absolute; top: -5px; bottom: -5px; width: 2px; margin-left: -1px; background: var(--a-risk); border-radius: 1px; }
+.drow.lg { height: 46px; grid-template-columns: 60px minmax(0, 1fr) 70px 90px; font-size: 13.5px; }
+.drow.lg .tr { height: 14px; }
+.drow .num { text-align: right; }
+.sleeve { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 36px; padding: 20px 0; border-top: 1px solid var(--a-line); }
+.sleeve.frz { border-top-color: var(--a-risk-line); }
+.sleeve h6 { margin: 0 0 6px; font: 600 14.5px var(--sans); }
+.sleeve .v { font: 500 18px var(--mono); letter-spacing: -0.02em; margin-top: 10px; }
+.legend { display: flex; gap: 18px; font-size: 11.5px; color: var(--a-text3); align-items: center; }
+.legend i { display: inline-block; vertical-align: middle; margin-right: 6px; }
+.alloc { display: flex; gap: 3px; height: 16px; }
+.alloc > span { display: block; height: 100%; border-radius: 2px; }
+.alloc-l { display: flex; gap: 3px; margin-top: 10px; }
+.alloc-l > div { min-width: 0; font-size: 12px; }
+.alloc-l b { display: block; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tm { display: flex; gap: 3px; }
+.tm .col { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.tm .ch { height: 48px; flex: none; padding: 6px 10px; display: flex; flex-direction: column; justify-content: center; font-size: 12px; line-height: 1.35; white-space: nowrap; overflow: hidden; border-radius: 3px; background: var(--a-panel); box-shadow: inset 0 2px 0 var(--tone); }
+.tm .ch b, .tm .ch span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tm .ch b { font-weight: 600; }
+.tm .tile { flex-basis: 0; min-height: 0; border-radius: 3px; padding: 8px 10px; position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; font-size: 12px; box-shadow: inset 0 0 0 1px var(--a-line); }
+.tm .tile .sym { font-size: 13px; }
+.tm .tile .v { font: 400 11.5px var(--mono); color: var(--a-text2); }
+.tm .col.frz .ch { box-shadow: inset 0 2px 0 var(--a-risk); }
+.tm .tile.frzt { box-shadow: inset 0 0 0 1.5px var(--a-risk); background-image: repeating-linear-gradient(135deg, var(--a-risk-soft) 0 2px, transparent 2px 7px) !important; }
+.tm .free { flex: 1; border-radius: 3px; padding: 10px; font-size: 12px; background: repeating-linear-gradient(135deg, var(--a-hatch) 0 1.5px, transparent 1.5px 6px); box-shadow: inset 0 0 0 1px var(--a-line2); display: flex; flex-direction: column; justify-content: flex-end; }
+.tm .dim { opacity: 0.28; }
+.tm.rows { flex-direction: column; }
+.tm.rows .col { flex-direction: row; }
+.tm.rows .ch { display: none; }
+.tm.rows .tile { padding: 6px 8px; font-size: 11px; }
+.tm.rows .tile .sym { font-size: 11.5px; }
+.scard { background: var(--a-panel); border: 1px solid var(--a-line); border-radius: 8px; padding: 20px 22px; display: grid; gap: 14px; align-content: start; }
+.scard.frz { border-color: var(--a-risk-line); box-shadow: inset 0 3px 0 var(--a-risk); }
+.scard.free { background: transparent; border-style: dashed; border-color: var(--a-line2); }
+.scard h6 { margin: 0; font: 600 15px var(--sans); }
+.scard .v { font: 500 28px/1.1 var(--mono); letter-spacing: -0.03em; }
+.scard .meta { font-size: 12px; color: var(--a-text3); }
+.hold { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 11.5px; color: var(--a-text2); }
+.hold b { font: 600 11.5px var(--mono); color: var(--a-text); margin-right: 4px; }
+.vs { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--a-line); border-radius: 6px; overflow: hidden; }
+.vs > div { padding: 14px 16px; }
+.vs > div + div { border-left: 1px solid var(--a-line); }
+.vs .n { font: 500 30px/1.1 var(--mono); letter-spacing: -0.03em; margin-top: 4px; }
+.feed .day { font: 500 11.5px var(--sans); color: var(--a-text3); padding: 16px 0 6px; }
+.feed .ev { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--a-line); font-size: 13px; }
+.feed .ev .ic { width: 28px; height: 28px; border-radius: 50%; background: var(--a-sunk); display: grid; place-items: center; color: var(--a-text2); }
+.feed .ev .ic .ico { width: 14px; height: 14px; }
+.feed .ev .num { text-align: right; }
+
+/* Settings */
+.side { width: 230px; flex: none; padding: 30px 0 30px 40px; display: grid; gap: 18px; align-content: start; }
+.side .g { display: grid; gap: 2px; }
+.side .g > em { font: 500 11.5px var(--sans); color: var(--a-text3); font-style: normal; padding: 0 10px 4px; }
+.side .g > span { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 4px; color: var(--a-text2); font-size: 13px; }
+.side .g > span .ico { width: 15px; height: 15px; }
+.side .g > span.on { background: var(--a-sunk); color: var(--a-text); font-weight: 500; }
+.sec { margin-bottom: 26px; }
+.sec h5 { margin: 0 0 4px; font: 600 16px var(--sans); }
+.sec > p { margin: 0 0 14px; color: var(--a-text3); font-size: 12.5px; }
+.lp { position: absolute; inset: 0; overflow: auto; scrollbar-width: none; }
+.lp::-webkit-scrollbar { display: none; }
+.idx { position: sticky; top: 30px; display: grid; gap: 2px; align-content: start; font-size: 12.5px; }
+.idx span { padding: 5px 0 5px 12px; color: var(--a-text3); box-shadow: inset 1px 0 0 var(--a-line2); }
+.idx span.on { color: var(--a-text); box-shadow: inset 2px 0 0 var(--acc); font-weight: 500; }
+.hub { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.hc { background: var(--a-panel); border: 1px solid var(--a-line); border-radius: 8px; padding: 18px 20px; display: grid; gap: 10px; align-content: start; }
+.hc .ti { display: flex; align-items: center; gap: 10px; }
+.hc .ti .ic { width: 30px; height: 30px; border-radius: 7px; background: var(--a-sunk); display: grid; place-items: center; color: var(--a-text2); }
+.hc .ti b { font: 600 14px var(--sans); }
+.hc p { margin: 0; font-size: 12.5px; color: var(--a-text2); }
+.hc.on { border-color: var(--acc); box-shadow: 0 0 0 3px var(--acc-soft); }
+.hc.wide { grid-column: span 2; }
+.tgl { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--a-line); font-size: 13px; }
+.tgl:last-child { border-bottom: 0; }
+.tgl .chs { display: flex; gap: 18px; align-items: center; }
+.tgl .chs label { display: flex; gap: 6px; align-items: center; font-size: 11.5px; color: var(--a-text3); }
+
+/* Palette */
+.pal { width: 640px; background: var(--a-panel); border-radius: 10px; box-shadow: inset 0 0 0 1px var(--a-line2), 0 40px 90px -30px rgba(0,0,0,0.8); overflow: hidden; }
+.pal.m { width: auto; position: absolute; left: 12px; right: 12px; top: 6px; z-index: 6; }
+.pal .q { display: flex; gap: 12px; align-items: center; padding: 16px 18px; border-bottom: 1px solid var(--a-line); font-size: 16px; }
+.pal .q .ico { color: var(--a-text3); width: 18px; height: 18px; }
+.pal .gl { padding: 12px 18px 4px; font: 500 11.5px var(--sans); color: var(--a-text3); }
+.pal .it { display: flex; gap: 12px; align-items: center; padding: 9px 18px; font-size: 13px; }
+.pal .it .ico { color: var(--a-text3); }
+.pal .it.on { background: var(--a-sunk); box-shadow: inset 2px 0 0 var(--acc); }
+.pal .it em { margin-left: auto; font-style: normal; font-size: 11.5px; color: var(--a-text3); }
+.pal .ans { padding: 16px 18px; display: grid; gap: 12px; font-size: 13.5px; line-height: 1.6; border-bottom: 1px solid var(--a-line); }
+.pal .ft { display: flex; gap: 18px; padding: 10px 18px; font-size: 11.5px; color: var(--a-text3); background: var(--a-bg); }
+.pal .ft span { display: inline-flex; gap: 6px; align-items: center; }
+
+/* Motion: a short settle when a screen is shown */
+.enter .rise { animation: rise 0.42s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.enter .grow { transform-origin: 0 50%; animation: grow 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.enter .fade { animation: fade 0.5s ease both; }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } }
+@keyframes grow { from { transform: scaleX(0); } }
+@keyframes fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .enter .rise, .enter .grow, .enter .fade, .caret, .st.ping i::after { animation: none; } }
+
+@media (max-width: 1100px) {
+    .intro { grid-template-columns: 1fr; gap: 28px; }
+    .toc { grid-template-columns: repeat(2, 1fr); }
+    .notes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .plan { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+    .wrap { padding: 0 16px; }
+    .intro { padding-top: 34px; }
+    .intro h1 { font-size: 30px; }
+    .facts { grid-template-columns: 1fr; }
+    .facts > div { border-right: 0; border-bottom: 1px solid var(--p-line); }
+    .facts > div:last-child { border-bottom: 0; }
+    .toc { grid-template-columns: 1fr; }
+    .flow { padding-top: 64px; }
+    .flow-h { grid-template-columns: 1fr; }
+    .flow-h h2 { font-size: 24px; }
+    .var { padding-top: 40px; }
+    .pair { grid-template-columns: 1fr; gap: 26px; }
+    .pair > .ph { width: 78%; margin: 0 auto; }
+    .notes { grid-template-columns: 1fr; gap: 14px; }
+    .verdict { grid-template-columns: 1fr; padding: 18px; }
+    .scr-tabs { border-radius: 14px; }
+}
+</style>
+</head>
+<body>
+<script>window.RB_CONFIG = { theme: { key: "lts-theme-b2", def: "slate", opts: [["slate", "Slate"], ["black", "Black"]] }, accent: { key: "lts-acc-b5", def: "cyan", opts: [["cyan", "Cyan", "#4cc2ff"], ["white", "Frost", "#dbe3f0"], ["amber", "Amber", "#ffc24b"], ["violet", "Violet", "#a78bfa"], ["blue", "Blue", "#2563eb"]] } };</script>
+<main>
+    <div class="wrap">
+        <section class="intro">
+            <div>
+                <div class="kick">Flows · Portfolio, Copilot, Account</div>
+                <h1>Portfolio, Copilot and account settings</h1>
+                <p>Three or four layouts for each flow, drawn in the B Session language with the same paper account behind every screen. Each one shows the key screens on desktop and on a phone, with a short note on the idea, the trade-offs, the motion and what it would take to build.</p>
+                <p>Use the screen buttons above each pair to step through a flow. Theme and accent are in the review bar at the top.</p>
+            </div>
+            <div class="facts"><div><b>$103,410.27</b><span>total equity, Nov 13 at 10:42 ET</span></div><div><b>3 sleeves</b><span>2 running, Recession Radar frozen</span></div><div><b>Paper</b><span>closed beta, no charge</span></div></div>
+        </section>
+        <nav class="toc" id="toc" aria-label="Contents"></nav>
+        <div id="flows"></div>
+        <section class="final" id="final">
+            <div class="flow-h"><h2><em>04</em>Final plan</h2><p>One layout per flow, chosen for how calm it looks with real numbers in it and how little new backend it needs.</p></div>
+            <div class="plan">
+                <div><h4>Portfolio</h4><span class="pick">P2 · Weights with drift ticks</span><p>Every sleeve is a set of weight bars with its target marked, under one allocation bar for the account. The statement total from P1 stays as the last line of the page, so the figures still add up to $103,410.27 in plain rows.</p><ol><li>Add each session's target weights to the portfolio response.</li><li>Build the weight row once and reuse it for sleeves, reconciliation and the add-funds preview.</li><li>Move reconciliation into the sleeve, with the ledger and Alpaca marks on one bar.</li></ol></div>
+                <div><h4>Copilot</h4><span class="pick">C2 · Full screen with strategy cards</span><p>The /copilot page becomes a single reading column with the strategy, its weights and its actions in one card. The side panel that exists today stays as the quick way in and expands into this page, since both already share one conversation store.</p><ol><li>Restyle PendingArtifactCard into the strategy card, with code folded by default.</li><li>Give ToolConfirmationCard the argument list and a plain sentence of what will happen.</li><li>Group history by day, with what each conversation produced.</li></ol></div>
+                <div><h4>Account and settings</h4><span class="pick">S1 · Classic sidebar</span><p>Four sections in a left list on desktop and a grouped list on the phone. It matches the existing tabs and their ?tab= links, keeps unfinished parts honest in their own section, and leaves room for broker keys and security as they grow.</p><ol><li>Swap the tab bar in SettingsPage for the sidebar; keep the URLs.</li><li>Merge profile and security, and say plainly what isn't built yet.</li><li>Keep billing to what the beta is: Pro at no charge, usage meters, no card needed.</li></ol></div>
+            </div>
+            <div class="shared"><b>Across all three.</b> Green and red appear only on profit and loss. Amber means a sleeve or order needs attention. The accent marks what you can act on and the targets you set. The Paper label stays in the desktop app bar, and the frozen sleeve is raised in the same words wherever it appears.</div>
+        </section>
+    </div>
+    <footer class="foot"><div class="wrap"><div>LlamaTrade design review. All figures are from the paper account used across the design pages.</div></div></footer>
+</main>
+<script>
+(() => {
+    "use strict";
+    /* Icons */
+    const P = {
+        plus: '<path d="M10 4v12M4 10h12"/>', warn: '<path d="M10 2.5 18 17H2L10 2.5Z"/><path d="M10 8v4M10 14.2v.3"/>', info: '<circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.2v.3"/>',
+        check: '<path d="m5 10.5 3 3 7-7"/>', bell: '<path d="M4.5 11.5V8a5.5 5.5 0 0 1 11 0v3.5l1.5 2.5H3l1.5-2.5Z"/><path d="M8 16.5a2 2 0 0 0 4 0"/>',
+        search: '<circle cx="9" cy="9" r="5.5"/><path d="m13 13 4 4"/>', send: '<path d="M3.5 10 16.5 3.5 13 16.5l-3-5.5-6.5-1Z"/>',
+        spark: '<path d="M10 2.5v4M10 13.5v4M2.5 10h4M13.5 10h4M5 5l2.2 2.2M12.8 12.8 15 15M15 5l-2.2 2.2M7.2 12.8 5 15"/>',
+        key: '<circle cx="7" cy="13" r="3.5"/><path d="m9.5 10.5 7-7M14 6l2 2M12 8l1.5 1.5"/>', card: '<rect x="2.5" y="5" width="15" height="10.5" rx="1.5"/><path d="M2.5 8.5h15"/>',
+        back: '<path d="M12.5 4.5 7 10l5.5 5.5"/>', chev: '<path d="m7.5 4.5 5.5 5.5-5.5 5.5"/>', x: '<path d="m5 5 10 10M15 5 5 15"/>',
+        home: '<path d="M3.5 9 10 3.5 16.5 9v7.5h-13V9Z"/>', wallet: '<rect x="2.5" y="5" width="15" height="11" rx="1.5"/><path d="M13 10.5h2"/><path d="M4.5 5 13 2.5V5"/>',
+        chart: '<path d="M3 16.5h14"/><path d="M4.5 13 8 9l3 2.5 5-6"/>', user: '<circle cx="10" cy="7" r="3.5"/><path d="M3.5 17a6.5 6.5 0 0 1 13 0"/>',
+        refresh: '<path d="M16 10a6 6 0 1 1-1.8-4.3"/><path d="M16 3.5V7h-3.5"/>', hist: '<path d="M3.5 10a6.5 6.5 0 1 0 2-4.7"/><path d="M3.5 3.5v3h3"/><path d="M10 6.5V10l2.5 1.5"/>',
+        play: '<path d="M6 4.5v11l9-5.5-9-5.5Z"/>', expand: '<path d="M11.5 3.5h5v5M8.5 16.5h-5v-5M16.5 3.5 11 9M3.5 16.5 9 11"/>',
+        lock: '<rect x="4" y="9" width="12" height="8" rx="1.5"/><path d="M7 9V6.5a3 3 0 0 1 6 0V9"/>', shield: '<path d="M10 2.5 16 5v5c0 3.5-2.5 6-6 7.5C6.5 16 4 13.5 4 10V5l6-2.5Z"/>',
+        mail: '<rect x="2.5" y="4.5" width="15" height="11" rx="1.5"/><path d="m3 5.5 7 5.5 7-5.5"/>', hook: '<path d="M8.5 11.5 11.5 8.5"/><path d="M9 6.5 10.5 5a3 3 0 0 1 4.5 4.5L13.5 11M11 13.5 9.5 15A3 3 0 0 1 5 10.5L6.5 9"/>',
+        gauge: '<path d="M3.5 14a6.5 6.5 0 1 1 13 0"/><path d="m10 14 3-4"/>', in: '<path d="M10 3.5v9M6 8.5l4 4 4-4"/><path d="M3.5 16.5h13"/>', out: '<path d="M10 12.5v-9M6 7.5l4-4 4 4"/><path d="M3.5 16.5h13"/>',
+        swap: '<path d="M4 7h11l-3-3M16 13H5l3 3"/>', coin: '<circle cx="10" cy="10" r="7"/><path d="M10 6v8M7.5 8.2c0-1 1.1-1.7 2.5-1.7s2.5.7 2.5 1.7-1.1 1.4-2.5 1.8-2.5.8-2.5 1.8 1.1 1.7 2.5 1.7 2.5-.7 2.5-1.7"/>',
+        code: '<path d="m7 6-4 4 4 4M13 6l4 4-4 4"/>', blocks: '<rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/>',
+        cmd: '<path d="M7 7h6v6H7z"/><path d="M7 7V5.5A1.5 1.5 0 1 0 5.5 7H7M13 7V5.5A1.5 1.5 0 1 1 14.5 7H13M7 13v1.5A1.5 1.5 0 1 1 5.5 13H7M13 13v1.5a1.5 1.5 0 1 0 1.5-1.5H13"/>',
+        enter: '<path d="M15.5 5v5.5h-10"/><path d="m8.5 7.5-3 3 3 3"/>', more: '<circle cx="5" cy="10" r=".9"/><circle cx="10" cy="10" r=".9"/><circle cx="15" cy="10" r=".9"/>',
+        logout: '<path d="M8 3.5H4.5v13H8"/><path d="m12 6.5 3.5 3.5-3.5 3.5M15.5 10H8"/>', gear: '<circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/>',
+    };
+    const ic = (k, c = "ico") => `<svg class="${c}" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[k]}</svg>`;
+    const LOGO = '<svg class="ltm" viewBox="0 0 32 32" fill="none" aria-hidden="true"><path d="M8 2v20M12.4 13v16.5M25.6 13v16.5M16.8 12.5v10M21.2 13v9" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><rect x="2" y="7" width="3.2" height="4" rx="0.5" fill="var(--lacc)"/><rect x="6.4" y="4.5" width="3.2" height="14" rx="0.5" fill="currentColor"/><rect x="10.8" y="14.5" width="3.2" height="10" rx="0.5" fill="currentColor"/><rect x="15.2" y="14.5" width="3.2" height="6" rx="0.5" fill="currentColor"/><rect x="19.6" y="15" width="3.2" height="5.5" rx="0.5" fill="currentColor"/><rect x="24" y="14.5" width="3.2" height="10" rx="0.5" fill="currentColor"/><rect x="28.4" y="13" width="2" height="4.5" rx="0.5" fill="currentColor"/></svg>';
+
+    /* Formatting */
+    const nf = (v, d = 2) => Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+    const usd = (v) => (v < 0 ? "−" : "") + "$" + nf(v);
+    const sg = (v) => (v < 0 ? "−" : "+") + nf(v);
+    const sgu = (v) => (v < 0 ? "−$" : "+$") + nf(v);
+    const pl = (v) => (v < 0 ? "loss" : "gain");
+    const pc = (v, d = 1) => v.toFixed(d) + "%";
+
+    /* The paper account, Nov 13 at 10:42 ET */
+    const EQ = 103410.27, FREE = 17077.12, TODAY = 895.4, RET = 1333.15;
+    const SL = [
+        { id: "aw", n: "All-Weather Portfolio", sh: "All-Weather", s: "run", mv: 35982.55, al: 35000, d: -84.12, t: 982.55, tone: "h1", reb: "Quarterly", next: "Jan 4", since: "Aug 3",
+            pos: [["VGLT", 209, 61.75, 62.18, 40], ["VTI", 28, 402.1, 436.12, 30], ["IEF", 54, 95.4, 96.1, 15], ["GLD", 12, 231.4, 247.86, 7.5], ["DBC", 105, 22.8, 22.45, 7.5]] },
+        { id: "rr", n: "Recession Radar", sh: "Recession Radar", s: "frz", mv: 25436.18, al: 25000, d: 112.4, t: 436.18, tone: "h2", reb: "Monthly", next: "Held", since: "Sep 1",
+            pos: [["TLT", 167, 89.82, 90.41, 60], ["GLD", 41, 243.9, 247.86, 40]] },
+        { id: "tm", n: "Tech Momentum Rotation", sh: "Tech Momentum", s: "run", mv: 24914.42, al: 25000, d: 867.12, t: -85.58, tone: "h3", reb: "Monthly", next: "Dec 1", since: "Oct 1",
+            pos: [["QQQ", 20, 621.3, 618.95, 50], ["SMH", 42, 290.85, 289.3, 50]] },
+    ];
+    SL.forEach((s) => {
+        s.rows = s.pos.map(([sym, q, c, l, tg]) => { const mv = Math.round(q * l * 100) / 100; return { sym, q, c, l, tg, mv, pl: Math.round(q * (l - c) * 100) / 100, w: (mv / s.mv) * 100 }; });
+        s.cash = Math.round((s.mv - s.rows.reduce((a, r) => a + r.mv, 0)) * 100) / 100;
+        s.w = (s.mv / EQ) * 100;
+        s.cost = s.rows.reduce((a, r) => a + r.q * r.c, 0);
+    });
+    const [AW, RR, TM] = SL;
+    const REC = [["VTI", "All-Weather", 28, 28], ["VGLT", "All-Weather", 209, 209], ["IEF", "All-Weather", 54, 54], ["GLD", "2 sleeves", 53, 53], ["DBC", "All-Weather", 105, 105], ["TLT", "Recession Radar", 167, 120], ["QQQ", "Tech Momentum", 20, 20], ["SMH", "Tech Momentum", 42, 42]];
+    const ACT = [
+        ["Nov 6", "09:00", "Dividend", "VGLT · All-Weather Portfolio", 41.2, "coin", "inc"],
+        ["Nov 4", "15:12", "Released to cash", "Classic 60/40 was stopped", 14787.6, "swap", "alloc"],
+        ["Nov 2", "09:31", "Buy GLD", "41 at 243.90 · Recession Radar", -9999.9, "in", "trade"],
+        ["Nov 2", "09:31", "Buy TLT", "167 at 89.82 · Recession Radar", -14999.94, "in", "trade"],
+        ["Nov 2", "09:31", "Buy SMH", "42 at 290.85 · Tech Momentum Rotation", -12215.7, "in", "trade"],
+        ["Nov 2", "09:31", "Sell VTI", "30 at 436.23 · Recession Radar", 13086.9, "out", "trade"],
+        ["Nov 2", "09:31", "Sell XLK", "38 at 301.12 · Tech Momentum Rotation", 11442.56, "out", "trade"],
+        ["Oct 1", "09:30", "Allocated", "To Tech Momentum Rotation", -25000, "swap", "alloc"],
+        ["Oct 1", "09:28", "Deposit", "Paper credit", 25000, "wallet", "fund"],
+    ];
+    const NOTES = [["rk", "Recession Radar is frozen", "Alpaca reports 120 TLT and the ledger expects 167. New orders wait until it's resolved.", "10:15", 1], ["", "Backtest completed", "Recession Radar v3 · +21.4% · Sharpe 0.79", "Nov 12", 1], ["", "Session stopped", "Classic 60/40 was stopped and its holdings released to cash.", "Nov 4", 1], ["rk", "Order rejected by a risk check", "BUY 24 VOO in Classic 60/40 would pass the $10,000 position limit.", "Nov 4", 0], ["", "Rebalance complete", "Tech Momentum Rotation · 3 orders filled.", "Nov 2", 0]];
+    const CATS = [["Money", [["Sleeve frozen", 1, 1, 1], ["Fill quarantined", 1, 1, 0], ["External trade detected", 1, 1, 0]]], ["Trading", [["Order rejected by a risk check", 1, 1, 1], ["Order filled", 0, 0, 0], ["Reconciliation drift", 1, 1, 0], ["Session stopped", 1, 0, 0], ["Connection lost", 1, 1, 0]]], ["Strategies", [["Backtest completed", 0, 0, 0], ["Backtest failed", 1, 0, 0], ["Plan limit reached", 1, 0, 0]]]];
+    const USAGE = [["Strategies", 6, 10, "4 remaining"], ["Backtests this month", 38, 500, "462 remaining"], ["Copilot messages", 214, 2000, "1,786 remaining"], ["Live sessions", 0, 3, "Not available in the beta"]];
+    const HIST = [["Today", [["Tech momentum rotation, monthly", "10:31", "Draft · Tech Momentum Rotation"], ["How is my portfolio doing?", "09:48", ""], ["Backtest Recession Radar", "09:44", "Backtest · Recession Radar v3"]]], ["Yesterday", [["Bond hedge below the 200-day", "15:02", "Draft change · Recession Radar"], ["Why did Recession Radar go defensive?", "11:20", ""]]], ["Earlier", [["Backtest Core Four over 10 years", "Nov 8", "Backtest · Core Four v1"], ["Dual momentum, stocks vs bonds", "Nov 5", "Draft · Dual Momentum"]]]];
+
+    /* Shared parts */
+    const NAV = ["Home", "Portfolio", "Strategies", "Backtests", "Sessions", "Copilot"];
+    const nav = (on, o = {}) => `<div class="app-nav"><span class="lg">${LOGO}LlamaTrade</span><nav>${NAV.map((x) => `<span class="${x === on ? "on" : ""}">${x}</span>`).join("")}</nav><div class="end"><span style="display:inline-flex;gap:7px;align-items:center"><span class="st run ping"><i></i></span>Market open · 10:42 ET</span><span class="kbd">⌘K</span><span class="bell ${o.bell ? "on" : ""}">${ic("bell")}<b>3</b></span><span class="mode">Paper</span><span class="av">SR</span></div></div>`;
+    const b = (t, c = "") => `<span class="b ${c}">${t}</span>`;
+    const hd = (t, m, a = "") => `<div class="hd rise"><div><h3>${t}</h3>${m ? `<div class="meta">${m}</div>` : ""}</div>${a ? `<div class="acts">${a}</div>` : ""}</div>`;
+    const stt = (s) => (s === "frz" ? '<span class="st frz"><i></i>Frozen</span>' : '<span class="st run"><i></i>Running</span>');
+    const wbar = (segs, h = 10, cls = "") => `<div class="wb ${cls}" style="height:${h}px">${segs.map(([c, w]) => `<span class="${c}" style="flex:${w} 1 0"></span>`).join("")}</div>`;
+    const TONES = ["h1", "h2", "h3", "h4", "h5"];
+    const holdBar = (s, h = 8) => wbar(s.rows.map((r, i) => [TONES[i], r.w]), h, "grow");
+    const accountBar = (h = 14, extra = 0) => `<div class="alloc grow" style="height:${h}px">${SL.map((s) => `<span class="${s.tone}" style="flex:${s.mv} 1 0"></span>`).join("")}<span class="hfree" style="flex:${FREE + extra} 1 0"></span></div>`;
+    const frozenAlert = (btn = "Review") => `<div class="alert rise">${ic("warn")}<div><b>Recession Radar is frozen.</b> Alpaca reports 120 TLT shares and the ledger expects 167. New orders for this sleeve wait until the difference is resolved.</div>${btn ? b(btn) : "<span></span>"}</div>`;
+    const kvs = (rows) => rows.map(([a, v, c = ""]) => `<div class="kv"><span>${a}</span><span class="${c}">${v}</span></div>`).join("");
+    const desk = (url, inner) => `<div class="win"><div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="url">${ic("lock")}app.llamatrade.ai${url}</span></div><div class="app dk">${inner}</div></div>`;
+    const TABS = [["Home", "home"], ["Portfolio", "wallet"], ["Strategies", "chart"], ["Copilot", "spark"], ["Account", "user"]];
+    const phone = (body, tab, o = {}) => `<div class="phone"><div class="scr"><div class="mob app"><div class="sb"><span>9:41</span><i></i></div>${o.raw ? `<div class="body" style="padding:0;display:block">${body}</div>` : `<div class="body">${body}</div>`}${o.after || ""}<div class="tabs">${TABS.map(([n, i], k) => `<span class="${k === tab ? "on" : ""}">${ic(i)}${n}</span>`).join("")}</div></div></div></div>`;
+    const mh = (t, r = '<span class="mode">Paper</span>') => `<div class="mh rise"><h4>${t}</h4>${r}</div>`;
+    const mback = (t, r = "") => `<div class="mh"><span class="back">${ic("back")}${t}</span>${r}</div>`;
+    const mFrozen = (short) => `<div class="alert rise">${ic("warn")}<div><b>Recession Radar is frozen.</b> ${short || "Alpaca and the ledger disagree on TLT. Its orders are held."}</div></div>`;
+
+    /* ---------- Portfolio ---------- */
+    const pHead = (acts = true) => hd("Portfolio", "Alpaca paper account ending 9cc · 9 open positions", acts ? `${b("Activity")}${b(`${ic("plus")}Add paper funds`)}${b("Deploy a strategy", "p")}` : "");
+    const figs = () => `<div class="figs rise"><div><span class="lbl">Total equity</span><div class="hero-n">$103,410.27</div></div><div><span class="lbl">Today</span><div class="v gain">+$895.40</div><div class="d gain">+0.87%</div></div><div><span class="lbl">Total return</span><div class="v gain">+$1,333.15</div><div class="d">+1.31% since Aug 3</div></div><div><span class="lbl">Unallocated</span><div class="v">$17,077.12</div><div class="d">16.5% of equity</div></div></div>`;
+
+    // P1 Statement
+    const stmtRows = (open) => SL.map((s) => `<tr class="${s.s === "frz" ? "rk" : ""}"><td><span class="dot ${s.tone}"></span><b style="font-weight:600">${s.n}</b><div class="t3 sm" style="margin:2px 0 0 16px">${s.reb} · ${s.rows.length} positions · since ${s.since}</div></td><td>${stt(s.s)}</td><td class="n">${nf(s.al)}</td><td class="n">${nf(s.mv)}</td><td class="n t2">${pc(s.w)}</td><td class="n ${pl(s.d)}">${sg(s.d)}</td><td class="n ${pl(s.t)}">${sg(s.t)}</td></tr>` + (open === s.id ? s.rows.map((r) => `<tr class="sub"><td><span class="sym">${r.sym}</span><span class="t3" style="margin-left:12px">${r.q} at ${nf(r.c)} · last ${nf(r.l)}</span></td><td></td><td class="n t3">${nf(r.q * r.c)}</td><td class="n">${nf(r.mv)}</td><td class="n t2">${pc(r.w)}</td><td></td><td class="n ${pl(r.pl)}">${sg(r.pl)}</td></tr>`).join("") + `<tr class="sub"><td class="t2">Cash in sleeve</td><td></td><td></td><td class="n">${nf(s.cash)}</td><td class="n t2">${pc((s.cash / s.mv) * 100)}</td><td></td><td></td></tr>` : "")).join("");
+    const stmt = (open) => `<div class="pn rise"><table class="tbl"><thead><tr><th>Sleeve</th><th>State</th><th class="n">Allocated</th><th class="n">Market value</th><th class="n">Weight</th><th class="n">Today</th><th class="n">Total P&amp;L</th></tr></thead><tbody>${stmtRows(open)}<tr class="dim"><td style="padding-left:36px">Unallocated cash</td><td></td><td></td><td class="n">17,077.12</td><td class="n">16.5%</td><td></td><td></td></tr><tr class="tot"><td style="padding-left:36px">Total equity</td><td></td><td class="n">85,000.00</td><td class="n">103,410.27</td><td class="n">100.0%</td><td class="n gain">+895.40</td><td class="n gain">+1,333.15</td></tr></tbody></table></div>`;
+    const mStmt = (open) => `<div class="card flush rise">${SL.map((s) => `<div class="row" style="align-items:flex-start"><span><span class="dot ${s.tone}"></span>${s.sh}<div style="margin:3px 0 0 16px">${stt(s.s)}</div></span><span class="r num">${nf(s.mv)}<div class="${pl(s.d)}" style="font-size:12.5px">${sg(s.d)}</div></span></div>` + (open === s.id ? s.rows.map((r) => `<div class="row" style="padding:8px 0 8px 16px;font-size:13px"><span><span class="sym">${r.sym}</span> <span class="t3">${r.q}</span></span><span class="r num">${nf(r.mv)} <span class="${pl(r.pl)}" style="font-size:12px;margin-left:6px">${sg(r.pl)}</span></span></div>`).join("") : "")).join("")}<div class="row t2"><span>Unallocated cash</span><span class="num">17,077.12</span></div><div class="row" style="font-weight:600;border-top:1px solid var(--a-text3);border-bottom:3px double var(--a-text3);margin-bottom:10px"><span>Total equity</span><span class="num">103,410.27</span></div></div>`;
+    const P1 = {
+        overview: { u: "/portfolio", d: () => `${nav("Portfolio")}<div class="main c">${pHead()}${figs()}${frozenAlert()}<div style="height:16px"></div>${stmt()}<div class="fine">Figures are the ledger's book of record. Reconciled with Alpaca at 10:15 ET, where 7 of 8 positions agree.</div></div>`,
+            m: () => phone(`${mh("Portfolio")}<div class="rise"><span class="lbl">Total equity</span><div class="big">$103,410.27</div><div class="gain num" style="font-size:14px;margin-top:4px">+$895.40 today · +0.87%</div></div>${mFrozen()}<span class="glbl">Statement · Nov 13, 10:42 ET</span>${mStmt()}`, 1) },
+        positions: { u: "/portfolio?open=all-weather", d: () => `${nav("Portfolio")}<div class="main c">${pHead()}${stmt("aw")}<div class="fine">All-Weather Portfolio: cost basis $34,486.95, unrealised <span class="gain">+$1,241.00</span>. Weights are of the sleeve's market value.</div></div>`,
+            m: () => phone(`${mback("Portfolio")}<div class="rise"><span class="lbl">All-Weather Portfolio</span><div class="big">$35,982.55</div><div class="num" style="font-size:14px;margin-top:4px"><span class="loss">−$84.12 today</span> · <span class="gain">+$982.55 total</span></div></div><div class="card flush rise">${AW.rows.map((r) => `<div class="row" style="align-items:flex-start"><span><span class="sym" style="font-size:14px">${r.sym}</span><div class="sub">${r.q} at ${nf(r.c)}</div></span><span class="r num">${nf(r.mv)}<div class="${pl(r.pl)}" style="font-size:12.5px">${sg(r.pl)}</div></span></div>`).join("")}<div class="row t2"><span>Cash in sleeve</span><span class="num">${nf(AW.cash)}</span></div><div class="row" style="font-weight:600;border-top:1px solid var(--a-text3);border-bottom:3px double var(--a-text3);margin-bottom:10px"><span>Sleeve total</span><span class="num">35,982.55</span></div></div><div class="sub" style="text-align:center">Quarterly · next rebalance Jan 4</div>`, 1) },
+        frozen: { u: "/portfolio/reconciliation", d: () => `${nav("Portfolio")}<div class="main c">${hd("Reconciliation", "Last run Nov 13, 10:15 ET · next at 12:15 ET", b(`${ic("refresh")}Run again`))}${frozenAlert("")}<div style="height:16px"></div><div class="g2" style="grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);align-items:start"><div class="pn rise"><table class="tbl cmp"><thead><tr><th>Symbol</th><th>Sleeve</th><th class="n">Ledger</th><th class="n">Alpaca</th><th class="n">Difference</th></tr></thead><tbody>${REC.map(([s, sl, l, a]) => `<tr class="${l !== a ? "rk" : ""}"><td class="sym">${s}</td><td class="t2">${sl}</td><td class="n">${l}</td><td class="n">${a}</td><td class="n ${l !== a ? "risk" : "t3"}" style="${l !== a ? "font-weight:600" : ""}">${l !== a ? "−" + (l - a) : "0"}</td></tr>`).join("")}<tr class="tot"><td>Cash</td><td></td><td class="n">17,077.12</td><td class="n">17,077.12</td><td class="n t3">0.00</td></tr></tbody></table></div><div class="stack rise"><div class="pn"><div class="pn-h"><b>Recession Radar</b>${stt("frz")}</div><div class="pn-b" style="padding-top:6px;padding-bottom:6px">${kvs([["Frozen since", "Nov 13, 10:15 ET"], ["Difference", "47 TLT, about $4,249", "risk"], ["Last fill booked", "BUY 167 TLT · Nov 2"], ["Next rebalance", "Held until resolved"]])}</div></div><div class="pn pn-b" style="font-size:13px;color:var(--a-text2)"><b style="color:var(--a-text);display:block;margin-bottom:6px">What you can do</b>Check Alpaca's activity for a TLT trade placed outside LlamaTrade. Once both sides agree, run reconciliation again and the sleeve unfreezes. The other two sleeves keep running.</div></div></div></div>`,
+            m: () => phone(`${mback("Portfolio")}<h5 class="rise">Reconciliation</h5><div class="sub" style="margin-top:-8px">Last run 10:15 ET · next at 12:15 ET</div>${mFrozen("Nothing is adjusted automatically.")}<div class="card flush rise"><div class="row sub" style="padding:9px 0"><span>Symbol</span><span>Ledger · Alpaca</span></div>${REC.slice(4).map(([s, sl, l, a]) => `<div class="row" style="${l !== a ? "color:var(--a-risk);font-weight:600" : ""}"><span class="sym" style="font-size:14px">${s}</span><span class="num">${l} · ${a}</span></div>`).join("")}<div class="row sub"><span>4 more agree</span><span>${ic("chev")}</span></div></div><div class="sub">Check Alpaca's activity for a TLT trade placed outside LlamaTrade, then run reconciliation again.</div><div class="mb">Run again</div>`, 1) },
+        funds: { u: "/portfolio", d: () => `${nav("Portfolio")}<div class="main c">${pHead()}${figs()}${stmt()}</div><div class="ovl"><div class="modal rise"><div class="modal-h"><b>Add paper funds</b><span class="x">${ic("x")}</span></div><div class="modal-b"><div class="inp big focus"><span class="af">$</span>25,000.00<span class="caret"></span></div><div style="display:flex;gap:6px">${["+10K", "+25K", "+50K", "+100K"].map((x, i) => b(x, i === 1 ? "p" : "")).join("")}</div><table class="tbl cmp" style="font-size:12.5px"><tbody><tr><td style="padding-left:0">Unallocated now</td><td class="n" style="padding-right:0">17,077.12</td></tr><tr><td style="padding-left:0">Paper credit</td><td class="n" style="padding-right:0">25,000.00</td></tr><tr class="tot"><td style="padding-left:0">Unallocated after</td><td class="n" style="padding-right:0">42,077.12</td></tr></tbody></table><div class="t3" style="font-size:12px">Total equity becomes $128,410.27. Paper funds are simulated and no real money moves.</div></div><div class="modal-f">${b("Cancel")}${b("Add $25,000", "p")}</div></div></div>`,
+            m: () => phone(`${mback("Portfolio")}<h5>Add paper funds</h5><div class="inp big focus" style="height:68px;border-radius:10px"><span class="af">$</span>25,000.00<span class="caret"></span></div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">${["+10K", "+25K", "+50K", "+100K"].map((x, i) => `<span class="b ${i === 1 ? "p" : ""}" style="height:36px">${x}</span>`).join("")}</div><div class="card flush"><div class="row"><span class="t2">Unallocated now</span><span class="num">17,077.12</span></div><div class="row"><span class="t2">Paper credit</span><span class="num">25,000.00</span></div><div class="row" style="font-weight:600;border-top:1px solid var(--a-text3)"><span>Unallocated after</span><span class="num">42,077.12</span></div></div><div class="sub">Paper funds are simulated and no real money moves.</div><div class="mb">Add $25,000</div>`, 1) },
+        activity: { u: "/portfolio/activity", d: () => `${nav("Portfolio")}<div class="main c">${hd("Activity", "Deposits, allocations, trades and income on the paper account", '<span class="seg"><span class="on">All</span><span>Funding</span><span>Allocations</span><span>Trades</span><span>Income</span></span>')}<div class="pn rise"><table class="tbl cmp"><thead><tr><th>Date</th><th>Entry</th><th>Detail</th><th class="n">Paid in</th><th class="n">Paid out</th></tr></thead><tbody>${["November", "October"].map((mo) => `<tr class="grp"><td colspan="5">${mo} 2026</td></tr>` + ACT.filter((a) => (mo === "November" ? a[0].startsWith("Nov") : a[0].startsWith("Oct"))).map(([d, t, e, s, v]) => `<tr><td class="num t2">${d} · ${t}</td><td>${e}</td><td class="t2">${s}</td><td class="n">${v > 0 ? nf(v) : ""}</td><td class="n">${v < 0 ? nf(v) : ""}</td></tr>`).join("")).join("")}</tbody></table><div class="pn-f"><span>9 of 41 entries</span><span style="color:var(--acc)">Load more</span></div></div></div>`,
+            m: () => phone(`${mback("Portfolio")}<h5>Activity</h5><div class="card flush rise">${ACT.slice(0, 7).map(([d, t, e, s, v]) => `<div class="row" style="align-items:flex-start"><span>${e}<div class="sub">${s.replace(" · ", "<br>")}</div></span><span class="r num">${v > 0 ? "+" : "−"}${nf(v)}<div class="sub">${d}</div></span></div>`).join("")}</div>`, 1) },
+    };
+
+    // P2 Weights and drift ticks
+    const drow = (r, s, o = {}) => `<div class="drow ${o.lg ? "lg" : ""}"><span class="sym">${r.sym}</span><span class="tr"><i class="${o.tone || s.tone} grow" style="width:${Math.min(r.w, 100)}%"></i><u style="left:${r.tg}%"></u>${o.alp ? `<s style="left:${o.alp}%"></s>` : ""}</span><span class="num">${pc(r.w)}</span><span class="num t3">${o.right || (Math.abs(r.w - r.tg) < 0.05 ? "0.0 pts" : (r.w - r.tg > 0 ? "+" : "−") + Math.abs(r.w - r.tg).toFixed(1) + " pts")}</span></div>`;
+    const legend = () => `<div class="legend"><span><i class="h2" style="width:14px;height:6px"></i>Weight now</span><span><i style="width:2px;height:12px;background:var(--acc)"></i>Target at the last rebalance</span></div>`;
+    const allocBlock = () => `<div class="rise">${accountBar(16)}<div class="alloc-l">${SL.map((s) => `<div style="flex:${s.mv} 1 0"><b>${s.sh}</b><span class="num t3">${pc(s.w)} · ${nf(s.mv, 0)}</span></div>`).join("")}<div style="flex:${FREE} 1 0"><b class="t2">Unallocated</b><span class="num t3">16.5% · 17,077</span></div></div></div>`;
+    const sleeveBlock = (s, o = {}) => `<div class="sleeve ${s.s === "frz" ? "frz" : ""} rise"><div><h6><span class="dot ${s.tone}"></span>${s.n}</h6>${stt(s.s)}<div class="v">${usd(s.mv)}</div><div class="num sm" style="margin-top:3px"><span class="${pl(s.d)}">${sgu(s.d)} today</span></div><div class="t3 sm" style="margin-top:8px">${s.reb} · ${s.s === "frz" ? "orders held" : "next " + s.next}</div></div><div style="align-self:center">${s.rows.map((r) => drow(r, s, o.alp && r.sym === "TLT" ? { alp: (120 * 90.41 / s.mv) * 100, right: "47 short" } : {})).join("")}</div></div>`;
+    const P2 = {
+        overview: { u: "/portfolio", d: () => `${nav("Portfolio")}<div class="main c">${pHead()}<div class="row2 rise" style="align-items:flex-end;margin-bottom:18px"><div><span class="lbl">Total equity</span><div class="hero-n" style="font-size:38px">$103,410.27</div></div><div class="num" style="text-align:right"><span class="gain">+$895.40 today · +0.87%</span><div class="t3 sm">+$1,333.15 since Aug 3</div></div></div>${allocBlock()}<div style="height:22px"></div>${frozenAlert()}<div style="height:6px"></div>${SL.map((s) => sleeveBlock(s)).join("")}<div class="row2" style="border-top:1px solid var(--a-line);padding-top:14px">${legend()}<span class="t3 sm">Sleeves rebalance on their own schedule. Nothing trades between those dates.</span></div></div>`,
+            m: () => phone(`${mh("Portfolio")}<div class="rise"><span class="lbl">Total equity</span><div class="big">$103,410.27</div><div class="gain num" style="font-size:14px;margin:4px 0 14px">+$895.40 today · +0.87%</div>${accountBar(12)}</div>${mFrozen()}${SL.map((s) => `<div class="card rise" style="${s.s === "frz" ? "border-color:var(--a-risk-line)" : ""}"><div class="row2" style="margin-bottom:8px"><b style="font-weight:600;font-size:14.5px"><span class="dot ${s.tone}"></span>${s.sh}</b><span class="num" style="font-size:14px">${nf(s.mv)}</span></div>${s.rows.slice(0, 2).map((r) => drow(r, s)).join("")}</div>`).join("")}`, 1) },
+        positions: { u: "/portfolio/all-weather", d: () => `${nav("Portfolio")}<div class="main c">${hd("All-Weather Portfolio", "Sleeve of 5 positions · quarterly · since Aug 3", `<span class="st run"><i></i>Running</span>${b("Session")}${b("Open strategy")}`)}<div class="g2" style="grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:28px;align-items:start"><div class="pn rise"><div class="pn-h"><b>Weights</b>${legend()}</div><div class="pn-b" style="padding-top:8px;padding-bottom:8px">${AW.rows.map((r) => drow(r, AW, { lg: 1 })).join("")}</div><div class="pn-f"><span>VTI and VGLT have moved furthest from target. The rebalance on Jan 4 would sell about 3 VTI and buy about 22 VGLT.</span></div></div><div class="stack rise"><div class="pn pn-b"><span class="lbl">Sleeve value</span><div class="num" style="font-size:28px;letter-spacing:-0.03em;margin-top:2px">$35,982.55</div><div class="num sm" style="margin-top:4px"><span class="loss">−$84.12 today</span> · <span class="gain">+$982.55 since Aug 3</span></div></div><div class="pn"><table class="tbl cmp"><thead><tr><th>Symbol</th><th class="n">Qty</th><th class="n">Value</th><th class="n">P&amp;L</th></tr></thead><tbody>${AW.rows.map((r) => `<tr><td class="sym">${r.sym}</td><td class="n">${r.q}</td><td class="n">${nf(r.mv)}</td><td class="n ${pl(r.pl)}">${sg(r.pl)}</td></tr>`).join("")}<tr class="dim"><td>Cash</td><td></td><td class="n">${nf(AW.cash)}</td><td></td></tr></tbody></table></div></div></div></div>`,
+            m: () => phone(`${mback("Portfolio")}<div class="rise"><span class="lbl">All-Weather Portfolio</span><div class="big">$35,982.55</div><div class="num" style="font-size:14px;margin-top:4px"><span class="loss">−$84.12 today</span></div></div><div class="card rise">${AW.rows.map((r) => drow(r, AW)).join("")}</div><div class="sub">The tick is each fund's target. VTI and VGLT have moved furthest; the Jan 4 rebalance would sell about 3 VTI and buy about 22 VGLT.</div><div class="card flush">${AW.rows.slice(0, 3).map((r) => `<div class="row"><span class="sym" style="font-size:14px">${r.sym}</span><span class="num">${nf(r.mv)} <span class="${pl(r.pl)}" style="font-size:12.5px">${sg(r.pl)}</span></span></div>`).join("")}</div>`, 1) },
+        frozen: { u: "/portfolio/recession-radar", d: () => `${nav("Portfolio")}<div class="main c">${hd("Recession Radar", "Sleeve of 2 positions · monthly · since Sep 1", `<span class="st frz"><i></i>Frozen since 10:15 ET</span>${b(`${ic("refresh")}Run reconciliation`)}`)}${frozenAlert("")}<div class="g2" style="grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:28px;align-items:start;margin-top:20px"><div class="pn rise"><div class="pn-h"><b>Ledger against Alpaca</b><div class="legend"><span><i style="width:2px;height:12px;background:var(--acc)"></i>Target</span><span><i style="width:2px;height:12px;background:var(--a-risk)"></i>What Alpaca holds</span></div></div><div class="pn-b">${RR.rows.map((r) => drow(r, RR, r.sym === "TLT" ? { lg: 1, alp: (120 * 90.41 / RR.mv) * 100, right: "47 short" } : { lg: 1, right: "agrees" })).join("")}</div><div class="pn-f"><span>The ledger booked 167 TLT on Nov 2. Alpaca reports 120, about $4,249 less. The amber mark is where Alpaca's position would put the weight.</span></div></div><div class="stack rise"><div class="pn"><div class="pn-b" style="padding-top:6px;padding-bottom:6px">${kvs([["Sleeve value", "$25,436.18"], ["Today", "+$112.40", "gain"], ["Open orders", "None"], ["Next rebalance", "Held until resolved"]])}</div></div><div class="pn pn-b" style="font-size:13px;color:var(--a-text2)"><b style="color:var(--a-text);display:block;margin-bottom:6px">What you can do</b>Look in Alpaca for a TLT trade placed outside LlamaTrade. When both sides agree again, run reconciliation and the sleeve unfreezes. All-Weather and Tech Momentum keep running.</div></div></div></div>`,
+            m: () => phone(`${mback("Portfolio")}<div class="rise"><span class="lbl">Recession Radar</span><div class="big">$25,436.18</div><div style="margin-top:6px">${stt("frz")}</div></div><div class="card rise" style="border-color:var(--a-risk-line)">${RR.rows.map((r) => drow(r, RR, r.sym === "TLT" ? { alp: (120 * 90.41 / RR.mv) * 100, right: "47 short" } : { right: "agrees" })).join("")}</div><div class="sub">Ledger 167 TLT, Alpaca 120. Orders for this sleeve wait until both agree. Nothing is adjusted automatically.</div><div class="mb">Run reconciliation</div><div class="mb s">How to resolve this</div>`, 1) },
+        funds: { u: "/portfolio", d: () => `${nav("Portfolio")}<div class="main c">${pHead()}${allocBlock()}${SL.slice(0, 2).map((s) => sleeveBlock(s)).join("")}</div><div class="ovl"><div class="modal rise" style="width:520px"><div class="modal-h"><b>Add paper funds</b><span class="x">${ic("x")}</span></div><div class="modal-b"><div class="inp big focus"><span class="af">$</span>25,000.00<span class="caret"></span></div><div style="display:flex;gap:6px">${["+10K", "+25K", "+50K", "+100K"].map((x, i) => b(x, i === 1 ? "p" : "")).join("")}</div><div><div class="row2 sm t3" style="margin-bottom:6px"><span>Now</span><span class="num">$103,410.27</span></div>${accountBar(10)}<div class="row2 sm" style="margin:12px 0 6px"><span class="t2">After</span><span class="num">$128,410.27</span></div>${accountBar(10, 25000)}<div class="sm t3" style="margin-top:8px">Unallocated grows from 16.5% to 32.8% of equity.</div></div><div class="t3" style="font-size:12px">Paper funds are simulated and no real money moves.</div></div><div class="modal-f">${b("Cancel")}${b("Add $25,000", "p")}</div></div></div>`,
+            m: () => phone(`${mback("Portfolio")}<h5>Add paper funds</h5><div class="inp big focus" style="height:68px;border-radius:10px"><span class="af">$</span>25,000.00<span class="caret"></span></div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">${["+10K", "+25K", "+50K", "+100K"].map((x, i) => `<span class="b ${i === 1 ? "p" : ""}" style="height:36px">${x}</span>`).join("")}</div><div class="card"><div class="row2 sub" style="margin-bottom:6px"><span>Now</span><span class="num">103,410.27</span></div>${accountBar(10)}<div class="row2 sub" style="margin:14px 0 6px"><span>After</span><span class="num">128,410.27</span></div>${accountBar(10, 25000)}</div><div class="sub">Unallocated grows to $42,077.12. Paper funds are simulated.</div><div class="mb">Add $25,000</div>`, 1) },
+        activity: { u: "/portfolio/activity", d: () => `${nav("Portfolio")}<div class="main c">${pHead(false)}${allocBlock()}</div><div class="ovl right"><div class="drawer rise"><div class="modal-h"><div><b>Activity</b><div class="t3" style="font-size:12px">What moved cash between the account and its sleeves</div></div><span class="x">${ic("x")}</span></div><div style="padding:12px 20px;border-bottom:1px solid var(--a-line)"><span class="seg"><span class="on">All</span><span>Funding</span><span>Allocations</span><span>Trades</span></span></div><div class="feed" style="padding:0 20px;overflow:hidden">${["Nov 6", "Nov 4", "Nov 2", "Oct 1"].map((d) => `<div class="day">${d}</div>` + ACT.filter((a) => a[0] === d).map(([, t, e, s, v, i]) => `<div class="ev"><span class="ic">${ic(i)}</span><span>${e}<div class="t3 sm">${s}</div></span><span class="num">${v > 0 ? "+" : "−"}${nf(v)}<div class="t3 sm">${t}</div></span></div>`).join("")).join("")}</div></div></div>`,
+            m: () => phone(`${mback("Portfolio")}<h5>Activity</h5><div class="feed rise">${["Nov 6", "Nov 4", "Nov 2"].map((d) => `<div class="day">${d}</div>` + ACT.filter((a) => a[0] === d).slice(0, 3).map(([, t, e, s, v, i]) => `<div class="ev"><span class="ic">${ic(i)}</span><span style="font-size:14px">${e}<div class="sub">${s.split(" · ")[1] || s}</div></span><span class="num" style="font-size:14px">${v > 0 ? "+" : "−"}${nf(v)}</span></div>`).join("")).join("")}</div>`, 1) },
+    };
+
+    // P3 Treemap
+    const tint = (r) => { const p = (r.pl / (r.q * r.c)) * 100, a = Math.min(0.26, Math.abs(p) * 0.035 + 0.02); return `background:rgba(var(${p < 0 ? "--a-loss-rgb" : "--a-gain-rgb"}),${a.toFixed(3)})`; };
+    const treemap = (o = {}) => {
+        const H = o.h || 470;
+        const cols = (o.only ? SL.filter((s) => s.id === o.only) : SL).map((s) => `<div class="col ${s.s === "frz" ? "frz" : ""} ${o.focus && o.focus !== s.id ? "dim" : ""}" style="flex:${s.mv} 1 0;--tone:var(--a-${s.tone})"><div class="ch"><b>${s.sh}</b><span class="num t3">${nf(s.mv)}${s.s === "frz" ? ' · <span class="risk">Frozen</span>' : ""}</span></div>${s.rows.map((r) => { const small = (r.mv / s.mv) * H < (o.rows ? 0 : 52); return `<div class="tile ${s.s === "frz" && r.sym === "TLT" ? "frzt" : ""}" style="flex-grow:${r.mv};${tint(r)}" title="${r.sym}">${small ? `<span class="row2"><span class="sym">${r.sym}</span><span class="v">${pc(r.w, 0)}</span></span>` : `<span class="sym">${r.sym}</span><span><span class="v">${nf(r.mv, 0)}</span><br><span class="num ${pl(r.pl)}" style="font-size:11.5px">${sg(r.pl)}</span></span>`}</div>`; }).join("")}</div>`).join("");
+        const free = o.only ? "" : `<div class="col ${o.focus ? "dim" : ""}" style="flex:${FREE + (o.extra || 0)} 1 0"><div class="ch" style="--tone:var(--a-h5)"><b class="t2">Unallocated</b><span class="num t3">${nf(FREE + (o.extra || 0))}</span></div><div class="free" style="${o.extra ? "box-shadow:inset 0 0 0 1px var(--acc);" : ""}">${o.extra ? `<span class="num" style="color:var(--acc)">+25,000.00</span>` : ""}<span class="t3">Ready to deploy</span></div></div>`;
+        return `<div class="tm fade" style="height:${H}px">${cols}${free}</div>`;
+    };
+    const mTree = (o = {}) => {
+        const rows = SL.map((s) => `<div class="col ${o.focus && o.focus !== s.id ? "dim" : ""}" style="flex:${s.mv} 1 0">${s.rows.map((r) => { const wide = r.mv / s.mv > 0.2; return `<div class="tile ${s.s === "frz" && r.sym === "TLT" ? "frzt" : ""}" style="flex-grow:${r.mv};${tint(r)}">${wide ? `<span class="sym">${r.sym}</span><span class="num ${pl(r.pl)}" style="font-size:11px">${sg(r.pl)}</span>` : ""}</div>`; }).join("")}</div>`).join("");
+        return `<div class="tm rows fade" style="height:${o.h || 300}px">${rows}<div class="col" style="flex:${FREE} 1 0"><div class="free" style="padding:6px 8px;font-size:11.5px"><span class="t3">Unallocated 17,077</span></div></div></div>`;
+    };
+    const tmHead = () => `<div class="row2 rise" style="margin-bottom:16px"><div style="display:flex;gap:36px;align-items:flex-end"><div><span class="lbl">Total equity</span><div class="num" style="font-size:28px;letter-spacing:-0.03em">$103,410.27</div></div><div><span class="lbl">Today</span><div class="num gain" style="font-size:16px">+$895.40 · +0.87%</div></div><div><span class="lbl">Unallocated</span><div class="num" style="font-size:16px">$17,077.12</div></div></div><span class="seg"><span class="on">Size by value</span><span>Colour by total P&amp;L</span></span></div>`;
+    const P3 = {
+        overview: { u: "/portfolio", d: () => `${nav("Portfolio")}<div class="main">${pHead()}${tmHead()}${treemap({ h: 470 })}<div class="row2" style="margin-top:12px"><span class="t3 sm">Each block is sized by market value. The tint deepens with the position's total gain or loss.</span><span class="t3 sm"><span class="risk">Amber outline:</span> a frozen position</span></div></div>`,
+            m: () => phone(`${mh("Portfolio")}<div class="rise"><span class="lbl">Total equity</span><div class="big">$103,410.27</div><div class="gain num" style="font-size:14px;margin-top:4px">+$895.40 today · +0.87%</div></div>${mTree({ h: 330 })}${mFrozen()}<div class="card flush">${SL.map((s) => `<div class="row"><span><span class="dot ${s.tone}"></span>${s.sh}</span><span class="num">${nf(s.mv)}</span></div>`).join("")}</div>`, 1) },
+        positions: { u: "/portfolio/all-weather", d: () => `${nav("Portfolio")}<div class="main">${hd(`<span class="t3" style="font-weight:500">Portfolio /</span> All-Weather Portfolio`, "5 positions · quarterly · next rebalance Jan 4", `<span class="st run"><i></i>Running</span>${b("Back to account")}`)}<div class="g2" style="grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:20px;align-items:start">${treemap({ h: 540, only: "aw" })}<div class="pn rise"><div class="pn-h"><b>$35,982.55</b><span class="num"><span class="loss">−84.12</span> today</span></div><table class="tbl cmp"><thead><tr><th>Symbol</th><th class="n">Weight</th><th class="n">Value</th><th class="n">P&amp;L</th></tr></thead><tbody>${AW.rows.map((r) => `<tr><td class="sym">${r.sym}</td><td class="n t2">${pc(r.w)}</td><td class="n">${nf(r.mv)}</td><td class="n ${pl(r.pl)}">${sg(r.pl)}</td></tr>`).join("")}<tr class="dim"><td>Cash</td><td class="n">${pc((AW.cash / AW.mv) * 100)}</td><td class="n">${nf(AW.cash)}</td><td></td></tr></tbody></table><div class="pn-f"><span>Cost basis $34,486.95</span><span class="gain num">+$1,241.00</span></div></div></div></div>`,
+            m: () => phone(`${mback("Portfolio")}<div class="rise"><span class="lbl">All-Weather Portfolio</span><div class="big">$35,982.55</div></div><div class="tm fade" style="height:330px"><div class="col" style="flex:1">${AW.rows.map((r) => `<div class="tile" style="flex-grow:${r.mv};${tint(r)}"><span class="row2"><span class="sym">${r.sym}</span><span class="num ${pl(r.pl)}" style="font-size:11.5px">${sg(r.pl)}</span></span></div>`).join("")}</div></div><div class="card flush">${AW.rows.slice(0, 3).map((r) => `<div class="row"><span class="sym" style="font-size:14px">${r.sym}</span><span class="num">${nf(r.mv)}</span></div>`).join("")}</div>`, 1) },
+        frozen: { u: "/portfolio?focus=recession-radar", d: () => `${nav("Portfolio")}<div class="main">${pHead(false)}<div class="g2" style="grid-template-columns:minmax(0,1.7fr) minmax(0,1fr);gap:20px;align-items:start">${treemap({ h: 560, focus: "rr" })}<div class="stack rise"><div class="pn" style="border-color:var(--a-risk-line)"><div class="pn-h"><b>Recession Radar</b>${stt("frz")}</div><div class="pn-b"><div class="vs"><div><span class="lbl">Ledger</span><div class="n">167</div><span class="t3 sm">TLT booked Nov 2</span></div><div><span class="lbl">Alpaca</span><div class="n risk">120</div><span class="t3 sm">reported 10:15 ET</span></div></div><div style="margin-top:14px">${kvs([["Difference", "47 TLT, about $4,249", "risk"], ["Open orders", "None"], ["Next rebalance", "Held until resolved"]])}</div></div><div class="pn-f" style="display:block">Check Alpaca for a TLT trade placed outside LlamaTrade, then run reconciliation. The sleeve unfreezes when both agree.</div></div><div style="display:flex;gap:8px">${b(`${ic("refresh")}Run reconciliation`, "p")}${b("View all positions")}</div></div></div></div>`,
+            m: () => phone(`${mh("Portfolio")}${mTree({ h: 250, focus: "rr" })}<div class="card rise" style="border-color:var(--a-risk-line)"><div class="row2" style="margin-bottom:12px"><b style="font-weight:600">Recession Radar</b>${stt("frz")}</div><div class="vs"><div><span class="lbl">Ledger</span><div class="n" style="font-size:26px">167</div></div><div><span class="lbl">Alpaca</span><div class="n risk" style="font-size:26px">120</div></div></div><div class="sub" style="margin-top:10px">TLT differs by 47 shares. Orders wait until both agree.</div></div><div class="mb">Run reconciliation</div>`, 1) },
+        funds: { u: "/portfolio", d: () => `${nav("Portfolio")}<div class="main" style="padding-right:500px">${pHead(false)}${treemap({ h: 560, extra: 25000 })}</div><div class="ovl right" style="background:transparent"><div class="drawer rise"><div class="modal-h"><b>Add paper funds</b><span class="x">${ic("x")}</span></div><div class="modal-b"><div class="inp big focus"><span class="af">$</span>25,000.00<span class="caret"></span></div><div style="display:flex;gap:6px">${["+10K", "+25K", "+50K", "+100K"].map((x, i) => b(x, i === 1 ? "p" : "")).join("")}</div><div class="pn pn-b" style="background:var(--a-bg)">${kvs([["Unallocated after", "$42,077.12"], ["Total equity after", "$128,410.27"]])}</div><div class="t3" style="font-size:12px">The outlined block on the map shows where the money lands. Paper funds are simulated and no real money moves.</div></div><div class="modal-f" style="margin-top:auto">${b("Cancel")}${b("Add $25,000", "p")}</div></div></div>`,
+            m: () => phone(`${mh("Portfolio")}${mTree({ h: 190 })}<div class="scrim"></div>`, 1, { after: `<div class="sheet" style="height:540px;bottom:84px"><div class="grab"></div><div style="padding:6px 20px 16px;display:grid;gap:14px"><h5>Add paper funds</h5><div class="inp big focus" style="height:64px;border-radius:10px"><span class="af">$</span>25,000.00<span class="caret"></span></div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">${["+10K", "+25K", "+50K", "+100K"].map((x, i) => `<span class="b ${i === 1 ? "p" : ""}" style="height:36px">${x}</span>`).join("")}</div><div class="card flush"><div class="row"><span class="t2">Unallocated after</span><span class="num">42,077.12</span></div><div class="row"><span class="t2">Total equity after</span><span class="num">128,410.27</span></div></div><div class="sub">Paper funds are simulated and no real money moves.</div><div class="mb">Add $25,000</div></div></div>` }) },
+        activity: { u: "/portfolio", d: () => `${nav("Portfolio")}<div class="main">${pHead(false)}${treemap({ h: 560 })}</div><div class="ovl right"><div class="drawer rise"><div class="modal-h"><div><b>Activity</b><div class="t3" style="font-size:12px">Deposits, allocations, trades and income</div></div><span class="x">${ic("x")}</span></div><div style="padding:12px 20px;border-bottom:1px solid var(--a-line)"><span class="seg"><span class="on">All</span><span>Funding</span><span>Allocations</span><span>Trades</span></span></div><div>${ACT.map(([d, t, e, s, v]) => `<div class="kv" style="padding:11px 20px;align-items:center"><span><span style="color:var(--a-text);display:block">${e}</span><span class="t3 sm">${s}</span></span><span class="num" style="text-align:right">${v > 0 ? "+" : "−"}${nf(v)}<span class="t3" style="display:block;font-size:11px">${d} · ${t}</span></span></div>`).join("")}</div></div></div>`,
+            m: () => phone(`${mh("Portfolio")}${mTree({ h: 170 })}<div class="scrim"></div>`, 1, { after: `<div class="sheet" style="height:590px;bottom:84px"><div class="grab"></div><div style="padding:6px 20px 0"><h5>Activity</h5></div><div style="padding:0 20px">${ACT.slice(0, 7).map(([d, t, e, s, v]) => `<div class="row" style="display:flex;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--a-line);font-size:14px"><span>${e}<div class="sub">${d}</div></span><span class="num">${v > 0 ? "+" : "−"}${nf(v)}</span></div>`).join("")}</div></div>` }) },
+    };
+
+    // P4 Sleeve cards
+    const scard = (s, o = {}) => `<div class="scard ${s.s === "frz" ? "frz" : ""} rise" style="${o.on ? "border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-soft)" : ""}"><div class="row2"><h6><span class="dot ${s.tone}"></span>${s.n}</h6>${stt(s.s)}</div><div><div class="v">${usd(s.mv)}</div><div class="num sm" style="margin-top:6px"><span class="${pl(s.d)}">${sgu(s.d)} today</span><span class="t3"> · </span><span class="${pl(s.t)}">${sgu(s.t)} since ${s.since}</span></div></div>${holdBar(s)}<div class="hold">${s.rows.map((r) => `<span><b>${r.sym}</b>${pc(r.w, 0)}</span>`).join("")}</div>${s.s === "frz" ? `<div class="sm" style="color:var(--a-risk)">Alpaca reports 120 TLT and the ledger expects 167. Orders are held.</div>` : `<div class="meta">${s.reb} · next rebalance ${s.next}</div>`}</div>`;
+    const freeCard = (o = {}) => `<div class="scard free rise"><div class="row2"><h6 class="t2">Unallocated cash</h6><span class="t3 sm">16.5% of equity</span></div><div class="v">$17,077.12</div><div class="meta">Ready to deploy into a new strategy, or to top up a sleeve.</div><div style="display:flex;gap:8px">${b(`${ic("plus")}Add paper funds`, o.p ? "p" : "")}${b("Deploy a strategy")}</div></div>`;
+    const P4 = {
+        overview: { u: "/portfolio", d: () => `${nav("Portfolio")}<div class="main c">${hd("Portfolio", "Alpaca paper account ending 9cc", b("Activity"))}<div class="row2 rise" style="align-items:flex-end;margin-bottom:22px"><div><span class="lbl">Total equity</span><div class="hero-n" style="font-size:38px">$103,410.27</div></div><div class="num" style="text-align:right"><span class="gain">+$895.40 today · +0.87%</span><div class="t3 sm">3 sleeves and unallocated cash</div></div></div><div class="g2" style="gap:18px">${scard(RR)}${scard(AW)}${scard(TM)}${freeCard()}</div></div>`,
+            m: () => phone(`${mh("Portfolio")}<div class="rise"><span class="lbl">Total equity</span><div class="big">$103,410.27</div><div class="gain num" style="font-size:14px;margin-top:4px">+$895.40 today · +0.87%</div></div>${scard(RR)}${scard(AW)}`, 1) },
+        positions: { u: "/portfolio/all-weather", d: () => `${nav("Portfolio")}<div class="main c">${hd(`<span class="t3" style="font-weight:500">Portfolio /</span> All-Weather Portfolio`, "Quarterly · since Aug 3", `${b("Session")}${b("Open strategy")}`)}<div class="g2" style="grid-template-columns:360px minmax(0,1fr);gap:20px;align-items:start">${scard(AW, { on: 1 })}<div class="stack">${AW.rows.map((r, i) => `<div class="pn rise" style="display:grid;grid-template-columns:70px minmax(0,1fr) 120px 100px;gap:16px;align-items:center;padding:14px 18px"><span class="sym" style="font-size:14px"><span class="dot ${TONES[i]}"></span>${r.sym}</span><span class="t3 sm">${r.q} shares at ${nf(r.c)} · last ${nf(r.l)}</span><span class="num" style="text-align:right">${nf(r.mv)}<div class="t3 sm">${pc(r.w)} of sleeve</div></span><span class="num ${pl(r.pl)}" style="text-align:right">${sg(r.pl)}</span></div>`).join("")}<div class="t3 sm" style="text-align:right">Cash in sleeve ${nf(AW.cash)} · cost basis 34,486.95</div></div></div></div>`,
+            m: () => phone(`${mback("Portfolio")}${scard(AW, { on: 1 })}<div class="card flush">${AW.rows.map((r) => `<div class="row"><span class="sym" style="font-size:14px">${r.sym}<div class="sub" style="font-family:var(--sans);font-weight:400">${r.q} shares</div></span><span class="r num">${nf(r.mv)}<div class="${pl(r.pl)}" style="font-size:12.5px">${sg(r.pl)}</div></span></div>`).join("")}</div>`, 1) },
+        frozen: { u: "/portfolio/recession-radar", d: () => `${nav("Portfolio")}<div class="main c">${hd(`<span class="t3" style="font-weight:500">Portfolio /</span> Recession Radar`, "Monthly · since Sep 1", b(`${ic("refresh")}Run reconciliation`, "p"))}<div class="g2" style="grid-template-columns:360px minmax(0,1fr);gap:20px;align-items:start">${scard(RR)}<div class="scard rise"><h6>Why it's frozen</h6><div class="vs"><div><span class="lbl">The ledger expects</span><div class="n">167 TLT</div><span class="t3 sm">booked from the Nov 2 rebalance</span></div><div><span class="lbl">Alpaca reports</span><div class="n risk">120 TLT</div><span class="t3 sm">at reconciliation, 10:15 ET</span></div></div><div style="font-size:13px;color:var(--a-text2)">The difference is 47 shares, about $4,249. Reconciliation compares the two on a schedule and froze this sleeve so it doesn't trade on a position it can't confirm. Nothing is adjusted automatically.</div><div>${kvs([["GLD", "41 and 41, agrees"], ["Open orders", "None"], ["Next rebalance", "Held until resolved"]])}</div><div class="t3 sm">Check Alpaca's activity for a TLT trade placed outside LlamaTrade. All-Weather and Tech Momentum keep running.</div></div></div></div>`,
+            m: () => phone(`${mback("Portfolio")}${scard(RR)}<div class="vs" style="background:var(--a-panel)"><div><span class="lbl">Ledger</span><div class="n" style="font-size:24px">167</div></div><div><span class="lbl">Alpaca</span><div class="n risk" style="font-size:24px">120</div></div></div><div class="sub">TLT differs by 47 shares, about $4,249. Nothing is adjusted automatically.</div><div class="mb">Run reconciliation</div>`, 1) },
+        funds: { u: "/portfolio", d: () => `${nav("Portfolio")}<div class="main c">${hd("Portfolio", "Alpaca paper account ending 9cc", b("Activity"))}<div class="g2" style="gap:18px;margin-top:8px">${scard(RR)}${scard(AW)}${scard(TM)}<div class="scard rise" style="border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-soft)"><div class="row2"><h6>Add paper funds</h6><span class="x">${ic("x")}</span></div><div class="inp big focus" style="height:54px;font-size:24px"><span class="af">$</span>25,000.00<span class="caret"></span></div><div style="display:flex;gap:6px">${["+10K", "+25K", "+50K", "+100K"].map((x, i) => b(x, i === 1 ? "p" : "")).join("")}</div><div class="meta">Unallocated becomes $42,077.12 and total equity $128,410.27. Paper funds are simulated.</div><div style="display:flex;gap:8px;justify-content:flex-end">${b("Cancel")}${b("Add $25,000", "p")}</div></div></div></div>`,
+            m: () => phone(`${mh("Portfolio")}<div class="scard rise" style="border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-soft)"><div class="row2"><h6>Unallocated cash</h6><span class="x">${ic("x")}</span></div><div class="num t3">$17,077.12 now</div><div class="inp big focus" style="height:60px;border-radius:8px"><span class="af">$</span>25,000.00<span class="caret"></span></div><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">${["+10K", "+25K", "+50K", "+100K"].map((x, i) => `<span class="b ${i === 1 ? "p" : ""}" style="height:34px">${x}</span>`).join("")}</div><div class="meta">Becomes $42,077.12. Paper funds are simulated.</div><div class="mb">Add $25,000</div></div>${scard(RR)}`, 1) },
+        activity: { u: "/portfolio/activity", d: () => `${nav("Portfolio")}<div class="main c">${hd("Activity", "Paper account ending 9cc", '<span class="seg"><span class="on">All</span><span>Funding</span><span>Allocations</span><span>Trades</span></span>')}<div class="g2" style="gap:18px;align-items:start">${["Nov 6", "Nov 4", "Nov 2", "Oct 1"].map((d) => `<div class="scard rise" style="padding:16px 20px;gap:4px"><span class="lbl">${d}</span>${ACT.filter((a) => a[0] === d).map(([, t, e, s, v, i]) => `<div class="feed"><div class="ev" style="border-bottom:0"><span class="ic">${ic(i)}</span><span>${e}<div class="t3 sm">${s}</div></span><span class="num">${v > 0 ? "+" : "−"}${nf(v)}<div class="t3 sm">${t}</div></span></div></div>`).join("")}</div>`).join("")}</div></div>`,
+            m: () => phone(`${mback("Portfolio")}<h5>Activity</h5>${["Nov 6", "Nov 4", "Nov 2"].map((d) => `<div class="card rise" style="padding:10px 16px"><span class="lbl">${d}</span>${ACT.filter((a) => a[0] === d).slice(0, 3).map(([, t, e, s, v, i]) => `<div class="feed"><div class="ev" style="border-bottom:0;padding:8px 0"><span class="ic">${ic(i)}</span><span style="font-size:14px">${e}</span><span class="num" style="font-size:14px">${v > 0 ? "+" : "−"}${nf(v)}</span></div></div>`).join("")}</div>`).join("")}`, 1) },
+    };
+
+    /* ---------- Copilot ---------- */
+    const CONV1 = { me: "How is my portfolio doing?", tool: "get_portfolio_summary", ai: `<p>Up <span class="num">$895.40</span> today (<span class="num">+0.87%</span>), and <span class="num">$1,333.15</span> since Aug 3. Most of today's gain is Tech Momentum Rotation, at <span class="num">+$867.12</span>. All-Weather is down <span class="num">$84.12</span>.</p><p>Recession Radar is frozen while a TLT quantity is checked: the ledger expects 167 shares and Alpaca reports 120. Its orders wait until that's resolved.</p>` };
+    const CONV2me = "Build me a momentum rotation across tech ETFs, rebalanced monthly.";
+    const CONV2ai = "Ranking QQQ, XLK and SMH by 90-day return each month and holding the top two at equal weight, with QQQ as the benchmark.";
+    const APPme = "Backtest Recession Radar over the last two years against SPY.";
+    const APPai = "I'll run version 3 from 2024-11-01 to 2026-10-30 with $25,000 and SPY as the benchmark. Nothing runs until you approve.";
+    const k = (s) => `<span class="k">${s}</span>`;
+    const DRAFT = [`(${k("strategy")} <span class="s">"Tech Momentum Rotation"</span>`, "  :rebalance monthly :benchmark QQQ", `  (${k("filter")} :by momentum :select (top 2) :lookback 90`, `    (${k("weight")} :method equal`, `      (${k("asset")} QQQ) (${k("asset")} XLK) (${k("asset")} SMH))))`];
+    const RADAR = [`(${k("strategy")} <span class="s">"Recession Radar"</span>`, "  :rebalance monthly :benchmark SPY", `  (${k("if")} (&gt; (rsi SPY 14) 70)`, `      (${k("weight")} :method specified`, `        (${k("asset")} TLT :weight 60)`, `        (${k("asset")} GLD :weight 40))`, `      (${k("else")}`, `        (${k("weight")} :method momentum`, "          :lookback 90 :top 2", "          :lookback 120 :top 2", `          (${k("asset")} VTI) (${k("asset")} QQQ)`, `          (${k("asset")} IWM)))))`];
+    const code = (lines, cls = {}, start = 1) => `<div class="code">${lines.map((l, i) => `<div class="${cls[i] || ""}"><span class="ln">${cls[i] === "add" ? "+" : cls[i] === "del" ? "−" : i + start}</span><span>${l}</span></div>`).join("")}</div>`;
+    const msgMe = (t, who = "Sam · 10:29 ET") => `<div class="msg me rise"><span class="who">${who}</span><div class="bub">${t}</div></div>`;
+    const msgAi = (t) => `<div class="msg ai rise" style="max-width:92%"><span class="who">Copilot</span><div class="bub">${t}</div></div>`;
+    const tool = (n, d, spin) => `<div class="tool rise">${spin ? '<span class="caret" style="width:6px;height:6px;border-radius:50%"></span>' : ic("check")}<b>${n}</b>${d}</div>`;
+    const stratCard = (o = {}) => `<div class="art rise"><div class="art-h"><span style="display:flex;gap:10px;align-items:center">${o.m ? "" : '<span class="lbl">Strategy draft</span>'}<b>Tech Momentum Rotation</b></span><span class="chip ok">${ic("check")}Valid</span></div><div class="art-b">${o.m ? '<span class="sm t3">Would hold at Nov 13 close</span>' : '<div class="row2 sm t3"><span>Monthly · benchmark QQQ · 3 funds, holds 2</span><span>Would hold at Nov 13 close</span></div>'}${wbar([["h1", 50], ["h3", 50], ["h5", 0.6]], 12, "grow")}<div class="hold"><span><b>SMH</b>50%</span><span><b>QQQ</b>50%</span><span class="t3">XLK ranks third and isn't held</span></div>${o.code ? `<div class="pn" style="background:var(--a-bg)">${code(DRAFT)}</div>` : `<span class="t3 sm" style="display:flex;gap:6px;align-items:center">${ic("code")}Show the strategy code</span>`}</div><div class="art-f">${b("Open in editor", "p")}${b(`${ic("play")}Backtest`)}${b("Save")}${o.m ? "" : '<span class="t3 sm" style="margin-left:auto">Nothing is saved yet</span>'}</div></div>`;
+    const approveCard = (o = {}) => `<div class="art ask rise" style="${o.w ? `max-width:${o.w}px` : ""}"><div class="art-h"><b>Run a backtest</b><span class="chip">Needs your approval</span></div><div class="art-b"><div class="args"><span>Strategy</span><span>Recession Radar v3</span><span>Period</span><span>2024-11-01 to 2026-10-30</span><span>Capital</span><span>$25,000</span><span>Benchmark</span><span>SPY</span></div><span class="t3 sm">A backtest uses historical data only. It doesn't place orders or change the strategy.</span></div><div class="art-f">${b("Approve and run", "p")}${b("Decline")}</div></div>`;
+    const portBg = () => `<div class="main c">${pHead()}${figs()}${frozenAlert()}<div style="height:16px"></div>${stmt()}</div>`;
+    const histList = (on = -1, compact) => HIST.map(([g, rows], gi) => `<div class="gh">${g}</div>${rows.map(([t, w, a], i) => `<div class="it ${gi * 10 + i === on ? "on" : ""}"><span>${t}</span><em>${w}${a && !compact ? " · " + a : ""}</em></div>`).join("")}`).join("");
+    const mChatHead = (t = "Copilot") => `<div class="mh"><h5>${t}</h5><span style="display:flex;gap:14px;color:var(--a-text2)">${ic("hist")}${ic("plus")}</span></div>`;
+    const mComposer = (ph = "Message Copilot") => `<div class="composer"><div class="inp"><span class="ph">${ph}</span></div><span class="send">${ic("send")}</span></div>`;
+    const dock = (inner, title = "Copilot", ctx = "On: Portfolio") => `<div class="ovl right"><div class="drawer rise" style="width:480px"><div class="modal-h"><span style="display:flex;gap:10px;align-items:center"><b>${title}</b><span class="chip">${ctx}</span></span><span style="display:flex;gap:10px;color:var(--a-text3)">${ic("hist")}${ic("plus")}${ic("expand")}${ic("x")}</span></div>${inner}</div></div>`;
+
+    const C1 = {
+        chat: { u: "/portfolio", d: () => `${nav("Portfolio")}${portBg()}${dock(`<div class="stack" style="flex:1;padding:20px;gap:16px;align-content:start">${msgMe(CONV1.me, "Sam · 09:48 ET")}${tool(CONV1.tool, "account, 3 sleeves")}${msgAi(CONV1.ai)}<div class="pn rise" style="background:var(--a-bg)"><div class="pn-b" style="padding:12px 14px">${SL.map((s) => `<div class="row2 sm" style="padding:4px 0"><span><span class="dot ${s.tone}"></span>${s.sh}${s.s === "frz" ? ' <span class="risk">· frozen</span>' : ""}</span><span class="num ${pl(s.d)}">${sg(s.d)}</span></div>`).join("")}</div></div><div style="display:flex;gap:6px;flex-wrap:wrap">${["Why is TLT different?", "Show the rebalance for All-Weather"].map((x) => `<span class="chip line">${x}</span>`).join("")}</div></div><div style="padding:0 16px 16px">${mComposer("Ask about your portfolio")}</div>`)}`,
+            m: () => phone(`${mh("Portfolio")}<div><span class="lbl">Total equity</span><div class="big">$103,410.27</div></div><div class="scrim"></div>`, 1, { after: `<div class="sheet" style="height:690px;bottom:0;z-index:7"><div class="grab"></div><div class="row2" style="padding:4px 20px 10px"><span style="display:flex;gap:8px;align-items:center"><b style="font-size:17px">Copilot</b><span class="chip">On: Portfolio</span></span><span style="color:var(--a-text3)">${ic("expand")}</span></div><div class="stack" style="padding:6px 20px;gap:14px;flex:1">${msgMe(CONV1.me, "09:48")}${msgAi(CONV1.ai)}</div>${mComposer()}</div>` }) },
+        approve: { u: "/strategies/recession-radar", d: () => `${nav("Strategies")}<div class="main c">${hd("Recession Radar", "Version 3 · monthly · benchmark SPY", `${b(`${ic("spark")}Copilot`)}${b("Backtest", "p")}`)}<div class="pn">${code(RADAR.filter((_, i) => i !== 9))}</div></div>${dock(`<div class="stack" style="flex:1;padding:20px;gap:16px;align-content:start">${msgMe(APPme, "Sam · 09:44 ET")}${msgAi(APPai)}${approveCard()}${tool("run_backtest", "waiting for approval", 1)}</div><div style="padding:0 16px 16px">${mComposer("Ask about this strategy")}</div>`, "Copilot", "On: Recession Radar")}`,
+            m: () => phone(`${mback("Strategies")}<h5>Recession Radar</h5><div class="scrim"></div>`, 2, { after: `<div class="sheet" style="height:690px;bottom:0;z-index:7"><div class="grab"></div><div class="row2" style="padding:4px 20px 10px"><span style="display:flex;gap:8px;align-items:center"><b style="font-size:17px">Copilot</b><span class="chip">On: Recession Radar</span></span><span style="color:var(--a-text3)">${ic("expand")}</span></div><div class="stack" style="padding:6px 20px;gap:14px">${msgMe("Backtest it over the last two years.", "09:44")}${approveCard()}</div></div>` }) },
+        history: { u: "/portfolio", d: () => `${nav("Portfolio")}${portBg()}${dock(`<div style="padding:12px 16px;border-bottom:1px solid var(--a-line)"><div class="inp">${ic("search")}<span class="ph">Search conversations</span></div></div><div class="hist" style="flex:1">${histList(1)}</div><div class="modal-f" style="justify-content:center"><span class="t3 sm">Conversations are kept for your account only.</span></div>`, "Conversations", "7 this month")}`,
+            m: () => phone(`${mh("Portfolio")}<div class="scrim"></div>`, 1, { after: `<div class="sheet" style="height:690px;bottom:0;z-index:7"><div class="grab"></div><div class="row2" style="padding:4px 20px 6px"><b style="font-size:17px">Conversations</b><span style="color:var(--acc);font-size:15px">New</span></div><div class="hist" style="font-size:14px">${histList(1, 1)}</div></div>` }) },
+    };
+
+    const c2rail = (on) => `<div style="width:270px;flex:none;border-right:1px solid var(--a-line);background:var(--a-panel);display:flex;flex-direction:column"><div style="padding:16px"><span class="b p full">${ic("plus")}New conversation</span></div><div class="hist" style="flex:1">${histList(on, 1)}</div></div>`;
+    const c2col = (inner, ph = "Ask Copilot to build, edit or explain a strategy") => `<div style="flex:1;display:flex;flex-direction:column;min-width:0"><div style="flex:1;overflow:hidden;padding:34px 0 10px"><div class="stack" style="max-width:700px;margin:0 auto;gap:20px">${inner}</div></div><div style="max-width:700px;width:100%;margin:0 auto;padding:0 0 22px">${mComposer(ph)}<div class="t3 sm" style="text-align:center;margin-top:8px">Copilot writes the strategy language. Nothing runs or saves until you approve it.</div></div></div>`;
+    const C2 = {
+        chat: { u: "/copilot", d: () => `${nav("Copilot")}<div class="main" style="padding:0;display:flex">${c2rail(0)}${c2col(`${msgMe(CONV2me)}${tool("validate_strategy", "3 symbols · needs 90 bars of history")}${msgAi(CONV2ai)}${stratCard({ code: 1 })}`)}</div>`,
+            m: () => phone(`${mChatHead("Tech momentum rotation")}<div class="stack" style="gap:14px">${msgMe("Build a momentum rotation across tech ETFs, monthly.", "10:29")}${msgAi(CONV2ai)}${stratCard({ m: 1 })}</div>`, 3, { after: mComposer() }) },
+        approve: { u: "/copilot", d: () => `${nav("Copilot")}<div class="main" style="padding:0;display:flex">${c2rail(2)}${c2col(`${msgMe(APPme, "Sam · 09:44 ET")}${msgAi(APPai)}${approveCard()}${tool("run_backtest", "waiting for approval", 1)}`)}</div>`,
+            m: () => phone(`${mChatHead("Backtest Recession Radar")}<div class="stack" style="gap:14px">${msgMe("Backtest Recession Radar over the last two years.", "09:44")}${msgAi("I'll run version 3 from 2024-11-01 to 2026-10-30 with $25,000, against SPY.")}${approveCard()}</div>`, 3) },
+        history: { u: "/copilot/history", d: () => `${nav("Copilot")}<div class="main c" style="max-width:860px">${hd("Conversations", "7 this month · kept for your account only", b(`${ic("plus")}New conversation`, "p"))}<div class="inp rise" style="margin-bottom:18px">${ic("search")}<span class="ph">Search conversations</span></div>${HIST.map(([g, rows]) => `<div class="lbl" style="margin:16px 0 8px">${g}</div><div class="pn rise">${rows.map(([t, w, a]) => `<div class="row2" style="padding:13px 18px;border-bottom:1px solid var(--a-line)"><span>${t}</span><span style="display:flex;gap:14px;align-items:center">${a ? `<span class="chip line">${a}</span>` : ""}<span class="num t3 sm" style="width:46px;text-align:right">${w}</span></span></div>`).join("")}</div>`).join("")}</div>`,
+            m: () => phone(`${mChatHead("Conversations")}<div class="inp" style="height:40px;border-radius:10px">${ic("search")}<span class="ph">Search</span></div>${HIST.slice(0, 2).map(([g, rows]) => `<span class="glbl">${g}</span><div class="card flush">${rows.map(([t, w, a]) => `<div class="row" style="align-items:flex-start"><span>${t}${a ? `<div class="sub">${a}</div>` : ""}</span><span class="num sub">${w}</span></div>`).join("")}</div>`).join("")}`, 3) },
+    };
+
+    const edHead = (extra = "") => hd("Recession Radar", "Version 3 · monthly · benchmark SPY" + extra, `<span class="seg"><span>Blocks</span><span class="on">Code</span></span>${b("Save version 4")}${b("Backtest", "p")}`);
+    const inlineAsk = (q) => `<div class="composer rise" style="margin:0 0 14px;border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-soft)">${ic("spark")}<div class="inp"><span>${q}</span></div><span class="kbd">Esc</span></div>`;
+    const C3 = {
+        chat: { u: "/strategies/recession-radar", d: () => `${nav("Strategies")}<div class="main c">${edHead(" · draft has 1 suggested change")}${inlineAsk("Would a longer lookback have helped in the April selloff?")}<div class="g2" style="grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);align-items:start"><div class="pn rise">${code(RADAR, { 8: "del", 9: "add" })}<div class="pn-f"><span>One line in the Else branch. The If branch is unchanged.</span><span style="display:flex;gap:6px">${b("Apply to draft", "p")}${b("Discard")}</span></div></div><div class="art rise"><div class="art-h"><span style="display:flex;gap:8px;align-items:center">${ic("spark")}<b>Copilot</b></span><span class="t3 sm">line 9</span></div><div class="art-b" style="font-size:13px;line-height:1.6"><p style="margin:0">A little. With 120 days the momentum branch moved out of IWM one rebalance earlier in April 2025.</p><p style="margin:0">Max drawdown goes from <span class="num">−12.3%</span> to <span class="num">−9.6%</span> and the total return drops from <span class="num">+21.4%</span> to <span class="num">+19.8%</span>. Sharpe is about the same.</p>${tool("run_backtest", "lookback 90 and 120 · 2024-11 to 2026-10")}</div><div class="art-f"><span class="t3 sm">Ask a follow-up</span><span class="kbd" style="margin-left:auto">⌘I</span></div></div></div></div>`,
+            m: () => phone(`${mback("Strategies")}<h5>Recession Radar</h5><div class="card" style="padding:12px 14px;font-size:13.5px"><span class="lbl">Else · momentum</span><div style="margin-top:4px"><span class="t3" style="text-decoration:line-through">lookback 90</span> <span style="background:var(--acc-soft);padding:1px 4px;border-radius:3px">lookback 120</span> · top 2</div></div><div class="art rise"><div class="art-h"><span style="display:flex;gap:8px;align-items:center">${ic("spark")}<b>Suggested change</b></span></div><div class="art-b" style="font-size:14px">Max drawdown improves from −12.3% to −9.6%. Total return drops from +21.4% to +19.8%.</div><div class="art-f">${b("Apply", "p")}${b("Discard")}</div></div>${mComposer("Ask about this strategy")}`, 2) },
+        approve: { u: "/strategies/recession-radar", d: () => `${nav("Strategies")}<div class="main c">${edHead()}${inlineAsk("Backtest both lookbacks over two years")}<div class="g2" style="grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);align-items:start"><div class="pn rise">${code(RADAR, { 8: "del", 9: "add" })}</div><div class="art ask rise"><div class="art-h"><b>Run 2 backtests</b><span class="chip">Needs your approval</span></div><div class="art-b"><div class="args"><span>Versions</span><span>3, and the draft</span><span>Lookback</span><span>90 and 120 days</span><span>Period</span><span>2024-11-01 to 2026-10-30</span><span>Capital</span><span>$25,000 each</span><span>Benchmark</span><span>SPY</span></div><span class="t3 sm">Backtests use historical data only. The draft stays unsaved.</span></div><div class="art-f">${b("Approve and run", "p")}${b("Decline")}<span class="kbd" style="margin-left:auto">⌘↵</span></div></div></div></div>`,
+            m: () => phone(`${mback("Strategies")}<h5>Recession Radar</h5><div class="card" style="padding:12px 14px;font-size:13.5px"><span class="lbl">Else · momentum</span><div style="margin-top:4px"><span class="t3" style="text-decoration:line-through">lookback 90</span> <span style="background:var(--acc-soft);padding:1px 4px;border-radius:3px">lookback 120</span></div></div><div class="art ask rise"><div class="art-h"><b>Run 2 backtests</b></div><div class="art-b"><div class="args"><span>Lookback</span><span>90 and 120</span><span>Period</span><span>2 years</span><span>Capital</span><span>$25,000</span></div></div></div><div class="mb">Approve and run</div><div class="mb s">Decline</div>`, 2) },
+        history: { u: "/strategies/recession-radar", d: () => `${nav("Strategies")}<div class="main c">${edHead()}<div class="g2" style="grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);align-items:start"><div class="pn rise">${code(RADAR.filter((_, i) => i !== 9))}</div><div class="pn rise"><div class="pn-h"><b>Copilot on this strategy</b><span>4 conversations</span></div><div style="padding:6px 18px 14px">${[["Today, 10:38", "Would a longer lookback have helped?", "Suggested lookback 120 · not applied", 1], ["Yesterday, 15:02", "Add a bond hedge below the 200-day", "Answered · no change"], ["Nov 12, 16:02", "Backtest version 3", "Ran · +21.4% · Sharpe 0.79"], ["Oct 27", "Make the defensive branch 60/40", "Applied · became version 3"]].map(([w, t, r, on]) => `<div style="display:grid;grid-template-columns:14px minmax(0,1fr);gap:12px;padding:12px 0;border-bottom:1px solid var(--a-line)"><span style="width:8px;height:8px;border-radius:50%;margin-top:6px;${on ? "background:var(--acc)" : "box-shadow:inset 0 0 0 1.5px var(--a-text3)"}"></span><span><span class="t3 sm">${w}</span><div style="margin:2px 0">${t}</div><span class="t2 sm">${r}</span></span></div>`).join("")}</div></div></div></div>`,
+            m: () => phone(`${mback("Recession Radar")}<h5>Copilot on this strategy</h5><div class="card flush">${[["Today", "Would a longer lookback have helped?", "Suggested lookback 120"], ["Yesterday", "Add a bond hedge below the 200-day", "No change"], ["Nov 12", "Backtest version 3", "+21.4% · Sharpe 0.79"], ["Oct 27", "Make the defensive branch 60/40", "Became version 3"]].map(([w, t, r]) => `<div class="row" style="align-items:flex-start"><span>${t}<div class="sub">${r}</div></span><span class="sub">${w}</span></div>`).join("")}</div>`, 2) },
+    };
+
+    const palFoot = (items) => `<div class="ft">${items.map(([kk, t]) => `<span><span class="kbd">${kk}</span>${t}</span>`).join("")}</div>`;
+    const C4 = {
+        chat: { u: "/portfolio", d: () => `${nav("Portfolio")}${portBg()}<div class="ovl top"><div class="pal rise"><div class="q">${ic("spark")}<span>How is my portfolio doing?</span><span class="kbd" style="margin-left:auto">Ask</span></div><div class="ans">${tool(CONV1.tool, "account, 3 sleeves")}<div>${CONV1.ai}</div></div><div class="gl">Follow up</div><div class="it on">${ic("chev")}Why is TLT different?<em>Ask</em></div><div class="it">${ic("wallet")}Open Recession Radar<em>Go to</em></div>${palFoot([["↵", "Ask"], ["⌘↵", "Continue in Copilot"], ["Esc", "Close"]])}</div></div>`,
+            m: () => phone(`${mh("Portfolio")}<div class="scrim" style="z-index:5"></div><div class="pal m rise"><div class="q" style="font-size:15px">${ic("spark")}<span>How is my portfolio doing?</span></div><div class="ans" style="font-size:14px">${CONV1.ai}</div><div class="it on" style="font-size:14px">${ic("chev")}Why is TLT different?</div><div class="it" style="font-size:14px">${ic("expand")}Continue in Copilot</div></div>`, 1) },
+        approve: { u: "/strategies", d: () => `${nav("Strategies")}<div class="main c">${hd("Strategies", "6 strategies · 3 running")}</div><div class="ovl top"><div class="pal rise"><div class="q">${ic("spark")}<span>backtest recession radar over two years</span></div><div class="gl">Copilot will</div><div class="ans" style="padding-top:8px">${approveCard()}</div>${palFoot([["⌘↵", "Approve and run"], ["Esc", "Decline"]])}</div></div>`,
+            m: () => phone(`${mh("Strategies", "")}<div class="scrim" style="z-index:5"></div><div class="pal m rise"><div class="q" style="font-size:15px">${ic("spark")}<span>backtest recession radar</span></div><div style="padding:14px">${approveCard()}</div></div>`, 2) },
+        history: { u: "/portfolio", d: () => `${nav("Portfolio")}${portBg()}<div class="ovl top"><div class="pal rise"><div class="q">${ic("search")}<span class="t3">Ask Copilot or go to a page</span><span class="caret"></span></div><div class="gl">Recent conversations</div>${HIST[0][1].concat(HIST[1][1].slice(0, 1)).map(([t, w], i) => `<div class="it ${i === 0 ? "on" : ""}">${ic("hist")}${t}<em>${w}</em></div>`).join("")}<div class="gl">Ask Copilot</div>${["Build a momentum rotation across the 11 sector ETFs", "Why did Recession Radar go defensive on Nov 2?"].map((t) => `<div class="it">${ic("spark")}${t}</div>`).join("")}<div class="gl">Go to</div><div class="it">${ic("wallet")}Portfolio<em>G P</em></div><div class="it">${ic("chart")}Strategies<em>G S</em></div>${palFoot([["↑↓", "Move"], ["↵", "Open"], ["Esc", "Close"]])}</div></div>`,
+            m: () => phone(`${mh("Portfolio")}<div class="scrim" style="z-index:5"></div><div class="pal m rise"><div class="q" style="font-size:15px">${ic("search")}<span class="t3">Ask or go to</span></div><div class="gl">Recent</div>${HIST[0][1].map(([t, w]) => `<div class="it" style="font-size:14px">${ic("hist")}${t}</div>`).join("")}<div class="gl">Ask Copilot</div><div class="it" style="font-size:14px">${ic("spark")}Why did Recession Radar go defensive?</div><div class="gl">Go to</div><div class="it" style="font-size:14px">${ic("chart")}Strategies</div></div>`, 1) },
+    };
+
+    /* ---------- Account and settings ---------- */
+    const SECT = [["Account", [["profile", "Profile and security", "user"]]], ["Trading", [["broker", "Broker keys", "key"]]], ["Alerts", [["notify", "Notifications", "bell"]]], ["Billing", [["plan", "Plan and usage", "gauge"]]]];
+    const profileSec = () => `<div class="sec rise"><h5>Profile</h5><p>Your details are read only for now. Contact support to change your email.</p><div class="pn"><div class="pn-b" style="padding-top:4px;padding-bottom:4px">${kvs([["Name", "Sam Rivera"], ["Email", "sam@samrivera.com"], ["Workspace", "Rivera Capital"], ["Role", "Owner"], ["Member since", "Aug 2026"]])}</div></div></div>`;
+    const securitySec = () => `<div class="sec rise"><h5>Security</h5><p>Password changes, signing out other devices and two-factor sign-in aren't available yet.</p><div class="pn"><div class="pn-b" style="padding-top:4px;padding-bottom:4px">${kvs([["Password", "Reset from the sign-in page"], ["Two-factor sign-in", "Not available yet", "t3"], ["Other devices", "Not available yet", "t3"]])}</div></div></div>`;
+    const brokerSec = () => `<div class="sec rise"><h5>Broker keys</h5><p>LlamaTrade trades through your Alpaca paper account. Live trading isn't available in the beta.</p><div class="pn"><div class="pn-b" style="padding-top:4px;padding-bottom:4px">${kvs([["Alpaca paper", '<span class="st run"><i></i>Connected</span>'], ["Key", "PK7Q••••"], ["Account", "ending 9cc"]])}</div></div></div>`;
+    const matrix = () => `<div class="pn"><table class="tbl cmp"><thead><tr><th>Category</th><th class="n">In app</th><th class="n">Email</th><th class="n">Webhook</th></tr></thead><tbody>${CATS.map(([g, rows]) => `<tr class="grp"><td colspan="4">${g}</td></tr>` + rows.map(([n, e, w, lock]) => `<tr><td>${n}${lock ? ' <span class="t3 sm">· always emails</span>' : ""}</td><td class="n"><span class="cb on lock"></span></td><td class="n"><span class="cb ${e ? "on" : ""} ${lock ? "lock" : ""}"></span></td><td class="n"><span class="cb ${w ? "on" : ""}"></span></td></tr>`).join("")).join("")}</tbody></table></div>`;
+    const notifySec = (o = {}) => `<div class="sec rise"><h5>Notifications</h5><p>Everything appears in the app. Choose what also goes to email or a signed webhook. Critical ones always email.</p>${matrix()}${o.hooks ? `<div class="pn" style="margin-top:14px"><div class="pn-b row2"><span><span style="display:block">ops-alerts</span><span class="t3 sm">hooks.samrivera.com/llamatrade · signed with HMAC-SHA256</span></span><span style="display:flex;gap:6px">${b("Test")}${b("Disable")}</span></div></div>` : ""}</div>`;
+    const usageGrid = (cols = 2) => `<div style="display:grid;grid-template-columns:repeat(${cols},minmax(0,1fr));gap:18px 28px">${USAGE.map(([a, u, l, c]) => `<div><div class="row2" style="font-size:13px"><span>${a}</span><span class="num t2">${u} / ${l.toLocaleString("en-US")}</span></div><div class="meter ${u ? "" : "off"}"><i class="grow" style="width:${Math.max(0.6, (u / l) * 100)}%"></i></div><span class="t3 sm">${c}</span></div>`).join("")}</div>`;
+    const planSec = () => `<div class="sec rise"><h5>Plan and usage</h5><p>You're on Pro while the closed beta runs, at no charge. Paid plans aren't settled yet, and we'll email you before anything changes.</p><div class="pn"><div class="pn-h"><b>Pro</b><span class="chip ok">Beta · no charge</span></div><div class="pn-b">${usageGrid()}</div><div class="pn-f"><span>Usage resets Dec 1. Live trading isn't available in the beta.</span></div></div><div class="g2" style="margin-top:14px"><div class="pn"><div class="empty" style="padding:24px 20px"><div class="eg" style="width:40px;height:40px;margin-bottom:10px">${ic("card")}</div><p>No card on file. You won't need one during the beta.</p></div></div><div class="pn"><div class="empty" style="padding:24px 20px"><div class="eg" style="width:40px;height:40px;margin-bottom:10px">${ic("info")}</div><p>No invoices. Nothing has been charged.</p></div></div></div></div>`;
+    const bellMenu = (style) => `<div class="menu rise" style="${style}"><div class="modal-h" style="padding:12px 16px"><b>Notifications</b><span style="color:var(--acc);font-size:12px">Mark all read</span></div>${NOTES.map(([c, t, p, ts, u]) => `<div class="nt ${c} ${u ? "" : "read"}"><i class="${u ? "u" : ""}"></i><div><b>${t}</b><p>${p}</p></div><span class="ts">${ts}</span></div>`).join("")}</div>`;
+    const sideNav = (on) => `<div class="side rise">${SECT.map(([g, items]) => `<div class="g"><em>${g}</em>${items.map(([id, n, i]) => `<span class="${id === on ? "on" : ""}">${ic(i)}${n}</span>`).join("")}</div>`).join("")}<div class="g" style="margin-top:8px"><span>${ic("logout")}Sign out</span></div></div>`;
+    const sWrap = (on, inner, o = {}) => `${nav("", o)}<div class="main" style="padding:0;display:flex">${sideNav(on)}<div style="flex:1;padding:30px 40px;overflow:hidden;min-width:0"><div style="max-width:${o.w || 720}px">${hd("Settings", "Signed in as sam@samrivera.com")}${inner}</div></div></div>`;
+    const mGroups = () => `${mh("Account", "")}<div class="card flush rise"><div class="row"><span>Sam Rivera<div class="sub">sam@samrivera.com</div></span><span class="av" style="width:34px;height:34px">SR</span></div></div>${SECT.map(([g, items]) => `<span class="glbl">${g}</span><div class="card flush rise">${items.map(([id, n, i]) => `<div class="row"><span style="display:flex;gap:12px;align-items:center">${ic(i)}${n}</span><span class="t3">${ic("chev")}</span></div>`).join("")}</div>`).join("")}<div class="mb s">Sign out</div>`;
+    const mInbox = () => `<div class="card flush rise">${NOTES.map(([c, t, p, ts, u]) => `<div class="nt ${c} ${u ? "" : "read"}" style="padding:12px 0;font-size:14px"><i class="${u ? "u" : ""}"></i><div><b>${t}</b><p style="font-size:13px">${p}</p></div><span class="ts">${ts}</span></div>`).join("")}</div>`;
+    const S1 = {
+        profile: { u: "/settings?tab=profile", d: () => sWrap("profile", profileSec() + securitySec()), m: () => phone(mGroups(), 4) },
+        notify: { u: "/settings?tab=notifications", d: () => sWrap("notify", notifySec({ hooks: 1 }), { bell: 1, w: 540 }) + bellMenu("right:64px;top:46px;width:340px"),
+            m: () => phone(`${mback("Account", `<span style="color:var(--a-text2)">${ic("gear")}</span>`)}<h5>Notifications</h5>${mInbox()}`, 4) },
+        plan: { u: "/settings?tab=billing", d: () => sWrap("plan", planSec()),
+            m: () => phone(`${mback("Account")}<h5>Plan and usage</h5><div class="card rise"><div class="row2"><b style="font-size:20px">Pro</b><span class="chip ok">Beta · no charge</span></div><div class="sub" style="margin:4px 0 14px">Paid plans aren't settled yet. We'll email you before anything changes.</div>${usageGrid(1)}</div><div class="card flush"><div class="row"><span>Payment method</span><span class="sub">None needed</span></div><div class="row"><span>Invoices</span><span class="sub">None</span></div></div>`, 4) },
+    };
+
+    const longPage = () => `<div style="display:grid;grid-template-columns:minmax(0,720px) 180px;gap:56px;justify-content:center;padding:30px 40px 300px"><div>${hd("Settings", "Signed in as sam@samrivera.com")}<div data-s="profile">${profileSec()}</div>${securitySec()}${brokerSec()}<div data-s="notify">${notifySec()}</div><div data-s="plan">${planSec()}</div></div><div><div class="idx">${["Profile", "Security", "Broker keys", "Notifications", "Plan and usage"].map((n) => `<span data-i="${n}">${n}</span>`).join("")}</div></div></div>`;
+    const mLong = () => `<div class="lp" style="padding:8px 20px 140px">${mh("Account", "")}<div style="height:10px"></div><div data-s="profile">${profileSec()}</div>${securitySec()}<div data-s="notify"><div class="sec"><h5>Notifications</h5><p>Shown in the app. Choose what also emails you.</p><div class="card flush">${CATS.flatMap(([, r]) => r).slice(0, 6).map(([n, e, , lock]) => `<div class="row" style="font-size:14px"><span>${n}</span><span class="sw ${e ? "on" : ""} ${lock ? "lock" : ""}"></span></div>`).join("")}</div></div></div><div data-s="plan"><div class="sec"><h5>Plan and usage</h5><p>Pro, at no charge during the beta.</p><div class="card">${usageGrid(1)}</div></div></div></div>`;
+    const S2 = {
+        profile: { u: "/settings", scroll: "profile", idx: "Profile", d: () => `${nav("")}<div class="main" style="padding:0"><div class="lp">${longPage()}</div></div>`, m: () => phone(mLong(), 4, { raw: 1 }) },
+        notify: { u: "/settings#notifications", scroll: "notify", idx: "Notifications", d: () => `${nav("")}<div class="main" style="padding:0"><div class="lp">${longPage()}</div></div>`, m: () => phone(mLong(), 4, { raw: 1 }) },
+        plan: { u: "/settings#plan", scroll: "plan", idx: "Plan and usage", d: () => `${nav("")}<div class="main" style="padding:0"><div class="lp">${longPage()}</div></div>`, m: () => phone(mLong(), 4, { raw: 1 }) },
+    };
+
+    const hc = (id, ico, t, body, o = {}) => `<div class="hc rise ${o.on ? "on" : ""} ${o.wide ? "wide" : ""}"><div class="ti"><span class="ic">${ic(ico)}</span><b>${t}</b>${o.right ? `<span style="margin-left:auto">${o.right}</span>` : `<span class="t3" style="margin-left:auto">${ic("chev")}</span>`}</div>${body}</div>`;
+    const hubCards = (on) => [
+        hc("profile", "user", "Profile", `<p>Sam Rivera · sam@samrivera.com</p><p class="t3">Rivera Capital · Owner</p>`, { on: on === "profile" }),
+        hc("security", "shield", "Security", `<p>Password reset from the sign-in page.</p><p class="t3">Two-factor sign-in isn't available yet.</p>`, { on: on === "profile" }),
+        hc("broker", "key", "Broker keys", `<p><span class="st run"><i></i>Alpaca paper connected</span></p><p class="t3">Key PK7Q•••• · account ending 9cc</p>`),
+        hc("notify", "bell", "Notifications", `<p>3 unread · 1 needs attention</p><p class="t3">Email for 9 categories · 1 webhook</p>`),
+        on === "plan" ? hc("plan", "gauge", "Plan and usage", `${usageGrid(2)}<p class="t3">Pro at no charge during the closed beta. Paid plans aren't settled yet.</p>`, { on: 1, wide: 1, right: '<span class="chip ok">Beta · no charge</span>' }) : hc("plan", "gauge", "Plan and usage", `<p>Pro · beta, no charge</p><div class="meter"><i style="width:10.7%"></i></div><p class="t3">214 of 2,000 Copilot messages</p>`),
+    ].join("");
+    const S3 = {
+        profile: { u: "/settings", d: () => `${nav("")}<div class="main c">${hd("Settings", "Signed in as sam@samrivera.com")}<div class="hub">${hubCards("profile")}<div class="hc rise" style="border-style:dashed;background:transparent"><div class="ti"><span class="ic">${ic("logout")}</span><b>Sign out</b></div><p class="t3">Signs out of this browser.</p></div></div></div>`,
+            m: () => phone(`${mh("Account", "")}${[["user", "Profile", "Sam Rivera · Owner"], ["shield", "Security", "Two-factor not available yet"], ["key", "Broker keys", "Alpaca paper connected"], ["bell", "Notifications", "3 unread"], ["gauge", "Plan and usage", "Pro · beta, no charge"]].map(([i, t, s]) => `<div class="card rise" style="display:flex;gap:12px;align-items:center;padding:12px 14px"><span style="width:34px;height:34px;border-radius:8px;background:var(--a-sunk);display:grid;place-items:center;color:var(--a-text2)">${ic(i)}</span><span style="flex:1">${t}<div class="sub">${s}</div></span><span class="t3">${ic("chev")}</span></div>`).join("")}`, 4) },
+        notify: { u: "/settings/notifications", d: () => `${nav("", { bell: 1 })}<div class="main c">${hd("Settings", "Signed in as sam@samrivera.com")}<div class="hub" style="opacity:0.35">${hubCards("")}</div></div><div class="ovl"><div class="modal rise" style="width:760px"><div class="modal-h"><span style="display:flex;gap:10px;align-items:center">${ic("bell")}<b>Notifications</b></span><span class="x">${ic("x")}</span></div><div class="g2" style="gap:0;grid-template-columns:minmax(0,1fr) minmax(0,1fr)"><div style="border-right:1px solid var(--a-line)"><div class="lbl" style="padding:12px 16px 4px">Recent</div>${NOTES.slice(0, 4).map(([c, t, p, ts, u]) => `<div class="nt ${c} ${u ? "" : "read"}"><i class="${u ? "u" : ""}"></i><div><b>${t}</b><p>${p}</p></div><span class="ts">${ts}</span></div>`).join("")}</div><div style="padding:6px 18px 12px">${CATS.map(([g, rows]) => `<div class="lbl" style="padding:10px 0 2px">${g}</div>${rows.slice(0, g === "Trading" ? 3 : 2).map(([n, e, , lock]) => `<div class="tgl"><span>${n}</span><span class="chs"><label>Email <span class="sw ${e ? "on" : ""} ${lock ? "lock" : ""}"></span></label></span></div>`).join("")}`).join("")}</div></div><div class="modal-f"><span class="lft">Critical notices always email. Webhooks are set up under Delivery.</span>${b("Delivery and webhooks")}</div></div></div>`,
+            m: () => phone(`${mback("Account")}<h5>Notifications</h5>${mInbox()}<div class="card rise"><div class="row2"><span>Email me about</span><span class="sub">9 of 11</span></div></div>`, 4) },
+        plan: { u: "/settings/plan", d: () => `${nav("")}<div class="main c">${hd("Settings", "Signed in as sam@samrivera.com")}<div class="hub">${hubCards("plan")}</div></div>`,
+            m: () => phone(`${mback("Account")}<div class="hc on rise"><div class="ti"><span class="ic">${ic("gauge")}</span><b>Plan and usage</b><span class="chip ok" style="margin-left:auto">Beta · no charge</span></div><div style="font:600 22px var(--sans)">Pro</div>${usageGrid(1)}<p class="t3">Paid plans aren't settled yet. We'll email you before anything changes.</p></div>`, 4) },
+    };
+
+    /* ---------- Flows ---------- */
+    const FLOWS = [
+        { id: "portfolio", no: "01", name: "Portfolio", blurb: "The account as the ledger records it: one sleeve per strategy, unallocated cash and the total. Every variation adds up to $103,410.27 and raises the frozen Recession Radar sleeve in the same words.",
+            screens: [["overview", "Overview"], ["positions", "Sleeve positions"], ["frozen", "Frozen sleeve"], ["funds", "Add funds"], ["activity", "Activity"]],
+            vars: [
+                { id: "P1", name: "Statement", R: P1, idea: "A brokerage statement: one table, the sleeves as line items, unallocated cash, then a ruled total. Positions open inline under their sleeve, and reconciliation and activity are more tables in the same register.", trade: "The most legible and the easiest to audit, because every figure sits in a column that adds up. It shows how much is where, but not whether a sleeve has drifted from its plan, and long tables get dense on a phone.", motion: "Rows open with a 160 ms height ease. A changed figure gets a brief underline rather than a colour flash, so green and red stay for profit and loss.", build: "Small. StrategyList and StrategyRowExpanded already render this shape; it needs the total row, the weight column and the double rule. Reconciliation needs a read endpoint for the last run, which today reaches the app only as a notification." },
+                { id: "P2", name: "Weights with drift ticks", R: P2, rec: 1, idea: "The C direction's weight bar, used everywhere. One bar splits the account into sleeves; inside each sleeve every fund is a bar with a tick at its target. Drift, rebalances and the frozen TLT position all read as distance between a bar and a mark.", trade: "It answers the question a sleeve-based product raises, which is whether each strategy is still holding what it meant to hold. Exact figures sit one column to the right, so it's slightly less scannable than a table for pure accounting.", motion: "Bars grow from zero when the page opens (700 ms, eased). In add funds, the hatched unallocated segment widens as the amount is typed, so the result is visible before it's confirmed.", build: "Medium. The ledger already has actual weights. Target weights from each session's last rebalance aren't in the portfolio response yet, so the trading service would need to expose them. One shared WeightRow component covers sleeves, reconciliation and the funds preview." },
+                { id: "P3", name: "Treemap", R: P3, idea: "The account as a map. Columns are sleeves sized by value, blocks inside are positions, and the tint deepens with each position's gain or loss. Drilling into a sleeve zooms the same map, and the frozen position carries an amber outline.", trade: "It's the most visual and makes concentration obvious at a glance. Small positions like DBC become slivers that are hard to label or tap, and colouring by P&L competes with the frozen state for attention. It needs a table beside it for exact figures.", motion: "Blocks fade in together, then the selected sleeve expands to fill the frame on drill-in (a 320 ms layout transition), and siblings fade to 30%.", build: "Medium to large. The layout is simple with flex for three sleeves, but labels, hit areas and keyboard focus for small tiles need real work. A squarified layout library would help once sleeves hold more than a few positions." },
+                { id: "P4", name: "Sleeve cards", R: P4, idea: "Each sleeve is a card you can pick up: its value, today's change, a holdings bar and its schedule. Unallocated cash is a dashed card with the funding and deploy actions. Opening a card turns it into the sleeve's own page.", trade: "Calm and friendly, and it reads well on a phone because each card is one thought. It hides the total's arithmetic, and with more than six sleeves the grid needs sorting and filtering to stay useful.", motion: "Opening a card keeps it in place and grows the detail beside it. Add funds turns the dashed card into a form in place, without a modal.", build: "Small to medium. The data per card exists today. The work is the card, the in-place funding form and a sleeve detail route, which PortfolioPage doesn't have yet." },
+            ],
+            verdict: ["P2 · Weights with drift ticks", "It's the only layout that shows what makes LlamaTrade different from a brokerage app: each sleeve is a plan, and the screen shows how far each holding is from it. The same bar explains the frozen sleeve, the next rebalance and where new money lands, so one component carries five screens. Keep P1's ruled total as the last line so the arithmetic is still visible."] },
+        { id: "copilot", no: "02", name: "Copilot", blurb: "An assistant that writes the strategy language, explains results and runs backtests when asked. Every variation shows the same rules: it asks before it runs anything, and a draft stays a draft until it's saved.",
+            screens: [["chat", "Conversation"], ["approve", "Approve an action"], ["history", "History"]],
+            vars: [
+                { id: "C1", name: "Side panel", R: C1, idea: "A panel that docks over whatever page you're on, with that page as its context. It's the quick way to ask about a portfolio or a strategy without leaving it. On a phone it's a sheet over the current tab.", trade: "Always one click away and good for short questions. At 480 px a strategy card and its code feel cramped, and the page behind is covered rather than used.", motion: "Slides in from the right over 220 ms with the scrim fading behind. Expand grows it into the full page without reloading the conversation.", build: "Already built. CopilotSidePanel, AgentFAB and the shared agent store exist. The work is restyling to these tokens and adding the context chip per route." },
+                { id: "C2", name: "Full screen with strategy cards", R: C2, rec: 1, idea: "A dedicated page with one reading column and the conversations in a rail. What Copilot produces arrives as a card: the strategy, what it would hold today as a weight bar, and its actions. Approval is a card with the exact arguments.", trade: "Has the room to show a strategy properly and keeps the actions where you're reading. It takes you away from the page you were on, which is why the side panel stays as the quick way in.", motion: "Tool calls appear as one muted line that ticks when done. The strategy card's weight bar grows in when validation passes, which is the moment the draft becomes usable.", build: "Small. CopilotPage, PendingArtifactCard and ToolConfirmationCard exist. The card needs the weight bar from the artifact preview, and history needs grouping by day with what each conversation produced." },
+                { id: "C3", name: "Inline in the editor", R: C3, idea: "Copilot lives inside the strategy editor. You ask in a bar above the code, the answer sits beside the line it concerns, and the change shows as a diff you apply or discard. History becomes a timeline of what Copilot did to this strategy.", trade: "The tightest loop for editing, and changes are never far from the code. It can't answer account questions like how the portfolio is doing, so it only works alongside one of the other layouts.", motion: "The suggested line types in at reading speed, then the diff tint settles. Applying it collapses the deleted line upward.", build: "Medium. The editor already shows diffs in the side panel. Anchoring answers to lines and the per-strategy timeline need conversation records linked to a strategy and version." },
+                { id: "C4", name: "Command palette", R: C4, idea: "Copilot behind ⌘K, next to navigation. Type a question or a command, get a short answer in place, and either follow up or continue in the full page. Approval is a keypress.", trade: "Fast for people who live on the keyboard, and it doubles as navigation. Long answers and strategy cards don't fit a palette, and approving with Enter is easy to do by accident, so it needs a deliberate second key.", motion: "Opens in 120 ms with a slight scale from 98%. Answers stream into the palette, which grows to fit up to a limit before suggesting the full page.", build: "Medium. There's no palette in the app today. It needs the palette, a router-aware command list and a compact answer view of the conversation." },
+            ],
+            verdict: ["C2 · Full screen with strategy cards", "Writing strategies is the job, and a strategy needs room: its rules, what it would hold and the actions. C2 gives it that and keeps approvals readable. The side panel that already exists stays as the way in from any page and expands into this view, since both share one conversation store. C3's inline diff is worth adding to the editor later."] },
+        { id: "account", no: "03", name: "Account and settings", blurb: "Profile, security, broker keys, notifications, and the plan with its usage. Billing in the beta is honest about what exists: Pro at no charge, meters for usage, no card needed and no prices beyond what the app shows.",
+            screens: [["profile", "Profile and security"], ["notify", "Notifications"], ["plan", "Plan and usage"]],
+            vars: [
+                { id: "S1", name: "Classic sidebar", R: S1, rec: 1, idea: "Four sections in a grouped list on the left and one section at a time on the right. The notifications screen also shows the bell's list, since the two belong together. On a phone the list is the Account tab and each row opens a page.", trade: "Predictable and easy to extend, and each section has a URL. It's the least distinctive layout, and a sidebar for four sections can feel heavy until security and broker settings grow.", motion: "None beyond the content fade. Settings should feel still.", build: "Small. SettingsPage has these tabs and their ?tab= links. Replace the tab bar with the sidebar, merge profile and security, and reuse NotificationSettings, UsageMeter and SubscriptionStatus." },
+                { id: "S2", name: "One long page", R: S2, idea: "Every setting on one scrolling page with an index that follows you. The screen buttons jump the page to a section, the way the index would.", trade: "Everything is findable with the browser's search, and nothing is more than a scroll away. The page is long, unsaved changes in one section are easy to lose sight of, and the notification matrix makes the middle heavy.", motion: "The index marker slides between sections as you scroll. Jumping uses a short smooth scroll.", build: "Small. The same sections stacked, with an intersection observer for the index and anchors for deep links." },
+                { id: "S3", name: "Grouped cards", R: S3, idea: "A hub of cards, each showing the state of one area: who you are, whether Alpaca is connected, unread notifications, usage. A card opens in place or as a focused panel.", trade: "The most glanceable, and the hub doubles as a status page. Cards that open in place make deep links and keyboard focus harder, and the hub is one extra step before every change.", motion: "A card lifts and expands into its panel (240 ms), and the hub dims behind it.", build: "Medium. Each card needs a summary query, and the expanded panels need their own routes so links keep working." },
+            ],
+            verdict: ["S1 · Classic sidebar", "Settings are visited rarely and with a purpose, so the layout should be the one people already know. S1 maps one to one onto the existing tabs and URLs, gives unfinished features a clear place to say so, and on a phone becomes the grouped list that the Account tab already is. S3's status summaries can live at the top of the profile section later."] },
+    ];
+
+    /* Render */
+    const tocEl = document.getElementById("toc"), flowsEl = document.getElementById("flows");
+    tocEl.innerHTML = FLOWS.map((f) => `<div><h2><a href="#${f.id}">${f.no} ${f.name}</a></h2><ol>${f.vars.map((v) => `<li><a href="#${f.id}-${v.id}"><em>${v.id}</em>${v.name}${v.rec ? '<span class="rec">Recommended</span>' : ""}</a></li>`).join("")}</ol></div>`).join("") + `<div><h2><a href="#final">04 Final plan</a></h2><ol><li><a href="#final"><em>→</em>One layout per flow</a></li></ol></div>`;
+    flowsEl.innerHTML = FLOWS.map((f) => `<section class="flow" id="${f.id}"><div class="flow-h"><h2><em>${f.no}</em>${f.name}</h2><p>${f.blurb}</p></div>${f.vars.map((v) => `<article class="var" id="${f.id}-${v.id}" data-f="${f.id}" data-v="${v.id}"><div class="vh"><div class="t"><span class="code">${v.id}</span><h3>${v.name}${v.rec ? '<span class="recb">Recommended</span>' : ""}</h3></div><div class="scr-tabs" role="group" aria-label="Screens">${f.screens.map(([sk, sn], i) => `<button type="button" data-s="${sk}" aria-pressed="${i === 0}">${sn}</button>`).join("")}</div></div><div class="pair"><div><div class="fr dk"></div><div class="cap">Desktop · 1240 px</div></div><div class="ph"><div class="fr mb"></div><div class="cap">Phone · 390 px</div></div></div><div class="notes"><div><b>Idea</b><p>${v.idea}</p></div><div><b>Trade-offs</b><p>${v.trade}</p></div><div><b>Motion</b><p>${v.motion}</p></div><div><b>To build</b><p>${v.build}</p></div></div></article>`).join("")}<div class="verdict"><div><span class="k">Recommended</span><h4>${f.verdict[0]}</h4></div><div><p>${f.verdict[1]}</p></div></div></section>`).join("");
+
+    function fit(el) {
+        const inn = el.firstElementChild;
+        if (!el.clientWidth || !inn || !inn.firstElementChild) return;
+        const s = el.clientWidth / inn.firstElementChild.offsetWidth;
+        inn.style.transform = `scale(${s})`;
+        el.style.height = inn.firstElementChild.offsetHeight * s + "px";
+    }
+    function show(art, sk) {
+        const f = FLOWS.find((x) => x.id === art.dataset.f), v = f.vars.find((x) => x.id === art.dataset.v), sc = v.R[sk];
+        const dk = art.querySelector(".fr.dk"), mb = art.querySelector(".fr.mb");
+        dk.innerHTML = `<div class="in enter">${desk(sc.u, sc.d())}</div>`;
+        mb.innerHTML = `<div class="in enter">${sc.m()}</div>`;
+        art.querySelectorAll(".scr-tabs button").forEach((bt) => bt.setAttribute("aria-pressed", String(bt.dataset.s === sk)));
+        fit(dk); fit(mb);
+        if (sc.scroll) {
+            [dk, mb].forEach((fr) => {
+                const lp = fr.querySelector(".lp"), t = fr.querySelector(`[data-s="${sc.scroll}"]`);
+                if (lp && t) lp.scrollTop = Math.max(0, t.offsetTop - (sc.scroll === "profile" ? 200 : 24));
+                fr.querySelectorAll(".idx span").forEach((x) => x.classList.toggle("on", x.dataset.i === sc.idx));
+            });
+        }
+    }
+    const arts = [...document.querySelectorAll(".var")];
+    arts.forEach((a) => {
+        show(a, FLOWS.find((x) => x.id === a.dataset.f).screens[0][0]);
+        a.querySelector(".scr-tabs").addEventListener("click", (e) => { const bt = e.target.closest("button"); if (bt) show(a, bt.dataset.s); });
+    });
+    const fitAll = () => document.querySelectorAll(".fr").forEach(fit);
+    let lw = window.innerWidth;
+    window.addEventListener("resize", () => { if (window.innerWidth !== lw) { lw = window.innerWidth; fitAll(); } });
+    if (document.fonts) document.fonts.ready.then(fitAll, fitAll);
+})();
+</script>
+<script src="review-bar.js"></script>
+</body>
+</html>

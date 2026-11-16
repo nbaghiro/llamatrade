@@ -9,12 +9,15 @@
  * Shared by web (billing pages) and mobile (Plans & Billing screen).
  */
 
-import { PlanTier, type Subscription } from '../proto/billing_pb';
+import { PlanTier, type Subscription } from "../proto/billing_pb";
 
-export type TierKey = 'free' | 'pro' | 'enterprise';
+export type TierKey = "free" | "pro" | "enterprise";
 
-/** Yearly billing discount reflected by the MONTHLY/YEARLY toggle (-17%). */
+/** Yearly billing discount reflected by the Monthly/Yearly toggle (-17%). */
 export const YEARLY_DISCOUNT = 0.17;
+
+/** Closed beta: testers are on Pro at no charge, and live trading is unavailable on every plan. */
+export const CLOSED_BETA = true;
 
 export interface PlanFeatureRow {
   label: string;
@@ -47,88 +50,114 @@ export interface PlanTierConfig {
 /** Ordered low -> high; index drives Upgrade vs Downgrade labelling. */
 export const PLAN_TIERS: PlanTierConfig[] = [
   {
-    key: 'free',
-    name: 'Free',
-    tagline: 'Paper trading & exploration',
+    key: "free",
+    name: "Free",
+    tagline: "Paper trading and exploration",
     monthlyPrice: 0,
-    priceNote: 'Free forever',
+    priceNote: "Free forever",
     features: [
-      { label: 'Strategies', value: '1' },
-      { label: 'Live Trading', value: 'Paper only' },
-      { label: 'Backtests / mo', value: '10' },
-      { label: 'Copilot', value: 'Basic' },
-      { label: 'Support', value: 'Community' },
+      { label: "Strategies", value: "1" },
+      { label: "Trading", value: "Paper only" },
+      { label: "Backtests a month", value: "10" },
+      { label: "Copilot", value: "Basic" },
+      { label: "Support", value: "Community" },
     ],
-    limits: { strategies: 1, backtestsPerMonth: 10, liveSessions: 0, copilotMessages: 100 },
+    limits: {
+      strategies: 1,
+      backtestsPerMonth: 10,
+      liveSessions: 0,
+      copilotMessages: 100,
+    },
   },
   {
-    key: 'pro',
-    name: 'Pro',
-    tagline: 'For active retail algo traders',
+    key: "pro",
+    name: "Pro",
+    tagline: "For active strategy builders",
     monthlyPrice: 49,
-    priceNote: 'Billed monthly',
-    badge: 'Most Popular',
+    priceNote: "Billed monthly",
+    badge: "Most Popular",
     features: [
-      { label: 'Strategies', value: '10' },
-      { label: 'Live Trading', value: '3 live sessions' },
-      { label: 'Backtests / mo', value: '500' },
-      { label: 'Copilot', value: 'Full · DSL gen' },
-      { label: 'Support', value: 'Priority email' },
+      { label: "Strategies", value: "10" },
+      { label: "Trading", value: "3 live sessions" },
+      { label: "Backtests a month", value: "500" },
+      { label: "Copilot", value: "Writes strategies" },
+      { label: "Support", value: "Priority email" },
     ],
-    limits: { strategies: 10, backtestsPerMonth: 500, liveSessions: 3, copilotMessages: 2000 },
+    limits: {
+      strategies: 10,
+      backtestsPerMonth: 500,
+      liveSessions: 3,
+      copilotMessages: 2000,
+    },
   },
   {
-    key: 'enterprise',
-    name: 'Enterprise',
-    tagline: 'Desks, funds & power users',
+    key: "enterprise",
+    name: "Enterprise",
+    tagline: "Desks, funds and power users",
     monthlyPrice: 199,
-    priceNote: 'Volume & annual discounts',
-    badge: 'Scale',
+    priceNote: "Volume and annual discounts",
+    badge: "Scale",
     features: [
-      { label: 'Strategies', value: 'Unlimited', emphasis: true },
-      { label: 'Live Trading', value: 'Unlimited', emphasis: true },
-      { label: 'Backtests / mo', value: 'Unlimited', emphasis: true },
-      { label: 'Copilot', value: 'Full + fine-tune', emphasis: true },
-      { label: 'Support', value: 'Dedicated + SLA', emphasis: true },
+      { label: "Strategies", value: "Unlimited", emphasis: true },
+      { label: "Trading", value: "Unlimited", emphasis: true },
+      { label: "Backtests a month", value: "Unlimited", emphasis: true },
+      { label: "Copilot", value: "With fine-tuning", emphasis: true },
+      { label: "Support", value: "Dedicated, with an SLA", emphasis: true },
     ],
-    limits: { strategies: -1, backtestsPerMonth: -1, liveSessions: -1, copilotMessages: -1 },
+    limits: {
+      strategies: -1,
+      backtestsPerMonth: -1,
+      liveSessions: -1,
+      copilotMessages: -1,
+    },
   },
 ];
 
-export const PLAN_TIER_BY_KEY: Record<TierKey, PlanTierConfig> = Object.fromEntries(
-  PLAN_TIERS.map((t) => [t.key, t]),
-) as Record<TierKey, PlanTierConfig>;
+export const PLAN_TIER_BY_KEY: Record<TierKey, PlanTierConfig> =
+  Object.fromEntries(PLAN_TIERS.map((t) => [t.key, t])) as Record<
+    TierKey,
+    PlanTierConfig
+  >;
 
 /**
  * Resolve which config tier the real subscription maps to. Prefers the proto
  * PlanTier enum, then falls back to the plan name — so a live subscription
  * always drives the "current plan" marker rather than a hardcoded guess.
  */
-export function resolveCurrentTier(subscription: Subscription | null): TierKey | null {
+export function resolveCurrentTier(
+  subscription: Subscription | null,
+): TierKey | null {
   if (!subscription) return null;
   switch (subscription.plan?.tier) {
     case PlanTier.PRO:
-      return 'pro';
+      return "pro";
     case PlanTier.STARTER:
-      return 'pro';
+      return "pro";
     case PlanTier.FREE:
-      return 'free';
+      return "free";
   }
-  const name = subscription.plan?.name?.toLowerCase() ?? '';
-  if (name.includes('enterprise')) return 'enterprise';
-  if (name.includes('pro') || name.includes('starter')) return 'pro';
-  if (name.includes('free')) return 'free';
+  const name = subscription.plan?.name?.toLowerCase() ?? "";
+  if (name.includes("enterprise")) return "enterprise";
+  if (name.includes("pro") || name.includes("starter")) return "pro";
+  if (name.includes("free")) return "free";
   return null;
 }
 
 /** Per-month price for the selected billing cycle (yearly applies the discount). */
-export function tierPricePerMonth(tier: PlanTierConfig, yearly: boolean): number {
+export function tierPricePerMonth(
+  tier: PlanTierConfig,
+  yearly: boolean,
+): number {
   if (tier.monthlyPrice === 0) return 0;
-  return yearly ? Math.round(tier.monthlyPrice * (1 - YEARLY_DISCOUNT)) : tier.monthlyPrice;
+  return yearly
+    ? Math.round(tier.monthlyPrice * (1 - YEARLY_DISCOUNT))
+    : tier.monthlyPrice;
 }
 
 /** Total charged up-front for the selected cycle. */
 export function tierPriceTotal(tier: PlanTierConfig, yearly: boolean): number {
   if (tier.monthlyPrice === 0) return 0;
-  return yearly ? Math.round(tier.monthlyPrice * 12 * (1 - YEARLY_DISCOUNT)) : tier.monthlyPrice;
+  return yearly
+    ? Math.round(tier.monthlyPrice * 12 * (1 - YEARLY_DISCOUNT))
+    : tier.monthlyPrice;
 }

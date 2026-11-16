@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LlamaTrade · Live ticker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chivo+Mono:wght@400;500&family=Chivo:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,500&display=swap" rel="stylesheet">
+<style>
+/* Tape tokens copied from b-session-site.html: dark (Black theme) and light mode. */
+:root {
+--p-bg: #000; --p-card: #0e0e0e; --p-ink: #ededed; --p-ink2: #a3a3a3; --p-ink3: #767676; --p-line: #1f1f1f; --p-line2: #2e2e2e;
+--p-acc: #4cc2ff; --p-body: "Chivo", system-ui, sans-serif; --p-num: "Chivo Mono", monospace; --p-display: "Chivo", system-ui, sans-serif;
+--a-gain: #3fbf7a; --a-loss: #f2555a; --a-gain-rgb: 63,191,122; --a-loss-rgb: 242,85,90;
+}
+html[data-mode="light"] {
+--p-bg: #faf9f6; --p-card: #ffffff; --p-ink: #15191f; --p-ink2: #444b56; --p-ink3: #6b717c; --p-line: #e4e1da; --p-line2: #cfcbc2;
+--p-acc: #1f3b73; --p-body: "IBM Plex Sans", system-ui, sans-serif; --p-num: "IBM Plex Sans", sans-serif; --p-display: "Source Serif 4", Georgia, serif;
+--a-gain: #17703f; --a-loss: #b3261e; --a-gain-rgb: 23,112,63; --a-loss-rgb: 179,38,30;
+}
+* { box-sizing: border-box; }
+html { background: var(--p-bg); -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--p-bg); color: var(--p-ink); font: 400 16px/1.6 var(--p-body); overflow-x: hidden; }
+a { color: var(--p-acc); }
+
+.tape { overflow: hidden; white-space: nowrap; border-bottom: 1px solid var(--p-line); background: var(--p-card); font: 400 12px var(--p-num); color: var(--p-ink2); min-height: 33px; }
+.tape .in { display: inline-flex; animation: tape 80s linear infinite; }
+.tape:hover .in { animation-play-state: paused; }
+.tape span.q { padding: 7px 18px; display: inline-flex; gap: 8px; align-items: center; }
+.tape b { font-weight: 600; color: var(--p-ink); }
+.tape .p { color: var(--p-ink); font-variant-numeric: tabular-nums; }
+.tape .c { font-variant-numeric: tabular-nums; color: var(--p-ink3); }
+.tape .c[data-dir="up"] { color: var(--a-gain); }
+.tape .c[data-dir="down"] { color: var(--a-loss); }
+.tape .meta { color: var(--p-ink3); }
+.tape .state::before { content: ""; width: 6px; height: 6px; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--p-ink3); }
+.tape .state[data-open="true"] { color: var(--p-ink2); }
+.tape .state[data-open="true"]::before { background: var(--p-acc); box-shadow: none; }
+.tape .src { padding-right: 30px; }
+.tape .src a { color: inherit; text-decoration: underline; text-decoration-color: var(--p-line2); text-underline-offset: 2px; }
+.tape .fu { animation: fu 0.9s ease-out; } .tape .fd { animation: fd 0.9s ease-out; }
+@keyframes fu { from { background: rgba(var(--a-gain-rgb),0.22); } to { background: transparent; } }
+@keyframes fd { from { background: rgba(var(--a-loss-rgb),0.22); } to { background: transparent; } }
+@keyframes tape { to { transform: translateX(-50%); } }
+@media (prefers-reduced-motion: reduce) { .tape .in { animation: none; } .tape { overflow-x: auto; } }
+
+.wrap { max-width: 860px; margin: 0 auto; padding: 40px 16px 80px; }
+h1 { font: 600 28px/1.2 var(--p-display); letter-spacing: -0.02em; margin: 0 0 10px; }
+p { color: var(--p-ink2); margin: 0 0 14px; }
+.ctl { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 22px 0 8px; font-size: 13px; }
+.ctl span { color: var(--p-ink3); margin-right: 4px; }
+.ctl button { border: 1px solid var(--p-line2); background: var(--p-card); color: var(--p-ink2); font: inherit; padding: 5px 12px; border-radius: 999px; cursor: pointer; }
+.ctl button[aria-pressed="true"] { background: var(--p-ink); color: var(--p-bg); border-color: var(--p-ink); }
+.status { font: 400 12px/1.5 "Chivo Mono", monospace; color: var(--p-ink3); margin-top: 16px; padding: 12px 14px; border: 1px solid var(--p-line); border-radius: 4px; background: var(--p-card); white-space: pre-wrap; word-break: break-word; }
+</style>
+<script>(function () { var d = document.documentElement, m = "dark"; try { var q = new URLSearchParams(location.search).get("mode"); m = q || localStorage.getItem("lts-site-mode") || "dark"; } catch (e) {} d.dataset.mode = m === "light" ? "light" : "dark"; })();</script>
+</head>
+<body>
+
+<div class="tape" id="tape" aria-label="ETF prices" data-state="loading"><div class="in"></div></div>
+
+<main class="wrap">
+    <h1>Ticker tape with market data</h1>
+    <p>This prototype feeds the tape from <code>ticker-data.js</code>. It reads JSON in the shape of the endpoint sketched in <code>ticker-endpoint.md</code>, keeps the last good response in the browser, and falls back to values shipped with the page if a fetch fails.</p>
+    <p>The prices here are mock values. Pick a scenario to see how the labels change.</p>
+
+    <div class="ctl" role="group" aria-label="Scenario">
+        <span>Scenario</span>
+        <button data-s="closed">Weekend, last close</button>
+        <button data-s="open">Market open, delayed</button>
+        <button data-s="stale">Open, refresh stalled</button>
+        <button data-s="error">Endpoint down</button>
+    </div>
+    <div class="ctl" role="group" aria-label="Mode">
+        <span>Mode</span>
+        <button data-m="dark">Dark</button>
+        <button data-m="light">Light</button>
+    </div>
+    <div class="status" id="status" aria-live="polite"></div>
+</main>
+
+<script src="ticker-data.js"></script>
+<script>
+(function () {
+    const params = new URLSearchParams(location.search);
+    const scenario = params.get("scenario") || "closed";
+    const mode = document.documentElement.dataset.mode;
+    const statusEl = document.getElementById("status");
+
+    // Stand-in for the build-time copy of the last good snapshot.
+    const SHIPPED = { version: 1, generated_at: "2026-11-13T21:20:00Z", as_of: "2026-11-12T21:00:00Z", basis: "close", delay_minutes: null, session_date: "2026-11-12", market: { is_open: false, next_open: "2026-11-13T14:30:00Z", next_close: "2026-11-13T21:00:00Z" }, source: { provider: "Mock", feed: "mock", attribution: "Mock data for the prototype", url: "" }, quotes: [
+        { symbol: "SPY", price: 679.29, prev_close: 676.40, change: 2.89, change_pct: 0.43 },
+        { symbol: "QQQ", price: 601.56, prev_close: 603.10, change: -1.54, change_pct: -0.26 },
+        { symbol: "VTI", price: 437.96, prev_close: 436.20, change: 1.76, change_pct: 0.40 },
+        { symbol: "TLT", price: 90.03, prev_close: 90.03, change: 0, change_pct: 0 },
+        { symbol: "GLD", price: 246.65, prev_close: 245.12, change: 1.53, change_pct: 0.62 },
+    ] };
+
+    // Builds an in-memory JSON URL from the closed mock, as if the endpoint were serving an open session.
+    async function sessionMock(ageMinutes) {
+        const base = await (await fetch("ticker-mock-closed.json")).json();
+        const now = Date.now();
+        const d = structuredClone(base);
+        d.basis = "delayed";
+        d.delay_minutes = 15;
+        d.as_of = new Date(now - ageMinutes * 60000).toISOString();
+        d.generated_at = new Date(now - (ageMinutes - 15) * 60000).toISOString();
+        d.session_date = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(now));
+        d.market = { is_open: true, next_open: null, next_close: new Date(now + 3 * 3600000).toISOString() };
+        return URL.createObjectURL(new Blob([JSON.stringify(d)], { type: "application/json" }));
+    }
+
+    async function urlFor(s) {
+        if (s === "open") return sessionMock(15);
+        if (s === "stale") return sessionMock(140);
+        if (s === "error") return "ticker-mock-missing.json";
+        return "ticker-mock-closed.json";
+    }
+
+    function mark(sel, attr, val) {
+        document.querySelectorAll(sel).forEach((b) => b.setAttribute("aria-pressed", String(b.dataset[attr] === val)));
+    }
+    mark(".ctl button[data-s]", "s", scenario);
+    mark(".ctl button[data-m]", "m", mode);
+    document.querySelectorAll(".ctl button").forEach((b) => b.addEventListener("click", () => {
+        const p = new URLSearchParams(location.search);
+        if (b.dataset.s) p.set("scenario", b.dataset.s);
+        if (b.dataset.m) {
+            p.set("mode", b.dataset.m);
+            try { localStorage.setItem("lts-site-mode", b.dataset.m); } catch (e) {}
+        }
+        location.search = p.toString();
+    }));
+
+    (async () => {
+        if (scenario === "error") {
+            try { localStorage.removeItem(LTTicker.STORE_KEY); } catch (e) {}
+        }
+        const url = await urlFor(scenario);
+        LTTicker.mount(document.getElementById("tape"), {
+            url,
+            fallback: SHIPPED,
+            onUpdate: (r) => {
+                statusEl.textContent = (r.fresh ? "Fetched " : "Fetch failed (" + (r.error && r.error.message) + "), showing " + (r.data ? "fallback" : "nothing")) +
+                    (r.data ? "\nbasis: " + r.data.basis + "   as_of: " + r.data.as_of + "\nlabel: " + LTTicker.asOfLabel(r.data, Date.now()) : "");
+            },
+        });
+    })();
+})();
+</script>
+</body>
+</html>

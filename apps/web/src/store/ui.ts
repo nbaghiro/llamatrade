@@ -6,7 +6,6 @@
 import type { StrategyTemplate } from '@llamatrade/core/proto/strategy_pb';
 import { create } from 'zustand';
 
-
 interface UIState {
   // New Strategy Dialog
   newStrategyDialogOpen: boolean;
@@ -32,8 +31,7 @@ export const useUIStore = create<UIState>((set) => ({
   previewTemplate: null,
   openPreviewDialog: (template: StrategyTemplate) =>
     set({ previewDialogOpen: true, previewTemplate: template }),
-  closePreviewDialog: () =>
-    set({ previewDialogOpen: false, previewTemplate: null }),
+  closePreviewDialog: () => set({ previewDialogOpen: false, previewTemplate: null }),
   closeAllStrategyDialogs: () =>
     set({
       newStrategyDialogOpen: false,

@@ -28,7 +28,14 @@ function initialsFrom(firstName?: string, lastName?: string, email?: string): st
  * otherwise a Monolith initials tile (ink ground, bone text). Falls back to
  * initials if the image URL fails to load.
  */
-export function Avatar({ avatarUrl, firstName, lastName, email, size = 32, className = '' }: AvatarProps) {
+export function Avatar({
+  avatarUrl,
+  firstName,
+  lastName,
+  email,
+  size = 32,
+  className = '',
+}: AvatarProps) {
   const [errored, setErrored] = useState(false);
   const dims = { width: size, height: size };
   const name = [firstName, lastName].filter(Boolean).join(' ');
@@ -39,7 +46,7 @@ export function Avatar({ avatarUrl, firstName, lastName, email, size = 32, class
         src={avatarUrl}
         alt={name || 'Profile'}
         style={dims}
-        className={`flex-none border-2 border-ink object-cover ${className}`}
+        className={`flex-none rounded-full border border-line-strong object-cover ${className}`}
         onError={() => setErrored(true)}
       />
     );
@@ -48,11 +55,13 @@ export function Avatar({ avatarUrl, firstName, lastName, email, size = 32, class
   return (
     <span
       style={dims}
-      className={`flex-none grid place-items-center border-2 border-ink bg-ink text-bone font-mono font-bold uppercase leading-none ${className}`}
+      className={`flex-none grid place-items-center rounded-full border border-line-strong bg-sunk text-fg-2 font-sans font-semibold uppercase leading-none ${className}`}
       aria-label={name ? `${name} avatar` : 'Profile avatar'}
       role="img"
     >
-      <span style={{ fontSize: Math.round(size * 0.4) }}>{initialsFrom(firstName, lastName, email)}</span>
+      <span style={{ fontSize: Math.round(size * 0.4) }}>
+        {initialsFrom(firstName, lastName, email)}
+      </span>
     </span>
   );
 }

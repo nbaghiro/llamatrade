@@ -2,7 +2,6 @@ import { Code, ConnectError } from '@connectrpc/connect';
 import { authRetryInterceptor } from '@llamatrade/core/net';
 import { describe, expect, it, vi } from 'vitest';
 
-
 const req = (name: string) => ({ method: { name }, header: new Headers() });
 
 describe('authRetryInterceptor', () => {

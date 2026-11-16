@@ -1,0 +1,394 @@
+/* LlamaTrade theme tokens.
+   Solid colours are RGB channels so Tailwind's `/alpha` modifiers work: rgb(var(--fg) / 0.5).
+   Mode and surface live on <html>: data-mode (dark|light), data-theme (slate|black),
+   data-light (warm|white) and data-acc (see src/theme/accents.ts). public/theme-init.js
+   sets them before first paint. */
+
+:root {
+  color-scheme: dark;
+  --font-sans: 'Geist', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-display: var(--font-sans);
+  --display-tracking: -0.035em;
+
+  --canvas: 15 19 22;
+  --panel: 21 26 31;
+  --sunk: 28 34 40;
+  --line: 37 44 52;
+  --line-strong: 54 64 74;
+  --fg: 230 234 238;
+  --fg-2: 170 179 189;
+  --fg-3: 127 137 148;
+  --chart-1: 230 234 238;
+  --chart-2: 170 179 189;
+  --chart-3: 127 137 148;
+  --chart-4: 86 96 107;
+  --chart-5: 54 63 72;
+  --grid: 37 44 52;
+  --hatch: rgba(228, 232, 236, 0.16);
+
+  --gain: 63 191 122;
+  --loss: 242 85 90;
+  --risk: 240 166 58;
+  --risk-soft: rgba(240, 166, 58, 0.1);
+  --risk-line: rgba(240, 166, 58, 0.45);
+
+  --accent: 76 194 255;
+  --accent-fill: var(--accent);
+  --accent-ink: 4 18 28;
+  --accent-soft: rgb(var(--accent) / 0.16);
+
+  --radius-sm: 2px;
+  --radius: 3px;
+  --radius-panel: 4px;
+  --radius-window: 10px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 16px 36px -14px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  --shadow-xl: 0 50px 90px -40px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  --scrim: rgba(0, 0, 0, 0.55);
+
+  --label-size: 11px;
+  --label-tracking: 0;
+  --label-transform: none;
+  --total-top: 1px solid rgb(var(--line-strong));
+  --total-bottom: 0;
+  --grid-dash: 1 3;
+
+  /* Transition aliases for code still on the Monolith --lt-* names. */
+  --lt-ink: var(--fg);
+  --lt-bone: var(--canvas);
+  --lt-paper: var(--panel);
+  --lt-line: rgb(var(--line));
+  --lt-grid-line: rgb(var(--grid));
+  --lt-grid-dot: rgb(var(--fg) / 0.1);
+  --lt-surface: var(--canvas);
+  --lt-text: var(--fg);
+  --lt-accent: var(--accent);
+  --lt-success: var(--gain);
+  --lt-danger: var(--loss);
+  --lt-info: var(--accent);
+
+  --lt-orange-50: var(--accent);
+  --lt-orange-100: var(--accent);
+  --lt-orange-200: var(--accent);
+  --lt-orange-300: var(--accent);
+  --lt-orange-400: var(--accent);
+  --lt-orange-500: var(--accent);
+  --lt-orange-600: var(--accent);
+  --lt-orange-700: var(--accent);
+  --lt-orange-800: var(--accent);
+  --lt-orange-900: var(--accent);
+  --lt-orange-950: var(--accent);
+  --lt-blue-50: var(--accent);
+  --lt-blue-100: var(--accent);
+  --lt-blue-200: var(--accent);
+  --lt-blue-300: var(--accent);
+  --lt-blue-400: var(--accent);
+  --lt-blue-500: var(--accent);
+  --lt-blue-600: var(--accent);
+  --lt-blue-700: var(--accent);
+  --lt-blue-800: var(--accent);
+  --lt-blue-900: var(--accent);
+  --lt-blue-950: var(--accent);
+  --lt-green-50: var(--gain);
+  --lt-green-100: var(--gain);
+  --lt-green-200: var(--gain);
+  --lt-green-300: var(--gain);
+  --lt-green-400: var(--gain);
+  --lt-green-500: var(--gain);
+  --lt-green-600: var(--gain);
+  --lt-green-700: var(--gain);
+  --lt-green-800: var(--gain);
+  --lt-green-900: var(--gain);
+  --lt-green-950: var(--gain);
+  --lt-red-50: var(--loss);
+  --lt-red-100: var(--loss);
+  --lt-red-200: var(--loss);
+  --lt-red-300: var(--loss);
+  --lt-red-400: var(--loss);
+  --lt-red-500: var(--loss);
+  --lt-red-600: var(--loss);
+  --lt-red-700: var(--loss);
+  --lt-red-800: var(--loss);
+  --lt-red-900: var(--loss);
+  --lt-red-950: var(--loss);
+  --lt-gray-50: var(--sunk);
+  --lt-gray-100: var(--sunk);
+  --lt-gray-200: var(--line);
+  --lt-gray-300: var(--line-strong);
+  --lt-gray-400: var(--fg-3);
+  --lt-gray-500: var(--fg-3);
+  --lt-gray-600: var(--fg-2);
+  --lt-gray-700: var(--fg-2);
+  --lt-gray-800: var(--fg);
+  --lt-gray-900: var(--fg);
+  --lt-gray-950: var(--fg);
+  --lt-warning-500: var(--risk);
+  --lt-warning-600: var(--risk);
+  --lt-font-display: var(--font-display);
+  --lt-font-sans: var(--font-sans);
+  --lt-font-mono: var(--font-mono);
+  --lt-radius: var(--radius);
+  --lt-shadow-sm: var(--shadow-sm);
+  --lt-shadow: var(--shadow);
+  --lt-shadow-lg: var(--shadow-lg);
+  --lt-shadow-xl: var(--shadow-xl);
+  --lt-shadow-inner: inset 0 1px 0 0 rgb(var(--fg) / 0.06);
+  --lt-block-else-bg: var(--sunk);
+  --lt-block-weight-bg: var(--sunk);
+  --lt-block-shadow: var(--shadow-sm);
+}
+
+:root[data-theme='black'] {
+  --canvas: 10 10 10;
+  --panel: 17 17 17;
+  --sunk: 24 24 24;
+  --line: 34 34 34;
+  --line-strong: 46 46 46;
+  --fg: 237 237 237;
+  --fg-2: 163 163 163;
+  --fg-3: 118 118 118;
+  --chart-1: 237 237 237;
+  --chart-2: 163 163 163;
+  --chart-3: 118 118 118;
+  --chart-4: 77 77 77;
+  --chart-5: 46 46 46;
+  --grid: 36 36 36;
+  --hatch: rgba(237, 237, 237, 0.16);
+  --shadow-lg: 0 16px 36px -14px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-xl: 0 50px 90px -40px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+/* Dark accents. Blue and Slate blue fill buttons with a deeper colour than their text accent. */
+:root:not([data-mode='light'])[data-acc='silver'] {
+  --accent: 161 161 170;
+  --accent-ink: 10 10 10;
+}
+:root:not([data-mode='light'])[data-acc='white'] {
+  --accent: 219 227 240;
+  --accent-ink: 11 18 32;
+  --accent-soft: rgb(var(--accent) / 0.12);
+}
+:root:not([data-mode='light'])[data-acc='orange'] {
+  --accent: 255 159 67;
+  --accent-ink: 31 16 0;
+}
+:root:not([data-mode='light'])[data-acc='lime'] {
+  --accent: 217 240 92;
+  --accent-ink: 20 26 0;
+}
+:root:not([data-mode='light'])[data-acc='teal'] {
+  --accent: 45 212 191;
+  --accent-ink: 3 26 23;
+}
+:root:not([data-mode='light'])[data-acc='cyan'] {
+  --accent: 76 194 255;
+  --accent-ink: 4 18 28;
+  --accent-soft: rgb(var(--accent) / 0.14);
+}
+:root:not([data-mode='light'])[data-acc='blue'] {
+  --accent: 91 140 255;
+  --accent-fill: 37 99 235;
+  --accent-ink: 255 255 255;
+}
+:root:not([data-mode='light'])[data-acc='slate'] {
+  --accent: 143 164 207;
+  --accent-fill: 71 95 138;
+  --accent-ink: 255 255 255;
+}
+:root:not([data-mode='light'])[data-acc='indigo'] {
+  --accent: 129 140 248;
+  --accent-ink: 11 11 46;
+}
+:root:not([data-mode='light'])[data-acc='violet'] {
+  --accent: 167 139 250;
+  --accent-ink: 20 8 46;
+}
+:root:not([data-mode='light'])[data-acc='lilac'] {
+  --accent: 216 180 254;
+  --accent-ink: 30 11 51;
+}
+:root:not([data-mode='light'])[data-acc='pink'] {
+  --accent: 244 114 182;
+  --accent-ink: 43 6 24;
+}
+
+:root[data-mode='light'] {
+  color-scheme: light;
+  --canvas: 250 249 246;
+  --panel: 255 255 255;
+  --sunk: 242 240 234;
+  --line: 232 229 222;
+  --line-strong: 207 203 194;
+  --fg: 21 25 31;
+  --fg-2: 68 75 86;
+  --fg-3: 107 113 124;
+  --chart-1: 42 47 55;
+  --chart-2: 84 91 102;
+  --chart-3: 135 141 151;
+  --chart-4: 182 186 193;
+  --chart-5: 220 222 226;
+  --grid: 236 233 226;
+  --hatch: rgb(var(--accent) / 0.16);
+  --gain: 23 112 63;
+  --loss: 179 38 30;
+  --risk: 138 90 0;
+  --risk-soft: #fbf3e2;
+  --risk-line: #e7cf9d;
+
+  --accent: 31 59 115;
+  --accent-fill: var(--accent);
+  --accent-ink: 255 255 255;
+  --accent-soft: color-mix(in srgb, rgb(var(--accent)) 10%, #fff);
+
+  --radius: 2px;
+  --radius-panel: 2px;
+  --radius-window: 8px;
+
+  --shadow-sm: 0 1px 2px rgba(21, 25, 31, 0.06);
+  --shadow: 0 4px 12px -6px rgba(21, 25, 31, 0.16);
+  --shadow-lg: 0 16px 36px -16px rgba(21, 25, 31, 0.28), 0 2px 6px rgba(21, 25, 31, 0.06);
+  --shadow-xl: 0 34px 60px -30px rgba(21, 25, 31, 0.32), 0 2px 6px rgba(21, 25, 31, 0.06);
+  --scrim: rgba(21, 25, 31, 0.32);
+
+  --label-size: 9.5px;
+  --label-tracking: 0.08em;
+  --label-transform: uppercase;
+  --total-top: 1px solid rgb(var(--fg));
+  --total-bottom: 3px double rgb(var(--fg));
+  --grid-dash: 0;
+}
+
+:root[data-mode='light'][data-light='white'] {
+  --canvas: 251 251 252;
+  --panel: 255 255 255;
+  --sunk: 244 245 247;
+  --line: 236 238 241;
+  --line-strong: 220 223 227;
+  --fg: 17 20 24;
+  --fg-2: 71 77 86;
+  --fg-3: 107 113 122;
+  --chart-1: 35 39 45;
+  --chart-2: 80 86 95;
+  --chart-3: 133 139 148;
+  --chart-4: 181 185 191;
+  --chart-5: 221 224 228;
+  --grid: 238 240 242;
+  --shadow-lg: 0 16px 36px -16px rgba(17, 20, 24, 0.24), 0 1px 4px rgba(17, 20, 24, 0.05);
+  --shadow-xl: 0 34px 60px -30px rgba(17, 20, 24, 0.26), 0 1px 4px rgba(17, 20, 24, 0.05);
+}
+
+/* Light accents: white ink, soft is a 10% mix into white. */
+:root[data-mode='light'][data-acc='charcoal'] {
+  --accent: 58 63 71;
+}
+:root[data-mode='light'][data-acc='ink'] {
+  --accent: 27 41 64;
+}
+:root[data-mode='light'][data-acc='rust'] {
+  --accent: 168 82 10;
+}
+:root[data-mode='light'][data-acc='pine'] {
+  --accent: 29 92 69;
+}
+:root[data-mode='light'][data-acc='teal'] {
+  --accent: 15 107 120;
+}
+:root[data-mode='light'][data-acc='ocean'] {
+  --accent: 29 78 137;
+}
+:root[data-mode='light'][data-acc='blue'] {
+  --accent: 37 99 235;
+}
+:root[data-mode='light'][data-acc='navy'] {
+  --accent: 31 59 115;
+}
+:root[data-mode='light'][data-acc='slate'] {
+  --accent: 71 95 138;
+}
+:root[data-mode='light'][data-acc='iris'] {
+  --accent: 74 63 212;
+}
+:root[data-mode='light'][data-acc='plum'] {
+  --accent: 107 45 92;
+}
+:root[data-mode='light'][data-acc='burgundy'] {
+  --accent: 90 30 60;
+}
+
+/* Marketing page values (--p-*), consumed by the marketing package under .site. */
+.site,
+html.marketing-active {
+  --p-bg: 11 14 17;
+  --p-card: 19 23 27;
+  --p-ink: var(--fg);
+  --p-ink-2: var(--fg-2);
+  --p-ink-3: var(--fg-3);
+  --p-line: 32 39 46;
+  --p-line-2: 50 59 68;
+  --p-acc: var(--accent);
+  --p-acc-fill: var(--accent-fill);
+  --p-acc-ink: var(--accent-ink);
+  --p-acc-soft: var(--accent-soft);
+  --p-pin-ring: rgb(var(--accent) / 0.2);
+  --p-risk: var(--risk);
+  --p-nav-bg: rgba(11, 14, 17, 0.88);
+  --p-tab-on: 26 32 38;
+  --p-art-ink: rgba(170, 190, 210, 0.16);
+  --p-hero-glow: radial-gradient(55% 45% at 50% 32%, rgb(var(--accent) / 0.22), transparent 72%);
+}
+:root[data-theme='black'] .site,
+:root[data-theme='black'].marketing-active {
+  --p-bg: 0 0 0;
+  --p-card: 14 14 14;
+  --p-line: 31 31 31;
+  --p-line-2: 46 46 46;
+  --p-nav-bg: rgba(0, 0, 0, 0.86);
+  --p-tab-on: 22 22 22;
+  --p-art-ink: rgba(210, 210, 210, 0.13);
+  --p-hero-glow: radial-gradient(55% 45% at 50% 32%, rgb(var(--accent) / 0.22), transparent 72%);
+}
+:root[data-mode='light'] .site,
+:root[data-mode='light'].marketing-active {
+  --p-bg: 250 249 246;
+  --p-card: 255 255 255;
+  --p-line: 228 225 218;
+  --p-line-2: 207 203 194;
+  --p-pin-ring: color-mix(in srgb, rgb(var(--accent)) 15%, transparent);
+  --p-nav-bg: rgba(250, 249, 246, 0.92);
+  --p-tab-on: 255 255 255;
+  --p-art-ink: color-mix(in srgb, rgb(var(--accent)) 32%, transparent);
+  --p-hero-glow:
+    radial-gradient(38% 34% at 50% 26%, #fff, rgba(255, 255, 255, 0) 72%),
+    radial-gradient(
+      62% 52% at 50% 30%,
+      color-mix(in srgb, rgb(var(--accent)) 16%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      120% 90% at 50% 26%,
+      transparent 38%,
+      color-mix(in srgb, rgb(var(--accent)) 9%, rgba(20, 24, 32, 0.07)) 100%
+    );
+}
+:root[data-mode='light'][data-light='white'] .site,
+:root[data-mode='light'][data-light='white'].marketing-active {
+  --p-bg: 253 253 253;
+  --p-line: 233 235 238;
+  --p-line-2: 215 218 222;
+  --p-nav-bg: rgba(253, 253, 253, 0.9);
+  --p-hero-glow:
+    radial-gradient(38% 34% at 50% 26%, #fff, rgba(255, 255, 255, 0) 72%),
+    radial-gradient(
+      62% 52% at 50% 30%,
+      color-mix(in srgb, rgb(var(--accent)) 12%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      120% 90% at 50% 26%,
+      transparent 42%,
+      color-mix(in srgb, rgb(var(--accent)) 6%, rgba(30, 36, 46, 0.045)) 100%
+    );
+}

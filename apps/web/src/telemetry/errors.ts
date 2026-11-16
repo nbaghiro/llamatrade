@@ -18,7 +18,10 @@ function reasonMessage(reason: unknown): string {
   return 'unhandledrejection';
 }
 
-function record(name: string, attributes: Record<string, string | number | boolean | undefined>): void {
+function record(
+  name: string,
+  attributes: Record<string, string | number | boolean | undefined>
+): void {
   if (count >= MAX_ERRORS_PER_SESSION) return;
   count += 1;
   emit({ type: 'js_error', name, timestamp: Date.now(), attributes });

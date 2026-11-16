@@ -12,7 +12,6 @@ import {
 } from '@llamatrade/core/format';
 import { describe, it, expect } from 'vitest';
 
-
 // Guards the P0 dedup that replaced the dashboard/strategyRow Intl formatters
 // with these hand-rolled (Hermes-parity) equivalents.
 

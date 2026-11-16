@@ -99,7 +99,7 @@ export const useBillingStore = create<BillingState>((set, get) => ({
     const context = tenantContext();
     if (!context) throw new Error('Not signed in.');
     const free = get().plans.find((p) => p.tier === PlanTier.FREE);
-    if (!free) throw new Error('The Free plan is unavailable here — manage your plan on the web.');
+    if (!free) throw new Error("The Free plan isn't available here. Manage your plan on the web.");
     const res = get().subscription
       ? await billingClient.updateSubscription({
           context,

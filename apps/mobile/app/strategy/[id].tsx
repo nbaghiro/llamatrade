@@ -1,40 +1,18 @@
-import { isUp, num, pct } from '@llamatrade/core/format';
+import { num, pct } from '@llamatrade/core/format';
 import type { BacktestRun } from '@llamatrade/core/proto/backtest_pb';
 import { ExecutionMode } from '@llamatrade/core/proto/common_pb';
 import { StrategyStatus } from '@llamatrade/core/proto/strategy_pb';
-import { useStrategiesStore, type StrategyDeployment } from '@llamatrade/core/stores/strategies';
+import { useStrategiesStore } from '@llamatrade/core/stores/strategies';
 import { router, useLocalSearchParams } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import { X } from 'lucide-react-native';
 import { useEffect } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View } from 'react-native';
 
 import { LineChart } from '../../src/charts/LineChart';
+import { timeLabels } from '../../src/charts/paths';
 import { DslBlock } from '../../src/copilot/DslBlock';
-import { fonts, palette, strategyColors } from '../../src/theme';
-import { Body, Display, GridBackground, Label, Mono } from '../../src/ui';
-
-type PillVariant = 'gray' | 'orange' | 'ink' | 'green';
-function statusPill(status: StrategyStatus, dep: StrategyDeployment | undefined): { label: string; variant: PillVariant } {
-  switch (status) {
-    case StrategyStatus.PAUSED:
-      return { label: 'PAUSED', variant: 'ink' };
-    case StrategyStatus.ARCHIVED:
-      return { label: 'ARCHIVED', variant: 'gray' };
-    case StrategyStatus.ACTIVE:
-      return dep?.mode === ExecutionMode.LIVE ? { label: 'LIVE', variant: 'green' } : { label: 'PAPER', variant: 'orange' };
-    default:
-      return { label: 'DRAFT', variant: 'gray' };
-  }
-}
-
-const PILL_BG: Record<PillVariant, { bg: string; fg: string }> = {
-  gray: { bg: palette.bone, fg: palette.ink },
-  orange: { bg: palette.orange[500], fg: palette.ink },
-  ink: { bg: palette.paper, fg: palette.ink },
-  green: { bg: palette.green[500], fg: palette.bone },
-};
+import { makeStyles, useTheme } from '../../src/theme';
+import { Button, Card, ListRow, Loading, PanelError, Screen, StatusMark, Text, WeightStrip, pnlTone } from '../../src/ui';
+import { cadence, runStateOfStrategy } from '../../src/ui/status';
 
 /** Per-asset weights (%) from a backtest's final holdings, largest first. */
 function positionAllocations(run: BacktestRun | null | undefined): { symbol: string; weight: number }[] {
@@ -47,40 +25,21 @@ function positionAllocations(run: BacktestRun | null | undefined): { symbol: str
   return valued.map((p) => ({ symbol: p.symbol, weight: (p.value / total) * 100 })).sort((a, b) => b.weight - a.weight);
 }
 
-function Chip({ label, bg, fg }: { label: string; bg?: string; fg?: string }) {
+function Metric({ label, value, tone }: { label: string; value: string; tone?: 'gain' | 'loss' | 'fg' | 'fg3' }) {
+  const s = useStyles();
   return (
-    <View
-      style={{
-        borderWidth: 1.5,
-        borderColor: bg ? palette.ink : 'rgba(251,248,241,0.3)',
-        backgroundColor: bg ?? 'transparent',
-        paddingHorizontal: 7,
-        paddingVertical: 3,
-      }}
-    >
-      <Mono size={9} color={fg ?? palette.bone} style={{ fontWeight: '700', letterSpacing: 0.5 }}>
-        {label}
-      </Mono>
+    <View style={s.metric}>
+      <Text variant="label" tone="fg3">{label}</Text>
+      <Text variant="numLarge" tone={tone ?? 'fg'}>{value}</Text>
     </View>
   );
 }
 
-function Metric({ label, value, color, note }: { label: string; value: string; color?: string; note?: string }) {
-  return (
-    <View style={{ flex: 1, padding: 11 }}>
-      <Mono size={9} color={palette.gray[500]} style={{ fontWeight: '700', letterSpacing: 0.6 }}>
-        {label}
-      </Mono>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 3, marginTop: 4 }}>
-        <Display size={20} color={color ?? palette.ink}>{value}</Display>
-        {note ? <Mono size={8} color={palette.gray[400]}>{note}</Mono> : null}
-      </View>
-    </View>
-  );
-}
+const back = { label: 'Strategies', onPress: () => (router.canGoBack() ? router.back() : router.replace('/strategies')) };
 
 export default function StrategyDetailScreen() {
-  const insets = useSafeAreaInsets();
+  const s = useStyles();
+  const { c } = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const {
     strategies,
@@ -98,32 +57,27 @@ export default function StrategyDetailScreen() {
 
   useEffect(() => {
     if (!id) return;
-    void fetchStrategyDetail(id);
-    void fetchStrategyRun(id);
-    // Opened from the Portfolio tab? The strategies list + deployment figures may
-    // not be loaded yet — pull them so allocation/realized return render (no-op
-    // when already loaded from the Strategies tab).
+    fetchStrategyDetail(id);
+    fetchStrategyRun(id);
+    // Opened from Portfolio or Home: the list and deployment figures may not be loaded yet.
     const store = useStrategiesStore.getState();
-    if (store.strategies.length === 0) void store.fetchStrategies();
-    if (Object.keys(store.deployments).length === 0) void store.fetchDeployments();
+    if (store.strategies.length === 0) store.fetchStrategies();
+    if (Object.keys(store.deployments).length === 0) store.fetchDeployments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  const summary = strategies.find((s) => s.id === id);
+  const summary = strategies.find((x) => x.id === id);
   const strategy = (id ? details[id] : undefined) ?? summary;
 
   if (!strategy) {
     return (
-      <View style={{ flex: 1, backgroundColor: palette.ink, paddingTop: insets.top }}>
-        <StatusBar style="light" />
-        <View style={{ padding: 14, flexDirection: 'row', justifyContent: 'space-between' }}>
-          <Mono size={9} color={palette.orange[500]} style={{ fontWeight: '700' }}>STRATEGY DETAIL</Mono>
-          <Pressable onPress={() => router.back()} hitSlop={10}><X color={palette.bone} size={20} strokeWidth={2.5} /></Pressable>
-        </View>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: palette.bone }}>
-          {id && detailLoading[id] ? <ActivityIndicator color={palette.ink} /> : <Label>Strategy not found</Label>}
-        </View>
-      </View>
+      <Screen title="Strategy" back={back}>
+        {id && detailLoading[id] ? (
+          <Loading label="Loading strategy" />
+        ) : (
+          <PanelError title="Couldn't find this strategy" detail="It may have been archived or removed." onRetry={id ? () => fetchStrategyDetail(id) : undefined} />
+        )}
+      </Screen>
     );
   }
 
@@ -135,162 +89,133 @@ export default function StrategyDetailScreen() {
   const metrics = run?.results?.metrics;
 
   const btReturn = metrics ? num(metrics.totalReturn) * 100 : id ? backtestReturns[id] : undefined;
-  const returnPct = deployed ? dep.returnAll : btReturn ?? null;
-  const returnIsBacktest = !deployed && btReturn !== undefined;
-  const up = returnPct !== null && isUp(returnPct);
+  const returnPct = deployed ? dep.returnAll : (btReturn ?? null);
   const sharpe = metrics ? num(metrics.sharpeRatio) : null;
   const maxDD = metrics ? num(metrics.maxDrawdown) * 100 : null;
   const benchReturn = metrics ? num(metrics.benchmarkReturn) * 100 : null;
 
   const equity = (run?.results?.equityCurve ?? []).map((p) => num(p.equity));
+  const equityTimes = (run?.results?.equityCurve ?? []).map((p) => Number(p.timestamp?.seconds ?? 0));
   const bench = (run?.results?.benchmarkEquityCurve ?? []).map((p) => num(p.equity));
-  const benchSym = run?.results?.benchmarkSymbol || strategy.dslCode.match(/:benchmark\s+([A-Za-z]+)/)?.[1] || 'SPY';
-  const dsl = strategy.dslCode || strategy.compiledJson;
+  const benchSym = (run?.results?.benchmarkSymbol || strategy.dslCode.match(/:benchmark\s+([A-Za-z]+)/)?.[1] || 'SPY').toUpperCase();
   const positions = positionAllocations(run);
-  const pill = statusPill(strategy.status, dep);
-  const pc = PILL_BG[pill.variant];
-  const impl = strategy.templateId ? 'TEMPLATE' : 'DSL';
-  const idx = strategies.findIndex((s) => s.id === strategy.id);
-  const accent = dep?.color || strategyColors[(idx < 0 ? 0 : idx) % strategyColors.length];
+  const live = dep?.mode === ExecutionMode.LIVE;
 
   return (
-    <View style={{ flex: 1, backgroundColor: palette.bone }}>
-      <GridBackground />
-      <StatusBar style="light" />
-      {/* Ink header */}
-      <View style={{ backgroundColor: palette.ink, paddingTop: insets.top + 10, paddingHorizontal: 14, paddingBottom: 14 }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Mono size={9} color={palette.orange[500]} style={{ fontWeight: '700', letterSpacing: 1 }}>STRATEGY DETAIL</Mono>
-          <Pressable onPress={() => router.back()} hitSlop={10}><X color={palette.bone} size={20} strokeWidth={2.5} /></Pressable>
-        </View>
-        <Body size={26} color={palette.bone} style={{ fontFamily: fonts.display, textTransform: 'uppercase', marginTop: 6 }} numberOfLines={2}>
-          {strategy.name}
-        </Body>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 11 }}>
-          <Chip label={pill.label} bg={pc.bg} fg={pc.fg} />
-          <Chip label={impl} />
-          <Chip label={(strategy.timeframe || '1D').toUpperCase()} />
-          <Chip label={`${strategy.symbols.length} SYMBOLS`} />
-          <Chip label={`V${strategy.version}`} />
-          <Chip label={`BENCH · ${benchSym.toUpperCase()}`} />
-        </View>
+    <Screen title={strategy.name} back={back} eyebrow={`Strategy · ${live ? 'Live' : 'Paper'}`}>
+      <View style={s.statusLine}>
+        <StatusMark state={runStateOfStrategy(strategy.status, dep?.status)} />
+        {strategy.templateId ? <Text variant="small" tone="fg3">From a template</Text> : null}
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: 12, gap: 12 }} showsVerticalScrollIndicator={false}>
-        {strategy.description ? (
-          <Body size={13} color={palette.gray[600]} style={{ lineHeight: 19 }}>{strategy.description}</Body>
-        ) : null}
+      {strategy.description ? <Text variant="small" tone="fg2">{strategy.description}</Text> : null}
 
-        {/* Metrics */}
-        <View style={{ flexDirection: 'row', borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.paper }}>
-          <Metric
-            label="RETURN"
-            value={returnPct === null ? '—' : `${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(1)}%`}
-            color={returnPct === null ? palette.gray[400] : up ? palette.green[500] : palette.red[500]}
-            note={returnIsBacktest ? 'bt' : undefined}
-          />
-          <View style={{ width: 2, backgroundColor: palette.ink }} />
-          <Metric label="SHARPE" value={sharpe === null ? '—' : sharpe.toFixed(2)} />
-          <View style={{ width: 2, backgroundColor: palette.ink }} />
-          <Metric label="MAX DD" value={maxDD === null ? '—' : `-${Math.abs(maxDD).toFixed(1)}%`} color={maxDD === null ? palette.gray[400] : palette.red[500]} />
-        </View>
+      <Card style={s.metrics}>
+        <Metric
+          label={deployed || returnPct === null ? 'Return' : 'Backtest'}
+          value={returnPct === null ? '–' : pct(returnPct, 1)}
+          tone={returnPct === null ? 'fg3' : pnlTone(returnPct) === 'loss' ? 'loss' : 'gain'}
+        />
+        <Metric label="Sharpe" value={sharpe === null ? '–' : sharpe.toFixed(2)} tone={sharpe === null ? 'fg3' : 'fg'} />
+        <Metric
+          label="Max DD"
+          value={maxDD === null ? '–' : `−${Math.abs(maxDD).toFixed(1)}%`}
+          tone={maxDD === null ? 'fg3' : 'loss'}
+        />
+      </Card>
 
-        {/* Equity curve */}
-        {equity.length > 1 ? (
-          <View style={{ borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.paper, padding: 12, gap: 8 }}>
-            <LineChart values={equity} benchmark={bench.length > 1 ? bench : undefined} height={120} color={palette.green[500]} fill="rgba(15,122,52,0.10)" />
-            <View style={{ flexDirection: 'row', gap: 16, marginTop: 2 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                <View style={{ width: 14, height: 3, backgroundColor: palette.green[500] }} />
-                <Mono size={9} color={palette.gray[600]}>STRATEGY {returnPct === null ? '' : `${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(1)}%`}</Mono>
+      {equity.length > 1 ? (
+        <Card style={s.chartCard}>
+          <LineChart values={equity} benchmark={bench.length > 1 ? bench : undefined} height={140} axis xLabels={timeLabels(equityTimes)} />
+          <View style={s.legend}>
+            <View style={s.legendItem}>
+              <View style={[s.swatch, { backgroundColor: c.accent }]} />
+              <Text variant="numSmall" tone="fg2">Strategy {returnPct === null ? '' : pct(returnPct, 1)}</Text>
+            </View>
+            {bench.length > 1 ? (
+              <View style={s.legendItem}>
+                <View style={[s.swatch, { backgroundColor: c.fg3 }]} />
+                <Text variant="numSmall" tone="fg2">{benchSym} {benchReturn === null ? '' : pct(benchReturn, 1)}</Text>
               </View>
-              {bench.length > 1 ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                  <View style={{ width: 14, height: 3, backgroundColor: palette.gray[400] }} />
-                  <Mono size={9} color={palette.gray[600]}>{benchSym.toUpperCase()} {benchReturn === null ? '' : `${benchReturn >= 0 ? '+' : ''}${benchReturn.toFixed(1)}%`}</Mono>
-                </View>
-              ) : null}
-            </View>
+            ) : null}
           </View>
-        ) : loadingRun ? (
-          <View style={{ borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.paper, padding: 30, alignItems: 'center' }}>
-            <ActivityIndicator color={palette.ink} />
-          </View>
-        ) : null}
+        </Card>
+      ) : loadingRun ? (
+        <Card><Loading label="Loading the latest backtest" /></Card>
+      ) : null}
 
-        {/* DSL */}
-        <View style={{ gap: 6 }}>
-          <Label style={{ marginLeft: 2 }}>Definition · DSL</Label>
-          {dsl ? (
-            <DslBlock code={dsl} />
-          ) : loadingDsl ? (
-            <View style={{ borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.ink, padding: 18, alignItems: 'center' }}>
-              <ActivityIndicator color={palette.orange[500]} />
-            </View>
-          ) : (
-            <Pressable
-              onPress={() => id && void fetchStrategyDetail(id)}
-              style={{ borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.bone2, padding: 14, alignItems: 'center', gap: 4 }}
-            >
-              <Mono size={10} color={palette.gray[600]}>Couldn’t load definition</Mono>
-              <Mono size={9} color={palette.orange[500]} style={{ fontWeight: '700' }}>TAP TO RETRY</Mono>
-            </Pressable>
-          )}
-        </View>
-
-        {/* Allocation */}
-        <View style={{ gap: 6 }}>
-          <Label style={{ marginLeft: 2 }}>Allocation · {positions.length} {positions.length === 1 ? 'position' : 'positions'}</Label>
-          {positions.length ? (
-            <View style={{ borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.paper, padding: 12, gap: 8 }}>
+      <Card style={s.holdings}>
+        <Text variant="label" tone="fg3">Holdings</Text>
+        {positions.length ? (
+          <>
+            <WeightStrip weights={positions.map((p) => p.weight)} />
+            <View style={s.holdingLabels}>
               {positions.map((p) => (
-                <View key={p.symbol}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                    <Mono size={11} style={{ fontWeight: '700' }}>{p.symbol}</Mono>
-                    <Mono size={11} color={palette.gray[600]}>{p.weight.toFixed(1)}%</Mono>
-                  </View>
-                  <View style={{ height: 6, borderWidth: 1.5, borderColor: palette.ink, backgroundColor: palette.bone, marginTop: 3 }}>
-                    <View style={{ height: '100%', width: `${Math.min(100, p.weight)}%`, backgroundColor: accent }} />
-                  </View>
-                </View>
+                <Text key={p.symbol} variant="numSmall" tone="fg2">
+                  <Text variant="numSmall" tone="fg">{p.symbol}</Text> {p.weight.toFixed(1)}%
+                </Text>
               ))}
             </View>
-          ) : (
-            <View style={{ borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.bone2, padding: 14 }}>
-              <Mono size={10} color={palette.gray[500]}>No position data — run a backtest to populate holdings.</Mono>
-            </View>
-          )}
-        </View>
+          </>
+        ) : (
+          <Text variant="small" tone="fg3">No holdings yet. Run a backtest on the web to see what it would hold.</Text>
+        )}
+      </Card>
 
-        {/* Universe */}
-        {strategy.symbols.length ? (
-          <View style={{ gap: 6 }}>
-            <Label style={{ marginLeft: 2 }}>Universe</Label>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-              {strategy.symbols.map((sym) => (
-                <View key={sym} style={{ borderWidth: 1.5, borderColor: palette.ink, backgroundColor: palette.paper, paddingHorizontal: 8, paddingVertical: 4 }}>
-                  <Mono size={10} style={{ fontWeight: '700' }}>{sym}</Mono>
-                </View>
-              ))}
-            </View>
-          </View>
-        ) : null}
+      <Card style={s.rows}>
+        <ListRow
+          label="Universe"
+          right={
+            <Text variant="numSmall" style={s.universe} numberOfLines={2}>
+              {strategy.symbols.length ? strategy.symbols.join(' ') : '–'}
+            </Text>
+          }
+        />
+        <ListRow label="Rebalance" value={cadence(strategy.rebalance) || '–'} />
+        <ListRow label="Benchmark" right={<Text variant="numSmall">{benchSym}</Text>} />
+        <ListRow label="Version" right={<Text variant="numSmall">{String(strategy.version)}</Text>} last />
+      </Card>
 
-        {/* Actions */}
-        {strategy.status === StrategyStatus.ACTIVE ? (
-          <Pressable onPress={() => void pauseStrategy(strategy.id)} style={{ borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.paper, paddingVertical: 12, alignItems: 'center', marginTop: 2 }}>
-            <Mono size={11} style={{ fontWeight: '700' }}>PAUSE STRATEGY</Mono>
-          </Pressable>
-        ) : strategy.status === StrategyStatus.PAUSED ? (
-          <Pressable onPress={() => void activateStrategy(strategy.id)} style={{ borderWidth: 2, borderColor: palette.ink, backgroundColor: palette.orange[500], paddingVertical: 12, alignItems: 'center', marginTop: 2 }}>
-            <Mono size={11} style={{ fontWeight: '700' }}>ACTIVATE STRATEGY</Mono>
-          </Pressable>
-        ) : null}
+      <View style={s.definition}>
+        <Text variant="label" tone="fg3">Definition</Text>
+        {strategy.dslCode ? (
+          <DslBlock code={strategy.dslCode} />
+        ) : loadingDsl ? (
+          <Card><Loading label="Loading the definition" /></Card>
+        ) : (
+          <PanelError
+            title="Couldn't load the definition"
+            detail="The strategy service didn't respond."
+            onRetry={id ? () => fetchStrategyDetail(id) : undefined}
+          />
+        )}
+      </View>
 
-        <Mono size={9} color={palette.gray[500]} style={{ textAlign: 'center', marginTop: 2, marginBottom: 8 }}>
-          EDIT & RUN BACKTESTS IN THE DESKTOP BUILDER
-        </Mono>
-      </ScrollView>
-    </View>
+      {strategy.status === StrategyStatus.ACTIVE ? (
+        <Button label="Pause strategy" variant="secondary" onPress={() => pauseStrategy(strategy.id)} />
+      ) : strategy.status === StrategyStatus.PAUSED ? (
+        <Button label="Resume strategy" onPress={() => activateStrategy(strategy.id)} />
+      ) : null}
+
+      <Text variant="caption" tone="fg3" style={s.footnote}>
+        Edit the strategy and run backtests in the web builder.
+      </Text>
+    </Screen>
   );
 }
+
+const useStyles = makeStyles(() => ({
+  statusLine: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: -6 },
+  metrics: { flexDirection: 'row', gap: 8 },
+  metric: { flex: 1, gap: 4 },
+  chartCard: { paddingHorizontal: 12, gap: 10 },
+  legend: { flexDirection: 'row', gap: 16 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  swatch: { width: 12, height: 2, borderRadius: 1 },
+  holdings: { gap: 10 },
+  holdingLabels: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 14, rowGap: 4 },
+  rows: { paddingVertical: 2 },
+  universe: { flexShrink: 1, textAlign: 'right', maxWidth: '65%' },
+  definition: { gap: 8 },
+  footnote: { textAlign: 'center' },
+}));

@@ -1,64 +1,62 @@
-import { useDashboardStore, type ActivityKind, type DashboardActivity } from '@llamatrade/core/stores/dashboard';
-import { useNavigate } from 'react-router-dom';
+import { dateShort } from '@llamatrade/core/format';
+import {
+  useDashboardStore,
+  type ActivityKind,
+  type DashboardActivity,
+} from '@llamatrade/core/stores/dashboard';
+import { Link } from 'react-router-dom';
 
+import { EmptyState } from '../ui';
 
-import { timeAgo } from './format';
-
-const TAG: Record<ActivityKind, { label: string; className: string }> = {
-  buy: { label: 'Buy', className: 'bg-[#0f7a34] text-bone' },
-  sell: { label: 'Sell', className: 'bg-[#c81e1e] text-bone' },
-  backtest: { label: 'Test', className: 'bg-[#2f52a8] text-bone' },
-  dividend: { label: 'Div', className: 'bg-orange-500 text-ink' },
+const TAG: Record<ActivityKind, string> = {
+  buy: 'BUY',
+  sell: 'SELL',
+  backtest: 'TEST',
+  dividend: 'DIV',
 };
 
-function FeedRow({ item }: { item: DashboardActivity }) {
-  const tag = TAG[item.kind];
+function Row({ item }: { item: DashboardActivity }) {
   return (
-    <div className="flex gap-3 px-4 py-2.5 border-b border-line last:border-b-0 items-start">
-      <span
-        className={`font-mono text-[9px] font-bold uppercase tracking-[0.04em] border-[1.5px] border-ink px-1.5 py-0.5 shrink-0 mt-px ${tag.className}`}
-      >
-        {tag.label}
+    <li className="flex items-center gap-3 border-b border-line px-3.5 py-[9px] text-[12.5px] last:border-b-0">
+      <span className="w-[38px] flex-none rounded-[3px] border border-line-strong py-0.5 text-center font-mono text-[9.5px] font-medium text-fg-2">
+        {TAG[item.kind]}
       </span>
-      <div className="flex-1 min-w-0">
-        <div className="text-[12.5px] font-semibold truncate">{item.title}</div>
-        <div className="font-mono text-[10px] text-ink/50 mt-0.5 uppercase tracking-[0.04em] truncate">
-          {item.subtitle}
-        </div>
-      </div>
-      <span className="font-mono text-[10px] text-ink/40 shrink-0">{timeAgo(item.at)}</span>
-    </div>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-fg">{item.title}</span>
+        <span className="block truncate text-[11.5px] text-fg-3">{item.subtitle}</span>
+      </span>
+      <span className="num flex-none text-fg-3">{dateShort(item.at)}</span>
+    </li>
   );
 }
 
+/** Fills, dividends and finished backtests, newest first. */
 export default function RecentActivity() {
-  const navigate = useNavigate();
   const activity = useDashboardStore((s) => s.activity);
 
   return (
-    <div className="bg-paper border-2 border-ink shadow-[4px_4px_0_#0d0d0d]">
-      <div className="flex items-center justify-between px-4 py-3 border-b-2 border-ink">
-        <span className="font-mono text-[11px] font-bold uppercase tracking-[0.1em]">
-          Recent Activity
-        </span>
-        <button
-          onClick={() => navigate('/portfolio')}
-          className="font-mono text-[10.5px] font-bold uppercase tracking-[0.05em] text-orange-500 hover:underline"
-        >
-          History →
-        </button>
+    <section
+      aria-label="Recent activity"
+      className="min-w-0 overflow-hidden rounded-panel border border-line bg-panel"
+    >
+      <div className="flex min-h-[42px] items-center justify-between gap-2.5 border-b border-line px-3.5 py-2.5 text-[12.5px]">
+        <b className="font-semibold">Recent activity</b>
+        <Link to="/portfolio" className="text-accent hover:underline">
+          History
+        </Link>
       </div>
       {activity.length > 0 ? (
-        <div>
+        <ul className="m-0 list-none p-0">
           {activity.map((item) => (
-            <FeedRow key={item.id} item={item} />
+            <Row key={item.id} item={item} />
           ))}
-        </div>
+        </ul>
       ) : (
-        <div className="px-4 py-10 text-center font-mono text-[11px] uppercase tracking-[0.08em] text-ink/40">
-          No recent activity
-        </div>
+        <EmptyState
+          title="No activity yet"
+          body="Fills, dividends and finished backtests appear here as they happen."
+        />
       )}
-    </div>
+    </section>
   );
 }

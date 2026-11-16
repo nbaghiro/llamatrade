@@ -127,6 +127,15 @@ class OrderExecutor(OrderSubmissionMixin):
             except Exception:
                 logger.debug("Failed to close session Alpaca client", exc_info=True)
 
+    async def release_connection(self) -> None:
+        """End the session's transaction and return its connection to the pool.
+
+        The session stays usable (the next query checks out a fresh connection),
+        so a long-lived owner such as a runner holds no connection between
+        operations. ``expire_on_commit=False`` keeps returned orders readable.
+        """
+        await self.db.close()
+
     async def submit_order(
         self,
         tenant_id: UUID,
@@ -1388,7 +1397,11 @@ async def create_order_executor(
     bind_tenant_guc(db, tenant_id)
     owns_alpaca = False
     if session_id is not None:
-        creds = await resolve_session_credentials(db, session_id, tenant_id)
+        try:
+            creds = await resolve_session_credentials(db, session_id, tenant_id)
+        except BaseException:
+            await db.close()
+            raise
         if creds is None:
             await db.close()
             raise ValueError(

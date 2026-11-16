@@ -1,8 +1,11 @@
 export { AgentFAB } from './AgentFAB';
 export { ChatInput } from './ChatInput';
-export { CopilotConversation } from './CopilotConversation';
 export { ChatMessage } from './ChatMessage';
+export { CopilotConversation, CopilotUnavailableNotice } from './CopilotConversation';
+export { CopilotHistoryRail } from './CopilotHistoryRail';
+export { CopilotSidePanel } from './CopilotSidePanel';
 export { PendingArtifactCard } from './PendingArtifactCard';
 export { StreamingIndicator } from './StreamingIndicator';
 export { ThinkingBlock } from './ThinkingBlock';
 export { ToolCallIndicator } from './ToolCallIndicator';
+export { ToolConfirmationCard } from './ToolConfirmationCard';

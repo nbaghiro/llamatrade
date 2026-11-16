@@ -1,46 +1,20 @@
 import type { ReactNode } from 'react';
 import { Linking, Text, View } from 'react-native';
 
-import { fonts, palette } from '../theme';
-
-type Tone = 'ink' | 'bone';
+import { fonts, radius, useTheme, type Colors } from '../theme';
 
 interface Palette {
   text: string;
   dim: string;
   codeBg: string;
-  codeBorder: string;
-  codeText: string;
   link: string;
   rule: string;
   fenceBg: string;
-  fenceText: string;
+  fenceBorder: string;
 }
 
-function paletteFor(tone: Tone): Palette {
-  return tone === 'bone'
-    ? {
-        text: palette.bone,
-        dim: '#b7b0a2',
-        codeBg: 'rgba(251,248,241,0.16)',
-        codeBorder: 'rgba(251,248,241,0.28)',
-        codeText: palette.bone,
-        link: palette.orange[400],
-        rule: 'rgba(251,248,241,0.28)',
-        fenceBg: '#000',
-        fenceText: '#e9e4d6',
-      }
-    : {
-        text: palette.ink,
-        dim: palette.gray[500],
-        codeBg: palette.bone2,
-        codeBorder: palette.ink,
-        codeText: palette.ink,
-        link: palette.blue[600],
-        rule: 'rgba(13,13,13,0.16)',
-        fenceBg: palette.ink,
-        fenceText: '#e9e4d6',
-      };
+function paletteFor(c: Colors): Palette {
+  return { text: c.fg, dim: c.fg3, codeBg: c.sunk, link: c.accent, rule: c.line, fenceBg: c.sunk, fenceBorder: c.line };
 }
 
 const INLINE = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g;
@@ -51,7 +25,7 @@ function inline(content: string, p: Palette, keyBase: string): ReactNode[] {
     const key = `${keyBase}-${i}`;
     if (seg.startsWith('**') && seg.endsWith('**')) {
       return (
-        <Text key={key} style={{ fontWeight: '700' }}>
+        <Text key={key} style={{ fontFamily: fonts.semibold }}>
           {seg.slice(2, -2)}
         </Text>
       );
@@ -70,7 +44,7 @@ function inline(content: string, p: Palette, keyBase: string): ReactNode[] {
           style={{
             fontFamily: fonts.mono,
             fontSize: 11.5,
-            color: p.codeText,
+            color: p.text,
             backgroundColor: p.codeBg,
           }}
         >
@@ -93,20 +67,19 @@ function inline(content: string, p: Palette, keyBase: string): ReactNode[] {
 
 function Fence({ code, language, p }: { code: string; language: string; p: Palette }) {
   return (
-    <View style={{ marginVertical: 8, backgroundColor: p.fenceBg, borderWidth: 2, borderColor: p.codeBorder, padding: 12 }}>
-      <Text style={{ fontFamily: fonts.mono, fontSize: 8.5, letterSpacing: 1, color: p.dim, textTransform: 'uppercase', marginBottom: 6 }}>
-        {language}
-      </Text>
-      <Text style={{ fontFamily: fonts.mono, fontSize: 11, lineHeight: 17, color: p.fenceText }}>{code}</Text>
+    <View style={{ marginVertical: 8, backgroundColor: p.fenceBg, borderWidth: 1, borderColor: p.fenceBorder, borderRadius: radius.md, padding: 12 }}>
+      <Text style={{ fontFamily: fonts.sans, fontSize: 11, color: p.dim, marginBottom: 6 }}>{language}</Text>
+      <Text style={{ fontFamily: fonts.mono, fontSize: 12, lineHeight: 18, color: p.text }}>{code}</Text>
     </View>
   );
 }
 
 const HEADER_SIZE: Record<number, number> = { 1: 19, 2: 17, 3: 15, 4: 14, 5: 13, 6: 12 };
 
-/** Monolith-styled markdown for Copilot messages. */
-export function Markdown({ content, tone = 'ink', size = 13 }: { content: string; tone?: Tone; size?: number }) {
-  const p = paletteFor(tone);
+/** Markdown for Copilot messages: paragraphs, headings, lists, rules, inline code and links. */
+export function Markdown({ content, size = 14 }: { content: string; size?: number }) {
+  const { c } = useTheme();
+  const p = paletteFor(c);
   const base = { fontFamily: fonts.sans, fontSize: size, lineHeight: size * 1.5, color: p.text } as const;
 
   // Split into code fences vs prose.
@@ -154,7 +127,7 @@ export function Markdown({ content, tone = 'ink', size = 13 }: { content: string
         flush();
         const lvl = h[1].length;
         blocks.push(
-          <Text key={`h-${pi}-${li}`} style={[base, { fontWeight: '700', fontSize: HEADER_SIZE[lvl], lineHeight: HEADER_SIZE[lvl] * 1.3, marginTop: 8, marginBottom: 3 }]}>
+          <Text key={`h-${pi}-${li}`} style={[base, { fontFamily: fonts.semibold, fontSize: HEADER_SIZE[lvl], lineHeight: HEADER_SIZE[lvl] * 1.3, marginTop: 8, marginBottom: 3 }]}>
             {inline(h[2], p, `h-${pi}-${li}`)}
           </Text>,
         );

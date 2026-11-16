@@ -1,13 +1,20 @@
 export type BlockId = string;
-export type BlockType = 'root' | 'asset' | 'group' | 'weight' | 'if' | 'else' | 'filter';
+export type BlockType =
+  | "root"
+  | "asset"
+  | "group"
+  | "weight"
+  | "if"
+  | "else"
+  | "filter";
 export type WeightMethod =
-  | 'specified'
-  | 'equal'
-  | 'inverse_volatility'
-  | 'market_cap'
-  | 'momentum'
-  | 'min_variance'
-  | 'risk_parity';
+  | "specified"
+  | "equal"
+  | "inverse_volatility"
+  | "market_cap"
+  | "momentum"
+  | "min_variance"
+  | "risk_parity";
 
 interface BaseBlock {
   id: BlockId;
@@ -15,14 +22,14 @@ interface BaseBlock {
 }
 
 export interface RootBlock extends BaseBlock {
-  type: 'root';
+  type: "root";
   parentId: null;
   name: string;
   childIds: BlockId[];
 }
 
 export interface AssetBlock extends BaseBlock {
-  type: 'asset';
+  type: "asset";
   parentId: BlockId;
   symbol: string;
   exchange: string;
@@ -30,14 +37,14 @@ export interface AssetBlock extends BaseBlock {
 }
 
 export interface GroupBlock extends BaseBlock {
-  type: 'group';
+  type: "group";
   parentId: BlockId;
   name: string;
   childIds: BlockId[];
 }
 
 export interface WeightBlock extends BaseBlock {
-  type: 'weight';
+  type: "weight";
   parentId: BlockId;
   method: WeightMethod;
   allocations: Record<BlockId, number>; // for 'specified' method
@@ -49,38 +56,51 @@ export interface WeightBlock extends BaseBlock {
 // Condition Block Types (IF/ELSE)
 
 export type IndicatorName =
-  | 'sma'
-  | 'ema'
-  | 'rsi'
-  | 'macd_line'
-  | 'macd_signal'
-  | 'bb_upper'
-  | 'bb_middle'
-  | 'bb_lower'
-  | 'atr'
-  | 'adx'
-  | 'stochastic_k'
-  | 'stochastic_d'
-  | 'cci'
-  | 'williams_r'
-  | 'obv'
-  | 'mfi'
-  | 'vwap';
+  | "sma"
+  | "ema"
+  | "rsi"
+  | "macd_line"
+  | "macd_signal"
+  | "bb_upper"
+  | "bb_middle"
+  | "bb_lower"
+  | "atr"
+  | "adx"
+  | "stochastic_k"
+  | "stochastic_d"
+  | "cci"
+  | "williams_r"
+  | "obv"
+  | "mfi"
+  | "vwap"
+  | "momentum";
 
-export type PriceField = 'current' | 'open' | 'high' | 'low' | 'close' | 'volume';
-export type IndicatorSource = 'price' | 'close' | 'high' | 'low' | 'open' | 'volume';
+export type PriceField =
+  | "current"
+  | "open"
+  | "high"
+  | "low"
+  | "close"
+  | "volume";
+export type IndicatorSource =
+  | "price"
+  | "close"
+  | "high"
+  | "low"
+  | "open"
+  | "volume";
 export type Comparator =
-  | 'gt'
-  | 'lt'
-  | 'gte'
-  | 'lte'
-  | 'eq'
-  | 'neq'
-  | 'cross_above'
-  | 'cross_below';
+  | "gt"
+  | "lt"
+  | "gte"
+  | "lte"
+  | "eq"
+  | "neq"
+  | "cross_above"
+  | "cross_below";
 
 export interface IndicatorRef {
-  type: 'indicator';
+  type: "indicator";
   indicator: IndicatorName;
   period?: number;
   symbol: string;
@@ -94,27 +114,31 @@ export interface IndicatorRef {
 }
 
 export interface PriceRef {
-  type: 'price';
+  type: "price";
   symbol: string;
   field: PriceField;
 }
 
 export interface NumberValue {
-  type: 'number';
+  type: "number";
   value: number;
   isPercent?: boolean;
 }
 
-export type MetricName = 'drawdown' | 'return' | 'volatility';
+export type MetricName = "drawdown" | "return" | "volatility";
 
 export interface MetricRef {
-  type: 'metric';
+  type: "metric";
   metric: MetricName;
   symbol: string;
   period?: number;
 }
 
-export type ConditionOperand = IndicatorRef | PriceRef | NumberValue | MetricRef;
+export type ConditionOperand =
+  | IndicatorRef
+  | PriceRef
+  | NumberValue
+  | MetricRef;
 
 export interface ConditionExpression {
   left: ConditionOperand;
@@ -123,7 +147,7 @@ export interface ConditionExpression {
 }
 
 export interface IfBlock extends BaseBlock {
-  type: 'if';
+  type: "if";
   parentId: BlockId;
   condition: ConditionExpression;
   conditionText: string; // Human-readable: "current price of SPY is greater than..."
@@ -132,7 +156,7 @@ export interface IfBlock extends BaseBlock {
 
 // Else block - alternative allocation (sibling of IfBlock)
 export interface ElseBlock extends BaseBlock {
-  type: 'else';
+  type: "else";
   parentId: BlockId;
   ifBlockId: BlockId;
   childIds: BlockId[];
@@ -140,16 +164,21 @@ export interface ElseBlock extends BaseBlock {
 
 // Filter Block Types
 
-export type FilterSelection = 'top' | 'bottom';
-export type FilterUniverse = 'sp500' | 'nasdaq100' | 'russell2000' | 'dow30' | 'custom';
+export type FilterSelection = "top" | "bottom";
+export type FilterUniverse =
+  | "sp500"
+  | "nasdaq100"
+  | "russell2000"
+  | "dow30"
+  | "custom";
 export type FilterSortBy =
-  | 'momentum'
-  | 'market_cap'
-  | 'volume'
-  | 'volatility'
-  | 'rsi'
-  | 'dividend_yield';
-export type FilterPeriod = '1m' | '3m' | '6m' | '12m';
+  | "momentum"
+  | "market_cap"
+  | "volume"
+  | "volatility"
+  | "rsi"
+  | "dividend_yield";
+export type FilterPeriod = "1m" | "3m" | "6m" | "12m";
 
 export interface FilterConfig {
   selection: FilterSelection;
@@ -158,56 +187,71 @@ export interface FilterConfig {
   customSymbols?: string[]; // For custom universe
   sortBy: FilterSortBy;
   period: FilterPeriod;
+  /** The exact `:lookback` in trading days as written; `period` is its nearest bucket. */
+  lookbackDays?: number;
 }
 
 export interface FilterBlock extends BaseBlock {
-  type: 'filter';
+  type: "filter";
   parentId: BlockId;
   config: FilterConfig;
   displayText: string; // "Top 10 by Momentum (12 months)"
   childIds: BlockId[]; // Populated dynamically based on filter results
 }
 
-export type Block = RootBlock | AssetBlock | GroupBlock | WeightBlock | IfBlock | ElseBlock | FilterBlock;
+export type Block =
+  | RootBlock
+  | AssetBlock
+  | GroupBlock
+  | WeightBlock
+  | IfBlock
+  | ElseBlock
+  | FilterBlock;
 
 export function isRootBlock(block: Block): block is RootBlock {
-  return block.type === 'root';
+  return block.type === "root";
 }
 
 export function isAssetBlock(block: Block): block is AssetBlock {
-  return block.type === 'asset';
+  return block.type === "asset";
 }
 
 export function isGroupBlock(block: Block): block is GroupBlock {
-  return block.type === 'group';
+  return block.type === "group";
 }
 
 export function isWeightBlock(block: Block): block is WeightBlock {
-  return block.type === 'weight';
+  return block.type === "weight";
 }
 
 export function isIfBlock(block: Block): block is IfBlock {
-  return block.type === 'if';
+  return block.type === "if";
 }
 
 export function isElseBlock(block: Block): block is ElseBlock {
-  return block.type === 'else';
+  return block.type === "else";
 }
 
 export function isFilterBlock(block: Block): block is FilterBlock {
-  return block.type === 'filter';
+  return block.type === "filter";
 }
 
-export type ParentBlock = RootBlock | GroupBlock | WeightBlock | IfBlock | ElseBlock | FilterBlock;
+export type ParentBlock =
+  | RootBlock
+  | GroupBlock
+  | WeightBlock
+  | IfBlock
+  | ElseBlock
+  | FilterBlock;
 
 export function hasChildren(block: Block): block is ParentBlock {
   return (
-    block.type === 'root' ||
-    block.type === 'group' ||
-    block.type === 'weight' ||
-    block.type === 'if' ||
-    block.type === 'else' ||
-    block.type === 'filter'
+    block.type === "root" ||
+    block.type === "group" ||
+    block.type === "weight" ||
+    block.type === "if" ||
+    block.type === "else" ||
+    block.type === "filter"
   );
 }
 
@@ -234,55 +278,62 @@ export interface WeightMethodInfo {
   };
 }
 
+/** Block types share one neutral fill; the accent marks selection, never a block type. */
+const NEUTRAL_METHOD_COLOR = {
+  bg: "bg-sunk",
+  text: "text-fg-2",
+  border: "border-line",
+};
+
 export const WEIGHT_METHODS: WeightMethodInfo[] = [
   {
-    method: 'specified',
-    label: 'Specified',
-    description: 'Fixed percentage allocations',
+    method: "specified",
+    label: "Specified",
+    description: "Fixed percentage allocations",
     hasLookback: false,
-    color: { bg: 'bg-green-100 dark:bg-green-900', text: 'text-green-700 dark:text-green-300', border: 'border-green-200 dark:border-green-800' },
+    color: NEUTRAL_METHOD_COLOR,
   },
   {
-    method: 'equal',
-    label: 'Equal Weight',
-    description: 'Split evenly across children',
+    method: "equal",
+    label: "Equal Weight",
+    description: "Split evenly across children",
     hasLookback: false,
-    color: { bg: 'bg-green-100 dark:bg-green-900', text: 'text-green-700 dark:text-green-300', border: 'border-green-200 dark:border-green-800' },
+    color: NEUTRAL_METHOD_COLOR,
   },
   {
-    method: 'inverse_volatility',
-    label: 'Inverse Volatility',
-    description: 'Risk parity weighting',
+    method: "inverse_volatility",
+    label: "Inverse Volatility",
+    description: "Risk parity weighting",
     hasLookback: true,
-    color: { bg: 'bg-green-100 dark:bg-green-900', text: 'text-green-700 dark:text-green-300', border: 'border-green-200 dark:border-green-800' },
+    color: NEUTRAL_METHOD_COLOR,
   },
   {
-    method: 'market_cap',
-    label: 'Market Cap',
-    description: 'Cap-weighted allocation',
+    method: "market_cap",
+    label: "Market Cap",
+    description: "Cap-weighted allocation",
     hasLookback: false,
-    color: { bg: 'bg-green-100 dark:bg-green-900', text: 'text-green-700 dark:text-green-300', border: 'border-green-200 dark:border-green-800' },
+    color: NEUTRAL_METHOD_COLOR,
   },
   {
-    method: 'momentum',
-    label: 'Momentum',
-    description: 'Momentum-weighted allocation',
+    method: "momentum",
+    label: "Momentum",
+    description: "Momentum-weighted allocation",
     hasLookback: true,
-    color: { bg: 'bg-green-100 dark:bg-green-900', text: 'text-green-700 dark:text-green-300', border: 'border-green-200 dark:border-green-800' },
+    color: NEUTRAL_METHOD_COLOR,
   },
   {
-    method: 'min_variance',
-    label: 'Min Variance',
-    description: 'Minimum variance optimization',
+    method: "min_variance",
+    label: "Min Variance",
+    description: "Minimum variance optimization",
     hasLookback: true,
-    color: { bg: 'bg-green-100 dark:bg-green-900', text: 'text-green-700 dark:text-green-300', border: 'border-green-200 dark:border-green-800' },
+    color: NEUTRAL_METHOD_COLOR,
   },
   {
-    method: 'risk_parity',
-    label: 'Risk Parity',
-    description: 'Equal risk contribution weighting',
+    method: "risk_parity",
+    label: "Risk Parity",
+    description: "Equal risk contribution weighting",
     hasLookback: true,
-    color: { bg: 'bg-green-100 dark:bg-green-900', text: 'text-green-700 dark:text-green-300', border: 'border-green-200 dark:border-green-800' },
+    color: NEUTRAL_METHOD_COLOR,
   },
 ];
 
@@ -302,27 +353,150 @@ export interface IndicatorInfo {
   shortLabel: string;
   hasPeriod: boolean;
   defaultPeriod?: number;
-  category: 'trend' | 'momentum' | 'volatility' | 'volume';
+  category: "trend" | "momentum" | "volatility" | "volume";
 }
 
 export const INDICATORS: IndicatorInfo[] = [
-  { name: 'sma', label: 'Moving Average (SMA)', shortLabel: 'SMA', hasPeriod: true, defaultPeriod: 20, category: 'trend' },
-  { name: 'ema', label: 'Exponential Moving Average', shortLabel: 'EMA', hasPeriod: true, defaultPeriod: 20, category: 'trend' },
-  { name: 'rsi', label: 'Relative Strength Index', shortLabel: 'RSI', hasPeriod: true, defaultPeriod: 14, category: 'momentum' },
-  { name: 'macd_line', label: 'MACD Line', shortLabel: 'MACD', hasPeriod: false, category: 'momentum' },
-  { name: 'macd_signal', label: 'MACD Signal', shortLabel: 'Signal', hasPeriod: false, category: 'momentum' },
-  { name: 'bb_upper', label: 'Bollinger Band (Upper)', shortLabel: 'BB Upper', hasPeriod: true, defaultPeriod: 20, category: 'volatility' },
-  { name: 'bb_middle', label: 'Bollinger Band (Middle)', shortLabel: 'BB Mid', hasPeriod: true, defaultPeriod: 20, category: 'volatility' },
-  { name: 'bb_lower', label: 'Bollinger Band (Lower)', shortLabel: 'BB Lower', hasPeriod: true, defaultPeriod: 20, category: 'volatility' },
-  { name: 'atr', label: 'Average True Range', shortLabel: 'ATR', hasPeriod: true, defaultPeriod: 14, category: 'volatility' },
-  { name: 'adx', label: 'Average Directional Index', shortLabel: 'ADX', hasPeriod: true, defaultPeriod: 14, category: 'trend' },
-  { name: 'stochastic_k', label: 'Stochastic %K', shortLabel: '%K', hasPeriod: true, defaultPeriod: 14, category: 'momentum' },
-  { name: 'stochastic_d', label: 'Stochastic %D', shortLabel: '%D', hasPeriod: true, defaultPeriod: 14, category: 'momentum' },
-  { name: 'cci', label: 'Commodity Channel Index', shortLabel: 'CCI', hasPeriod: true, defaultPeriod: 20, category: 'momentum' },
-  { name: 'williams_r', label: 'Williams %R', shortLabel: '%R', hasPeriod: true, defaultPeriod: 14, category: 'momentum' },
-  { name: 'obv', label: 'On-Balance Volume', shortLabel: 'OBV', hasPeriod: false, category: 'volume' },
-  { name: 'mfi', label: 'Money Flow Index', shortLabel: 'MFI', hasPeriod: true, defaultPeriod: 14, category: 'volume' },
-  { name: 'vwap', label: 'VWAP', shortLabel: 'VWAP', hasPeriod: false, category: 'volume' },
+  {
+    name: "sma",
+    label: "Moving Average (SMA)",
+    shortLabel: "SMA",
+    hasPeriod: true,
+    defaultPeriod: 20,
+    category: "trend",
+  },
+  {
+    name: "ema",
+    label: "Exponential Moving Average",
+    shortLabel: "EMA",
+    hasPeriod: true,
+    defaultPeriod: 20,
+    category: "trend",
+  },
+  {
+    name: "rsi",
+    label: "Relative Strength Index",
+    shortLabel: "RSI",
+    hasPeriod: true,
+    defaultPeriod: 14,
+    category: "momentum",
+  },
+  {
+    name: "macd_line",
+    label: "MACD Line",
+    shortLabel: "MACD",
+    hasPeriod: false,
+    category: "momentum",
+  },
+  {
+    name: "macd_signal",
+    label: "MACD Signal",
+    shortLabel: "Signal",
+    hasPeriod: false,
+    category: "momentum",
+  },
+  {
+    name: "bb_upper",
+    label: "Bollinger Band (Upper)",
+    shortLabel: "BB Upper",
+    hasPeriod: true,
+    defaultPeriod: 20,
+    category: "volatility",
+  },
+  {
+    name: "bb_middle",
+    label: "Bollinger Band (Middle)",
+    shortLabel: "BB Mid",
+    hasPeriod: true,
+    defaultPeriod: 20,
+    category: "volatility",
+  },
+  {
+    name: "bb_lower",
+    label: "Bollinger Band (Lower)",
+    shortLabel: "BB Lower",
+    hasPeriod: true,
+    defaultPeriod: 20,
+    category: "volatility",
+  },
+  {
+    name: "atr",
+    label: "Average True Range",
+    shortLabel: "ATR",
+    hasPeriod: true,
+    defaultPeriod: 14,
+    category: "volatility",
+  },
+  {
+    name: "adx",
+    label: "Average Directional Index",
+    shortLabel: "ADX",
+    hasPeriod: true,
+    defaultPeriod: 14,
+    category: "trend",
+  },
+  {
+    name: "stochastic_k",
+    label: "Stochastic %K",
+    shortLabel: "%K",
+    hasPeriod: true,
+    defaultPeriod: 14,
+    category: "momentum",
+  },
+  {
+    name: "stochastic_d",
+    label: "Stochastic %D",
+    shortLabel: "%D",
+    hasPeriod: true,
+    defaultPeriod: 14,
+    category: "momentum",
+  },
+  {
+    name: "cci",
+    label: "Commodity Channel Index",
+    shortLabel: "CCI",
+    hasPeriod: true,
+    defaultPeriod: 20,
+    category: "momentum",
+  },
+  {
+    name: "williams_r",
+    label: "Williams %R",
+    shortLabel: "%R",
+    hasPeriod: true,
+    defaultPeriod: 14,
+    category: "momentum",
+  },
+  {
+    name: "obv",
+    label: "On-Balance Volume",
+    shortLabel: "OBV",
+    hasPeriod: false,
+    category: "volume",
+  },
+  {
+    name: "mfi",
+    label: "Money Flow Index",
+    shortLabel: "MFI",
+    hasPeriod: true,
+    defaultPeriod: 14,
+    category: "volume",
+  },
+  {
+    name: "vwap",
+    label: "VWAP",
+    shortLabel: "VWAP",
+    hasPeriod: false,
+    category: "volume",
+  },
+  {
+    name: "momentum",
+    label: "Momentum",
+    shortLabel: "momentum",
+    hasPeriod: true,
+    defaultPeriod: 252,
+    category: "momentum",
+  },
 ];
 
 export function getIndicatorInfo(name: IndicatorName): IndicatorInfo {
@@ -342,14 +516,14 @@ export interface ComparatorInfo {
 }
 
 export const COMPARATORS: ComparatorInfo[] = [
-  { value: 'gt', label: '>', verboseLabel: 'is greater than' },
-  { value: 'lt', label: '<', verboseLabel: 'is less than' },
-  { value: 'gte', label: '≥', verboseLabel: 'is greater than or equal to' },
-  { value: 'lte', label: '≤', verboseLabel: 'is less than or equal to' },
-  { value: 'eq', label: '=', verboseLabel: 'is equal to' },
-  { value: 'neq', label: '≠', verboseLabel: 'is not equal to' },
-  { value: 'cross_above', label: '↗', verboseLabel: 'crosses above' },
-  { value: 'cross_below', label: '↘', verboseLabel: 'crosses below' },
+  { value: "gt", label: ">", verboseLabel: "is greater than" },
+  { value: "lt", label: "<", verboseLabel: "is less than" },
+  { value: "gte", label: "≥", verboseLabel: "is greater than or equal to" },
+  { value: "lte", label: "≤", verboseLabel: "is less than or equal to" },
+  { value: "eq", label: "=", verboseLabel: "is equal to" },
+  { value: "neq", label: "≠", verboseLabel: "is not equal to" },
+  { value: "cross_above", label: "↗", verboseLabel: "crosses above" },
+  { value: "cross_below", label: "↘", verboseLabel: "crosses below" },
 ];
 
 export function getComparatorInfo(value: Comparator): ComparatorInfo {
@@ -369,11 +543,23 @@ export interface FilterUniverseInfo {
 }
 
 export const FILTER_UNIVERSES: FilterUniverseInfo[] = [
-  { value: 'sp500', label: 'S&P 500', description: 'Large-cap US stocks' },
-  { value: 'nasdaq100', label: 'NASDAQ 100', description: 'Tech-heavy large caps' },
-  { value: 'russell2000', label: 'Russell 2000', description: 'Small-cap US stocks' },
-  { value: 'dow30', label: 'Dow Jones 30', description: 'Blue-chip industrials' },
-  { value: 'custom', label: 'Custom', description: 'Your own symbol list' },
+  { value: "sp500", label: "S&P 500", description: "Large-cap US stocks" },
+  {
+    value: "nasdaq100",
+    label: "NASDAQ 100",
+    description: "Tech-heavy large caps",
+  },
+  {
+    value: "russell2000",
+    label: "Russell 2000",
+    description: "Small-cap US stocks",
+  },
+  {
+    value: "dow30",
+    label: "Dow Jones 30",
+    description: "Blue-chip industrials",
+  },
+  { value: "custom", label: "Custom", description: "Your own symbol list" },
 ];
 
 export interface FilterSortByInfo {
@@ -383,12 +569,24 @@ export interface FilterSortByInfo {
 }
 
 export const FILTER_SORT_OPTIONS: FilterSortByInfo[] = [
-  { value: 'momentum', label: 'Momentum', description: 'Price change over period' },
-  { value: 'market_cap', label: 'Market Cap', description: 'Company size' },
-  { value: 'volume', label: 'Volume', description: 'Trading activity' },
-  { value: 'volatility', label: 'Volatility', description: 'Price variability' },
-  { value: 'rsi', label: 'RSI', description: 'Relative strength' },
-  { value: 'dividend_yield', label: 'Dividend Yield', description: 'Income potential' },
+  {
+    value: "momentum",
+    label: "Momentum",
+    description: "Price change over period",
+  },
+  { value: "market_cap", label: "Market Cap", description: "Company size" },
+  { value: "volume", label: "Volume", description: "Trading activity" },
+  {
+    value: "volatility",
+    label: "Volatility",
+    description: "Price variability",
+  },
+  { value: "rsi", label: "RSI", description: "Relative strength" },
+  {
+    value: "dividend_yield",
+    label: "Dividend Yield",
+    description: "Income potential",
+  },
 ];
 
 export interface FilterPeriodInfo {
@@ -397,10 +595,10 @@ export interface FilterPeriodInfo {
 }
 
 export const FILTER_PERIODS: FilterPeriodInfo[] = [
-  { value: '1m', label: '1 month' },
-  { value: '3m', label: '3 months' },
-  { value: '6m', label: '6 months' },
-  { value: '12m', label: '12 months' },
+  { value: "1m", label: "1 month" },
+  { value: "3m", label: "3 months" },
+  { value: "6m", label: "6 months" },
+  { value: "12m", label: "12 months" },
 ];
 
 export interface NodePosition {

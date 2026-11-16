@@ -1,15 +1,32 @@
-import { ConnectError } from '@connectrpc/connect';
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 import { AuthSplitLayout } from '../../components/auth/AuthSplitLayout';
-import { SocialAuthButtons } from '../../components/auth/SocialAuthButtons';
+import { authErrorMessage } from '../../components/auth/errors';
+import {
+  AlpacaButton,
+  Field,
+  FormFoot,
+  FormNote,
+  LINK,
+  OrDivider,
+} from '../../components/auth/fields';
+import { landingAfterSignIn } from '../../components/auth/landing';
 import { startAuthWithAlpaca } from '../../services/alpacaOAuth';
 import { authClient } from '../../services/grpc-client';
 import { useAuthStore } from '../../store/auth';
 
+function signInError(err: unknown): string {
+  return authErrorMessage(
+    err,
+    "You couldn't be signed in. Please check your details and try again."
+  );
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const registered = (location.state as { registered?: boolean } | null)?.registered === true;
   const setSession = useAuthStore((state) => state.setSession);
 
   const [email, setEmail] = useState('');
@@ -21,10 +38,8 @@ export default function LoginPage() {
     e.preventDefault();
     setError('');
     setLoading(true);
-
     try {
       const response = await authClient.login({ email, password });
-
       const user = {
         id: response.user?.id ?? '',
         email: response.user?.email ?? '',
@@ -34,89 +49,59 @@ export default function LoginPage() {
         roles: response.user?.roles ?? [],
         tenantId: response.user?.tenantId ?? '',
       };
-
       setSession(user, response.accessToken, response.refreshToken);
-      navigate('/dashboard');
+      navigate(await landingAfterSignIn(user.id), { replace: true });
     } catch (err: unknown) {
-      if (err instanceof ConnectError) {
-        setError(err.message || 'Login failed');
-      } else {
-        setError('Login failed');
-      }
-    } finally {
+      setError(signInError(err));
       setLoading(false);
     }
   };
 
   return (
-    <AuthSplitLayout title="Sign In" subtitle="Welcome back — access your account">
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {error && (
-          <div
-            className="border-2 border-ink bg-red-50 px-3 py-2.5 font-mono text-xs text-red-600"
-            role="alert"
-          >
-            {error}
-          </div>
+    <AuthSplitLayout title="Sign in" subtitle="Welcome back to LlamaTrade.">
+      <form onSubmit={handleSubmit} className="grid gap-3.5">
+        {registered && !error && (
+          <FormNote tone="ok">
+            <b>Your account is ready.</b> We&apos;ve emailed you a link to confirm your address. You
+            can sign in now.
+          </FormNote>
         )}
-
-        <div>
-          <label className="label" htmlFor="email">
-            Email address
-          </label>
-          <input
-            id="email"
-            type="email"
-            className="input"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            autoComplete="email"
-            required
-          />
-        </div>
-
-        <div>
-          <label className="label" htmlFor="password">
-            Password
-          </label>
-          <input
-            id="password"
-            type="password"
-            className="input"
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-            required
-          />
-        </div>
-
-        <div className="text-right">
-          <Link
-            to="/forgot-password"
-            className="font-mono text-[11px] uppercase tracking-wide text-ink/60 hover:text-ink"
-          >
-            Forgot password?
-          </Link>
-        </div>
-
+        {error && <FormNote tone="warn">{error}</FormNote>}
+        <Field
+          id="email"
+          label="Email address"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          autoComplete="email"
+          required
+        />
+        <Field
+          id="password"
+          label="Password"
+          aside={
+            <Link to="/forgot-password" className={LINK}>
+              Forgot password?
+            </Link>
+          }
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete="current-password"
+          required
+        />
         <button type="submit" className="btn btn-primary btn-lg w-full" disabled={loading}>
           {loading ? 'Signing in…' : 'Sign in'}
         </button>
       </form>
-
-      <SocialAuthButtons disabled={loading} onAlpaca={startAuthWithAlpaca} />
-
-      <p className="mt-6 font-mono text-[11px] uppercase tracking-wide text-ink/60">
-        No account?{' '}
-        <Link
-          to="/register"
-          className="font-bold text-orange-600 underline-offset-2 hover:underline"
-        >
-          Sign up
+      <OrDivider />
+      <AlpacaButton label="Continue with Alpaca" onClick={startAuthWithAlpaca} disabled={loading} />
+      <FormFoot>
+        New to LlamaTrade?{' '}
+        <Link to="/register" className={LINK}>
+          Create an account
         </Link>
-      </p>
+      </FormFoot>
     </AuthSplitLayout>
   );
 }

@@ -48,7 +48,7 @@ export async function runCopilotStreamSpike(
   let firstEventMs: number | null = null;
 
   if (!ctx) {
-    return { name: 'copilot-stream', pass: false, firstEventMs: null, eventCount: 0, deltaCount: 0, logs, error: 'Not authenticated — set a dev session first.' };
+    return { name: 'copilot-stream', pass: false, firstEventMs: null, eventCount: 0, deltaCount: 0, logs, error: 'Not signed in. Sign in first.' };
   }
 
   try {
@@ -117,7 +117,7 @@ export async function runBacktestProgressSpike(
   let reachedTerminal = false;
 
   if (!ctx) {
-    return { name: 'backtest-progress', pass: false, firstEventMs: null, eventCount: 0, deltaCount: 0, logs, error: 'Not authenticated — set a dev session first.' };
+    return { name: 'backtest-progress', pass: false, firstEventMs: null, eventCount: 0, deltaCount: 0, logs, error: 'Not signed in. Sign in first.' };
   }
 
   try {

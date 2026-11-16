@@ -1,4 +1,3 @@
-
 import { create } from '@bufbuild/protobuf';
 import { NotificationCategory } from '@llamatrade/core/proto/events_pb';
 import {
@@ -8,344 +7,454 @@ import {
   ChannelType,
 } from '@llamatrade/core/proto/notification_pb';
 import { useNotificationsStore } from '@llamatrade/core/stores/notifications';
-import { Copy, Plus, Send, Trash2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, Check, Copy, Lock, Plus, Trash2 } from 'lucide-react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 
 import {
   CATEGORY_GROUPS,
+  alertConditionText,
   CHANNEL_LABELS,
   CONDITION_TYPE_LABELS,
+  PREFERENCE_CHANNELS,
+  canReach,
   categoryLabel,
+  cellState,
+  toggledPreferences,
+  type CellState,
+  type PreferenceChannel,
 } from '../../types/notifications';
-import { Badge } from '../common/Badge';
-import { Button } from '../common/Button';
-import { Card } from '../common/Card';
-import { Input } from '../common/Input';
-import { Select } from '../common/Select';
-
-const PREFERENCE_CHANNELS = [ChannelType.EMAIL, ChannelType.WEBHOOK] as const;
+import { PanelError, SkeletonRows } from '../ui';
 
 const CONDITION_OPTIONS = Object.entries(CONDITION_TYPE_LABELS).map(([value, label]) => ({
   value,
   label: label ?? '',
 }));
 
+const errorText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
+
+function SettingsPanel({
+  title,
+  aside,
+  children,
+}: {
+  title: string;
+  aside?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="min-w-0 overflow-hidden rounded-panel border border-line bg-panel">
+      <header className="flex min-h-[42px] items-center justify-between gap-2.5 border-b border-line px-3.5 py-2.5 text-[12.5px]">
+        <b className="font-semibold text-fg">{title}</b>
+        {aside && <span className="text-fg-3">{aside}</span>}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+function InlineError({ children }: { children: ReactNode }) {
+  return (
+    <p role="alert" className="m-0 flex items-center gap-2 px-3.5 py-2 text-xs text-risk">
+      <AlertTriangle className="h-3.5 w-3.5 flex-none" />
+      {children}
+    </p>
+  );
+}
+
+/** Email and webhook delivery per category, plus webhooks and price alerts. */
 export function NotificationSettings() {
   return (
-    <div className="space-y-6">
+    <div className="grid items-start gap-3 lg:grid-cols-[1.2fr_1fr]">
       <PreferencesMatrix />
-      <WebhookManager />
-      <AlertManager />
+      <div className="grid min-w-0 gap-3">
+        <WebhookManager />
+        <AlertManager />
+      </div>
     </div>
   );
 }
 
-function PreferencesMatrix() {
-  const { preferences, fetchPreferences, updatePreferences } = useNotificationsStore();
-  const [saving, setSaving] = useState(false);
+type LoadState = 'loading' | 'ready' | 'error';
 
-  useEffect(() => {
-    void fetchPreferences();
+function PreferencesMatrix() {
+  const preferences = useNotificationsStore((s) => s.preferences);
+  const fetchPreferences = useNotificationsStore((s) => s.fetchPreferences);
+  const updatePreferences = useNotificationsStore((s) => s.updatePreferences);
+  const [load, setLoad] = useState<LoadState>('loading');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const reload = useCallback(() => {
+    setLoad('loading');
+    useNotificationsStore.setState({ error: null });
+    fetchPreferences()
+      .then(() => setLoad(useNotificationsStore.getState().error ? 'error' : 'ready'))
+      .catch(() => setLoad('error'));
   }, [fetchPreferences]);
 
-  const enabledByChannel = useMemo(() => {
-    const map = new Map<ChannelType, { enabled: boolean; categories: Set<NotificationCategory> }>();
-    for (const pref of preferences) {
-      map.set(pref.channel, { enabled: pref.enabled, categories: new Set(pref.categories) });
-    }
-    return map;
-  }, [preferences]);
+  useEffect(reload, [reload]);
 
-  const isOn = (channel: ChannelType, category: NotificationCategory): boolean => {
-    const state = enabledByChannel.get(channel);
-    if (!state || !state.enabled) return false;
-    return state.categories.size === 0 || state.categories.has(category);
-  };
-
-  const toggle = async (channel: ChannelType, category: NotificationCategory) => {
-    const state = enabledByChannel.get(channel);
-    const allCategories = CATEGORY_GROUPS.flatMap((g) => [...g.categories]);
-    const current = new Set(
-      state && state.categories.size > 0
-        ? state.categories
-        : state?.enabled !== false
-          ? allCategories
-          : [],
-    );
-    if (current.has(category)) current.delete(category);
-    else current.add(category);
+  const toggle = (channel: PreferenceChannel, category: NotificationCategory) => {
     setSaving(true);
-    try {
-      await updatePreferences(
-        PREFERENCE_CHANNELS.map((ch) => {
-          const chState = enabledByChannel.get(ch);
-          return create(ChannelPreferenceSchema, {
-            channel: ch,
-            enabled: chState?.enabled ?? true,
-            categories:
-              ch === channel
-                ? [...current]
-                : chState
-                  ? [...chState.categories]
-                  : [],
-          });
-        }),
-      );
-    } finally {
-      setSaving(false);
-    }
+    setSaveError(null);
+    const next = toggledPreferences(preferences, channel, category).map((p) =>
+      create(ChannelPreferenceSchema, { ...p, categories: [...p.categories] })
+    );
+    updatePreferences(next)
+      .catch((e: unknown) => setSaveError(errorText(e, "That change couldn't be saved.")))
+      .finally(() => setSaving(false));
   };
 
   return (
-    <Card className="p-5">
-      <h3 className="text-sm font-bold uppercase tracking-wide text-ink">Delivery preferences</h3>
-      <p className="mt-1 text-[13px] text-ink/60">
-        In-app notifications are always kept. Critical and security notices always email.
-      </p>
-      <div className="mt-4 overflow-x-auto">
-        <table className="w-full text-[13px]">
-          <thead>
-            <tr className="border-b-2 border-ink text-left">
-              <th className="py-2 pr-4 font-mono uppercase tracking-wide text-[11px]">Category</th>
-              {PREFERENCE_CHANNELS.map((ch) => (
-                <th key={ch} className="py-2 px-3 font-mono uppercase tracking-wide text-[11px]">
-                  {CHANNEL_LABELS[ch]}
+    <SettingsPanel title="Delivery" aside="in-app is always on">
+      {load === 'loading' && <SkeletonRows rows={8} cols={3} />}
+      {load === 'error' && (
+        <PanelError
+          title="Delivery settings couldn't be loaded"
+          unaffected="Notifications still arrive in the app."
+          onRetry={reload}
+        />
+      )}
+      {load === 'ready' && (
+        <>
+          {saveError && <InlineError>{saveError}</InlineError>}
+          <table className="w-full text-[12.5px]">
+            <thead>
+              <tr>
+                <th className="border-b border-line px-3.5 py-2 text-left text-[11px] font-medium text-fg-3">
+                  Category
                 </th>
+                {PREFERENCE_CHANNELS.map((ch) => (
+                  <th
+                    key={ch}
+                    className="w-[76px] border-b border-line px-3.5 py-2 text-right text-[11px] font-medium text-fg-3"
+                  >
+                    {CHANNEL_LABELS[ch]}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {CATEGORY_GROUPS.map((group) => (
+                <GroupRows key={group.label} label={group.label} categories={group.categories}>
+                  {(category) =>
+                    PREFERENCE_CHANNELS.map((ch) => (
+                      <td key={ch} className="border-b border-line px-3.5 py-2 text-right">
+                        <MatrixBox
+                          state={cellState(preferences, ch, category)}
+                          label={`${categoryLabel(category)} by ${CHANNEL_LABELS[ch]}`}
+                          disabled={saving}
+                          onToggle={() => toggle(ch, category)}
+                        />
+                      </td>
+                    ))
+                  }
+                </GroupRows>
               ))}
-            </tr>
-          </thead>
-          <tbody>
-            {CATEGORY_GROUPS.map((group) => (
-              <GroupRows
-                key={group.label}
-                label={group.label}
-                categories={group.categories}
-                isOn={isOn}
-                onToggle={toggle}
-                disabled={saving}
-              />
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Card>
+            </tbody>
+          </table>
+          <p className="m-0 border-t border-line px-3.5 py-2.5 text-xs text-fg-3">
+            Critical notices always email. A dash means that kind of notice only appears in the app
+            or on the other channel.
+          </p>
+        </>
+      )}
+    </SettingsPanel>
   );
 }
 
 function GroupRows({
   label,
   categories,
-  isOn,
-  onToggle,
-  disabled,
+  children,
 }: {
   label: string;
-  categories: ReadonlyArray<NotificationCategory>;
-  isOn: (channel: ChannelType, category: NotificationCategory) => boolean;
-  onToggle: (channel: ChannelType, category: NotificationCategory) => Promise<void>;
-  disabled: boolean;
+  categories: readonly NotificationCategory[];
+  children: (category: NotificationCategory) => ReactNode;
 }) {
   return (
     <>
       <tr>
-        <td
-          colSpan={1 + PREFERENCE_CHANNELS.length}
-          className="pt-4 pb-1 font-mono uppercase tracking-wide text-[11px] text-ink/50"
-        >
+        <td colSpan={3} className="bg-sunk px-3.5 py-[5px] text-[11px] text-fg-3">
           {label}
         </td>
       </tr>
-      {categories.map((category) => (
-        <tr key={category} className="border-b border-ink/10">
-          <td className="py-1.5 pr-4 text-ink">{categoryLabel(category)}</td>
-          {PREFERENCE_CHANNELS.map((ch) => (
-            <td key={ch} className="py-1.5 px-3">
-              <input
-                type="checkbox"
-                checked={isOn(ch, category)}
-                disabled={disabled}
-                onChange={() => void onToggle(ch, category)}
-                className="h-4 w-4 accent-orange-500"
-                aria-label={`${categoryLabel(category)} via ${CHANNEL_LABELS[ch]}`}
-              />
+      {categories.map((category) => {
+        const inAppOnly = !PREFERENCE_CHANNELS.some((ch) => canReach(ch, category));
+        const pinned = cellState([], ChannelType.EMAIL, category) === 'locked';
+        return (
+          <tr key={category}>
+            <td className="border-b border-line px-3.5 py-2 text-fg">
+              {categoryLabel(category)}
+              {(pinned || inAppOnly) && (
+                <span className="text-[11px] text-fg-3">
+                  {' '}
+                  · {pinned ? 'always emails' : 'in-app only'}
+                </span>
+              )}
             </td>
-          ))}
-        </tr>
-      ))}
+            {children(category)}
+          </tr>
+        );
+      })}
     </>
   );
 }
 
+function MatrixBox({
+  state,
+  label,
+  disabled,
+  onToggle,
+}: {
+  state: CellState;
+  label: string;
+  disabled: boolean;
+  onToggle: () => void;
+}) {
+  if (state === 'unavailable') {
+    return (
+      <span title="Not sent on this channel" className="inline-block w-4 text-center text-fg-3">
+        –
+      </span>
+    );
+  }
+  const on = state !== 'off';
+  const locked = state === 'locked';
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={on}
+      aria-label={locked ? `${label}, always on` : label}
+      title={locked ? 'Critical notices always email' : undefined}
+      disabled={locked || disabled}
+      onClick={onToggle}
+      className={`inline-grid h-4 w-4 place-items-center rounded-[4px] align-middle transition-colors ${
+        on
+          ? 'bg-accent-fill text-accent-ink'
+          : 'border-[1.5px] border-line-strong hover:border-fg-3'
+      } ${locked ? 'cursor-not-allowed opacity-50' : 'disabled:cursor-wait'}`}
+    >
+      {on &&
+        (locked ? (
+          <Lock className="h-2.5 w-2.5" strokeWidth={3} />
+        ) : (
+          <Check className="h-[11px] w-[11px]" strokeWidth={3} />
+        ))}
+    </button>
+  );
+}
+
 function WebhookManager() {
-  const { webhooks, fetchWebhooks, createWebhook, updateWebhook, deleteWebhook, testWebhook } =
-    useNotificationsStore();
+  const webhooks = useNotificationsStore((s) => s.webhooks);
+  const fetchWebhooks = useNotificationsStore((s) => s.fetchWebhooks);
+  const createWebhook = useNotificationsStore((s) => s.createWebhook);
+  const updateWebhook = useNotificationsStore((s) => s.updateWebhook);
+  const deleteWebhook = useNotificationsStore((s) => s.deleteWebhook);
+  const testWebhook = useNotificationsStore((s) => s.testWebhook);
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [newSecret, setNewSecret] = useState<string | null>(null);
-  const [testResult, setTestResult] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    void fetchWebhooks();
+    fetchWebhooks().catch(() => undefined);
   }, [fetchWebhooks]);
 
-  const handleCreate = async () => {
-    if (!name.trim() || !url.trim()) return;
+  const run = (work: () => Promise<void>) => {
     setBusy(true);
-    try {
-      const { secret } = await createWebhook({ name, url, events: [] });
+    work()
+      .catch((e: unknown) => setResult({ ok: false, text: errorText(e, 'Something went wrong.') }))
+      .finally(() => setBusy(false));
+  };
+
+  const add = () => {
+    if (!name.trim() || !url.trim()) {
+      setResult({ ok: false, text: 'Enter a name and an https:// address.' });
+      return;
+    }
+    if (!/^https:\/\//i.test(url.trim())) {
+      setResult({ ok: false, text: 'Webhook addresses need to start with https://.' });
+      return;
+    }
+    run(async () => {
+      const { secret } = await createWebhook({ name: name.trim(), url: url.trim(), events: [] });
       setNewSecret(secret);
+      setCopied(false);
       setName('');
       setUrl('');
-    } catch (error) {
-      setTestResult(error instanceof Error ? error.message : 'Webhook creation failed');
-    } finally {
-      setBusy(false);
-    }
+      setResult(null);
+    });
   };
 
-  const handleTest = async (webhookId: string) => {
-    setBusy(true);
-    try {
-      const result = await testWebhook(webhookId);
-      setTestResult(
-        result.success ? `Delivered (HTTP ${result.statusCode})` : `Failed: ${result.message}`,
+  const test = (id: string) =>
+    run(async () => {
+      const r = await testWebhook(id);
+      setResult(
+        r.success
+          ? { ok: true, text: `Test delivered, HTTP ${r.statusCode}.` }
+          : { ok: false, text: `Test failed: ${r.message}` }
       );
-    } finally {
-      setBusy(false);
-    }
-  };
+    });
 
   return (
-    <Card className="p-5">
-      <h3 className="text-sm font-bold uppercase tracking-wide text-ink">Webhooks</h3>
-      <p className="mt-1 text-[13px] text-ink/60">
-        Signed POSTs (X-Webhook-Signature, HMAC-SHA256 of the raw body) to your endpoint.
-        A persistently failing endpoint is disabled automatically.
-      </p>
-
-      {newSecret && (
-        <div className="mt-3 border-2 border-ink bg-orange-500/10 p-3 text-[13px]">
-          <p className="font-medium text-ink">
-            Signing secret (shown once — store it now):
-          </p>
-          <div className="mt-1 flex items-center gap-2">
-            <code className="font-mono text-[12px] break-all">{newSecret}</code>
+    <SettingsPanel title="Webhooks" aside="signed with HMAC-SHA256">
+      <div className="grid gap-2.5 px-3.5 py-3">
+        {newSecret && (
+          <div className="grid gap-1.5 rounded-[8px] border border-line-strong bg-sunk px-3 py-2.5 text-[12.5px]">
+            <span className="text-fg-2">
+              Signing secret. It&apos;s shown once, so store it now.
+            </span>
+            <div className="flex items-center gap-2">
+              <code className="num min-w-0 flex-1 break-all text-xs text-fg">{newSecret}</code>
+              <button
+                type="button"
+                aria-label="Copy secret"
+                className="btn btn-ghost btn-sm px-1.5"
+                onClick={() => {
+                  navigator.clipboard
+                    .writeText(newSecret)
+                    .then(() => setCopied(true))
+                    .catch(() => undefined);
+                }}
+              >
+                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+              </button>
+            </div>
             <button
-              onClick={() => {
-                void navigator.clipboard.writeText(newSecret);
-              }}
-              aria-label="Copy secret"
-              className="shrink-0 text-ink/60 hover:text-ink"
+              type="button"
+              className="btn btn-secondary btn-sm justify-self-start"
+              onClick={() => setNewSecret(null)}
             >
-              <Copy className="h-4 w-4" />
+              I&apos;ve stored it
             </button>
           </div>
-          <Button size="sm" variant="ghost" className="mt-2" onClick={() => setNewSecret(null)}>
-            I stored it
-          </Button>
-        </div>
-      )}
-      {testResult && <p className="mt-2 text-[13px] text-ink/70">{testResult}</p>}
-
-      <div className="mt-4 flex flex-wrap items-end gap-2">
-        <Input
-          placeholder="Name (e.g. ops-alerts)"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="w-48"
-        />
-        <Input
-          placeholder="https://example.com/hooks/llamatrade"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-          className="flex-1 min-w-64"
-        />
-        <Button size="sm" onClick={() => void handleCreate()} disabled={busy}>
-          <Plus className="h-4 w-4" />
-          Add webhook
-        </Button>
-      </div>
-
-      <div className="mt-4 space-y-2">
-        {webhooks.map((webhook) => (
-          <div
-            key={webhook.id}
-            className="flex flex-wrap items-center gap-3 border-2 border-ink/20 px-3 py-2"
-          >
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-ink truncate">{webhook.name}</p>
-              <p className="text-[12px] font-mono text-ink/60 truncate">{webhook.url}</p>
-            </div>
-            {!webhook.isActive && <Badge variant="danger">Disabled</Badge>}
-            {webhook.failureCount > 0 && webhook.isActive && (
-              <Badge variant="accent">{webhook.failureCount} failures</Badge>
-            )}
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={() => void handleTest(webhook.id)}
-            >
-              <Send className="h-3.5 w-3.5" />
-              Test
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={() =>
-                void updateWebhook({ ...webhook, isActive: !webhook.isActive })
-              }
-            >
-              {webhook.isActive ? 'Disable' : 'Re-enable'}
-            </Button>
-            <Button
-              size="sm"
-              variant="danger"
-              disabled={busy}
-              onClick={() => void deleteWebhook(webhook.id)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        ))}
-        {webhooks.length === 0 && (
-          <p className="text-[13px] text-ink/50">No webhooks configured.</p>
         )}
+
+        {webhooks.length === 0 ? (
+          <p className="m-0 text-[12.5px] text-fg-3">
+            No webhooks yet. Each one receives signed POSTs for the categories ticked above.
+          </p>
+        ) : (
+          webhooks.map((w) => (
+            <div key={w.id} className="flex flex-wrap items-center gap-2">
+              <span className="min-w-0 flex-1">
+                <b className="block truncate font-semibold text-fg">{w.name}</b>
+                <span className="block truncate text-[11.5px] text-fg-3">
+                  {w.url.replace(/^https?:\/\//, '')}
+                </span>
+              </span>
+              {!w.isActive && <span className="badge badge-danger">Disabled</span>}
+              {w.isActive && w.failureCount > 0 && (
+                <span className="badge badge-danger">{w.failureCount} failed</span>
+              )}
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={busy}
+                onClick={() => test(w.id)}
+              >
+                Test
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={busy}
+                onClick={() => run(() => updateWebhook({ ...w, isActive: !w.isActive }))}
+              >
+                {w.isActive ? 'Disable' : 'Enable'}
+              </button>
+              <button
+                type="button"
+                aria-label={`Delete ${w.name}`}
+                className="btn btn-ghost btn-sm px-1.5"
+                disabled={busy}
+                onClick={() => run(() => deleteWebhook(w.id))}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))
+        )}
+
+        {result && (
+          <p className={`m-0 text-xs ${result.ok ? 'text-fg-2' : 'text-risk'}`} role="status">
+            {result.text}
+          </p>
+        )}
+
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)_auto]">
+          <input
+            className="input"
+            aria-label="Webhook name"
+            placeholder="Name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <input
+            className="input"
+            aria-label="Webhook address"
+            placeholder="https://"
+            inputMode="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+          />
+          <button type="button" className="btn btn-secondary h-9" disabled={busy} onClick={add}>
+            <Plus className="h-3.5 w-3.5" />
+            Add webhook
+          </button>
+        </div>
       </div>
-    </Card>
+    </SettingsPanel>
   );
 }
 
 function AlertManager() {
-  const { alerts, fetchAlerts, createAlert, deleteAlert, toggleAlert } = useNotificationsStore();
+  const alerts = useNotificationsStore((s) => s.alerts);
+  const fetchAlerts = useNotificationsStore((s) => s.fetchAlerts);
+  const createAlert = useNotificationsStore((s) => s.createAlert);
+  const deleteAlert = useNotificationsStore((s) => s.deleteAlert);
+  const toggleAlert = useNotificationsStore((s) => s.toggleAlert);
   const [name, setName] = useState('');
   const [symbol, setSymbol] = useState('');
   const [threshold, setThreshold] = useState('');
-  const [conditionType, setConditionType] = useState<string>(
-    String(AlertConditionType.PRICE_ABOVE),
-  );
+  const [conditionType, setConditionType] = useState(String(AlertConditionType.PRICE_ABOVE));
   const [emailToo, setEmailToo] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    void fetchAlerts();
+    fetchAlerts().catch(() => undefined);
   }, [fetchAlerts]);
 
-  const handleCreate = async () => {
-    if (!name.trim()) return;
+  const run = (work: () => Promise<unknown>) => {
     setBusy(true);
     setError(null);
-    try {
+    work()
+      .catch((e: unknown) => setError(errorText(e, 'Something went wrong.')))
+      .finally(() => setBusy(false));
+  };
+
+  const add = () => {
+    if (!name.trim()) {
+      setError('Give the alert a name.');
+      return;
+    }
+    if (threshold.trim() && !Number.isFinite(Number(threshold))) {
+      setError('The threshold needs to be a number.');
+      return;
+    }
+    run(async () => {
       await createAlert({
-        name,
+        name: name.trim(),
         description: '',
         condition: create(AlertConditionSchema, {
           type: Number(conditionType) as AlertConditionType,
           symbol: symbol.trim().toUpperCase(),
-          threshold: { value: threshold || '0' },
+          threshold: { value: threshold.trim() || '0' },
         }),
         channels: emailToo ? [ChannelType.EMAIL] : [],
         cooldownMinutes: 60,
@@ -353,103 +462,124 @@ function AlertManager() {
       setName('');
       setSymbol('');
       setThreshold('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Alert creation failed');
-    } finally {
-      setBusy(false);
-    }
+    });
   };
 
   return (
-    <Card className="p-5">
-      <h3 className="text-sm font-bold uppercase tracking-wide text-ink">Price alerts</h3>
-      <p className="mt-1 text-[13px] text-ink/60">
-        Fire a notification when a market or trading condition is met. One-hour cooldown between
-        triggers.
-      </p>
-      {error && <p className="mt-2 text-[13px] text-red-600">{error}</p>}
-
-      <div className="mt-4 flex flex-wrap items-end gap-2">
-        <Input
-          placeholder="Name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="w-44"
-        />
-        <Select
-          value={conditionType}
-          onChange={(e) => setConditionType(e.target.value)}
-          options={CONDITION_OPTIONS}
-          className="w-44"
-        />
-        <Input
-          placeholder="Symbol"
-          value={symbol}
-          onChange={(e) => setSymbol(e.target.value)}
-          className="w-28"
-        />
-        <Input
-          placeholder="Threshold"
-          value={threshold}
-          onChange={(e) => setThreshold(e.target.value)}
-          className="w-28"
-        />
-        <label className="flex items-center gap-1.5 text-[13px] text-ink/70">
+    <SettingsPanel title="Price alerts" aside="one-hour cooldown">
+      {alerts.length > 0 && (
+        <table className="w-full text-[12.5px]">
+          <thead>
+            <tr>
+              {['Alert', 'Condition', 'State', ''].map((h) => (
+                <th
+                  key={h}
+                  className="border-b border-line px-3.5 py-2 text-left text-[11px] font-medium text-fg-3"
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {alerts.map((a) => (
+              <tr key={a.id}>
+                <td className="border-b border-line px-3.5 py-2 text-fg">{a.name}</td>
+                <td className="border-b border-line px-3.5 py-2 text-fg-2">
+                  {alertConditionText(
+                    a.condition?.type,
+                    a.condition?.symbol,
+                    a.condition?.threshold?.value
+                  )}
+                </td>
+                <td
+                  className={`border-b border-line px-3.5 py-2 ${a.isActive ? 'text-fg' : 'text-fg-3'}`}
+                >
+                  <button
+                    type="button"
+                    className="hover:underline disabled:opacity-60"
+                    disabled={busy}
+                    onClick={() => run(() => toggleAlert(a.id, !a.isActive))}
+                    title={a.isActive ? 'Pause this alert' : 'Resume this alert'}
+                  >
+                    {a.isActive ? 'Active' : 'Paused'}
+                  </button>
+                </td>
+                <td className="border-b border-line px-2 py-1 text-right">
+                  <button
+                    type="button"
+                    aria-label={`Delete ${a.name}`}
+                    className="btn btn-ghost btn-sm px-1.5"
+                    disabled={busy}
+                    onClick={() => run(() => deleteAlert(a.id))}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div className="grid gap-2 px-3.5 py-3">
+        {alerts.length === 0 && (
+          <p className="m-0 text-[12.5px] text-fg-3">
+            No alerts yet. An alert adds a notice when its condition is met.
+          </p>
+        )}
+        {error && <p className="m-0 text-xs text-risk">{error}</p>}
+        <div className="grid grid-cols-2 gap-2">
           <input
-            type="checkbox"
-            checked={emailToo}
-            onChange={(e) => setEmailToo(e.target.checked)}
-            className="h-4 w-4 accent-orange-500"
+            className="input"
+            aria-label="Alert name"
+            placeholder="Name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
           />
-          Email me
-        </label>
-        <Button size="sm" onClick={() => void handleCreate()} disabled={busy}>
-          <Plus className="h-4 w-4" />
-          Add alert
-        </Button>
-      </div>
-
-      <div className="mt-4 space-y-2">
-        {alerts.map((alert) => (
-          <div
-            key={alert.id}
-            className="flex flex-wrap items-center gap-3 border-2 border-ink/20 px-3 py-2"
+          <select
+            className="select"
+            aria-label="Condition"
+            value={conditionType}
+            onChange={(e) => setConditionType(e.target.value)}
           >
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium text-ink truncate">{alert.name}</p>
-              <p className="text-[12px] font-mono text-ink/60">
-                {CONDITION_TYPE_LABELS[alert.condition?.type ?? AlertConditionType.UNSPECIFIED] ??
-                  'Condition'}
-                {alert.condition?.symbol ? ` · ${alert.condition.symbol}` : ''}
-                {alert.condition?.threshold?.value
-                  ? ` · ${alert.condition.threshold.value}`
-                  : ''}
-                {alert.timesTriggered > 0 ? ` · fired ${alert.timesTriggered}×` : ''}
-              </p>
-            </div>
-            <Badge variant={alert.isActive ? 'success' : 'gray'}>
-              {alert.isActive ? 'Active' : 'Paused'}
-            </Badge>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={() => void toggleAlert(alert.id, !alert.isActive)}
-            >
-              {alert.isActive ? 'Pause' : 'Resume'}
-            </Button>
-            <Button
-              size="sm"
-              variant="danger"
-              disabled={busy}
-              onClick={() => void deleteAlert(alert.id)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        ))}
-        {alerts.length === 0 && <p className="text-[13px] text-ink/50">No alerts yet.</p>}
+            {CONDITION_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <input
+            className="input"
+            aria-label="Symbol"
+            placeholder="Symbol"
+            value={symbol}
+            onChange={(e) => setSymbol(e.target.value)}
+          />
+          <input
+            className="input num"
+            aria-label="Threshold"
+            placeholder="Threshold"
+            inputMode="decimal"
+            value={threshold}
+            onChange={(e) => setThreshold(e.target.value)}
+          />
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <label className="flex items-center gap-2 text-[12.5px] text-fg-2">
+            <input
+              type="checkbox"
+              checked={emailToo}
+              onChange={(e) => setEmailToo(e.target.checked)}
+              className="h-4 w-4 accent-[rgb(var(--accent-fill))]"
+            />
+            Email me too
+          </label>
+          <button type="button" className="btn btn-secondary" disabled={busy} onClick={add}>
+            <Plus className="h-3.5 w-3.5" />
+            Add alert
+          </button>
+        </div>
       </div>
-    </Card>
+    </SettingsPanel>
   );
 }

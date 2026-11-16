@@ -10,6 +10,7 @@
  */
 
 import { create as createMessage } from "@bufbuild/protobuf";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { create } from "zustand";
 
 import { agentClient, getTenantContext } from "../net";
@@ -30,10 +31,36 @@ interface ToolCallStatus {
 }
 
 /** A write action the agent has proposed and is awaiting the user to approve. */
-interface PendingConfirmation {
+export interface PendingConfirmation {
   toolName: string;
   argumentsJson: string;
   confirmationId: string;
+}
+
+export type ConfirmationDecision = "approved" | "declined" | "change";
+
+/** A proposal the user answered, kept so its card stays in the thread. */
+export interface ResolvedConfirmation extends PendingConfirmation {
+  decision: ConfirmationDecision;
+  /** The message the card followed when it was answered; null at the top of the thread. */
+  afterMessageId: string | null;
+}
+
+/** Composer text placed after "Change" so the user can say what to change. */
+export const CHANGE_PROMPT = "Change the settings: ";
+
+/** True when the Copilot service itself can't be reached, as opposed to a request failing. */
+export function isServiceUnavailable(error: unknown): boolean {
+  if (error instanceof ConnectError) {
+    return (
+      error.code === Code.Unavailable || /fetch|network/i.test(error.rawMessage)
+    );
+  }
+  if (error instanceof TypeError) return /fetch|network/i.test(error.message);
+  return (
+    error instanceof Error &&
+    /failed to fetch|networkerror/i.test(error.message)
+  );
 }
 
 interface AgentState {
@@ -56,6 +83,8 @@ interface AgentState {
   pendingArtifactIdsForCurrentMessage: string[];
   /** A proposed write action awaiting the user's approval (null when none). */
   pendingConfirmation: PendingConfirmation | null;
+  /** Proposals answered in this thread, in order. */
+  resolvedConfirmations: ResolvedConfirmation[];
 
   // UI state
   /** Prompt to prefill the composer with (e.g. from the New Strategy console). */
@@ -101,8 +130,14 @@ interface AgentState {
   dismissArtifact: (artifactId: string) => void;
   /** Commit a pending strategy artifact into a real strategy (server-side). Returns the new strategy id. */
   commitArtifact: (artifactId: string) => Promise<string | null>;
-  /** Approve or deny the pending proposed write action, resuming the agent turn. */
-  confirmToolCall: (approved: boolean) => Promise<void>;
+  /**
+   * Approve or deny the pending proposed write action, resuming the agent turn. "change" declines
+   * it and puts CHANGE_PROMPT in the composer so the user can say what to change.
+   */
+  confirmToolCall: (
+    approved: boolean,
+    decision?: ConfirmationDecision,
+  ) => Promise<void>;
 
   getSuggestedPrompts: (uiContext: UIContext) => Promise<void>;
 
@@ -130,6 +165,7 @@ function freshChatSession(seedPrompt: string): Partial<AgentState> {
     currentToolCall: null,
     pendingArtifactIdsForCurrentMessage: [],
     pendingConfirmation: null,
+    resolvedConfirmations: [],
   };
 }
 
@@ -252,6 +288,7 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
   currentToolCall: null,
   pendingArtifactIdsForCurrentMessage: [],
   pendingConfirmation: null,
+  resolvedConfirmations: [],
 
   seedPrompt: "",
   suggestedPrompts: [],
@@ -287,12 +324,10 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
       );
       set({ sessions, sessionsLoading: false, serviceUnavailable: false });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "";
-      if (message.includes("fetch")) {
-        set({ serviceUnavailable: true, sessionsLoading: false });
-      } else {
-        set({ sessionsLoading: false });
-      }
+      set({
+        sessionsLoading: false,
+        serviceUnavailable: isServiceUnavailable(error),
+      });
     }
   },
 
@@ -325,10 +360,15 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
         pendingArtifacts: response.pendingArtifacts,
         pendingArtifactIdsForCurrentMessage: [],
         pendingConfirmation: null,
+        resolvedConfirmations: [],
         loading: false,
         serviceUnavailable: false,
       });
     } catch (error) {
+      if (isServiceUnavailable(error)) {
+        set({ serviceUnavailable: true, loading: false });
+        return;
+      }
       const message =
         error instanceof Error ? error.message : "Failed to load conversation";
       set({ error: message, loading: false });
@@ -394,11 +434,11 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
         currentSessionId = session.id;
         set({ currentSessionId: session.id });
       } catch (error) {
-        const message =
-          error instanceof Error ? error.message : "Failed to create session";
-        if (message.includes("Failed to fetch") || message.includes("fetch")) {
+        if (isServiceUnavailable(error)) {
           set({ serviceUnavailable: true, loading: false, error: null });
         } else {
+          const message =
+            error instanceof Error ? error.message : "Failed to create session";
           set({ error: message, loading: false });
         }
         return;
@@ -450,10 +490,12 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
 
       await consumeAgentStream(stream, currentSessionId);
     } catch (error) {
+      const unavailable = isServiceUnavailable(error);
       const message =
         error instanceof Error ? error.message : "Failed to send message";
       set({
-        error: message,
+        error: unavailable ? null : message,
+        serviceUnavailable: unavailable || get().serviceUnavailable,
         isStreaming: false,
         streamingContent: "",
         thinkingContent: "",
@@ -505,11 +547,26 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
     }
   },
 
-  confirmToolCall: async (approved: boolean) => {
+  confirmToolCall: async (
+    approved: boolean,
+    decision: ConfirmationDecision = approved ? "approved" : "declined",
+  ) => {
     const context = getTenantContext();
     const pending = get().pendingConfirmation;
     const sessionId = get().currentSessionId;
     if (!context || !pending || !sessionId) return;
+
+    const messages = get().messages;
+    const resolved: ResolvedConfirmation = {
+      ...pending,
+      decision: approved ? "approved" : decision,
+      afterMessageId: messages.length ? messages[messages.length - 1].id : null,
+    };
+    set((state) => ({
+      resolvedConfirmations: [...state.resolvedConfirmations, resolved],
+      seedPrompt:
+        resolved.decision === "change" ? CHANGE_PROMPT : state.seedPrompt,
+    }));
 
     set({
       pendingConfirmation: null,
@@ -532,10 +589,12 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
       });
       await consumeAgentStream(stream, sessionId);
     } catch (error) {
+      const unavailable = isServiceUnavailable(error);
       const message =
         error instanceof Error ? error.message : "Failed to confirm action";
       set({
-        error: message,
+        error: unavailable ? null : message,
+        serviceUnavailable: unavailable || get().serviceUnavailable,
         isStreaming: false,
         streamingContent: "",
         thinkingContent: "",
@@ -580,6 +639,7 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
       currentToolCall: null,
       pendingArtifactIdsForCurrentMessage: [],
       pendingConfirmation: null,
+      resolvedConfirmations: [],
       seedPrompt: "",
       suggestedPrompts: [],
       error: null,

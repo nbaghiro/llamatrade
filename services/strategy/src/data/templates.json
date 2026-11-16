@@ -2,7 +2,7 @@
   {
     "id": "classic-60-40",
     "name": "Classic 60/40",
-    "description": "The foundational portfolio—60% stocks, 40% bonds. Simple, time-tested, effective.",
+    "description": "The foundational portfolio: 60% stocks, 40% bonds. Simple, time-tested, effective.",
     "category": "TEMPLATE_CATEGORY_BUY_AND_HOLD",
     "asset_class": "ASSET_CLASS_MULTI_ASSET",
     "tags": [
@@ -15,7 +15,7 @@
   {
     "id": "three-fund",
     "name": "Three-Fund Portfolio",
-    "description": "Bogleheads classic—total US market, international, and bonds for maximum diversification.",
+    "description": "Bogleheads classic: total US market, international, and bonds for maximum diversification.",
     "category": "TEMPLATE_CATEGORY_BUY_AND_HOLD",
     "asset_class": "ASSET_CLASS_MULTI_ASSET",
     "tags": [
@@ -28,7 +28,7 @@
   {
     "id": "permanent-portfolio",
     "name": "Permanent Portfolio",
-    "description": "Harry Browne's 4x25% allocation designed for all economic conditions—stocks, bonds, gold, cash.",
+    "description": "Harry Browne's 4x25% allocation designed for all economic conditions: stocks, bonds, gold, cash.",
     "category": "TEMPLATE_CATEGORY_BUY_AND_HOLD",
     "asset_class": "ASSET_CLASS_MULTI_ASSET",
     "tags": [
@@ -56,7 +56,7 @@
   {
     "id": "golden-butterfly",
     "name": "Golden Butterfly",
-    "description": "Balanced allocation with small-cap value tilt—total market, SCV, long bonds, short bonds, gold.",
+    "description": "Balanced allocation with small-cap value tilt: total market, SCV, long bonds, short bonds, gold.",
     "category": "TEMPLATE_CATEGORY_BUY_AND_HOLD",
     "asset_class": "ASSET_CLASS_MULTI_ASSET",
     "tags": [
@@ -83,7 +83,7 @@
   {
     "id": "risk-parity",
     "name": "Risk Parity",
-    "description": "Allocate by risk contribution using inverse volatility—equal risk across asset classes.",
+    "description": "Allocate by risk contribution using inverse volatility: equal risk across asset classes.",
     "category": "TEMPLATE_CATEGORY_BUY_AND_HOLD",
     "asset_class": "ASSET_CLASS_MULTI_ASSET",
     "tags": [
@@ -138,7 +138,7 @@
   {
     "id": "momentum-sectors",
     "name": "Momentum Sectors",
-    "description": "Weight sectors by recent momentum—more allocation to stronger performers.",
+    "description": "Weight sectors by recent momentum: more allocation to stronger performers.",
     "category": "TEMPLATE_CATEGORY_FACTOR",
     "asset_class": "ASSET_CLASS_EQUITY",
     "tags": [
@@ -369,7 +369,7 @@
   {
     "id": "volatility-regime",
     "name": "Volatility Regime",
-    "description": "Adjust allocation based on VIX levels—aggressive in low vol, defensive in high vol.",
+    "description": "Adjust allocation based on VIX levels: aggressive in low vol, defensive in high vol.",
     "category": "TEMPLATE_CATEGORY_TACTICAL",
     "asset_class": "ASSET_CLASS_MULTI_ASSET",
     "tags": [
@@ -398,7 +398,7 @@
   {
     "id": "macd-regime-tactical",
     "name": "MACD Regime Tactical",
-    "description": "Use MACD histogram for market regime detection—positive histogram is risk-on, negative is defensive.",
+    "description": "Use MACD histogram for market regime detection: positive histogram is risk-on, negative is defensive.",
     "category": "TEMPLATE_CATEGORY_TACTICAL",
     "asset_class": "ASSET_CLASS_MULTI_ASSET",
     "tags": [
@@ -470,7 +470,7 @@
   {
     "id": "dual-ma",
     "name": "Dual Moving Average",
-    "description": "Golden cross strategy—bullish when 50-day crosses above 200-day moving average.",
+    "description": "Golden cross strategy: bullish when 50-day crosses above 200-day moving average.",
     "category": "TEMPLATE_CATEGORY_TREND",
     "asset_class": "ASSET_CLASS_MULTI_ASSET",
     "tags": [
@@ -670,7 +670,7 @@
   {
     "id": "double-oversold-reversion",
     "name": "Double Oversold Reversion",
-    "description": "Requires both RSI and Bollinger Band oversold confirmation—higher conviction mean reversion entries.",
+    "description": "Requires both RSI and Bollinger Band oversold confirmation: higher conviction mean reversion entries.",
     "category": "TEMPLATE_CATEGORY_MEAN_REVERSION",
     "asset_class": "ASSET_CLASS_EQUITY",
     "tags": [
@@ -685,7 +685,7 @@
   {
     "id": "crypto-market-cap",
     "name": "Crypto Market Cap",
-    "description": "Market-cap weighted allocation to top cryptocurrencies—BTC, ETH, SOL.",
+    "description": "Market-cap weighted allocation to top cryptocurrencies: BTC, ETH, SOL.",
     "category": "TEMPLATE_CATEGORY_ALTERNATIVES",
     "asset_class": "ASSET_CLASS_CRYPTO",
     "tags": [
@@ -714,7 +714,7 @@
   {
     "id": "dragon-portfolio",
     "name": "Dragon Portfolio",
-    "description": "Chris Cole's 100-year portfolio—stocks, bonds, gold, commodity trend, and long volatility for all regimes.",
+    "description": "Chris Cole's 100-year portfolio: stocks, bonds, gold, commodity trend, and long volatility for all regimes.",
     "category": "TEMPLATE_CATEGORY_ALTERNATIVES",
     "asset_class": "ASSET_CLASS_MULTI_ASSET",
     "tags": [
@@ -801,7 +801,7 @@
   {
     "id": "ivy-portfolio",
     "name": "Ivy Portfolio",
-    "description": "Meb Faber's endowment-style allocation—equal weight across 5 asset classes with trend filter.",
+    "description": "Meb Faber's endowment-style allocation: equal weight across 5 asset classes with trend filter.",
     "category": "TEMPLATE_CATEGORY_BUY_AND_HOLD",
     "asset_class": "ASSET_CLASS_MULTI_ASSET",
     "tags": [
@@ -815,7 +815,7 @@
   {
     "id": "swensen-portfolio",
     "name": "Swensen Portfolio",
-    "description": "David Swensen's Yale endowment model adapted for individual investors—tilts toward equities with broad diversification.",
+    "description": "David Swensen's Yale endowment model adapted for individual investors: tilts toward equities with broad diversification.",
     "category": "TEMPLATE_CATEGORY_BUY_AND_HOLD",
     "asset_class": "ASSET_CLASS_MULTI_ASSET",
     "tags": [
@@ -829,7 +829,7 @@
   {
     "id": "accelerating-dual-momentum",
     "name": "Accelerating Dual Momentum",
-    "description": "Gary Antonacci's dual momentum—combines absolute and relative momentum to switch between US, international, and bonds.",
+    "description": "Gary Antonacci's dual momentum: combines absolute and relative momentum to switch between US, international, and bonds.",
     "category": "TEMPLATE_CATEGORY_TREND",
     "asset_class": "ASSET_CLASS_MULTI_ASSET",
     "tags": [
@@ -844,7 +844,7 @@
   {
     "id": "vigilant-asset-allocation",
     "name": "Vigilant Asset Allocation (VAA)",
-    "description": "Wouter Keller's defensive momentum strategy—monitors canary assets for crash warnings and shifts to safety.",
+    "description": "Wouter Keller's defensive momentum strategy: monitors canary assets for crash warnings and shifts to safety.",
     "category": "TEMPLATE_CATEGORY_TREND",
     "asset_class": "ASSET_CLASS_MULTI_ASSET",
     "tags": [
@@ -859,7 +859,7 @@
   {
     "id": "protective-asset-allocation",
     "name": "Protective Asset Allocation (PAA)",
-    "description": "Keller's breadth-based momentum strategy—uses asset breadth to determine equity exposure level.",
+    "description": "Keller's breadth-based momentum strategy: uses asset breadth to determine equity exposure level.",
     "category": "TEMPLATE_CATEGORY_TREND",
     "asset_class": "ASSET_CLASS_MULTI_ASSET",
     "tags": [
@@ -874,7 +874,7 @@
   {
     "id": "credit-spread-tactical",
     "name": "Credit Spread Tactical",
-    "description": "Uses high-yield credit spreads as a risk indicator—wide spreads trigger defensive positioning.",
+    "description": "Uses high-yield credit spreads as a risk indicator: wide spreads trigger defensive positioning.",
     "category": "TEMPLATE_CATEGORY_TACTICAL",
     "asset_class": "ASSET_CLASS_MULTI_ASSET",
     "tags": [
@@ -888,7 +888,7 @@
   {
     "id": "breadth-thrust-momentum",
     "name": "Breadth Thrust Momentum",
-    "description": "Combines market breadth signals with sector momentum—expands equity exposure when breadth improves.",
+    "description": "Combines market breadth signals with sector momentum: expands equity exposure when breadth improves.",
     "category": "TEMPLATE_CATEGORY_TACTICAL",
     "asset_class": "ASSET_CLASS_EQUITY",
     "tags": [
@@ -903,7 +903,7 @@
   {
     "id": "quarterly-drift-bands",
     "name": "Quarterly Drift Bands",
-    "description": "Tactical rebalancing based on allocation drift—only rebalances when positions exceed threshold bands.",
+    "description": "Tactical rebalancing based on allocation drift: only rebalances when positions exceed threshold bands.",
     "category": "TEMPLATE_CATEGORY_TACTICAL",
     "asset_class": "ASSET_CLASS_MULTI_ASSET",
     "tags": [
@@ -918,7 +918,7 @@
   {
     "id": "tqqq-tmf-hedged-growth",
     "name": "TQQQ/TMF Hedged Growth",
-    "description": "Leveraged growth strategy using 3x Nasdaq hedged with 3x long bonds—dynamic allocation based on volatility regime.",
+    "description": "Leveraged growth strategy using 3x Nasdaq hedged with 3x long bonds: dynamic allocation based on volatility regime.",
     "category": "TEMPLATE_CATEGORY_TACTICAL",
     "asset_class": "ASSET_CLASS_EQUITY",
     "tags": [
@@ -934,7 +934,7 @@
   {
     "id": "leveraged-risk-parity",
     "name": "Leveraged Risk Parity",
-    "description": "Risk parity with leveraged ETFs (UPRO/TMF)—equalizes risk contribution between stocks and bonds with leverage.",
+    "description": "Risk parity with leveraged ETFs (UPRO/TMF): equalizes risk contribution between stocks and bonds with leverage.",
     "category": "TEMPLATE_CATEGORY_TACTICAL",
     "asset_class": "ASSET_CLASS_MULTI_ASSET",
     "tags": [
@@ -950,7 +950,7 @@
   {
     "id": "vix-mean-reversion-confirmed",
     "name": "VIX Mean Reversion with Confirmation",
-    "description": "Buys equities on VIX spikes above 25—requires VIX to start declining before entry to avoid catching falling knives.",
+    "description": "Buys equities on VIX spikes above 25: requires VIX to start declining before entry to avoid catching falling knives.",
     "category": "TEMPLATE_CATEGORY_MEAN_REVERSION",
     "asset_class": "ASSET_CLASS_EQUITY",
     "tags": [
@@ -965,7 +965,7 @@
   {
     "id": "sector-mean-reversion-rotation",
     "name": "Sector Mean Reversion Rotation",
-    "description": "Identifies oversold sectors using RSI and z-scores—rotates into beaten-down sectors with trend confirmation.",
+    "description": "Identifies oversold sectors using RSI and z-scores: rotates into beaten-down sectors with trend confirmation.",
     "category": "TEMPLATE_CATEGORY_MEAN_REVERSION",
     "asset_class": "ASSET_CLASS_EQUITY",
     "tags": [
@@ -995,7 +995,7 @@
   {
     "id": "dividend-quality-barbell",
     "name": "Dividend Quality Barbell",
-    "description": "Barbells high-yield assets (REITs, BDCs) with dividend growth stocks—balances current income vs income growth.",
+    "description": "Barbells high-yield assets (REITs, BDCs) with dividend growth stocks: balances current income vs income growth.",
     "category": "TEMPLATE_CATEGORY_INCOME",
     "asset_class": "ASSET_CLASS_MULTI_ASSET",
     "tags": [
@@ -1011,7 +1011,7 @@
   {
     "id": "country-momentum-rotation",
     "name": "Country Momentum Rotation",
-    "description": "Rotates across country and region ETFs based on 6-12 month momentum—captures global rotation themes.",
+    "description": "Rotates across country and region ETFs based on 6-12 month momentum: captures global rotation themes.",
     "category": "TEMPLATE_CATEGORY_ALTERNATIVES",
     "asset_class": "ASSET_CLASS_EQUITY",
     "tags": [
@@ -1026,7 +1026,7 @@
   {
     "id": "commodity-carry-momentum",
     "name": "Commodity Carry + Momentum",
-    "description": "Combines roll yield (carry) signals with price momentum for commodity selection—avoids contango traps.",
+    "description": "Combines roll yield (carry) signals with price momentum for commodity selection: avoids contango traps.",
     "category": "TEMPLATE_CATEGORY_ALTERNATIVES",
     "asset_class": "ASSET_CLASS_COMMODITY",
     "tags": [
@@ -1041,7 +1041,7 @@
   {
     "id": "quality-factor-portfolio",
     "name": "Quality Factor Portfolio",
-    "description": "Invests in high-quality companies with strong ROE, low debt, and stable earnings—based on Buffett/Novy-Marx research.",
+    "description": "Invests in high-quality companies with strong ROE, low debt, and stable earnings: based on Buffett/Novy-Marx research.",
     "category": "TEMPLATE_CATEGORY_FACTOR",
     "asset_class": "ASSET_CLASS_EQUITY",
     "tags": [
@@ -1074,7 +1074,7 @@
   {
     "id": "betting-against-beta",
     "name": "Betting Against Beta",
-    "description": "Low-beta anomaly strategy—overweights low-beta stocks which historically outperform on risk-adjusted basis.",
+    "description": "Low-beta anomaly strategy: overweights low-beta stocks which historically outperform on risk-adjusted basis.",
     "category": "TEMPLATE_CATEGORY_FACTOR",
     "asset_class": "ASSET_CLASS_EQUITY",
     "tags": [
@@ -1090,7 +1090,7 @@
   {
     "id": "coffeehouse-portfolio",
     "name": "Coffeehouse Portfolio",
-    "description": "Bill Schultheis' 7-fund lazy portfolio—40% bonds, 60% equities split across diversified stock funds.",
+    "description": "Bill Schultheis' 7-fund lazy portfolio: 40% bonds, 60% equities split across diversified stock funds.",
     "category": "TEMPLATE_CATEGORY_BUY_AND_HOLD",
     "asset_class": "ASSET_CLASS_MULTI_ASSET",
     "tags": [
@@ -1106,7 +1106,7 @@
   {
     "id": "adx-trend-confirmation",
     "name": "ADX Trend Confirmation",
-    "description": "Uses ADX (Average Directional Index) to confirm trend strength—only enters when ADX indicates strong trend.",
+    "description": "Uses ADX (Average Directional Index) to confirm trend strength: only enters when ADX indicates strong trend.",
     "category": "TEMPLATE_CATEGORY_TREND",
     "asset_class": "ASSET_CLASS_EQUITY",
     "tags": [
@@ -1121,7 +1121,7 @@
   {
     "id": "preferred-stock-ladder",
     "name": "Preferred Stock Ladder",
-    "description": "Focus on preferred stocks for stable income—uses PFF, PGX, PFFD with credit quality and duration management.",
+    "description": "Focus on preferred stocks for stable income: uses PFF, PGX, PFFD with credit quality and duration management.",
     "category": "TEMPLATE_CATEGORY_INCOME",
     "asset_class": "ASSET_CLASS_FIXED_INCOME",
     "tags": [
@@ -1137,7 +1137,7 @@
   {
     "id": "turn-of-month-effect",
     "name": "Turn-of-Month Effect",
-    "description": "Exploits documented turn-of-month seasonality—full equity exposure around month boundaries, defensive mid-month.",
+    "description": "Exploits documented turn-of-month seasonality: full equity exposure around month boundaries, defensive mid-month.",
     "category": "TEMPLATE_CATEGORY_MEAN_REVERSION",
     "asset_class": "ASSET_CLASS_EQUITY",
     "tags": [
@@ -1152,7 +1152,7 @@
   {
     "id": "volatility-risk-premium",
     "name": "Volatility Risk Premium",
-    "description": "Harvests volatility risk premium by selling vol—uses SVXY when term structure in contango, defensive when VIX spikes.",
+    "description": "Harvests volatility risk premium by selling vol: uses SVXY when term structure in contango, defensive when VIX spikes.",
     "category": "TEMPLATE_CATEGORY_ALTERNATIVES",
     "asset_class": "ASSET_CLASS_OPTIONS",
     "tags": [

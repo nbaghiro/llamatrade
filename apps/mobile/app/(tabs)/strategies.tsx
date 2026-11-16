@@ -1,115 +1,81 @@
-import { useStrategiesStore, type StrategyDeployment } from '@llamatrade/core/stores/strategies';
-import { isUp, moneyShort, num, pct } from '@llamatrade/core/format';
+import { money, num, pct } from '@llamatrade/core/format';
 import { ExecutionMode } from '@llamatrade/core/proto/common_pb';
 import { StrategyStatus, type Strategy } from '@llamatrade/core/proto/strategy_pb';
+import { useStrategiesStore, type StrategyDeployment } from '@llamatrade/core/stores/strategies';
 import { router } from 'expo-router';
-import { ChevronRight } from 'lucide-react-native';
 import { useEffect } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Alert, View } from 'react-native';
 
-import { palette, strategyColors } from '../../src/theme';
-import { Badge, Body, Card, Display, GridBackground, Label, Mono } from '../../src/ui';
+import { makeStyles } from '../../src/theme';
+import { Card, EmptyState, Loading, Notice, Pill, Screen, Segmented, StatusMark, Text, pnlTone, type Segment } from '../../src/ui';
+import { cadence, runStateOfStrategy } from '../../src/ui/status';
 
-type Pill = { label: string; variant: 'gray' | 'orange' | 'ink' | 'green' };
+type Filter = 'all' | 'active' | 'paused' | 'draft';
 
-function pillFor(status: StrategyStatus, dep: StrategyDeployment | undefined): Pill {
-  switch (status) {
-    case StrategyStatus.PAUSED:
-      return { label: 'Paused', variant: 'ink' };
-    case StrategyStatus.ARCHIVED:
-      return { label: 'Archived', variant: 'gray' };
-    case StrategyStatus.ACTIVE:
-      return dep?.mode === ExecutionMode.LIVE
-        ? { label: 'Live', variant: 'green' }
-        : { label: 'Paper', variant: 'orange' };
-    default:
-      return { label: 'Draft', variant: 'gray' };
-  }
-}
-
-const FILTERS: { key: string; label: string }[] = [
+const FILTERS: readonly Segment<Filter>[] = [
   { key: 'all', label: 'All' },
   { key: 'active', label: 'Active' },
   { key: 'paused', label: 'Paused' },
   { key: 'draft', label: 'Draft' },
 ];
 
+function isFilter(value: string): value is Filter {
+  return FILTERS.some((f) => f.key === value);
+}
+
 function StrategyCard({
   strategy,
   dep,
   backtestReturn,
-  color,
 }: {
   strategy: Strategy;
   dep?: StrategyDeployment;
   backtestReturn?: number;
-  color: string;
 }) {
-  const activate = useStrategiesStore((s) => s.activateStrategy);
-  const pause = useStrategiesStore((s) => s.pauseStrategy);
-  const pill = pillFor(strategy.status, dep);
-  const impl = strategy.templateId ? 'template' : 'dsl';
+  const s = useStyles();
+  const activate = useStrategiesStore((st) => st.activateStrategy);
+  const pause = useStrategiesStore((st) => st.pauseStrategy);
   const deployed = dep !== undefined;
+  const ret = deployed ? dep.returnAll : (backtestReturn ?? null);
+  const live = dep?.mode === ExecutionMode.LIVE;
+  const meta = [cadence(strategy.rebalance), deployed ? money(dep.allocatedCapital) : '', live ? 'Live' : '']
+    .filter(Boolean)
+    .join(' · ');
 
-  // Headline return: realized when deployed, else the latest backtest (tagged `bt`).
-  const returnValue = deployed ? dep.returnAll : (backtestReturn ?? null);
-  const returnIsBacktest = !deployed && backtestReturn !== undefined;
-  const up = returnValue !== null && isUp(returnValue);
+  const onLongPress = () => {
+    if (strategy.status === StrategyStatus.ACTIVE) {
+      Alert.alert(strategy.name, 'Pause this strategy? Its session stops placing orders.', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Pause', onPress: () => pause(strategy.id) },
+      ]);
+    } else if (strategy.status === StrategyStatus.PAUSED) {
+      Alert.alert(strategy.name, 'Resume this strategy on paper?', [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Resume', onPress: () => activate(strategy.id) },
+      ]);
+    }
+  };
 
   return (
-    <Pressable onPress={() => router.push(`/strategy/${strategy.id}`)}>
-    <Card shadow>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-        <View style={{ width: 9, height: 30, backgroundColor: color }} />
-        <View style={{ flex: 1 }}>
-          <Body size={13} style={{ fontWeight: '700' }} numberOfLines={1}>
-            {strategy.name}
-          </Body>
-          <Label style={{ marginTop: 2 }}>
-            {impl} · {strategy.timeframe || '1D'} · {strategy.symbols.length} sym
-          </Label>
-        </View>
-        <Badge label={pill.label} variant={pill.variant} />
-        <ChevronRight color={palette.gray[400]} size={16} strokeWidth={2} />
+    <Card onPress={() => router.push(`/strategy/${strategy.id}`)} onLongPress={onLongPress} style={s.card}>
+      <View style={s.line}>
+        <Text variant="subhead" numberOfLines={1} style={s.name}>{strategy.name}</Text>
+        <StatusMark state={runStateOfStrategy(strategy.status, dep?.status)} />
       </View>
-
-      <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginTop: 9, gap: 10 }}>
-        <View style={{ flexDirection: 'row', gap: 16 }}>
-          <View>
-            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 3 }}>
-              <Display size={16} color={returnValue === null ? palette.gray[400] : up ? palette.green[500] : palette.red[500]}>
-                {returnValue === null ? '—' : pct(returnValue)}
-              </Display>
-              {returnIsBacktest ? <Mono size={8} color={palette.gray[400]}>bt</Mono> : null}
-            </View>
-            <Label>Return</Label>
+      <View style={s.line}>
+        <Text variant="small" tone="fg3" numberOfLines={1} style={s.name}>
+          {meta || `${strategy.symbols.length} symbols`}
+        </Text>
+        {ret === null ? (
+          <Text variant="numStrong" tone="fg3">No runs</Text>
+        ) : (
+          <View style={s.ret}>
+            {!deployed ? <Text variant="caption" tone="fg3">backtest</Text> : null}
+            <Text variant="numStrong" tone={pnlTone(ret)}>{pct(ret, 1)}</Text>
           </View>
-          <View>
-            <Display size={16}>{deployed ? moneyShort(dep.allocatedCapital) : '—'}</Display>
-            <Label>Alloc</Label>
-          </View>
-        </View>
-
-        {/* Lifecycle toggle */}
-        {strategy.status === StrategyStatus.ACTIVE ? (
-          <Pressable
-            onPress={() => pause(strategy.id)}
-            style={{ marginLeft: 'auto', borderWidth: 2, borderColor: palette.ink, paddingHorizontal: 12, paddingVertical: 6 }}
-          >
-            <Mono size={9} style={{ fontWeight: '700' }}>PAUSE</Mono>
-          </Pressable>
-        ) : strategy.status === StrategyStatus.PAUSED ? (
-          <Pressable
-            onPress={() => activate(strategy.id)}
-            style={{ marginLeft: 'auto', backgroundColor: palette.orange[500], borderWidth: 2, borderColor: palette.ink, paddingHorizontal: 12, paddingVertical: 6 }}
-          >
-            <Mono size={9} style={{ fontWeight: '700' }}>ACTIVATE</Mono>
-          </Pressable>
-        ) : null}
+        )}
       </View>
     </Card>
-    </Pressable>
   );
 }
 
@@ -129,90 +95,56 @@ export default function StrategiesScreen() {
   } = useStrategiesStore();
 
   useEffect(() => {
-    void fetchStrategies();
-    void fetchDeployments();
-    void fetchBacktestReturns();
+    fetchStrategies();
+    fetchDeployments();
+    fetchBacktestReturns();
   }, [fetchStrategies, fetchDeployments, fetchBacktestReturns]);
 
   const refresh = () => {
-    void fetchStrategies();
-    void fetchDeployments();
-    void fetchBacktestReturns();
+    fetchStrategies();
+    fetchDeployments();
+    fetchBacktestReturns();
   };
 
-  // Deployment figures are keyed by strategyId; sort deployed strategies (by allocation) first.
   const ordered = [...strategies].sort(
     (a, b) => num(deployments[b.id]?.allocatedCapital) - num(deployments[a.id]?.allocatedCapital),
   );
+  const filter: Filter = isFilter(statusFilter) ? statusFilter : 'all';
 
   return (
-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: palette.bone }}>
-      <GridBackground />
-      <View
-        style={{
-          height: 46,
-          borderBottomWidth: 2,
-          borderColor: palette.ink,
-          backgroundColor: palette.paper,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingHorizontal: 14,
-        }}
-      >
-        <Display size={16}>Strategies</Display>
-        <Badge label={String(strategies.length)} />
-      </View>
+    <Screen
+      title="Strategies"
+      right={<Pill label={String(strategies.length)} />}
+      refreshing={loading && strategies.length > 0}
+      onRefresh={refresh}
+    >
+      <Segmented options={FILTERS} value={filter} onChange={setStatusFilter} />
+
+      {error ? <Notice title="Couldn't load strategies." detail={`${error} Tap to dismiss.`} onPress={clearError} /> : null}
 
       {loading && strategies.length === 0 ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-          <ActivityIndicator color={palette.ink} />
-          <Label>Loading strategies…</Label>
-        </View>
+        <Loading label="Loading strategies" />
+      ) : ordered.length === 0 ? (
+        filter === 'all' ? (
+          <EmptyState
+            title="No strategies yet"
+            detail="A strategy is a set of rules that decides what to hold. Ask Copilot to draft one, or build one on the web."
+          />
+        ) : (
+          <EmptyState title="Nothing matches" detail={`No ${filter} strategies. Choose All to see every strategy.`} />
+        )
       ) : (
-        <ScrollView
-          contentContainerStyle={{ padding: 12, gap: 11 }}
-          showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={loading} onRefresh={refresh} tintColor={palette.ink} />}
-        >
-          <View style={{ flexDirection: 'row', gap: 5 }}>
-            {FILTERS.map((f) => {
-              const on = statusFilter === f.key;
-              return (
-                <Pressable
-                  key={f.key}
-                  onPress={() => setStatusFilter(f.key)}
-                  style={{ borderWidth: 1.5, borderColor: palette.ink, backgroundColor: on ? palette.ink : palette.paper, paddingHorizontal: 9, paddingVertical: 4 }}
-                >
-                  <Mono size={9} color={on ? palette.bone : palette.ink}>{f.label}</Mono>
-                </Pressable>
-              );
-            })}
-          </View>
-
-          {error ? (
-            <Pressable onPress={clearError} style={{ borderWidth: 2, borderColor: palette.red[500], backgroundColor: palette.red[50], padding: 11 }}>
-              <Mono size={11} color={palette.red[600]}>{error} · tap to dismiss</Mono>
-            </Pressable>
-          ) : null}
-
-          {ordered.length === 0 && !loading ? (
-            <Card>
-              <Label>No strategies{statusFilter !== 'all' ? ` · ${statusFilter}` : ''}</Label>
-            </Card>
-          ) : (
-            ordered.map((s, i) => (
-              <StrategyCard
-                key={s.id}
-                strategy={s}
-                dep={deployments[s.id]}
-                backtestReturn={backtestReturns[s.id]}
-                color={deployments[s.id]?.color || strategyColors[i % strategyColors.length]}
-              />
-            ))
-          )}
-        </ScrollView>
+        ordered.map((st) => (
+          <StrategyCard key={st.id} strategy={st} dep={deployments[st.id]} backtestReturn={backtestReturns[st.id]} />
+        ))
       )}
-    </SafeAreaView>
+    </Screen>
   );
 }
+
+const useStyles = makeStyles(() => ({
+  card: { gap: 8 },
+  line: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  name: { flexShrink: 1 },
+  ret: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
+}));

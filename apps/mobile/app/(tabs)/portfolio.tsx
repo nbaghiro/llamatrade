@@ -1,37 +1,22 @@
-import { router } from 'expo-router';
-import { ChevronRight } from 'lucide-react-native';
-import { useEffect, useMemo } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-
+import { money, num, pct, qty, signedMoney } from '@llamatrade/core/format';
 import { ExecutionMode, ExecutionStatus } from '@llamatrade/core/proto/common_pb';
-import { isUp, money, num, pct, qty, signedMoney } from '@llamatrade/core/format';
-import { LineChart } from '../../src/charts/LineChart';
-import { useAuthStore } from '../../src/stores/auth';
-import { usePortfolioStore } from '../../src/stores/portfolio';
-import { palette, strategyColors } from '../../src/theme';
-import { Badge, Body, Card, Display, GridBackground, KpiTile, Label, Mono } from '../../src/ui';
+import { router } from 'expo-router';
+import { useEffect, useMemo } from 'react';
+import { View } from 'react-native';
 
-const STATUS_LABEL: Record<number, string> = {
-  [ExecutionStatus.PENDING]: 'Pending',
-  [ExecutionStatus.RUNNING]: 'Running',
-  [ExecutionStatus.PAUSED]: 'Paused',
-  [ExecutionStatus.STOPPED]: 'Stopped',
-  [ExecutionStatus.ERROR]: 'Error',
-};
+import { usePortfolioStore } from '../../src/stores/portfolio';
+import { makeStyles } from '../../src/theme';
+import { Card, ListRow, Loading, Notice, PanelError, Pill, Screen, StatusMark, Text, WeightStrip, pnlTone } from '../../src/ui';
+import { runStateOfExecution } from '../../src/ui/status';
 
 export default function PortfolioScreen() {
-  const user = useAuthStore((s) => s.user);
-  const { portfolio, strategies, positions, equityCurve, benchmarkCurve, loading, refreshing, loaded, error, fetch } =
-    usePortfolioStore();
+  const s = useStyles();
+  const { portfolio, strategies, positions, loading, refreshing, loaded, error, fetch } = usePortfolioStore();
 
   useEffect(() => {
-    void fetch();
+    fetch();
   }, [fetch]);
 
-  const holder = user ? `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email : '—';
-
-  // Account holdings: real open positions aggregated per symbol, largest first.
   const holdings = useMemo(() => {
     const bySymbol = new Map<string, { symbol: string; value: number; pnl: number; shares: number }>();
     for (const p of positions) {
@@ -48,242 +33,121 @@ export default function PortfolioScreen() {
     return rows.map((r) => ({ ...r, weight: total > 0 ? (r.value / total) * 100 : 0 }));
   }, [positions]);
 
-  const openPositions = holdings.length || strategies.reduce((n, s) => n + s.positionsCount, 0);
+  const sleeves = useMemo(
+    () => [...strategies].sort((a, b) => num(b.currentValue) - num(a.currentValue)),
+    [strategies],
+  );
+  const failing = sleeves.filter((x) => x.status === ExecutionStatus.ERROR);
+  const total = num(portfolio?.totalValue);
+  const allocated = sleeves.reduce((sum, x) => sum + num(x.currentValue), 0);
+  const unallocated = Math.max(0, total - allocated);
+  const lifetime = num(portfolio?.totalReturn);
 
   return (
-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: palette.bone }}>
-      <GridBackground />
-      <View
-        style={{
-          height: 46,
-          borderBottomWidth: 2,
-          borderColor: palette.ink,
-          backgroundColor: palette.paper,
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingHorizontal: 14,
-        }}
-      >
-        <Display size={16}>Portfolio</Display>
-        <Badge label="Paper" variant="orange" />
-      </View>
-
-      {/* First load */}
+    <Screen
+      title="Portfolio"
+      right={<Pill label="Paper" dot />}
+      refreshing={refreshing}
+      onRefresh={() => fetch({ refresh: true })}
+    >
       {loading && !loaded ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 }}>
-          <ActivityIndicator color={palette.ink} />
-          <Label>Loading portfolio…</Label>
-        </View>
-      ) : (
-        <ScrollView
-          contentContainerStyle={{ padding: 12, gap: 11 }}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => fetch({ refresh: true })}
-              tintColor={palette.ink}
+        <Loading label="Loading portfolio" />
+      ) : error && !portfolio ? (
+        <PanelError title="Couldn't load the portfolio" detail={error} onRetry={() => fetch()} />
+      ) : portfolio ? (
+        <>
+          {error ? <Notice title="Couldn't refresh." detail={`${error} Pull down to try again.`} /> : null}
+
+          <Card style={s.equity}>
+            <Text variant="label" tone="fg3">Total equity</Text>
+            <Text variant="hero" style={s.equityFigure}>{money(portfolio.totalValue, 2)}</Text>
+            <Text variant="numSmall" tone={pnlTone(lifetime)}>
+              {signedMoney(lifetime, 2)} ({pct(portfolio.totalReturnPercent)}) since start
+            </Text>
+            {total > 0 ? (
+              <View style={s.strip}>
+                <WeightStrip weights={[...sleeves.map((x) => num(x.currentValue)), unallocated]} />
+              </View>
+            ) : null}
+          </Card>
+
+          {failing.map((x) => (
+            <Notice
+              key={x.executionId}
+              title={`${x.strategyName} stopped with an error.`}
+              detail="Its sleeve keeps its positions until you restart or stop it."
+              onPress={() => router.push(`/strategy/${x.strategyId}`)}
             />
-          }
-        >
-          {error ? (
-            <View
-              style={{
-                borderWidth: 2,
-                borderColor: palette.red[500],
-                backgroundColor: palette.red[50],
-                padding: 11,
-                gap: 8,
-              }}
-            >
-              <Mono size={11} color={palette.red[600]}>
-                {error}
-              </Mono>
-              <Pressable
-                onPress={() => fetch()}
-                style={{
-                  alignSelf: 'flex-start',
-                  borderWidth: 2,
-                  borderColor: palette.ink,
-                  backgroundColor: palette.paper,
-                  paddingHorizontal: 12,
-                  paddingVertical: 6,
-                }}
-              >
-                <Mono size={10} style={{ fontWeight: '700' }}>
-                  RETRY
-                </Mono>
-              </Pressable>
-            </View>
-          ) : null}
+          ))}
 
-          {portfolio ? (
-            <>
-              <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
-                <Badge label={holder} />
-                <Badge label={`#${portfolio.id.slice(0, 6).toUpperCase()}`} />
-                <Badge label={`${openPositions} positions`} />
-              </View>
-
-              <Card ink shadow>
-                <Label color="#b7b0a2">Total Equity</Label>
-                <Display size={30} color={palette.bone} style={{ marginTop: 4 }}>
-                  {money(portfolio.totalValue)}
-                </Display>
-                <Label color="#b7b0a2" style={{ marginTop: 6 }}>
-                  ↗ {signedMoney(portfolio.totalReturn)} lifetime · {pct(portfolio.totalReturnPercent)}
-                </Label>
-                {equityCurve.length > 1 ? (
-                  <View style={{ marginTop: 10 }}>
-                    <LineChart
-                      values={equityCurve}
-                      benchmark={benchmarkCurve.length > 1 ? benchmarkCurve : undefined}
-                      height={64}
-                      color={palette.orange[500]}
-                      fill="rgba(255,77,28,0.24)"
+          <Card style={s.listCard}>
+            {sleeves.map((x) => {
+              const pnl = num(x.currentValue) - num(x.allocatedCapital);
+              const live = x.mode === ExecutionMode.LIVE;
+              return (
+                <ListRow
+                  key={x.executionId}
+                  onPress={() => router.push(`/strategy/${x.strategyId}`)}
+                  label={<Text variant="bodyStrong" numberOfLines={1}>{x.strategyName}</Text>}
+                  sub={
+                    <StatusMark
+                      state={runStateOfExecution(x.status)}
+                      label={live ? `${runLabel(x.status)} · live` : undefined}
                     />
-                  </View>
-                ) : null}
-              </Card>
-
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                <KpiTile
-                  value={signedMoney(portfolio.dayReturn)}
-                  label={`Day P&L · ${pct(portfolio.dayReturnPercent)}`}
-                  tone={isUp(portfolio.dayReturn) ? 'up' : 'down'}
+                  }
+                  right={
+                    <View style={s.figures}>
+                      <Text variant="numStrong">{money(x.currentValue, 2)}</Text>
+                      <Text variant="numSmall" tone={pnlTone(pnl)}>{signedMoney(pnl, 2)}</Text>
+                    </View>
+                  }
                 />
-                <KpiTile
-                  value={pct(portfolio.totalReturnPercent)}
-                  label="Total Return"
-                  tone={isUp(portfolio.totalReturnPercent) ? 'up' : 'down'}
+              );
+            })}
+            <ListRow
+              last
+              label={<Text variant="body" tone="fg2">Unallocated</Text>}
+              right={<Text variant="numStrong" tone="fg2">{money(unallocated, 2)}</Text>}
+            />
+          </Card>
+
+          {holdings.length ? (
+            <Card style={s.listCard}>
+              <Text variant="label" tone="fg3" style={s.cardLabel}>Holdings · {holdings.length}</Text>
+              {holdings.map((h, i) => (
+                <ListRow
+                  key={h.symbol}
+                  last={i === holdings.length - 1}
+                  label={<Text variant="numStrong">{h.symbol}</Text>}
+                  sub={<Text variant="numSmall" tone="fg3">{h.weight.toFixed(1)}% · {qty(h.shares)} sh</Text>}
+                  right={
+                    <View style={s.figures}>
+                      <Text variant="num">{money(h.value, 2)}</Text>
+                      <Text variant="numSmall" tone={pnlTone(h.pnl)}>{signedMoney(h.pnl, 2)}</Text>
+                    </View>
+                  }
                 />
-              </View>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
-                <KpiTile value={money(portfolio.cashBalance)} label="Free Cash" />
-                <KpiTile value={money(portfolio.positionsValue)} label="Deployed" />
-              </View>
-
-              {/* Holdings — per-symbol book, the ledger this screen is named for */}
-              {holdings.length > 0 ? (
-                <>
-                  <Label style={{ marginTop: 2 }}>Holdings · {holdings.length}</Label>
-                  <View style={{ flexDirection: 'row', height: 12, borderWidth: 2, borderColor: palette.ink }}>
-                    {holdings.map((h, i) => (
-                      <View
-                        key={h.symbol}
-                        style={{ flex: h.weight, backgroundColor: strategyColors[i % strategyColors.length] }}
-                      />
-                    ))}
-                  </View>
-                  <Card>
-                    {holdings.map((h, i) => {
-                      const up = h.pnl >= 0;
-                      const last = i === holdings.length - 1;
-                      return (
-                        <View
-                          key={h.symbol}
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            gap: 9,
-                            paddingVertical: 8,
-                            borderBottomWidth: last ? 0 : 1,
-                            borderColor: 'rgba(13,13,13,0.12)',
-                          }}
-                        >
-                          <View style={{ width: 9, height: 26, backgroundColor: strategyColors[i % strategyColors.length] }} />
-                          <View style={{ flex: 1 }}>
-                            <Body size={13} style={{ fontWeight: '700' }}>
-                              {h.symbol}
-                            </Body>
-                            <Mono size={9} color={palette.gray[500]}>
-                              {h.weight.toFixed(1)}% · {qty(h.shares)} sh
-                            </Mono>
-                          </View>
-                          <View style={{ alignItems: 'flex-end' }}>
-                            <Mono size={11} style={{ fontWeight: '700' }}>
-                              {money(h.value)}
-                            </Mono>
-                            <Mono size={9} color={up ? palette.green[600] : palette.red[600]}>
-                              {signedMoney(h.pnl)}
-                            </Mono>
-                          </View>
-                        </View>
-                      );
-                    })}
-                  </Card>
-                </>
-              ) : null}
-
-              <Label style={{ marginTop: 2 }}>Strategies · {strategies.length}</Label>
-              {strategies.length === 0 ? (
-                <Card>
-                  <Label>No deployed strategies yet</Label>
-                </Card>
-              ) : (
-                strategies.map((s, i) => {
-                  const ret = s.returns?.returnAll;
-                  const up = isUp(ret);
-                  const pnl = num(s.currentValue) - num(s.allocatedCapital);
-                  return (
-                    <Pressable key={s.executionId} onPress={() => router.push(`/strategy/${s.strategyId}`)}>
-                    <Card>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 9 }}>
-                        <View
-                          style={{
-                            width: 9,
-                            height: 34,
-                            backgroundColor: s.color || strategyColors[i % strategyColors.length],
-                          }}
-                        />
-                        <View style={{ flex: 1 }}>
-                          <Body size={13} style={{ fontWeight: '700' }} numberOfLines={1}>
-                            {s.strategyName}
-                          </Body>
-                          <Label style={{ marginTop: 2 }}>
-                            {s.mode === ExecutionMode.LIVE ? 'live' : 'paper'} ·{' '}
-                            {STATUS_LABEL[s.status] ?? '—'} · {s.positionsCount} pos
-                          </Label>
-                        </View>
-                        <View style={{ alignItems: 'flex-end' }}>
-                          <Display size={15} color={up ? palette.green[500] : palette.red[500]}>
-                            {pct(ret)}
-                          </Display>
-                          <Mono size={9} color={palette.gray[500]}>
-                            {signedMoney(pnl)}
-                          </Mono>
-                        </View>
-                        <ChevronRight color={palette.gray[400]} size={15} strokeWidth={2} />
-                      </View>
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          justifyContent: 'space-between',
-                          marginTop: 8,
-                          paddingTop: 8,
-                          borderTopWidth: 1,
-                          borderColor: 'rgba(13,13,13,0.12)',
-                        }}
-                      >
-                        <Mono size={10} color={palette.gray[500]}>
-                          allocated {money(s.allocatedCapital)}
-                        </Mono>
-                        <Mono size={10}>{money(s.currentValue)}</Mono>
-                      </View>
-                    </Card>
-                    </Pressable>
-                  );
-                })
-              )}
-            </>
-          ) : !error && loaded ? (
-            <Card>
-              <Label>No portfolio found for this account</Label>
+              ))}
             </Card>
           ) : null}
-        </ScrollView>
-      )}
-    </SafeAreaView>
+        </>
+      ) : loaded ? (
+        <PanelError title="No portfolio yet" detail="This account has no paper portfolio. Connect Alpaca paper keys to start." />
+      ) : null}
+    </Screen>
   );
 }
+
+function runLabel(status: ExecutionStatus): string {
+  const state = runStateOfExecution(status);
+  return state.charAt(0).toUpperCase() + state.slice(1);
+}
+
+const useStyles = makeStyles(() => ({
+  equity: { gap: 4 },
+  equityFigure: { marginTop: 2 },
+  strip: { marginTop: 10 },
+  listCard: { paddingVertical: 4 },
+  cardLabel: { marginTop: 10, marginBottom: 2 },
+  figures: { alignItems: 'flex-end', gap: 2 },
+}));

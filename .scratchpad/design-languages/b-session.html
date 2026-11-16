@@ -1,0 +1,1304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LlamaTrade · Session</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20viewBox=%220%200%2032%2032%22%3E%3Cstyle%3E.c%7Bfill:%23111;stroke:%23111%7Dpath.c%7Bfill:none%7D%40media%20(prefers-color-scheme:dark)%7B.c%7Bfill:%23eee;stroke:%23eee%7Dpath.c%7Bfill:none%7D%7D%3C/style%3E%3Cpath%20d=%22M11.5%204v17M16%2013v14M25%2013v14%22%20class=%22c%22%20stroke=%22%23111%22%20stroke-width=%221.6%22%20stroke-linecap=%22round%22/%3E%3Crect%20x=%224.5%22%20y=%228.5%22%20width=%224.5%22%20height=%224.5%22%20rx=%220.8%22%20fill=%22%234cc2ff%22/%3E%3Crect%20x=%229.5%22%20y=%226.5%22%20width=%224%22%20height=%2212%22%20rx=%220.8%22%20class=%22c%22%20fill=%22%23111%22/%3E%3Crect%20x=%2214%22%20y=%2215%22%20width=%224%22%20height=%227%22%20rx=%220.8%22%20class=%22c%22%20fill=%22%23111%22/%3E%3Crect%20x=%2218.5%22%20y=%2215%22%20width=%224%22%20height=%225%22%20rx=%220.8%22%20class=%22c%22%20fill=%22%23111%22/%3E%3Crect%20x=%2223%22%20y=%2215%22%20width=%224%22%20height=%227%22%20rx=%220.8%22%20class=%22c%22%20fill=%22%23111%22/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chivo+Mono:wght@400;500&family=Chivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root, .night {
+    --bg: #0d1013;
+    --panel: #13171b;
+    --raise: #1a1f25;
+    --line: #242b32;
+    --line-2: #323b44;
+    --text: #e4e8ec;
+    --text-2: #aab3bd;
+    --text-3: #808a95;
+    --accent: #4cc2ff;
+    --accent-ink: #04121c;
+    --accent-dim: rgba(76, 194, 255, 0.13);
+    --gain: #3fbf7a;
+    --gain-dim: rgba(63, 191, 122, 0.16);
+    --loss: #f2555a;
+    --loss-dim: rgba(242, 85, 90, 0.16);
+    --risk: #f0a63a;
+    --risk-dim: rgba(240, 166, 58, 0.1);
+    --hatch: rgba(228, 232, 236, 0.16);
+    --sans: "Chivo", system-ui, sans-serif;
+    --mono: "Chivo Mono", ui-monospace, monospace;
+}
+.day {
+    --bg: #f2f4f6;
+    --panel: #ffffff;
+    --raise: #f7f8fa;
+    --line: #dfe3e8;
+    --line-2: #c9d0d7;
+    --text: #0f1418;
+    --text-2: #44505b;
+    --text-3: #64707b;
+    --accent: #0a6fb3;
+    --accent-ink: #ffffff;
+    --accent-dim: rgba(10, 111, 179, 0.1);
+    --gain: #12804a;
+    --gain-dim: rgba(18, 128, 74, 0.12);
+    --loss: #c62f38;
+    --loss-dim: rgba(198, 47, 56, 0.12);
+    --risk: #955700;
+    --risk-dim: rgba(149, 87, 0, 0.08);
+    --hatch: rgba(15, 20, 24, 0.14);
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 400 14px/1.55 var(--sans);
+    overflow-x: hidden;
+}
+a { color: var(--accent); text-decoration: none; }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 0 24px; }
+.m { font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.gain { color: var(--gain); }
+.loss { color: var(--loss); }
+.t3 { color: var(--text-3); }
+.t2 { color: var(--text-2); }
+.lbl { font: 500 12px/1.3 var(--sans); color: var(--text-3); }
+
+.review { border-bottom: 1px solid var(--line); font-size: 13px; }
+.review .wrap { display: flex; gap: 20px; align-items: center; min-height: 44px; flex-wrap: wrap; }
+.review b { font-weight: 600; }
+.review nav { margin-left: auto; display: flex; gap: 16px; }
+.review nav a { color: var(--text-2); }
+.review nav a[aria-current] { color: var(--text); font-weight: 600; }
+
+/* Labels */
+.mode {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 22px;
+    padding: 0 8px;
+    font: 600 11px/1 var(--sans);
+    letter-spacing: 0.04em;
+    border: 1px solid var(--line-2);
+    border-radius: 2px;
+    color: var(--text);
+    background: repeating-linear-gradient(135deg, var(--hatch) 0 2px, transparent 2px 6px);
+    white-space: nowrap;
+}
+.mode.live { background: var(--text); color: var(--bg); border-color: var(--text); }
+.st { display: inline-flex; align-items: center; gap: 7px; font: 500 12.5px/1 var(--sans); white-space: nowrap; color: var(--text-2); }
+.st i { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--text-3); flex: none; }
+.st.run i { background: var(--text); border-color: var(--text); position: relative; }
+.st.run.stream i::after {
+    content: "";
+    position: absolute;
+    inset: -5px;
+    border-radius: 50%;
+    border: 1px solid var(--text);
+    animation: ping 2.4s ease-out infinite;
+}
+@keyframes ping { 0% { transform: scale(0.4); opacity: 0.9; } 80%, 100% { transform: scale(1.3); opacity: 0; } }
+.st.wait i { border-style: dashed; }
+.st.deg i { border-color: var(--risk); background: linear-gradient(90deg, var(--risk) 50%, transparent 50%); }
+.st.frz { color: var(--risk); }
+.st.frz i { border-color: var(--risk); background: var(--risk); border-radius: 1px; }
+.st.stop i { border-radius: 1px; }
+
+/* Buttons */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 34px;
+    padding: 0 14px;
+    font: 500 13px/1 var(--sans);
+    border-radius: 3px;
+    border: 1px solid var(--line-2);
+    background: var(--raise);
+    color: var(--text);
+    cursor: pointer;
+    white-space: nowrap;
+}
+.btn:hover, .btn.is-hover { border-color: var(--text-3); }
+.btn:focus-visible, .btn.is-focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn.pri { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.btn.pri:hover, .btn.pri.is-hover { filter: brightness(1.1); }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--accent); }
+.btn.ghost:hover { background: var(--accent-dim); }
+.btn.sm { height: 28px; padding: 0 10px; font-size: 12.5px; }
+.btn[disabled] { opacity: 0.4; cursor: not-allowed; }
+.kbd { font: 500 11px/1 var(--mono); padding: 3px 5px; border: 1px solid var(--line-2); border-radius: 2px; color: var(--text-3); }
+.spin { width: 12px; height: 12px; border: 1.5px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Marketing */
+.site { display: flex; align-items: center; gap: 28px; height: 68px; }
+.logo { display: flex; align-items: center; gap: 10px; font: 700 16px/1 var(--sans); color: var(--text); letter-spacing: -0.01em; }
+.logo svg { width: 22px; height: 22px; }
+.site .links { display: flex; gap: 22px; font-size: 13.5px; }
+.site .links a { color: var(--text-2); }
+.site .end { margin-left: auto; display: flex; gap: 8px; }
+.hero { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 48px; align-items: center; padding: 36px 0 72px; }
+.eyebrow { display: inline-flex; gap: 10px; align-items: center; font: 500 12.5px/1 var(--sans); color: var(--text-2); }
+.hero h1 { font: 600 46px/1.08 var(--sans); letter-spacing: -0.025em; margin: 18px 0 18px; }
+.hero .lede { color: var(--text-2); font-size: 16.5px; margin: 0 0 26px; max-width: 520px; }
+.hero .ctas { display: flex; gap: 10px; flex-wrap: wrap; }
+.hero .fine { margin-top: 18px; font-size: 12.5px; color: var(--text-3); max-width: 480px; }
+
+.term { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.rail {
+    display: flex;
+    border-bottom: 1px solid var(--line);
+    background: var(--raise);
+    font-size: 12px;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+.rail::-webkit-scrollbar { display: none; }
+.rail > div { padding: 8px 14px; border-right: 1px solid var(--line); white-space: nowrap; display: flex; flex-direction: column; gap: 3px; }
+.rail > div:last-child { border-right: 0; margin-left: auto; justify-content: center; }
+.rail .k { color: var(--text-3); font-size: 11px; }
+.rail .v { font: 500 12.5px/1.2 var(--mono); color: var(--text); display: flex; gap: 6px; align-items: center; }
+.rail .wait { color: var(--text-2); }
+
+.sess-h { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.sess-h h3, .sess-h h4 { margin: 0; font: 600 16px/1.2 var(--sans); letter-spacing: -0.01em; }
+.sess-h .sub { font-size: 12px; color: var(--text-3); margin-top: 4px; }
+.kpis { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--line); }
+.kpis > div { padding: 12px 16px; border-right: 1px solid var(--line); min-width: 0; }
+.kpis > div:last-child { border-right: 0; }
+.kpis .v { font: 500 20px/1.25 var(--mono); letter-spacing: -0.02em; margin-top: 4px; white-space: nowrap; }
+.kpis .d { font: 400 12px/1.3 var(--mono); color: var(--text-3); margin-top: 2px; white-space: nowrap; }
+
+table.t { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.t th {
+    text-align: left;
+    font: 500 11.5px/1 var(--sans);
+    color: var(--text-3);
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+    background: var(--panel);
+}
+table.t td { padding: 0 12px; height: 32px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+table.t tr:last-child td { border-bottom: 0; }
+table.t .n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+table.t th.n { font-family: var(--sans); }
+table.t td:first-child, table.t th:first-child { padding-left: 16px; }
+table.t td:last-child, table.t th:last-child { padding-right: 16px; }
+table.t tbody tr:hover td { background: var(--raise); }
+table.t tr.sel td { background: var(--accent-dim); }
+table.t tr.sel td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+.sym { font: 600 13px/1 var(--mono); }
+.side-b, .side-s { font: 600 11px/1 var(--mono); padding: 3px 5px; border-radius: 2px; border: 1px solid var(--line-2); }
+.flash-up { animation: fu 0.9s ease-out; }
+.flash-dn { animation: fd 0.9s ease-out; }
+@keyframes fu { from { background: var(--gain-dim); } to { background: transparent; } }
+@keyframes fd { from { background: var(--loss-dim); } to { background: transparent; } }
+@media (prefers-reduced-motion: reduce) {
+    .flash-up, .flash-dn, .spin, .st.run.stream i::after { animation: none; }
+}
+.scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+.mk { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 48px; padding: 72px 0; border-top: 1px solid var(--line); align-items: start; }
+.mk h2 { font: 600 32px/1.12 var(--sans); letter-spacing: -0.02em; margin: 12px 0 14px; }
+.mk p { color: var(--text-2); margin: 0 0 12px; font-size: 15px; }
+.mk .note { font-size: 12.5px; color: var(--text-3); }
+.checks { list-style: none; margin: 0; padding: 0; }
+.checks li {
+    display: grid;
+    grid-template-columns: 26px 1fr auto auto;
+    gap: 12px;
+    align-items: center;
+    padding: 0 16px;
+    height: 44px;
+    border-bottom: 1px solid var(--line);
+    font-size: 13.5px;
+}
+.checks li:last-child { border-bottom: 0; }
+.checks .no { font: 500 12px/1 var(--mono); color: var(--text-3); }
+.checks .lim { font: 400 12.5px/1 var(--mono); color: var(--text-3); text-align: right; }
+.checks .res { font: 500 12px/1 var(--sans); display: inline-flex; gap: 6px; align-items: center; width: 64px; justify-content: flex-end; }
+.checks .res.ok { color: var(--text-2); }
+.checks .res.fail { color: var(--risk); }
+.checks li.fail { background: var(--risk-dim); box-shadow: inset 2px 0 0 var(--risk); }
+.checks li.skip { color: var(--text-3); }
+.order-line { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 13px; align-items: center; }
+.reason { padding: 12px 16px; font-size: 13px; color: var(--text-2); border-top: 1px solid var(--line); }
+.reason b { color: var(--risk); font-weight: 600; }
+
+.states { display: grid; grid-template-columns: repeat(2, 1fr); border: 1px solid var(--line); border-radius: 4px; background: var(--panel); overflow: hidden; }
+.states > div { padding: 16px 18px; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); min-width: 0; }
+.states > div:nth-child(2n) { border-right: 0; }
+.states > div:nth-last-child(-n + 2) { border-bottom: 0; }
+.states p { margin: 8px 0 6px; font-size: 13px; color: var(--text-2); }
+.states .ts { font: 400 11.5px/1.3 var(--mono); color: var(--text-3); }
+
+/* Section heads */
+.part { padding-top: 88px; }
+.part-h { display: grid; grid-template-columns: 220px 1fr; gap: 24px; border-top: 1px solid var(--line-2); padding-top: 16px; margin-bottom: 32px; }
+.part-h .lbl { padding-top: 6px; }
+.part-h h2 { font: 600 28px/1.15 var(--sans); letter-spacing: -0.02em; margin: 0 0 8px; }
+.part-h p { margin: 0; color: var(--text-2); max-width: 700px; }
+.shot { margin-bottom: 64px; }
+.shot-cap { display: grid; grid-template-columns: 220px 1fr; gap: 24px; margin-bottom: 14px; }
+.shot-cap h3 { margin: 0; font: 600 17px/1.3 var(--sans); }
+.shot-cap p { margin: 4px 0 0; color: var(--text-2); font-size: 13.5px; max-width: 720px; }
+
+/* App */
+.app { background: var(--bg); color: var(--text); border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; }
+.app-top { display: flex; align-items: center; gap: 22px; height: 48px; padding: 0 16px; border-bottom: 1px solid var(--line); background: var(--panel); font-size: 13px; }
+.app-top nav { display: flex; gap: 4px; }
+.app-top nav a { color: var(--text-2); padding: 6px 10px; border-radius: 3px; }
+.app-top nav a.on { color: var(--text); background: var(--raise); box-shadow: inset 0 0 0 1px var(--line-2); }
+.app-top .end { margin-left: auto; display: flex; gap: 12px; align-items: center; }
+.av { width: 26px; height: 26px; border-radius: 50%; background: var(--raise); border: 1px solid var(--line-2); display: grid; place-items: center; font: 600 10.5px/1 var(--sans); color: var(--text-2); }
+.app-body { padding: 16px; display: grid; gap: 12px; }
+.pn { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; min-width: 0; }
+.pn-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.pn-h h5 { margin: 0; font: 600 13px/1.3 var(--sans); }
+.pn-b { padding: 14px 16px; }
+.g-live { display: grid; grid-template-columns: 1.6fr 1fr; gap: 12px; }
+.g-live > div { display: grid; gap: 12px; align-content: start; min-width: 0; }
+.wbar { display: grid; grid-template-columns: 48px 1fr 54px 54px; gap: 10px; align-items: center; font-size: 12.5px; padding: 6px 0; }
+.wbar .track { height: 6px; background: var(--raise); position: relative; border-radius: 1px; }
+.wbar .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--text-2); }
+.wbar .tgt { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--accent); }
+.meter { height: 4px; background: var(--raise); border-radius: 1px; margin-top: 6px; position: relative; overflow: hidden; }
+.meter i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--text-2); }
+.lim-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.lim-row:last-child { border-bottom: 0; }
+.lim-row .meter { grid-column: 1 / -1; margin-top: 0; }
+.log { font: 400 12px/1.5 var(--mono); }
+.log div { display: grid; grid-template-columns: 70px 1fr; gap: 10px; padding: 5px 16px; border-bottom: 1px solid var(--line); }
+.log div:last-child { border-bottom: 0; }
+.log .ts { color: var(--text-3); }
+.log .msg { font-family: var(--sans); font-size: 12.5px; color: var(--text-2); }
+.log .msg b { color: var(--text); font-weight: 500; }
+
+/* Charts */
+.ltc { position: relative; width: 100%; }
+.ltc svg { display: block; overflow: visible; }
+.ltc-grid line { stroke: var(--line); stroke-dasharray: 1 3; }
+.ltc-ax { font: 400 10.5px var(--mono); fill: var(--text-3); }
+.ltc-zero { stroke: var(--line-2); }
+.ltc-cross { stroke: var(--text-3); stroke-width: 1; }
+.s-main { stroke: var(--accent); stroke-width: 1.5; stroke-linejoin: round; }
+.s-main-area { fill: url(#none); fill: var(--accent); opacity: 0.08; }
+.s-main-dot { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
+.s-bench { stroke: var(--text-3); stroke-width: 1; stroke-dasharray: 3 3; }
+.s-bench-dot { fill: var(--text-3); stroke: var(--panel); stroke-width: 2; }
+.s-dd { stroke: var(--loss); stroke-width: 1; }
+.s-dd-area { fill: var(--loss); opacity: 0.16; }
+.s-dd-dot { fill: var(--loss); stroke: var(--panel); stroke-width: 2; }
+.ltc-tip {
+    position: absolute;
+    display: none;
+    pointer-events: none;
+    background: var(--raise);
+    border: 1px solid var(--line-2);
+    border-radius: 3px;
+    padding: 7px 9px;
+    font: 400 11.5px/1.55 var(--mono);
+    white-space: nowrap;
+    z-index: 2;
+    color: var(--text);
+}
+.ltc-tip b { font-weight: 500; color: var(--text-3); display: block; }
+.leg { display: flex; gap: 16px; font-size: 12px; color: var(--text-2); flex-wrap: wrap; }
+.leg i { display: inline-block; width: 16px; height: 0; border-top: 1.5px solid var(--accent); vertical-align: middle; margin-right: 6px; }
+.leg i.b { border-top: 1px dashed var(--text-3); }
+.statsrow { display: grid; grid-template-columns: repeat(6, 1fr); border-bottom: 1px solid var(--line); }
+.statsrow > div { padding: 12px 16px; border-right: 1px solid var(--line); min-width: 0; }
+.statsrow > div:last-child { border-right: 0; }
+.statsrow .v { font: 500 19px/1.25 var(--mono); margin-top: 4px; white-space: nowrap; letter-spacing: -0.02em; }
+.statsrow .d { font: 400 11.5px/1.3 var(--mono); color: var(--text-3); white-space: nowrap; }
+.bt-grid { display: grid; grid-template-columns: 1fr 340px; gap: 12px; }
+.mg { width: 100%; border-collapse: separate; border-spacing: 2px; font: 400 11px var(--mono); }
+.mg th { font: 500 10.5px/1 var(--sans); color: var(--text-3); padding: 4px 1px; text-align: center; }
+.mg th span { display: none; }
+.mg tbody th { text-align: left; font-family: var(--mono); }
+.mg td { text-align: center; padding: 6px 0; min-width: 22px; border-radius: 1px; }
+.mg td.mg-year { text-align: right; padding-left: 6px; color: var(--text-2); }
+
+/* Editor */
+.ed { display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px; }
+.code { font: 400 12.5px/1.75 var(--mono); padding: 10px 0; overflow-x: auto; }
+.code div { display: grid; grid-template-columns: 40px 1fr; white-space: pre; padding-right: 16px; }
+.code .ln { color: var(--text-3); text-align: right; padding-right: 14px; user-select: none; }
+.code .k { color: var(--accent); }
+.code .s { color: var(--text-2); }
+.code .bad { text-decoration: underline wavy var(--risk); text-underline-offset: 3px; }
+.code div.err { background: var(--risk-dim); box-shadow: inset 2px 0 0 var(--risk); }
+.prob { display: grid; grid-template-columns: 20px 1fr; gap: 8px; padding: 10px 16px; font-size: 13px; border-bottom: 1px solid var(--line); }
+.prob:last-child { border-bottom: 0; }
+.prob .ic { color: var(--risk); }
+.prob .ok { color: var(--text-3); }
+.prob code { font: 12px var(--mono); }
+
+/* Empty */
+.empty { display: grid; place-items: center; text-align: center; padding: 56px 20px 60px; }
+.empty .glyph { width: 56px; height: 56px; border: 1px dashed var(--line-2); border-radius: 50%; display: grid; place-items: center; margin-bottom: 18px; color: var(--text-3); }
+.empty h5 { font: 600 17px/1.3 var(--sans); margin: 0 0 8px; }
+.empty p { color: var(--text-2); max-width: 460px; margin: 0 auto 18px; font-size: 13.5px; }
+.timeline { display: flex; gap: 0; margin: 4px auto 22px; max-width: 520px; width: 100%; font-size: 12px; color: var(--text-3); }
+.timeline div { flex: 1; border-top: 1px solid var(--line-2); padding-top: 8px; position: relative; text-align: left; }
+.timeline div::before { content: ""; position: absolute; top: -4px; left: 0; width: 7px; height: 7px; border-radius: 50%; background: var(--bg); border: 1px solid var(--text-3); }
+.timeline div.done::before { background: var(--text); border-color: var(--text); }
+.timeline .m { display: block; color: var(--text-2); }
+
+/* Tokens */
+.tk { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.trow { display: grid; grid-template-columns: 150px 1fr; gap: 14px; padding: 10px 16px; border-bottom: 1px solid var(--line); align-items: baseline; }
+.trow:last-child { border-bottom: 0; }
+.trow .spec { font: 400 11.5px/1.5 var(--mono); color: var(--text-3); }
+.sw { display: grid; grid-template-columns: 36px 1fr; gap: 12px; padding: 9px 16px; border-bottom: 1px solid var(--line); align-items: center; font-size: 13px; }
+.sw:last-child { border-bottom: 0; }
+.sw i { width: 36px; height: 36px; border-radius: 3px; border: 1px solid var(--line-2); }
+.sw code { font: 11.5px var(--mono); color: var(--text-3); margin-left: 6px; }
+.sw span { display: block; color: var(--text-2); font-size: 12.5px; }
+.sp { display: grid; grid-template-columns: 34px 64px 1fr; align-items: center; gap: 10px; font-size: 12.5px; color: var(--text-2); padding: 4px 16px; }
+.sp i { display: block; height: 8px; background: var(--accent); }
+.field { display: grid; gap: 6px; margin-bottom: 14px; font-size: 12.5px; }
+.field label { color: var(--text-2); font-weight: 500; }
+.inp { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; background: var(--bg); border: 1px solid var(--line-2); border-radius: 3px; }
+.inp input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font: 400 13px var(--mono); }
+.inp .af { color: var(--text-3); font: 400 12px var(--mono); white-space: nowrap; }
+.inp.focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+.inp.err { border-color: var(--risk); }
+.field .help { color: var(--text-3); }
+.field .msg { color: var(--risk); }
+.crow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+.crow .cap { width: 100%; font-size: 12px; color: var(--text-3); }
+.al { display: grid; grid-template-columns: 18px 1fr auto; gap: 10px; align-items: start; padding: 11px 14px; border: 1px solid var(--line); border-radius: 3px; font-size: 13px; margin-bottom: 10px; background: var(--panel); }
+.al:last-child { margin-bottom: 0; }
+.al svg { width: 16px; height: 16px; margin-top: 2px; color: var(--text-3); }
+.al b { font-weight: 600; display: block; }
+.al p { margin: 2px 0 0; color: var(--text-2); }
+.al.risk { border-color: var(--risk); background: var(--risk-dim); }
+.al.risk svg { color: var(--risk); }
+.al.info svg { color: var(--accent); }
+.al .ts { font: 400 11.5px/1.4 var(--mono); color: var(--text-3); }
+
+.prose { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+.prose h4 { font: 600 16px/1.3 var(--sans); margin: 0 0 10px; }
+.prose p, .prose li { color: var(--text-2); font-size: 14px; }
+.prose ul { padding-left: 18px; margin: 0; }
+.prose li { margin-bottom: 8px; }
+.prose code { font: 12.5px var(--mono); color: var(--text); }
+footer.wrap { padding-top: 48px; padding-bottom: 72px; font-size: 12.5px; color: var(--text-3); }
+
+.hero > *, .mk > *, .g-live > *, .bt-grid > *, .ed > *, .tk > *, .prose > *, .part-h > *, .shot-cap > * { min-width: 0; }
+
+@media (max-width: 1000px) {
+    .hero, .mk, .g-live, .bt-grid, .ed, .tk, .prose { grid-template-columns: 1fr; }
+    .part-h, .shot-cap { grid-template-columns: 1fr; gap: 6px; }
+    .statsrow { grid-template-columns: repeat(3, 1fr); }
+    .statsrow > div:nth-child(3) { border-right: 0; }
+    .statsrow > div:nth-child(-n + 3) { border-bottom: 1px solid var(--line); }
+    .site .links { display: none; }
+}
+@media (max-width: 600px) {
+    .wrap { padding: 0 16px; }
+    .hero h1 { font-size: 34px; }
+    .mk h2 { font-size: 26px; }
+    .kpis { grid-template-columns: 1fr 1fr; }
+    .kpis > div:nth-child(2) { border-right: 0; }
+    .kpis > div:nth-child(-n + 2) { border-bottom: 1px solid var(--line); }
+    .statsrow { grid-template-columns: 1fr 1fr; }
+    .statsrow > div:nth-child(3) { border-right: 1px solid var(--line); }
+    .statsrow > div:nth-child(2n) { border-right: 0; }
+    .statsrow > div:nth-child(-n + 4) { border-bottom: 1px solid var(--line); }
+    .states { grid-template-columns: 1fr; }
+    .states > div { border-right: 0 !important; border-bottom: 1px solid var(--line) !important; }
+    .states > div:last-child { border-bottom: 0 !important; }
+    .app-top nav a:not(.on) { display: none; }
+    .app-top .end .hide-s { display: none; }
+    .app-body { padding: 10px; }
+    .checks li { grid-template-columns: 22px 1fr auto; }
+    .checks .lim { display: none; }
+    .trow { grid-template-columns: 1fr; gap: 4px; }
+    .site .end .btn:not(.pri) { display: none; }
+    .mg { min-width: 480px; }
+    .rail { flex-wrap: wrap; overflow: visible; }
+    .rail > div { flex: 1 1 40%; border-bottom: 1px solid var(--line); }
+    .rail > div:last-child { flex: 0 0 auto; border-bottom: 0; }
+    .review nav { margin-left: 0; }
+}
+</style>
+</head>
+<body>
+
+
+
+<section class="wrap">
+    <div class="site">
+        <span class="logo"><svg class="lt-candles" viewBox="0 0 32 32" fill="none" aria-hidden="true" style="width:1.3em;height:1.3em;flex:none;display:block"><path d="M8 2v20M12.4 13v16.5M25.6 13v16.5M16.8 12.5v10M21.2 13v9" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><rect x="2" y="7" width="3.2" height="4" rx="0.5" fill="var(--lacc, var(--p-acc, var(--accent, var(--navy, #1f3b73))))"/><rect x="6.4" y="4.5" width="3.2" height="14" rx="0.5" fill="currentColor"/><rect x="10.8" y="14.5" width="3.2" height="10" rx="0.5" fill="currentColor"/><rect x="15.2" y="14.5" width="3.2" height="6" rx="0.5" fill="currentColor"/><rect x="19.6" y="15" width="3.2" height="5.5" rx="0.5" fill="currentColor"/><rect x="24" y="14.5" width="3.2" height="10" rx="0.5" fill="currentColor"/><rect x="28.4" y="13" width="2" height="4.5" rx="0.5" fill="currentColor"/></svg>LlamaTrade</span>
+        <div class="links"><a href="#">Strategies</a><a href="#">Backtests</a><a href="#">Sessions</a><a href="#">Risk checks</a><a href="#">Docs</a></div>
+        <div class="end"><a class="btn ghost" href="#">Sign in</a><a class="btn pri" href="#">Request an invite</a></div>
+    </div>
+
+    <div class="hero">
+        <div>
+            <span class="eyebrow"><span class="mode">Paper</span>Closed beta on Alpaca paper accounts</span>
+            <h1>Run your strategies with the market clock in view.</h1>
+            <p class="lede">LlamaTrade runs allocation strategies on your own Alpaca account. Each session shows market hours, how fresh its data is, when the next rebalance is due and every order the risk checks allowed through.</p>
+            <div class="ctas"><a class="btn pri" href="#">Request an invite</a><a class="btn" href="#">See a session</a></div>
+            <p class="fine">Paper trading only during the beta. Alpaca is the broker of record and holds your funds. Market data is Alpaca's IEX feed, about 3% of consolidated US volume.</p>
+        </div>
+        <div class="term" aria-label="Example running session">
+            <div class="rail">
+                <div><span class="k">Market</span><span class="v"><span class="st run stream"><i></i></span>Open <span class="clock">10:42:18</span> ET</span></div>
+                <div><span class="k">Data</span><span class="v">IEX · bar 10:42</span></div>
+                <div><span class="k">Next rebalance</span><span class="v">Dec 1</span></div>
+                <div><span class="mode">Paper</span></div>
+            </div>
+            <div class="sess-h">
+                <div><h3>Tech Momentum Rotation</h3><div class="sub">Version 2 · monthly · top 2 of QQQ, XLK, SMH</div></div>
+                <span class="st run stream"><i></i>Running</span>
+            </div>
+            <div class="kpis">
+                <div><span class="lbl">Sleeve equity</span><div class="v" data-eq>$24,914.42</div><div class="d">allocated $25,000</div></div>
+                <div><span class="lbl">Today</span><div class="v gain" data-day>+$867.12</div><div class="d gain" data-dayp>+3.61%</div></div>
+                <div><span class="lbl">Total P&amp;L</span><div class="v loss" data-tot>−$85.58</div><div class="d loss" data-totp>−0.34%</div></div>
+                <div><span class="lbl">Cash</span><div class="v">$384.82</div><div class="d">1.5% of sleeve</div></div>
+            </div>
+            <div class="scroll">
+            <table class="t">
+                <thead><tr><th>Symbol</th><th class="n">Qty</th><th class="n">Last</th><th class="n">Today</th><th class="n">Weight</th><th class="n">Target</th></tr></thead>
+                <tbody>
+                    <tr><td class="sym">QQQ</td><td class="n">20</td><td class="n" data-px="QQQ">618.95</td><td class="n gain" data-chg="QQQ">+2.89%</td><td class="n">49.7%</td><td class="n t3">50.0%</td></tr>
+                    <tr><td class="sym">SMH</td><td class="n">42</td><td class="n" data-px="SMH">289.30</td><td class="n gain" data-chg="SMH">+4.46%</td><td class="n">48.8%</td><td class="n t3">50.0%</td></tr>
+                    <tr><td class="sym t3">XLK</td><td class="n t3">0</td><td class="n t3">301.84</td><td class="n t3">+2.14%</td><td class="n t3">0.0%</td><td class="n t3">0.0%</td></tr>
+                </tbody>
+            </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="mk">
+        <div>
+            <span class="lbl">Risk checks</span>
+            <h2>Seven checks run before any order reaches Alpaca.</h2>
+            <p>Every order a strategy produces is checked in the same order: market hours, order size, the sleeve's own cash and holdings, allowed symbols, position size, the day's loss and the order rate. If a check fails, the order isn't sent and the session records which check stopped it.</p>
+            <p>If the ledger can't confirm the sleeve's state, the order is rejected. A missing answer never counts as a pass.</p>
+            <p class="note">Limits shown are the defaults. Each session can set its own.</p>
+        </div>
+        <div class="term">
+            <div class="order-line"><span class="side-b">BUY</span><span class="sym">SMH</span><span class="m">16 × $289.30</span><span class="m t3">order $4,628.80</span><span class="m t3" style="margin-left:auto">10:31:07 ET</span></div>
+            <ol class="checks">
+                <li><span class="no">1</span><span>Market is open</span><span class="lim">9:30 to 4:00 ET</span><span class="res ok">Passed</span></li>
+                <li><span class="no">2</span><span>Order value</span><span class="lim">≤ $5,000</span><span class="res ok">Passed</span></li>
+                <li><span class="no">3</span><span>Sleeve is active and has the cash</span><span class="lim">free $4,912.40</span><span class="res ok">Passed</span></li>
+                <li><span class="no">4</span><span>Symbol is allowed</span><span class="lim">all symbols</span><span class="res ok">Passed</span></li>
+                <li class="fail"><span class="no">5</span><span>Position size after the order</span><span class="lim">$10,414.80 &gt; $10,000</span><span class="res fail">Stopped</span></li>
+                <li class="skip"><span class="no">6</span><span>Daily loss</span><span class="lim">≤ $1,000</span><span class="res">Not run</span></li>
+                <li class="skip"><span class="no">7</span><span>Order rate</span><span class="lim">10 per minute</span><span class="res">Not run</span></li>
+            </ol>
+            <div class="reason"><b>Not sent.</b> The position would be $10,414.80, above this session's $10,000 limit. You'll see this in the session log and in your notifications.</div>
+        </div>
+    </div>
+
+    <div class="mk">
+        <div>
+            <span class="lbl">Session states</span>
+            <h2>Every state has a name and a reason.</h2>
+            <p>A strategy that isn't trading is usually doing the right thing. It may be waiting for a symbol's bar, outside its rebalance window, or stopped because the ledger and Alpaca disagree. Each of these has its own mark, so you can tell them apart at a glance.</p>
+            <p>The shape carries the meaning and the colour backs it up: a dashed ring for waiting, a half-filled ring for a degraded evaluation, a square for frozen.</p>
+        </div>
+        <div class="states">
+            <div><span class="st run"><i></i>Running</span><p>Streaming bars and ready to rebalance on schedule.</p><span class="ts">since Oct 1, 9:30 ET</span></div>
+            <div><span class="st wait"><i></i>Waiting for data</span><p>Five of six symbols have today's bar. IWM's hasn't arrived.</p><span class="ts">gate 5 / 6 · 10:31 ET</span></div>
+            <div><span class="st deg"><i></i>Degraded evaluation</span><p>A condition read a missing value and evaluated as false. It's counted, not hidden.</p><span class="ts">2 this session</span></div>
+            <div><span class="st frz"><i></i>Frozen</span><p>Alpaca and the ledger disagree on a quantity. New orders wait for you.</p><span class="ts">TLT · 120 vs 167</span></div>
+            <div><span class="st"><i></i>Market closed</span><p>Bars resume at the next open. Nothing is evaluated overnight.</p><span class="ts">opens Mon 9:30 ET</span></div>
+            <div><span class="st stop"><i></i>Stopped</span><p>The sleeve is closed and its holdings moved to unmanaged at cost.</p><span class="ts">Nov 4, 3:12 pm ET</span></div>
+        </div>
+    </div>
+</section>
+
+<section class="wrap part">
+    <div class="part-h">
+        <span class="lbl">The application</span>
+        <div>
+            <h2>Dark by default, with a light theme for reports</h2>
+            <p>Every screen opens with the same status rail: market state, data freshness, the rebalance gate and the account mode. Numbers are set in Chivo Mono; labels are sentence case in Chivo, so the figures are the only monospaced text on screen.</p>
+        </div>
+    </div>
+
+    <div class="shot">
+        <div class="shot-cap"><span class="lbl">Live session</span><div><h3>A quiet day in a running session</h3><p>Most days a monthly strategy doesn't trade. The screen says so: the gate is closed until Dec 1, reconciliation passed, and the last rebalance's orders stay listed. Prices flash once when they change.</p></div></div>
+        <div class="app night">
+            <div class="app-top">
+                <span class="logo"><svg class="lt-candles" viewBox="0 0 32 32" fill="none" aria-hidden="true" style="width:1.3em;height:1.3em;flex:none;display:block"><path d="M8 2v20M12.4 13v16.5M25.6 13v16.5M16.8 12.5v10M21.2 13v9" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><rect x="2" y="7" width="3.2" height="4" rx="0.5" fill="var(--lacc, var(--p-acc, var(--accent, var(--navy, #1f3b73))))"/><rect x="6.4" y="4.5" width="3.2" height="14" rx="0.5" fill="currentColor"/><rect x="10.8" y="14.5" width="3.2" height="10" rx="0.5" fill="currentColor"/><rect x="15.2" y="14.5" width="3.2" height="6" rx="0.5" fill="currentColor"/><rect x="19.6" y="15" width="3.2" height="5.5" rx="0.5" fill="currentColor"/><rect x="24" y="14.5" width="3.2" height="10" rx="0.5" fill="currentColor"/><rect x="28.4" y="13" width="2" height="4.5" rx="0.5" fill="currentColor"/></svg>LlamaTrade</span>
+                <nav><a href="#">Portfolio</a><a href="#">Strategies</a><a href="#">Backtests</a><a class="on" href="#">Sessions</a><a href="#">Copilot</a></nav>
+                <div class="end"><span class="kbd hide-s">⌘K</span><span class="av">SR</span></div>
+            </div>
+            <div class="rail">
+                <div><span class="k">Market</span><span class="v"><span class="st run stream"><i></i></span>Open <span class="clock">10:42:18</span> ET</span></div>
+                <div><span class="k">Closes</span><span class="v">4:00 pm ET</span></div>
+                <div><span class="k">Data</span><span class="v">IEX · bar 10:42</span></div>
+                <div><span class="k">Rebalance gate</span><span class="v">Closed · opens Dec 1</span></div>
+                <div><span class="k">Reconciliation</span><span class="v">Passed 10:15</span></div>
+                <div><span class="mode">Paper</span></div>
+            </div>
+            <div class="app-body">
+                <div class="g-live">
+                    <div>
+                        <div class="pn">
+                            <div class="sess-h">
+                                <div><h4>Tech Momentum Rotation</h4><div class="sub">Version 2 · monthly · benchmark QQQ · running since Oct 1</div></div>
+                                <div style="display:flex;gap:8px;align-items:center"><span class="st run stream"><i></i>Running</span><button class="btn sm">Pause</button><button class="btn sm">Stop session</button></div>
+                            </div>
+                            <div class="kpis">
+                                <div><span class="lbl">Sleeve equity</span><div class="v" data-eq>$24,914.42</div><div class="d">allocated $25,000</div></div>
+                                <div><span class="lbl">Today</span><div class="v gain" data-day>+$867.12</div><div class="d gain" data-dayp>+3.61%</div></div>
+                                <div><span class="lbl">Total P&amp;L</span><div class="v loss" data-tot>−$85.58</div><div class="d loss" data-totp>−0.34%</div></div>
+                                <div><span class="lbl">Cash</span><div class="v">$384.82</div><div class="d">1.5% of sleeve</div></div>
+                            </div>
+                            <div class="pn-b" style="padding-bottom:8px"><div id="b-intraday"></div></div>
+                        </div>
+                        <div class="pn">
+                            <div class="pn-h"><h5>Positions</h5><span class="lbl">Marks from IEX, ledger quantities</span></div>
+                            <div class="scroll">
+                            <table class="t">
+                                <thead><tr><th>Symbol</th><th class="n">Qty</th><th class="n">Avg cost</th><th class="n">Last</th><th class="n">Today</th><th class="n">Market value</th><th class="n">Unrealised</th></tr></thead>
+                                <tbody>
+                                    <tr><td class="sym">QQQ</td><td class="n">20</td><td class="n">621.30</td><td class="n" data-px="QQQ">618.95</td><td class="n gain" data-chg="QQQ">+2.89%</td><td class="n" data-mv="QQQ">12,379.00</td><td class="n loss" data-un="QQQ">−47.00</td></tr>
+                                    <tr><td class="sym">SMH</td><td class="n">42</td><td class="n">290.85</td><td class="n" data-px="SMH">289.30</td><td class="n gain" data-chg="SMH">+4.46%</td><td class="n" data-mv="SMH">12,150.60</td><td class="n loss" data-un="SMH">−65.10</td></tr>
+                                    <tr><td class="t3">Cash</td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n"></td><td class="n">384.82</td><td class="n"></td></tr>
+                                </tbody>
+                            </table>
+                            </div>
+                        </div>
+                        <div class="pn">
+                            <div class="pn-h"><h5>Orders</h5><span class="lbl">Last rebalance, Mon Nov 2</span></div>
+                            <div class="scroll">
+                            <table class="t">
+                                <thead><tr><th>Time</th><th>Side</th><th>Symbol</th><th>Type</th><th class="n">Filled</th><th class="n">Avg fill</th><th>Status</th></tr></thead>
+                                <tbody>
+                                    <tr><td class="m t3">09:31:02</td><td><span class="side-s">SELL</span></td><td class="sym">XLK</td><td>Market</td><td class="n">38 / 38</td><td class="n">301.12</td><td>Filled</td></tr>
+                                    <tr><td class="m t3">09:31:02</td><td><span class="side-s">SELL</span></td><td class="sym">QQQ</td><td>Market</td><td class="n">1 / 1</td><td class="n">619.80</td><td>Filled</td></tr>
+                                    <tr><td class="m t3">09:31:05</td><td><span class="side-b">BUY</span></td><td class="sym">SMH</td><td>Market</td><td class="n">42 / 42</td><td class="n">290.85</td><td>Filled</td></tr>
+                                </tbody>
+                            </table>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="pn">
+                            <div class="pn-h"><h5>Weights</h5><span class="lbl">Bar is actual, tick is target</span></div>
+                            <div class="pn-b">
+                                <div class="wbar"><span class="sym">QQQ</span><span class="track"><span class="fill" style="width:49.7%"></span><span class="tgt" style="left:50%"></span></span><span class="m" style="text-align:right">49.7%</span><span class="m t3" style="text-align:right">−0.3</span></div>
+                                <div class="wbar"><span class="sym">SMH</span><span class="track"><span class="fill" style="width:48.8%"></span><span class="tgt" style="left:50%"></span></span><span class="m" style="text-align:right">48.8%</span><span class="m t3" style="text-align:right">−1.2</span></div>
+                                <div class="wbar"><span class="sym t3">Cash</span><span class="track"><span class="fill" style="width:1.5%"></span><span class="tgt" style="left:0"></span></span><span class="m" style="text-align:right">1.5%</span><span class="m t3" style="text-align:right">+1.5</span></div>
+                                <p class="lbl" style="margin:10px 0 0">Drift is measured against the last rebalance's targets. Nothing trades between rebalances.</p>
+                            </div>
+                        </div>
+                        <div class="pn">
+                            <div class="pn-h"><h5>Session limits</h5><button class="btn sm ghost">Edit</button></div>
+                            <div class="pn-b" style="padding-top:4px;padding-bottom:4px">
+                                <div class="lim-row"><span>Daily loss</span><span class="m t2">$0 of $1,000</span><div class="meter"><i style="width:0%"></i></div></div>
+                                <div class="lim-row"><span>Largest position</span><span class="m t2">$12,379 of $15,000</span><div class="meter"><i style="width:82.5%"></i></div></div>
+                                <div class="lim-row"><span>Order value</span><span class="m t2">≤ $15,000</span></div>
+                                <div class="lim-row"><span>Order rate</span><span class="m t2">0 of 10 per minute</span></div>
+                            </div>
+                        </div>
+                        <div class="pn">
+                            <div class="pn-h"><h5>Session log</h5><span class="lbl">Fri Nov 13</span></div>
+                            <div class="log">
+                                <div><span class="ts">10:15:00</span><span class="msg"><b>Reconciliation passed.</b> 2 positions match Alpaca.</span></div>
+                                <div><span class="ts">10:00:02</span><span class="msg">Equity synced from the ledger.</span></div>
+                                <div><span class="ts">09:31:00</span><span class="msg">Forming today's daily bar for 3 symbols.</span></div>
+                                <div><span class="ts">09:31:00</span><span class="msg"><b>Rebalance gate closed.</b> Next opens Dec 1.</span></div>
+                                <div><span class="ts">09:30:00</span><span class="msg">Market open. Streaming QQQ, XLK and SMH.</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="shot">
+        <div class="shot-cap"><span class="lbl">Strategy editor</span><div><h3>Code first, with problems stated plainly</h3><p>The editor shows what the strategy would hold today and what it needs to run. Here a draft uses market-cap weighting, which parses but can't run, and the editor says why before anything is saved.</p></div></div>
+        <div class="app night">
+            <div class="app-top">
+                <span class="logo"><svg class="lt-candles" viewBox="0 0 32 32" fill="none" aria-hidden="true" style="width:1.3em;height:1.3em;flex:none;display:block"><path d="M8 2v20M12.4 13v16.5M25.6 13v16.5M16.8 12.5v10M21.2 13v9" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><rect x="2" y="7" width="3.2" height="4" rx="0.5" fill="var(--lacc, var(--p-acc, var(--accent, var(--navy, #1f3b73))))"/><rect x="6.4" y="4.5" width="3.2" height="14" rx="0.5" fill="currentColor"/><rect x="10.8" y="14.5" width="3.2" height="10" rx="0.5" fill="currentColor"/><rect x="15.2" y="14.5" width="3.2" height="6" rx="0.5" fill="currentColor"/><rect x="19.6" y="15" width="3.2" height="5.5" rx="0.5" fill="currentColor"/><rect x="24" y="14.5" width="3.2" height="10" rx="0.5" fill="currentColor"/><rect x="28.4" y="13" width="2" height="4.5" rx="0.5" fill="currentColor"/></svg>LlamaTrade</span>
+                <nav><a href="#">Portfolio</a><a class="on" href="#">Strategies</a><a href="#">Backtests</a><a href="#">Sessions</a><a href="#">Copilot</a></nav>
+                <div class="end"><span class="kbd hide-s">⌘K</span><span class="av">SR</span></div>
+            </div>
+            <div class="app-body">
+                <div class="pn">
+                    <div class="sess-h">
+                        <div><h4>Tech Momentum Rotation</h4><div class="sub">Draft of version 3 · unsaved changes · version 2 is running</div></div>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm">Blocks</button><button class="btn sm" disabled>Backtest</button><button class="btn sm pri" disabled>Save version 3</button></div>
+                    </div>
+                </div>
+                <div class="ed">
+                    <div class="pn">
+                        <div class="pn-h"><h5>Source</h5><span class="lbl">1 problem</span></div>
+                        <div class="code">
+<div><span class="ln">1</span><span>(<span class="k">strategy</span> <span class="s">"Tech Momentum Rotation"</span></span></div>
+<div><span class="ln">2</span><span>  :rebalance monthly</span></div>
+<div><span class="ln">3</span><span>  :benchmark QQQ</span></div>
+<div><span class="ln">4</span><span>  (<span class="k">filter</span> :by momentum :select (top 2)</span></div>
+<div><span class="ln">5</span><span>          :lookback 90</span></div>
+<div class="err"><span class="ln">6</span><span>    (<span class="k">weight</span> :method <span class="bad">market-cap</span></span></div>
+<div><span class="ln">7</span><span>      (<span class="k">asset</span> QQQ)</span></div>
+<div><span class="ln">8</span><span>      (<span class="k">asset</span> XLK)</span></div>
+<div><span class="ln">9</span><span>      (<span class="k">asset</span> SMH))))</span></div>
+                        </div>
+                    </div>
+                    <div style="display:grid;gap:12px;align-content:start;min-width:0">
+                        <div class="pn">
+                            <div class="pn-h"><h5>Problems</h5></div>
+                            <div class="prob"><svg class="ic" viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 2.5 18 17H2L10 2.5Z"/><path d="M10 8v4M10 14.2v.3"/></svg><div><b>Line 6.</b> <code>market-cap</code> weighting needs company fundamentals, which the engine doesn't have. Use <code>equal</code>, <code>inverse-volatility</code>, <code>min-variance</code>, <code>momentum</code>, <code>risk-parity</code> or <code>specified</code>.</div></div>
+                        </div>
+                        <div class="pn">
+                            <div class="pn-h"><h5>What it needs</h5><span class="lbl">From version 2</span></div>
+                            <table class="t">
+                                <tbody>
+                                    <tr><td>Symbols</td><td class="n">QQQ · XLK · SMH</td></tr>
+                                    <tr><td>Signals only</td><td class="n t3">none</td></tr>
+                                    <tr><td>History before first rebalance</td><td class="n">90 bars</td></tr>
+                                    <tr><td>Would hold today</td><td class="n">SMH · QQQ</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="shot">
+        <div class="shot-cap"><span class="lbl">Backtest report, light</span><div><h3>The same data in the light theme</h3><p>Reports are often read in daylight, printed or shared, so the light theme uses the same tokens with darker steps of each colour. Equity and drawdown share one time axis and keep separate y-axes in separate charts.</p></div></div>
+        <div class="app day">
+            <div class="app-top">
+                <span class="logo"><svg class="lt-candles" viewBox="0 0 32 32" fill="none" aria-hidden="true" style="width:1.3em;height:1.3em;flex:none;display:block"><path d="M8 2v20M12.4 13v16.5M25.6 13v16.5M16.8 12.5v10M21.2 13v9" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><rect x="2" y="7" width="3.2" height="4" rx="0.5" fill="var(--lacc, var(--p-acc, var(--accent, var(--navy, #1f3b73))))"/><rect x="6.4" y="4.5" width="3.2" height="14" rx="0.5" fill="currentColor"/><rect x="10.8" y="14.5" width="3.2" height="10" rx="0.5" fill="currentColor"/><rect x="15.2" y="14.5" width="3.2" height="6" rx="0.5" fill="currentColor"/><rect x="19.6" y="15" width="3.2" height="5.5" rx="0.5" fill="currentColor"/><rect x="24" y="14.5" width="3.2" height="10" rx="0.5" fill="currentColor"/><rect x="28.4" y="13" width="2" height="4.5" rx="0.5" fill="currentColor"/></svg>LlamaTrade</span>
+                <nav><a href="#">Portfolio</a><a href="#">Strategies</a><a class="on" href="#">Backtests</a><a href="#">Sessions</a><a href="#">Copilot</a></nav>
+                <div class="end"><span class="kbd hide-s">⌘K</span><span class="av">SR</span></div>
+            </div>
+            <div class="app-body">
+                <div class="pn">
+                    <div class="sess-h">
+                        <div><h4>Recession Radar · version 3</h4><div class="sub m">2024-11-01 → 2026-10-30 · $25,000 · SPY · finished 3.8 s</div></div>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap"><span class="st"><i style="background:var(--text);border-color:var(--text)"></i>Completed</span><button class="btn sm">Export CSV</button><button class="btn sm pri">Deploy to paper</button></div>
+                    </div>
+                    <div class="statsrow" id="b-stats"></div>
+                    <div class="pn-b">
+                        <div class="leg" style="margin-bottom:6px"><span><i></i>Recession Radar</span><span><i class="b"></i>SPY</span></div>
+                        <div id="b-eq"></div>
+                        <div class="lbl" style="margin:14px 0 4px">Drawdown from peak</div>
+                        <div id="b-dd"></div>
+                    </div>
+                </div>
+                <div class="bt-grid">
+                    <div class="pn">
+                        <div class="pn-h"><h5>Monthly returns, %</h5><span class="lbl">Year column compounds months</span></div>
+                        <div class="pn-b scroll" id="b-mg"></div>
+                    </div>
+                    <div class="pn">
+                        <div class="pn-h"><h5>Run</h5></div>
+                        <table class="t">
+                            <tbody>
+                                <tr><td>Rebalances</td><td class="n">24</td></tr>
+                                <tr><td>Orders simulated</td><td class="n">58</td></tr>
+                                <tr><td>Defensive branch</td><td class="n">7 of 24</td></tr>
+                                <tr><td>Degraded evaluations</td><td class="n">0</td></tr>
+                                <tr><td>Fills</td><td class="n t3">close + slippage</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="shot">
+        <div class="shot-cap"><span class="lbl">Empty state</span><div><h3>A session that hasn't traded yet</h3><p>A new session can run for weeks before its first order. The empty state shows where it is in that timeline rather than an empty table.</p></div></div>
+        <div class="app night">
+            <div class="app-top">
+                <span class="logo"><svg class="lt-candles" viewBox="0 0 32 32" fill="none" aria-hidden="true" style="width:1.3em;height:1.3em;flex:none;display:block"><path d="M8 2v20M12.4 13v16.5M25.6 13v16.5M16.8 12.5v10M21.2 13v9" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/><rect x="2" y="7" width="3.2" height="4" rx="0.5" fill="var(--lacc, var(--p-acc, var(--accent, var(--navy, #1f3b73))))"/><rect x="6.4" y="4.5" width="3.2" height="14" rx="0.5" fill="currentColor"/><rect x="10.8" y="14.5" width="3.2" height="10" rx="0.5" fill="currentColor"/><rect x="15.2" y="14.5" width="3.2" height="6" rx="0.5" fill="currentColor"/><rect x="19.6" y="15" width="3.2" height="5.5" rx="0.5" fill="currentColor"/><rect x="24" y="14.5" width="3.2" height="10" rx="0.5" fill="currentColor"/><rect x="28.4" y="13" width="2" height="4.5" rx="0.5" fill="currentColor"/></svg>LlamaTrade</span>
+                <nav><a href="#">Portfolio</a><a href="#">Strategies</a><a href="#">Backtests</a><a class="on" href="#">Sessions</a><a href="#">Copilot</a></nav>
+                <div class="end"><span class="kbd hide-s">⌘K</span><span class="av">JL</span></div>
+            </div>
+            <div class="rail">
+                <div><span class="k">Market</span><span class="v"><span class="st run stream"><i></i></span>Open <span class="clock">10:42:18</span> ET</span></div>
+                <div><span class="k">Data</span><span class="v">IEX · bar 10:42</span></div>
+                <div><span class="k">Rebalance gate</span><span class="v">Closed · opens Dec 1</span></div>
+                <div><span class="mode">Paper</span></div>
+            </div>
+            <div class="app-body">
+                <div class="pn">
+                    <div class="pn-h"><h5>Orders · All-Weather Portfolio</h5><span class="st run"><i></i>Running</span></div>
+                    <div class="empty">
+                        <div class="glyph"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/></svg></div>
+                        <h5>No orders yet</h5>
+                        <p>This session started today at 9:31 am ET with $35,000.00. Its first rebalance is on Tuesday, Dec 1, once all five symbols have that day's first bar. Orders will be listed here as they're sent.</p>
+                        <div class="timeline">
+                            <div class="done"><span>Funded</span><span class="m">Nov 13 9:31</span></div>
+                            <div class="done"><span>History loaded</span><span class="m">90 bars</span></div>
+                            <div><span>First rebalance</span><span class="m">Dec 1</span></div>
+                        </div>
+                        <button class="btn sm">View the strategy's backtest</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="wrap part">
+    <div class="part-h">
+        <span class="lbl">Tokens</span>
+        <div><h2>Type, colour, spacing and charts</h2><p>Graphite surfaces, one signal accent and three semantic colours. The theme is defined twice, night and day, from the same names.</p></div>
+    </div>
+    <div class="tk">
+        <div class="pn">
+            <div class="pn-h"><h5>Type scale</h5></div>
+            <div class="trow"><span class="spec">Display · Chivo 600<br>46 / 50 · −0.025em</span><span style="font:600 38px/1.1 var(--sans);letter-spacing:-0.025em">Market clock</span></div>
+            <div class="trow"><span class="spec">Title · Chivo 600<br>16 / 20</span><span style="font:600 16px/1.2 var(--sans)">Tech Momentum Rotation</span></div>
+            <div class="trow"><span class="spec">Body · Chivo 400<br>14 / 22</span><span>Orders will be listed here as they're sent.</span></div>
+            <div class="trow"><span class="spec">Label · Chivo 500<br>12 / 16</span><span class="lbl">Sleeve equity</span></div>
+            <div class="trow"><span class="spec">Figure · Chivo Mono 500<br>20 / 25 · −0.02em</span><span class="m" style="font-size:20px;font-weight:500">$24,914.42</span></div>
+            <div class="trow"><span class="spec">Table · Chivo Mono 400<br>13 / 32 row</span><span class="m" style="font-size:13px">12,379.00 &nbsp;<span class="gain">+2.89%</span> &nbsp;<span class="loss">−47.00</span></span></div>
+            <div class="trow"><span class="spec">Time · Chivo Mono 400<br>12, always with zone</span><span class="m t3" style="font-size:12px">10:42:18 ET</span></div>
+        </div>
+        <div class="pn">
+            <div class="pn-h"><h5>Colour and meaning</h5><span class="lbl">Night · Day</span></div>
+            <div class="sw"><i style="background:linear-gradient(90deg,#0d1013 50%,#f2f4f6 50%)"></i><div><b>Ground</b><code>#0D1013 · #F2F4F6</code><span>Page and panels. Panels step up by one shade, never by a shadow.</span></div></div>
+            <div class="sw"><i style="background:linear-gradient(90deg,#4cc2ff 50%,#0a6fb3 50%)"></i><div><b>Signal, the accent</b><code>#4CC2FF · #0A6FB3</code><span>Interaction, selection, focus, targets and the strategy line.</span></div></div>
+            <div class="sw"><i style="background:linear-gradient(90deg,#3fbf7a 50%,#12804a 50%)"></i><div><b>Gain</b><code>#3FBF7A · #12804A</code><span>Positive P&amp;L and returns, and an up-tick flash. Always signed.</span></div></div>
+            <div class="sw"><i style="background:linear-gradient(90deg,#f2555a 50%,#c62f38 50%)"></i><div><b>Loss</b><code>#F2555A · #C62F38</code><span>Negative P&amp;L, returns, drawdown and a down-tick flash. Always signed.</span></div></div>
+            <div class="sw"><i style="background:linear-gradient(90deg,#f0a63a 50%,#955700 50%)"></i><div><b>Risk</b><code>#F0A63A · #955700</code><span>Failed checks, frozen sleeves, degraded evaluations. Always with a reason.</span></div></div>
+            <div class="sw"><i style="background:repeating-linear-gradient(135deg,rgba(228,232,236,.35) 0 2px,#13171b 2px 6px)"></i><div><b>Paper hatch</b><code>16% text</code><span>Paper is hatched, live is solid. The mode never depends on colour.</span></div></div>
+        </div>
+        <div class="pn">
+            <div class="pn-h"><h5>Spacing and density</h5><span class="lbl">4 px base</span></div>
+            <div class="pn-b" style="padding-left:0;padding-right:0">
+                <div class="sp"><span class="m">4</span><i style="width:4px"></i>Label to value</div>
+                <div class="sp"><span class="m">8</span><i style="width:8px"></i>Between controls</div>
+                <div class="sp"><span class="m">12</span><i style="width:12px"></i>Between panels, cell padding</div>
+                <div class="sp"><span class="m">16</span><i style="width:16px"></i>Panel padding</div>
+                <div class="sp"><span class="m">32</span><i style="width:32px"></i>Table row height</div>
+                <div class="sp"><span class="m">48</span><i style="width:48px"></i>App bar height</div>
+            </div>
+        </div>
+        <div class="pn">
+            <div class="pn-h"><h5>Chart style</h5></div>
+            <div class="pn-b"><div id="b-spec"></div>
+                <ul style="margin:12px 0 0;padding-left:18px;font-size:13px;color:var(--text-2)">
+                    <li>Strategy 1.5 px signal; benchmark 1 px dashed grey; one y-axis per chart.</li>
+                    <li>Dotted grid, mono axis labels, a crosshair with exact values on hover.</li>
+                    <li>Intraday charts mark the open and the close and stop at the last bar.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="wrap part">
+    <div class="part-h">
+        <span class="lbl">Components</span>
+        <div><h2>Buttons, inputs, a table and alerts</h2><p>Corners are 3 px. Depth comes from surface steps and 1 px lines.</p></div>
+    </div>
+    <div class="tk">
+        <div class="pn"><div class="pn-h"><h5>Buttons and labels</h5></div><div class="pn-b">
+            <div class="crow"><span class="cap">Primary: default, hover, focus, working, disabled</span><button class="btn pri">Start session</button><button class="btn pri is-hover">Start session</button><button class="btn pri is-focus">Start session</button><button class="btn pri"><span class="spin"></span>Starting</button><button class="btn pri" disabled>Start session</button></div>
+            <div class="crow"><span class="cap">Secondary and ghost</span><button class="btn">Pause</button><button class="btn is-hover">Pause</button><button class="btn ghost">Edit limits</button><button class="btn sm">Stop session</button></div>
+            <div class="crow"><span class="cap">Mode and state</span><span class="mode">Paper</span><span class="mode live">Live</span><span class="st run stream"><i></i>Running</span><span class="st wait"><i></i>Waiting</span><span class="st deg"><i></i>Degraded</span><span class="st frz"><i></i>Frozen</span><span class="st stop"><i></i>Stopped</span></div>
+            <p class="lbl" style="margin:0">Stop session is a secondary button with a confirmation that lists open orders. Red is kept for losses.</p>
+        </div></div>
+        <div class="pn"><div class="pn-h"><h5>Inputs</h5></div><div class="pn-b">
+            <div class="field"><label>Capital for this session</label><div class="inp"><span class="af">$</span><input value="15,000.00" aria-label="Capital"><span class="af">USD</span></div><span class="help">You have $17,077.12 unallocated.</span></div>
+            <div class="field"><label>Daily loss limit</label><div class="inp focus"><span class="af">$</span><input value="1,000" aria-label="Daily loss limit"></div></div>
+            <div class="field" style="margin-bottom:0"><label>Max position size</label><div class="inp err"><span class="af">$</span><input value="5,000" aria-label="Max position"></div><span class="msg">Below QQQ's current $12,379.00. The next rebalance would be rejected.</span></div>
+        </div></div>
+        <div class="pn"><div class="pn-h"><h5>Table</h5><span class="lbl">Sessions</span></div>
+            <div class="scroll"><table class="t">
+                <thead><tr><th>Strategy</th><th>Mode</th><th>State</th><th class="n">Equity</th><th class="n">Today</th></tr></thead>
+                <tbody>
+                    <tr class="sel"><td>Tech Momentum Rotation</td><td><span class="mode">Paper</span></td><td><span class="st run"><i></i>Running</span></td><td class="n">24,914.42</td><td class="n gain">+867.12</td></tr>
+                    <tr><td>All-Weather Portfolio</td><td><span class="mode">Paper</span></td><td><span class="st run"><i></i>Running</span></td><td class="n">35,982.55</td><td class="n loss">−84.12</td></tr>
+                    <tr><td>Recession Radar</td><td><span class="mode">Paper</span></td><td><span class="st frz"><i></i>Frozen</span></td><td class="n">25,436.18</td><td class="n gain">+112.40</td></tr>
+                    <tr><td>Classic 60/40</td><td><span class="mode">Paper</span></td><td><span class="st stop"><i></i>Stopped</span></td><td class="n t3">0.00</td><td class="n t3">0.00</td></tr>
+                </tbody>
+            </table></div>
+        </div>
+        <div class="pn"><div class="pn-h"><h5>Alerts</h5></div><div class="pn-b">
+            <div class="al risk"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10 2.5 18 17H2L10 2.5Z"/><path d="M10 8v4M10 14.2v.3"/></svg><div><b>Recession Radar is frozen</b><p>Alpaca shows 120 TLT and the ledger expects 167. New orders wait until you resolve it.</p></div><span class="ts">10:15</span></div>
+            <div class="al info"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="10" cy="10" r="7.5"/><path d="M10 9v5M10 6.2v.3"/></svg><div><b>Waiting for IWM</b><p>Five of six bars are in. The rebalance runs when the last one arrives.</p></div><span class="ts">10:31</span></div>
+            <div class="al"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="m5 10.5 3 3 7-7"/></svg><div><b>Rebalance complete</b><p>3 orders filled. The sleeve is within 1.2 points of its targets.</p></div><span class="ts">09:31</span></div>
+        </div></div>
+    </div>
+</section>
+
+<section class="wrap part">
+    <div class="part-h"><span class="lbl">Notes</span><div><h2>The idea, and what building it would take</h2></div></div>
+    <div class="prose">
+        <div>
+            <h4>Clocks and gates</h4>
+            <p>LlamaTrade's runtime is a set of clocks and gates: market hours, a bar stream that folds into a daily bar, a rebalance gate that opens on the schedule only when every symbol has data, reconciliation passes and a risk pipeline. Most confusion in a trading tool comes from not knowing which of these is holding things up.</p>
+            <p>This direction puts them on screen permanently. The status rail answers "is it working?" before any number is read, and every state has a shape as well as a colour. Times always carry a zone, numbers are always monospaced, and the only motion is a single flash when a price changes and a slow ring on things that are streaming.</p>
+            <p>It suits people who watch sessions during market hours. It's less suited to the marketing site and to occasional users, who meet a dense dark interface before they know what the parts mean.</p>
+        </div>
+        <div>
+            <h4>Building it in the current app</h4>
+            <ul>
+                <li>Theme: new values in <code>monolith.css</code> under <code>[data-theme="night"]</code> and <code>[data-theme="day"]</code>, re-enabling the retired toggle. Fonts swap to Chivo and Chivo Mono.</li>
+                <li>The status rail is a new component reading the market clock, the bar feed's last bar and the session's gate state. The gate and reconciliation timestamps would need to be exposed by the trading service to the web client if they aren't already.</li>
+                <li>State marks and the paper hatch are two small components that replace the current orange tags. Risk check results already return the failing checks, so the stopped-order view is a rendering of existing data.</li>
+                <li>Price flashes need the market-data stream on the session page; the current trading page is a read-only blotter, so this is new wiring, not restyling.</li>
+                <li>Most other screens are restyling: hard shadows, uppercase labels and orange accents come out, and table rows move to the 32 px rhythm.</li>
+            </ul>
+        </div>
+    </div>
+</section>
+
+<footer class="wrap">LlamaTrade design direction B. All figures on this page are illustrative and drawn from a generated backtest.</footer>
+
+<script>
+// Shared demo data and SVG chart helpers, inlined into each page at build time.
+const LT = (() => {
+    function mulberry(a) {
+        return function () {
+            a |= 0;
+            a = (a + 0x6d2b79f5) | 0;
+            let t = Math.imul(a ^ (a >>> 15), 1 | a);
+            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+    }
+    function gaussians(seed, n) {
+        const r = mulberry(seed);
+        const out = [];
+        for (let i = 0; i < n; i++) {
+            const u = 1 - r();
+            const v = r();
+            out.push(Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v));
+        }
+        return out;
+    }
+    function tradingDays(start, end) {
+        const out = [];
+        const d = new Date(start + "T12:00:00Z");
+        const e = new Date(end + "T12:00:00Z");
+        while (d <= e) {
+            const w = d.getUTCDay();
+            if (w !== 0 && w !== 6) out.push(new Date(d));
+            d.setUTCDate(d.getUTCDate() + 1);
+        }
+        return out;
+    }
+    function compound(z, start, end) {
+        const n = z.length;
+        let s = 0;
+        for (let i = 1; i < n; i++) s += z[i];
+        const adj = (Math.log(end / start) - s) / (n - 1);
+        const out = [start];
+        let lv = Math.log(start);
+        for (let i = 1; i < n; i++) {
+            lv += z[i] + adj;
+            out.push(Math.exp(lv));
+        }
+        return out;
+    }
+    function shock(z, at, len, amount) {
+        for (let i = at; i < at + len && i < z.length; i++) z[i] += amount / len;
+    }
+    function stats(s, days) {
+        const r = [];
+        for (let i = 1; i < s.length; i++) r.push(s[i] / s[i - 1] - 1);
+        const mean = r.reduce((a, b) => a + b, 0) / r.length;
+        const sd = Math.sqrt(r.reduce((a, b) => a + (b - mean) ** 2, 0) / (r.length - 1));
+        const down = Math.sqrt(r.reduce((a, b) => a + Math.min(b, 0) ** 2, 0) / r.length);
+        let peak = s[0];
+        let mdd = 0;
+        let mddAt = 0;
+        let peakAt = 0;
+        let ddPeakAt = 0;
+        for (let i = 0; i < s.length; i++) {
+            if (s[i] > peak) {
+                peak = s[i];
+                peakAt = i;
+            }
+            const dd = s[i] / peak - 1;
+            if (dd < mdd) {
+                mdd = dd;
+                mddAt = i;
+                ddPeakAt = peakAt;
+            }
+        }
+        let recoveredAt = -1;
+        for (let i = mddAt; i < s.length; i++) {
+            if (s[i] >= s[ddPeakAt]) {
+                recoveredAt = i;
+                break;
+            }
+        }
+        const years = (days[days.length - 1] - days[0]) / (365.25 * 864e5);
+        const end = s[s.length - 1];
+        return {
+            start: s[0],
+            end,
+            total: end / s[0] - 1,
+            cagr: Math.pow(end / s[0], 1 / years) - 1,
+            vol: sd * Math.sqrt(252),
+            sharpe: (mean / sd) * Math.sqrt(252),
+            sortino: (mean / down) * Math.sqrt(252),
+            mdd,
+            mddAt,
+            ddPeakAt,
+            recoveredAt,
+            recoveryDays: recoveredAt > 0 ? recoveredAt - mddAt : null,
+        };
+    }
+    function drawdown(s) {
+        let peak = s[0];
+        return s.map((v) => {
+            peak = Math.max(peak, v);
+            return v / peak - 1;
+        });
+    }
+    function monthly(s, days) {
+        const out = [];
+        let prev = s[0];
+        for (let i = 0; i < s.length; i++) {
+            const last = i === s.length - 1 || days[i + 1].getUTCMonth() !== days[i].getUTCMonth();
+            if (last) {
+                out.push({ y: days[i].getUTCFullYear(), m: days[i].getUTCMonth(), r: s[i] / prev - 1 });
+                prev = s[i];
+            }
+        }
+        return out;
+    }
+
+    // Recession Radar v3, Nov 1 2024 to Oct 30 2026, $25,000, benchmark SPY.
+    function backtest() {
+        const days = tradingDays("2024-11-01", "2026-10-30");
+        const n = days.length;
+        const m = gaussians(11, n).map((x) => x * 0.0098);
+        const idio = gaussians(29, n).map((x) => x * 0.0052);
+        const aprIdx = days.findIndex((d) => d.toISOString().startsWith("2025-03-24"));
+        shock(m, aprIdx, 12, -0.19);
+        shock(m, aprIdx + 12, 30, 0.13);
+        const spyZ = m.slice();
+        const stratZ = m.map((x, i) => x * 0.62 + idio[i]);
+        shock(stratZ, aprIdx + 3, 10, 0.065);
+        const spy = compound(spyZ, 25000, 31228.4);
+        const strat = compound(stratZ, 25000, 30352.18);
+        return {
+            days,
+            strat,
+            spy,
+            s: stats(strat, days),
+            b: stats(spy, days),
+            dd: drawdown(strat),
+            ddB: drawdown(spy),
+            months: monthly(strat, days),
+        };
+    }
+
+    // One month of account equity for the portfolio screen.
+    function accountMonth() {
+        const days = tradingDays("2026-10-14", "2026-11-13");
+        const z = gaussians(5, days.length).map((x) => x * 0.0046);
+        const acct = compound(z, 101_284.6, 103_410.27);
+        const zb = gaussians(8, days.length).map((x, i) => x * 0.007 + z[i] * 0.5);
+        const spy = compound(zb, 101_284.6, 102_633.9);
+        return { days, acct, spy };
+    }
+
+    const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const fmt = {
+        num(v, dp = 2) {
+            return Math.abs(v).toLocaleString("en-US", {
+                minimumFractionDigits: dp,
+                maximumFractionDigits: dp,
+            });
+        },
+        money(v, dp = 2) {
+            return (v < 0 ? "−$" : "$") + fmt.num(v, dp);
+        },
+        signedMoney(v, dp = 2) {
+            return (v < 0 ? "−$" : "+$") + fmt.num(v, dp);
+        },
+        paren(v, dp = 2) {
+            return v < 0 ? "(" + fmt.num(v, dp) + ")" : fmt.num(v, dp);
+        },
+        pct(v, dp = 1) {
+            return (v < 0 ? "−" : "") + fmt.num(v * 100, dp) + "%";
+        },
+        signedPct(v, dp = 1) {
+            return (v < 0 ? "−" : "+") + fmt.num(v * 100, dp) + "%";
+        },
+        date(d) {
+            return MON[d.getUTCMonth()] + " " + d.getUTCDate() + ", " + d.getUTCFullYear();
+        },
+        short(d) {
+            return MON[d.getUTCMonth()] + " " + d.getUTCDate();
+        },
+        mon(d) {
+            return MON[d.getUTCMonth()] + " " + d.getUTCFullYear();
+        },
+    };
+
+    const NS = "http://www.w3.org/2000/svg";
+    function el(tag, attrs, parent) {
+        const e = document.createElementNS(NS, tag);
+        for (const k in attrs) e.setAttribute(k, attrs[k]);
+        if (parent) parent.appendChild(e);
+        return e;
+    }
+
+    // Line chart with one y-axis, recessive grid and a crosshair tooltip.
+    // opts: { days, series: [{ values, cls, label, area }], height, yFmt, xFmt, xTicks, yTicks,
+    //         base (value for area baseline), tip(i) -> html, pad }
+    function lineChart(host, opts) {
+        host.classList.add("ltc");
+        const tip = document.createElement("div");
+        tip.className = "ltc-tip";
+        host.appendChild(tip);
+        let svg;
+        function render() {
+            if (svg) svg.remove();
+            const W = Math.max(260, host.clientWidth);
+            const H = opts.height || 260;
+            const pad = Object.assign({ t: 12, r: 12, b: 26, l: 56 }, opts.pad || {});
+            if (W < 480) pad.l = Math.min(pad.l, 46);
+            svg = el("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: "img" });
+            if (opts.label) svg.setAttribute("aria-label", opts.label);
+            host.insertBefore(svg, tip);
+            const all = opts.series.flatMap((s) => s.values);
+            let lo = Math.min(...all, opts.base ?? Infinity);
+            let hi = Math.max(...all, opts.ceil ?? -Infinity);
+            const span = hi - lo || 1;
+            if (opts.base === undefined) lo -= span * 0.06;
+            if (opts.ceil === undefined) hi += span * 0.06;
+            const n = opts.series[0].values.length;
+            const x = (i) => pad.l + (i / (n - 1)) * (W - pad.l - pad.r);
+            const y = (v) => pad.t + (1 - (v - lo) / (hi - lo)) * (H - pad.t - pad.b);
+            const yT = opts.yTicks || 4;
+            const g = el("g", { class: "ltc-grid" }, svg);
+            for (let k = 0; k <= yT; k++) {
+                const v = lo + ((hi - lo) * k) / yT;
+                const yy = Math.round(y(v)) + 0.5;
+                el("line", { x1: pad.l, x2: W - pad.r, y1: yy, y2: yy }, g);
+                const t = el("text", { x: pad.l - 8, y: yy + 4, "text-anchor": "end", class: "ltc-ax" }, g);
+                t.textContent = (opts.yFmt || ((v) => v.toFixed(0)))(v);
+            }
+            if (opts.zeroLine !== undefined) {
+                const yy = Math.round(y(opts.zeroLine)) + 0.5;
+                el("line", { x1: pad.l, x2: W - pad.r, y1: yy, y2: yy, class: "ltc-zero" }, svg);
+            }
+            const xT = W < 480 ? Math.min(3, opts.xTicks || 5) : opts.xTicks || 5;
+            for (let k = 0; k <= xT; k++) {
+                const i = Math.round(((n - 1) * k) / xT);
+                const t = el("text", {
+                    x: x(i),
+                    y: H - 6,
+                    "text-anchor": k === 0 ? "start" : k === xT ? "end" : "middle",
+                    class: "ltc-ax",
+                }, svg);
+                t.textContent = (opts.xFmt || fmt.mon)(opts.days[i]);
+            }
+            opts.series.forEach((s) => {
+                const pts = s.values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`);
+                if (s.area) {
+                    const b = y(opts.base ?? lo);
+                    el("path", {
+                        d: `M${x(0)},${b} L${pts.join(" L")} L${x(n - 1)},${b} Z`,
+                        class: s.cls + "-area",
+                    }, svg);
+                }
+                el("path", { d: "M" + pts.join(" L"), class: s.cls, fill: "none" }, svg);
+            });
+            const cross = el("line", { y1: pad.t, y2: H - pad.b, class: "ltc-cross", visibility: "hidden" }, svg);
+            const dots = opts.series.map((s) =>
+                el("circle", { r: 4, class: s.cls + "-dot", visibility: "hidden" }, svg),
+            );
+            const hit = el("rect", {
+                x: pad.l, y: 0, width: W - pad.l - pad.r, height: H, fill: "transparent",
+            }, svg);
+            function move(ev) {
+                const r = svg.getBoundingClientRect();
+                const px = (ev.touches ? ev.touches[0].clientX : ev.clientX) - r.left;
+                const i = Math.max(0, Math.min(n - 1, Math.round(((px - pad.l) / (W - pad.l - pad.r)) * (n - 1))));
+                const xx = x(i);
+                cross.setAttribute("x1", xx);
+                cross.setAttribute("x2", xx);
+                cross.setAttribute("visibility", "visible");
+                opts.series.forEach((s, k) => {
+                    dots[k].setAttribute("cx", xx);
+                    dots[k].setAttribute("cy", y(s.values[i]));
+                    dots[k].setAttribute("visibility", "visible");
+                });
+                tip.innerHTML = opts.tip ? opts.tip(i) : "";
+                tip.style.display = "block";
+                const tw = tip.offsetWidth;
+                const left = xx + 14 + tw > W ? xx - 14 - tw : xx + 14;
+                tip.style.left = left + "px";
+                tip.style.top = pad.t + 4 + "px";
+            }
+            function leave() {
+                cross.setAttribute("visibility", "hidden");
+                dots.forEach((d) => d.setAttribute("visibility", "hidden"));
+                tip.style.display = "none";
+            }
+            hit.addEventListener("mousemove", move);
+            hit.addEventListener("touchmove", move, { passive: true });
+            hit.addEventListener("mouseleave", leave);
+            hit.addEventListener("touchend", leave);
+        }
+        render();
+        let last = host.clientWidth;
+        new ResizeObserver(() => {
+            if (host.clientWidth !== last) {
+                last = host.clientWidth;
+                render();
+            }
+        }).observe(host);
+    }
+
+    // Monthly returns grid: rows by year, Jan to Dec. cell(r) returns a CSS background.
+    function monthlyGrid(host, months, cell) {
+        const years = [...new Set(months.map((m) => m.y))];
+        let h = '<table class="mg"><thead><tr><th></th>';
+        MON.forEach((m) => (h += `<th>${m.slice(0, 1)}<span>${m.slice(1)}</span></th>`));
+        h += "<th>Year</th></tr></thead><tbody>";
+        years.forEach((y) => {
+            h += `<tr><th>${y}</th>`;
+            let comp = 1;
+            for (let k = 0; k < 12; k++) {
+                const f = months.find((m) => m.y === y && m.m === k);
+                if (f) {
+                    comp *= 1 + f.r;
+                    h += `<td style="${cell(f.r)}" title="${MON[k]} ${y}: ${fmt.signedPct(f.r)}">${Math.abs(f.r) < 0.0005 ? "0.0" : (f.r < 0 ? "−" : "") + Math.abs(f.r * 100).toFixed(1)}</td>`;
+                } else h += '<td class="mg-none"></td>';
+            }
+            h += `<td class="mg-year">${fmt.signedPct(comp - 1)}</td></tr>`;
+        });
+        host.innerHTML = h + "</tbody></table>";
+    }
+
+    return { backtest, accountMonth, lineChart, monthlyGrid, fmt, mulberry, tradingDays, MON };
+})();
+
+(function () {
+    const { fmt } = LT;
+    const bt = LT.backtest();
+    const s = bt.s, b = bt.b;
+    const cell = (k, v, d, cls = "") => `<div><span class="lbl">${k}</span><div class="v ${cls}">${v}</div><div class="d">${d}</div></div>`;
+    document.getElementById("b-stats").innerHTML =
+        cell("Total return", fmt.signedPct(s.total), "SPY " + fmt.signedPct(b.total), s.total < 0 ? "loss" : "gain") +
+        cell("CAGR", fmt.signedPct(s.cagr), "SPY " + fmt.signedPct(b.cagr), s.cagr < 0 ? "loss" : "gain") +
+        cell("Sharpe", s.sharpe.toFixed(2), "SPY " + b.sharpe.toFixed(2)) +
+        cell("Sortino", s.sortino.toFixed(2), "SPY " + b.sortino.toFixed(2)) +
+        cell("Max drawdown", fmt.signedPct(s.mdd), "SPY " + fmt.signedPct(b.mdd), "loss") +
+        cell("Volatility", fmt.pct(s.vol), "SPY " + fmt.pct(b.vol));
+    const iso = (d) => d.toISOString().slice(0, 10);
+    const tip = (i) => `<b>${iso(bt.days[i])}</b>strat ${fmt.money(bt.strat[i])}<br>spy&nbsp;&nbsp; ${fmt.money(bt.spy[i])}`;
+    LT.lineChart(document.getElementById("b-eq"), {
+        days: bt.days, height: 230, series: [{ values: bt.spy, cls: "s-bench" }, { values: bt.strat, cls: "s-main", area: true }],
+        yFmt: (v) => (v / 1000).toFixed(0) + "k", tip, base: 20000, xFmt: (d) => iso(d).slice(0, 7), pad: { l: 44 },
+    });
+    LT.lineChart(document.getElementById("b-dd"), {
+        days: bt.days, height: 110, yTicks: 2, series: [{ values: bt.dd, cls: "s-dd", area: true }],
+        yFmt: (v) => (v === 0 ? "0%" : fmt.pct(v, 0)), base: 0, ceil: 0, zeroLine: 0, xFmt: (d) => iso(d).slice(0, 7), pad: { l: 44 },
+        tip: (i) => `<b>${iso(bt.days[i])}</b>dd ${fmt.signedPct(bt.dd[i])}`,
+    });
+    LT.monthlyGrid(document.getElementById("b-mg"), bt.months, (r) => {
+        const t = Math.min(1, Math.abs(r) / 0.08);
+        const c = r >= 0 ? "18,128,74" : "198,47,56";
+        return Math.abs(r) < 0.0005 ? "background:var(--raise)" : `background:rgba(${c},${0.07 + t * 0.33})`;
+    });
+    // Intraday: 9:30 to 10:42, one point a minute.
+    const r = LT.mulberry(4);
+    const mins = 73;
+    const intr = [24047.3];
+    for (let i = 1; i < mins; i++) intr.push(intr[i - 1] * (1 + (r() - 0.42) * 0.0024));
+    const scale = (24914.42 - 24047.3) / (intr[mins - 1] - 24047.3);
+    for (let i = 1; i < mins; i++) intr[i] = 24047.3 + (intr[i] - 24047.3) * scale;
+    const day0 = new Date("2026-11-13T14:30:00Z");
+    const mdays = intr.map((_, i) => new Date(day0.getTime() + i * 60000));
+    const hhmm = (d) => {
+        const h = d.getUTCHours() - 5;
+        return String(h).padStart(2, "0") + ":" + String(d.getUTCMinutes()).padStart(2, "0");
+    };
+    LT.lineChart(document.getElementById("b-intraday"), {
+        days: mdays, height: 150, yTicks: 3, xTicks: 4, series: [{ values: intr, cls: "s-main", area: true }],
+        yFmt: (v) => (v / 1000).toFixed(1) + "k", xFmt: hhmm, pad: { l: 44 }, base: 23900,
+        tip: (i) => `<b>${hhmm(mdays[i])} ET</b>${fmt.money(intr[i])}`,
+    });
+    const k = 160;
+    LT.lineChart(document.getElementById("b-spec"), {
+        days: bt.days.slice(0, k), height: 140, yTicks: 3, xTicks: 3,
+        series: [{ values: bt.spy.slice(0, k), cls: "s-bench" }, { values: bt.strat.slice(0, k), cls: "s-main", area: true }],
+        yFmt: (v) => (v / 1000).toFixed(0) + "k", base: 19000, xFmt: (d) => iso(d).slice(0, 7), pad: { l: 40 }, tip,
+    });
+
+    // Ticking prices and clock.
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const pos = { QQQ: { q: 20, px: 618.95, prev: 601.55, cost: 621.3 }, SMH: { q: 42, px: 289.3, prev: 276.94, cost: 290.85 } };
+    const cash = 384.82;
+    let secs = 10 * 3600 + 42 * 60 + 18;
+    const rr = LT.mulberry(17);
+    function paint(sym, dir) {
+        const p = pos[sym];
+        document.querySelectorAll(`[data-px="${sym}"]`).forEach((e) => {
+            e.textContent = p.px.toFixed(2);
+            if (!reduce && dir) {
+                e.classList.remove("flash-up", "flash-dn");
+                void e.offsetWidth;
+                e.classList.add(dir > 0 ? "flash-up" : "flash-dn");
+            }
+        });
+        document.querySelectorAll(`[data-chg="${sym}"]`).forEach((e) => {
+            const c = p.px / p.prev - 1;
+            e.textContent = fmt.signedPct(c, 2);
+            e.className = "n " + (c < 0 ? "loss" : "gain");
+        });
+        document.querySelectorAll(`[data-mv="${sym}"]`).forEach((e) => (e.textContent = fmt.num(p.px * p.q)));
+        document.querySelectorAll(`[data-un="${sym}"]`).forEach((e) => {
+            const u = (p.px - p.cost) * p.q;
+            e.textContent = (u < 0 ? "−" : "+") + fmt.num(u);
+            e.className = "n " + (u < 0 ? "loss" : "gain");
+        });
+        const eq = cash + pos.QQQ.px * pos.QQQ.q + pos.SMH.px * pos.SMH.q;
+        const day = (pos.QQQ.px - pos.QQQ.prev) * pos.QQQ.q + (pos.SMH.px - pos.SMH.prev) * pos.SMH.q;
+        const tot = eq - 25000;
+        document.querySelectorAll("[data-eq]").forEach((e) => (e.textContent = fmt.money(eq)));
+        document.querySelectorAll("[data-day]").forEach((e) => { e.textContent = fmt.signedMoney(day); e.className = "v " + (day < 0 ? "loss" : "gain"); });
+        document.querySelectorAll("[data-dayp]").forEach((e) => { e.textContent = fmt.signedPct(day / (eq - day), 2); e.className = "d " + (day < 0 ? "loss" : "gain"); });
+        document.querySelectorAll("[data-tot]").forEach((e) => { e.textContent = fmt.signedMoney(tot); e.className = "v " + (tot < 0 ? "loss" : "gain"); });
+        document.querySelectorAll("[data-totp]").forEach((e) => { e.textContent = fmt.signedPct(tot / 25000, 2); e.className = "d " + (tot < 0 ? "loss" : "gain"); });
+    }
+    setInterval(() => {
+        secs += 1;
+        const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), sc = secs % 60;
+        const t = `${h}:${String(m).padStart(2, "0")}:${String(sc).padStart(2, "0")}`;
+        document.querySelectorAll(".clock").forEach((e) => (e.textContent = t));
+        if (secs % 3 === 0) {
+            const sym = rr() < 0.5 ? "QQQ" : "SMH";
+            const p = pos[sym];
+            const step = Math.round((rr() - 0.5) * 8) / 100;
+            if (step !== 0) {
+                p.px = Math.max(p.prev * 0.98, p.px + step);
+                paint(sym, step);
+            }
+        }
+    }, 1000);
+})();
+</script>
+<script src="review-bar.js"></script>
+</body>
+</html>

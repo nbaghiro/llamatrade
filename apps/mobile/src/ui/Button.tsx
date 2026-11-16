@@ -1,82 +1,77 @@
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-  type StyleProp,
-  type ViewStyle,
-} from 'react-native';
+import type { ReactNode } from 'react';
+import { ActivityIndicator, Pressable, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { fonts, palette } from '../theme';
+import { makeStyles, radius, useTheme } from '../theme';
+import { Text } from './Text';
 
-type ButtonVariant = 'primary' | 'secondary' | 'danger';
+export type ButtonVariant = 'primary' | 'secondary' | 'danger';
+export type ButtonSize = 'md' | 'sm';
 
 interface ButtonProps {
   label: string;
   onPress: () => void;
   variant?: ButtonVariant;
+  size?: ButtonSize;
+  icon?: ReactNode;
   loading?: boolean;
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
-const VARIANT: Record<ButtonVariant, { bg: string; fg: string; border: string; shadow: boolean }> = {
-  primary: { bg: palette.orange[500], fg: palette.ink, border: palette.ink, shadow: true },
-  secondary: { bg: palette.paper, fg: palette.ink, border: palette.ink, shadow: false },
-  danger: { bg: palette.paper, fg: palette.red[500], border: palette.red[500], shadow: false },
-};
-
-/** Monolith button: hard border, offset shadow on primary, mono uppercase label. */
+/** Filled accent for the one main action; outlined panel for the rest. */
 export function Button({
   label,
   onPress,
   variant = 'primary',
+  size = 'md',
+  icon,
   loading = false,
   disabled = false,
   style,
 }: ButtonProps) {
-  const v = VARIANT[variant];
+  const { c } = useTheme();
+  const s = useStyles();
   const inactive = disabled || loading;
+  const primary = variant === 'primary';
+  const fg = primary ? c.accentInk : variant === 'danger' ? c.loss : c.fg;
 
   return (
-    <View style={[styles.wrap, style]}>
-      {v.shadow && !inactive ? <View style={styles.shadow} pointerEvents="none" /> : null}
-      <Pressable
-        onPress={inactive ? undefined : onPress}
-        disabled={inactive}
-        style={({ pressed }) => [
-          styles.base,
-          { backgroundColor: v.bg, borderColor: v.border, opacity: inactive ? 0.5 : 1 },
-          pressed && v.shadow ? { transform: [{ translateX: 2 }, { translateY: 2 }] } : null,
-        ]}
-      >
-        {loading ? (
-          <ActivityIndicator color={v.fg} size="small" />
-        ) : (
-          <Text style={[styles.label, { color: v.fg }]}>{label}</Text>
-        )}
-      </Pressable>
-    </View>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled: inactive, busy: loading }}
+      onPress={inactive ? undefined : onPress}
+      disabled={inactive}
+      style={({ pressed }) => [
+        s.base,
+        size === 'sm' ? s.sm : s.md,
+        primary ? s.primary : s.secondary,
+        inactive ? s.inactive : null,
+        pressed ? s.pressed : null,
+        style,
+      ]}
+    >
+      {loading ? <ActivityIndicator color={fg} size="small" /> : icon ? <View>{icon}</View> : null}
+      <Text variant={size === 'sm' ? 'smallStrong' : 'subhead'} color={fg} style={size === 'md' ? s.label : null}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
-const styles = StyleSheet.create({
-  wrap: { position: 'relative' },
-  shadow: { position: 'absolute', left: 4, top: 4, right: -4, bottom: -4, backgroundColor: palette.ink },
+const useStyles = makeStyles((t) => ({
   base: {
-    minHeight: 48,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
+    gap: 8,
+    borderRadius: radius.md,
     paddingHorizontal: 16,
-    paddingVertical: 12,
   },
-  label: {
-    fontFamily: fonts.mono,
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-  },
-});
+  md: { minHeight: 46 },
+  sm: { minHeight: 34, paddingHorizontal: 12 },
+  primary: { backgroundColor: t.c.accentFill },
+  secondary: { backgroundColor: t.c.panel, borderWidth: 1, borderColor: t.c.lineStrong },
+  inactive: { opacity: 0.5 },
+  pressed: { opacity: 0.8 },
+  label: { fontSize: 15 },
+}));

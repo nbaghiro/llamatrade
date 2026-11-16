@@ -1,25 +1,26 @@
-import { router } from 'expo-router';
-import { Lock, Warehouse, X } from 'lucide-react-native';
-import { useEffect, useState } from 'react';
-import { Alert, Pressable, View } from 'react-native';
-
-import { Field } from '../../src/auth/ui';
-import { useBillingStore } from '../../src/stores/billing';
+import { CLOSED_BETA } from '@llamatrade/core/billing/planTiers';
 import { useBrokerStore } from '@llamatrade/core/stores/broker';
-import { palette } from '../../src/theme';
-import { Badge, Body, Button, Card, Display, Label, Mono, SegmentedToggle } from '../../src/ui';
-import { Screen } from '../../src/ui/Screen';
+import { router } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Alert } from 'react-native';
+
+import { useBillingStore } from '../../src/stores/billing';
+import { makeStyles } from '../../src/theme';
+import { Button, Card, Field, ListRow, Notice, Screen, Segmented, StatusMark, Text, type Segment } from '../../src/ui';
 
 type Env = 'paper' | 'live';
-const ENV_OPTIONS = [
+const ENV_OPTIONS: readonly Segment<Env>[] = [
   { key: 'paper', label: 'Paper' },
   { key: 'live', label: 'Live' },
 ];
 
+const back = { label: 'Account', onPress: () => (router.canGoBack() ? router.back() : router.replace('/account')) };
+
 export default function ConnectBrokerScreen() {
+  const s = useStyles();
   const { credentials, connecting, error, fetch, connect, remove, clearError } = useBrokerStore();
-  const subscription = useBillingStore((s) => s.subscription);
-  const canLive = (subscription?.plan?.maxLiveSessions ?? 0) > 0;
+  const subscription = useBillingStore((st) => st.subscription);
+  const canLive = !CLOSED_BETA && (subscription?.plan?.maxLiveSessions ?? 0) > 0;
 
   const [env, setEnv] = useState<Env>('paper');
   const [name, setName] = useState('');
@@ -27,10 +28,9 @@ export default function ConnectBrokerScreen() {
   const [apiSecret, setApiSecret] = useState('');
 
   useEffect(() => {
-    void fetch();
+    fetch();
   }, [fetch]);
 
-  // If the plan can't trade live, keep the toggle on paper.
   useEffect(() => {
     if (!canLive && env === 'live') setEnv('paper');
   }, [canLive, env]);
@@ -41,139 +41,67 @@ export default function ConnectBrokerScreen() {
       Alert.alert('Missing keys', 'Enter both your API key ID and secret key.');
       return;
     }
-    const ok = await connect({
-      name,
-      apiKey: apiKey.trim(),
-      apiSecret: apiSecret.trim(),
-      isPaper: env === 'paper',
-    });
+    const ok = await connect({ name, apiKey: apiKey.trim(), apiSecret: apiSecret.trim(), isPaper: env === 'paper' });
     if (ok) {
       setApiKey('');
       setApiSecret('');
       setName('');
-      Alert.alert('Broker connected', `Your ${env} Alpaca account is linked.`);
+      Alert.alert('Connected', `Your Alpaca ${env} account is linked.`);
     }
   };
 
   const confirmRemove = (id: string, label: string) => {
-    Alert.alert('Remove credentials', `Disconnect “${label}”?`, [
+    Alert.alert('Remove credentials', `Disconnect ${label}? Sessions on this account stop placing orders.`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: () => void remove(id) },
+      { text: 'Remove', style: 'destructive', onPress: () => remove(id) },
     ]);
   };
 
   return (
-    <Screen title="Connect Broker" onBack={() => router.back()}>
-      {/* Hero */}
-      <View
-        style={{
-          backgroundColor: palette.ink,
-          borderWidth: 2,
-          borderColor: palette.ink,
-          padding: 18,
-          alignItems: 'center',
-          gap: 9,
-        }}
-      >
-        <View
-          style={{
-            width: 52,
-            height: 52,
-            borderWidth: 2,
-            borderColor: palette.orange[500],
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Warehouse color={palette.orange[500]} size={26} strokeWidth={2.5} />
-        </View>
-        <Display size={22} color={palette.bone}>
-          Link Alpaca
-        </Display>
-        <Mono
-          size={10}
-          color="rgba(251,248,241,0.6)"
-          style={{ textAlign: 'center', letterSpacing: 0.5, lineHeight: 15 }}
-        >
-          THE EXACT STRATEGY YOU BACKTEST IS WHAT TRADES. BRING YOUR OWN BROKER KEYS.
-        </Mono>
-      </View>
+    <Screen title="Connect broker" back={back}>
+      <Text variant="small" tone="fg2" style={s.intro}>
+        Paste your Alpaca paper keys.{CLOSED_BETA ? " Live trading isn't available in the beta." : ''}
+      </Text>
 
-      {/* Environment */}
-      <View style={{ gap: 6 }}>
-        <SegmentedToggle
-          options={ENV_OPTIONS}
-          value={env}
-          onChange={(k) => setEnv(k as Env)}
-          disabledKeys={canLive ? [] : ['live']}
-        />
-        {!canLive ? (
-          <Pressable
-            onPress={() => router.push('/account/plans')}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-          >
-            <Lock color={palette.gray[500]} size={12} strokeWidth={2.5} />
-            <Mono size={9} color={palette.gray[600]} style={{ letterSpacing: 0.5 }}>
-              LIVE TRADING REQUIRES A PRO PLAN · VIEW PLANS →
-            </Mono>
-          </Pressable>
-        ) : null}
-      </View>
-
-      {/* Keys */}
-      <View style={{ gap: 11 }}>
-        <Field label="Label (optional)" value={name} onChange={setName} placeholder="My Alpaca account" autoCapitalizeWords />
-        <Field label="API Key ID" value={apiKey} onChange={setApiKey} placeholder="PK…" />
-        <Field label="Secret Key" value={apiSecret} onChange={setApiSecret} placeholder="••••••••••••••••" secure />
-      </View>
-
-      {/* Security note */}
-      <View
-        style={{
-          flexDirection: 'row',
-          gap: 8,
-          backgroundColor: palette.green[50],
-          borderWidth: 2,
-          borderColor: palette.green[500],
-          padding: 11,
-        }}
-      >
-        <Lock color={palette.green[600]} size={14} strokeWidth={2.5} style={{ marginTop: 1 }} />
-        <Mono size={10} color={palette.green[700]} style={{ flex: 1, lineHeight: 15 }}>
-          Keys are validated with Alpaca, encrypted at rest, and sent only over TLS — never stored in plaintext.
-        </Mono>
-      </View>
-
-      {error ? (
-        <Card style={{ backgroundColor: palette.red[50], borderColor: palette.red[500] }}>
-          <Mono size={10} color={palette.red[600]}>
-            {error}
-          </Mono>
+      {credentials.map((cred) => (
+        <Card key={cred.id} style={s.rows}>
+          <ListRow
+            label={<Text variant="bodyStrong" numberOfLines={1}>{cred.name || (cred.isPaper ? 'Alpaca paper' : 'Alpaca live')}</Text>}
+            right={<StatusMark state="running" label="Connected" />}
+          />
+          <ListRow label="Key" right={<Text variant="numSmall">{cred.apiKeyPrefix}••••</Text>} />
+          <ListRow label="Environment" value={cred.isPaper ? 'Paper' : 'Live'} last />
         </Card>
-      ) : null}
+      ))}
 
-      <Button label="Connect & Verify →" onPress={submit} loading={connecting} />
+      <Segmented options={ENV_OPTIONS} value={env} onChange={setEnv} disabledKeys={canLive ? [] : ['live']} />
 
-      {/* Connected credentials */}
-      {credentials.length ? (
-        <View style={{ gap: 7, marginTop: 6 }}>
-          <Label style={{ marginLeft: 2 }}>Connected</Label>
-          {credentials.map((c) => (
-            <Card key={c.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-              <View style={{ flex: 1 }}>
-                <Body size={13} style={{ fontWeight: '700' }} numberOfLines={1}>
-                  {c.name || 'Alpaca account'}
-                </Body>
-                <Label style={{ marginTop: 2 }}>{c.apiKeyPrefix}••••</Label>
-              </View>
-              <Badge label={c.isPaper ? 'Paper' : 'Live'} variant={c.isPaper ? 'gray' : 'green'} />
-              <Pressable onPress={() => confirmRemove(c.id, c.name || 'Alpaca account')} hitSlop={8}>
-                <X color={palette.gray[500]} size={18} strokeWidth={2.5} />
-              </Pressable>
-            </Card>
-          ))}
-        </View>
-      ) : null}
+      <Field label="Label (optional)" value={name} onChange={setName} placeholder="My Alpaca account" autoCapitalizeWords />
+      <Field label="API key ID" value={apiKey} onChange={setApiKey} placeholder="PK..." mono />
+      <Field label="Secret key" value={apiSecret} onChange={setApiSecret} placeholder="Your secret key" secure mono />
+
+      <Text variant="caption" tone="fg3">
+        Keys are checked with Alpaca, encrypted at rest and only sent over TLS.
+      </Text>
+
+      {error ? <Notice title="Couldn't connect." detail={error} /> : null}
+
+      <Button label="Connect and verify" onPress={submit} loading={connecting} />
+
+      {credentials.map((cred) => (
+        <Button
+          key={cred.id}
+          label={credentials.length > 1 ? `Remove ${cred.name || cred.apiKeyPrefix}` : 'Remove credentials'}
+          variant="secondary"
+          onPress={() => confirmRemove(cred.id, cred.name || 'this Alpaca account')}
+        />
+      ))}
+
     </Screen>
   );
 }
+
+const useStyles = makeStyles(() => ({
+  intro: { marginTop: -8 },
+  rows: { paddingVertical: 2 },
+}));

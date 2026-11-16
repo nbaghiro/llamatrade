@@ -1,26 +1,30 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="monolith">
+<!doctype html>
+<html
+  lang="en"
+  class="marketing-active"
+  data-mode="dark"
+  data-theme="slate"
+  data-light="white"
+  data-acc="slate"
+>
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/logo-monolith.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LlamaTrade</title>
     <meta
       name="description"
-      content="LlamaTrade — build, backtest, and run algorithmic trading strategies in your own brokerage account. Open. Algorithmic. Yours."
+      content="Build a trading strategy, backtest it, then run it on your own Alpaca account, in paper or live. By invitation during the closed beta."
     />
-    <title>LlamaTrade — Build. Backtest. Trade. Own it.</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script src="/theme-init.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Anton&family=Archivo:wght@400;500;600;700;900&family=Space+Mono:wght@400;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
   </head>
-  <body>
-    <script>
-      // Monolith is light-only — ensure no stale dark class is ever applied.
-      document.documentElement.classList.remove('dark');
-    </script>
+  <body class="site">
     <div id="root"></div>
     <script type="module" src="/src/marketing/main.tsx"></script>
   </body>

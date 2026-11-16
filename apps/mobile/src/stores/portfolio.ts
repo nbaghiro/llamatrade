@@ -11,6 +11,7 @@ import { num } from '@llamatrade/core/format';
 import { MarketStatus } from '@llamatrade/core/proto/market_data_pb';
 import type { Portfolio, StrategyPerformanceSummary, Transaction } from '@llamatrade/core/proto/portfolio_pb';
 import type { Position } from '@llamatrade/core/proto/trading_pb';
+import { rebase } from '../charts/paths';
 import { marketDataClient, portfolioClient } from '../net/clients';
 import { tenantContext } from './auth';
 
@@ -24,6 +25,9 @@ interface PortfolioState {
   strategies: StrategyPerformanceSummary[];
   positions: Position[];
   equityCurve: number[];
+  /** Unix seconds for each point of `equityCurve`. */
+  equityTimes: number[];
+  /** Benchmark rebased to the equity curve's starting value. */
   benchmarkCurve: number[];
   transactions: Transaction[];
   marketStatus: MarketStatus | null;
@@ -39,6 +43,7 @@ export const usePortfolioStore = create<PortfolioState>((set) => ({
   strategies: [],
   positions: [],
   equityCurve: [],
+  equityTimes: [],
   benchmarkCurve: [],
   transactions: [],
   marketStatus: null,
@@ -67,6 +72,7 @@ export const usePortfolioStore = create<PortfolioState>((set) => ({
       // curve is the sum of per-sleeve equity curves (real seeded snapshots),
       // sharing one benchmark line — the same source the web app uses.
       let equityCurve: number[] = [];
+      let equityTimes: number[] = [];
       let benchmarkCurve: number[] = [];
       let transactions: Transaction[] = [];
       let positions: Position[] = [];
@@ -108,7 +114,9 @@ export const usePortfolioStore = create<PortfolioState>((set) => ({
         }
         const tsSorted = [...agg.keys()].sort((a, b) => a - b);
         equityCurve = tsSorted.map((ts) => agg.get(ts) ?? 0);
-        benchmarkCurve = bench.length > 1 ? bench.sort((a, b) => a.ts - b.ts).map((b) => b.v) : [];
+        equityTimes = tsSorted;
+        benchmarkCurve =
+          bench.length > 1 ? rebase(bench.sort((a, b) => a.ts - b.ts).map((b) => b.v), equityCurve[0] ?? 0) : [];
         transactions = txns;
       }
 
@@ -117,6 +125,7 @@ export const usePortfolioStore = create<PortfolioState>((set) => ({
         strategies: s.strategies,
         positions,
         equityCurve,
+        equityTimes,
         benchmarkCurve,
         transactions,
         marketStatus: market?.status ?? null,
