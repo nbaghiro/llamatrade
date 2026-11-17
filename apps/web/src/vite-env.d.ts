@@ -30,6 +30,7 @@ interface ImportMetaEnv {
   readonly VITE_MARKETING_STANDALONE?: string;
   readonly VITE_APP_URL?: string;
   readonly VITE_INVITE_EMAIL?: string;
+  readonly VITE_LOOPS_FORM_ID?: string;
 }
 
 interface ImportMeta {

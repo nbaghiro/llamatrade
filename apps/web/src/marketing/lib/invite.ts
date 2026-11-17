@@ -28,6 +28,45 @@ export function inviteMailto(address: string | undefined, from = ''): string | n
   return `mailto:${to}?subject=${subject}${body}`;
 }
 
+const LOOPS_FORM_BASE = 'https://app.loops.so/api/newsletter-form/';
+const LOOPS_ID_RE = /^[a-z0-9]+$/i;
+
+/** The Loops form endpoint for `formId`, or null when no usable form ID is configured. */
+export function loopsEndpoint(formId: string | undefined): string | null {
+  const id = formId?.trim();
+  if (!id || !LOOPS_ID_RE.test(id)) return null;
+  return `${LOOPS_FORM_BASE}${id}`;
+}
+
+/** Form-encoded Loops body; `source` lands on the contact so landing and join signups stay apart. */
+export function loopsBody(email: string, source: WaitlistSource): string {
+  const params = new URLSearchParams({
+    email: email.trim(),
+    source: `waitlist-${source}`,
+    userGroup: 'waitlist',
+  });
+  return params.toString();
+}
+
+/** Maps a Loops form reply: `{ success }` with 200, `{ success: false, message }` otherwise. */
+export function readLoopsResponse(status: number, body: unknown): InviteResult {
+  if (status === 429) return { ok: false, message: INVITE_COPY.rateLimited };
+  const success =
+    typeof body === 'object' && body !== null && 'success' in body && body.success === true;
+  if (status >= 200 && status < 300 && success) return { ok: true };
+  const message =
+    typeof body === 'object' &&
+    body !== null &&
+    'message' in body &&
+    typeof body.message === 'string'
+      ? body.message
+      : '';
+  if (/email/i.test(message) && /invalid|valid/i.test(message)) {
+    return { ok: false, message: INVITE_COPY.invalid };
+  }
+  return { ok: false, message: INVITE_COPY.failed };
+}
+
 /** The JoinWaitlist URL on the auth service, or null when no usable base URL is configured. */
 export function waitlistEndpoint(authUrl: string | undefined): string | null {
   const base = authUrl?.trim();

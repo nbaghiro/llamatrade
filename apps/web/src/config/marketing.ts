@@ -43,5 +43,9 @@ export const TAPE_ITEMS: readonly TapeItem[] = [
 export const WAITLIST_AUTH_URL: string | undefined =
   import.meta.env.VITE_AUTH_URL || (MARKETING_STANDALONE ? undefined : 'http://localhost:8810');
 
+/** Loops form ID for the waitlist. It's public: it ships in the form's URL. */
+export const LOOPS_FORM_ID: string =
+  import.meta.env.VITE_LOOPS_FORM_ID || 'cmrm19bgd0ipa0j3vfmwt02zg';
+
 /** Where invite requests go by email when the standalone build has no waitlist endpoint. */
 export const INVITE_EMAIL: string = import.meta.env.VITE_INVITE_EMAIL || 'hello@llamatrade.ai';

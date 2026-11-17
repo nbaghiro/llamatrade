@@ -4,7 +4,10 @@ import {
   INVITE_COPY,
   inviteMailto,
   isValidEmail,
+  loopsBody,
+  loopsEndpoint,
   readInviteResponse,
+  readLoopsResponse,
   waitlistBody,
   waitlistEndpoint,
 } from '../lib/invite';
@@ -126,5 +129,52 @@ describe('inviteMailto', () => {
     expect(inviteMailto(undefined)).toBeNull();
     expect(inviteMailto('')).toBeNull();
     expect(inviteMailto('not-an-address')).toBeNull();
+  });
+});
+
+describe('loopsEndpoint', () => {
+  it('builds the form URL from an ID', () => {
+    expect(loopsEndpoint(' clx1abc ')).toBe('https://app.loops.so/api/newsletter-form/clx1abc');
+  });
+
+  it('refuses a missing or malformed ID', () => {
+    expect(loopsEndpoint(undefined)).toBeNull();
+    expect(loopsEndpoint('')).toBeNull();
+    expect(loopsEndpoint('../other')).toBeNull();
+    expect(loopsEndpoint('https://app.loops.so/api/newsletter-form/x')).toBeNull();
+  });
+});
+
+describe('loopsBody', () => {
+  it('form-encodes the trimmed email with the waitlist group and source', () => {
+    const params = new URLSearchParams(loopsBody(' a+b@x.io ', 'join'));
+    expect(params.get('email')).toBe('a+b@x.io');
+    expect(params.get('userGroup')).toBe('waitlist');
+    expect(params.get('source')).toBe('waitlist-join');
+  });
+});
+
+describe('readLoopsResponse', () => {
+  it('accepts a 200 with success true', () => {
+    expect(readLoopsResponse(200, { success: true })).toEqual({ ok: true });
+  });
+
+  it('treats a 200 without success as a failure', () => {
+    expect(readLoopsResponse(200, null)).toEqual({ ok: false, message: INVITE_COPY.failed });
+  });
+
+  it('maps rate limiting and invalid emails', () => {
+    expect(readLoopsResponse(429, null)).toEqual({ ok: false, message: INVITE_COPY.rateLimited });
+    expect(readLoopsResponse(400, { success: false, message: 'Invalid email.' })).toEqual({
+      ok: false,
+      message: INVITE_COPY.invalid,
+    });
+  });
+
+  it('falls back to the generic failure', () => {
+    expect(readLoopsResponse(500, { success: false, message: 'Server error' })).toEqual({
+      ok: false,
+      message: INVITE_COPY.failed,
+    });
   });
 });

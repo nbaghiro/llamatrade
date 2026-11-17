@@ -1,23 +1,49 @@
 import { Check } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
-import { INVITE_EMAIL, WAITLIST_AUTH_URL } from '../../config/marketing';
+import { INVITE_EMAIL, LOOPS_FORM_ID, WAITLIST_AUTH_URL } from '../../config/marketing';
 import { useInviteDone } from '../hooks/useInviteDone';
 import {
   INVITE_COPY,
   inviteMailto,
   isValidEmail,
+  loopsBody,
+  loopsEndpoint,
   readInviteResponse,
+  readLoopsResponse,
   waitlistBody,
   waitlistEndpoint,
+  type InviteResult,
   type WaitlistSource,
 } from '../lib/invite';
 
-const ENDPOINT = waitlistEndpoint(WAITLIST_AUTH_URL);
-const BY_EMAIL = !ENDPOINT && inviteMailto(INVITE_EMAIL) !== null;
-const OPEN = ENDPOINT !== null || BY_EMAIL;
+const LOOPS = loopsEndpoint(LOOPS_FORM_ID);
+const ENDPOINT = LOOPS ? null : waitlistEndpoint(WAITLIST_AUTH_URL);
+const BY_EMAIL = !LOOPS && !ENDPOINT && inviteMailto(INVITE_EMAIL) !== null;
+const OPEN = LOOPS !== null || ENDPOINT !== null || BY_EMAIL;
 
-/** Email field that joins the waitlist. Closed, with a note, when no auth URL is configured. */
+async function send(email: string, source: WaitlistSource, company: string): Promise<InviteResult> {
+  if (LOOPS) {
+    if (company) return { ok: true };
+    const res = await fetch(LOOPS, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: loopsBody(email, source),
+    });
+    const body: unknown = await res.json().catch(() => null);
+    return readLoopsResponse(res.status, body);
+  }
+  if (!ENDPOINT) return { ok: false, message: INVITE_COPY.closed };
+  const res = await fetch(ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Connect-Protocol-Version': '1' },
+    body: waitlistBody(email, source, company),
+  });
+  const body: unknown = await res.json().catch(() => null);
+  return readInviteResponse(res.status, body);
+}
+
+/** Email field that joins the waitlist: Loops, the auth service, or an email, by configuration. */
 export function InviteForm({
   id = 'invite',
   source = 'landing',
@@ -43,7 +69,7 @@ export function InviteForm({
       setMessage(INVITE_COPY.mailed);
       return;
     }
-    if (!ENDPOINT) {
+    if (!LOOPS && !ENDPOINT) {
       setMessage(INVITE_COPY.closed);
       return;
     }
@@ -54,13 +80,7 @@ export function InviteForm({
     setSending(true);
     setMessage('');
     try {
-      const res = await fetch(ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Connect-Protocol-Version': '1' },
-        body: waitlistBody(email, source, company),
-      });
-      const body: unknown = await res.json().catch(() => null);
-      const result = readInviteResponse(res.status, body);
+      const result = await send(email, source, company);
       if (result.ok) {
         markDone();
       } else {
