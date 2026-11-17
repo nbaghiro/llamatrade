@@ -10,16 +10,22 @@ export const INVITE_COPY = {
   done: "You're on the list. We'll email you when a place opens.",
   invalid: 'Please enter a valid email address.',
   closed: "Invites aren't open from this page yet.",
+  mailed: 'Your email app should open with the request ready to send.',
   failed: "The request didn't go through. Please try again.",
   network: "The request couldn't be sent. Check your connection and try again.",
   rateLimited: 'Too many requests from this connection. Please wait a few minutes and try again.',
 } as const;
 
-/** A mailto link for asking for an invite by email, or null without a usable address. */
-export function inviteMailto(address: string | undefined): string | null {
+/** A mailto link asking for an invite for `from`, or null without a usable address to send to. */
+export function inviteMailto(address: string | undefined, from = ''): string | null {
   const to = address?.trim();
   if (!to || !EMAIL_RE.test(to)) return null;
-  return `mailto:${to}?subject=${encodeURIComponent('LlamaTrade invite')}`;
+  const subject = encodeURIComponent('LlamaTrade invite');
+  const who = from.trim();
+  const body = who
+    ? `&body=${encodeURIComponent(`Please add ${who} to the LlamaTrade waitlist.`)}`
+    : '';
+  return `mailto:${to}?subject=${subject}${body}`;
 }
 
 /** The JoinWaitlist URL on the auth service, or null when no usable base URL is configured. */

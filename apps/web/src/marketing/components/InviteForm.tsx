@@ -14,7 +14,8 @@ import {
 } from '../lib/invite';
 
 const ENDPOINT = waitlistEndpoint(WAITLIST_AUTH_URL);
-const MAILTO = ENDPOINT ? null : inviteMailto(INVITE_EMAIL);
+const BY_EMAIL = !ENDPOINT && inviteMailto(INVITE_EMAIL) !== null;
+const OPEN = ENDPOINT !== null || BY_EMAIL;
 
 /** Email field that joins the waitlist. Closed, with a note, when no auth URL is configured. */
 export function InviteForm({
@@ -26,12 +27,22 @@ export function InviteForm({
 }) {
   const [email, setEmail] = useState('');
   const [company, setCompany] = useState('');
-  const [message, setMessage] = useState(ENDPOINT ? '' : INVITE_COPY.closed);
+  const [message, setMessage] = useState(OPEN ? '' : INVITE_COPY.closed);
   const [done, markDone] = useInviteDone();
   const [sending, setSending] = useState(false);
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (BY_EMAIL) {
+      if (!isValidEmail(email)) {
+        setMessage(INVITE_COPY.invalid);
+        return;
+      }
+      const href = inviteMailto(INVITE_EMAIL, email);
+      if (href) window.location.href = href;
+      setMessage(INVITE_COPY.mailed);
+      return;
+    }
     if (!ENDPOINT) {
       setMessage(INVITE_COPY.closed);
       return;
@@ -62,20 +73,6 @@ export function InviteForm({
     }
   };
 
-  if (MAILTO) {
-    return (
-      <div className="invite-mail">
-        <a className="mk-btn pri" href={MAILTO}>
-          Email us for an invite
-          <i className="arr" aria-hidden="true">
-            →
-          </i>
-        </a>
-        <p className="invite-msg note">Places open in small groups. We reply to every request.</p>
-      </div>
-    );
-  }
-
   if (done) {
     return (
       <div className="invite-ok" role="status">
@@ -99,7 +96,7 @@ export function InviteForm({
           inputMode="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          disabled={!ENDPOINT}
+          disabled={!OPEN}
           aria-describedby={`${id}-msg`}
         />
         <div className="hp" aria-hidden="true">
@@ -112,7 +109,7 @@ export function InviteForm({
             onChange={(e) => setCompany(e.target.value)}
           />
         </div>
-        <button className="mk-btn pri" type="submit" disabled={!ENDPOINT || sending}>
+        <button className="mk-btn pri" type="submit" disabled={!OPEN || sending}>
           {sending ? 'Sending…' : 'Request an invite'}
           {!sending && (
             <i className="arr" aria-hidden="true">
@@ -123,7 +120,7 @@ export function InviteForm({
       </form>
       <div
         id={`${id}-msg`}
-        className={`invite-msg ${ENDPOINT ? '' : 'note'}`}
+        className={`invite-msg ${message === INVITE_COPY.invalid || message === INVITE_COPY.failed || message === INVITE_COPY.network || message === INVITE_COPY.rateLimited ? '' : 'note'}`}
         role="status"
         aria-live="polite"
       >

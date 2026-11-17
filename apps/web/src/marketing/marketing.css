@@ -2975,12 +2975,3 @@ html.marketing-active body {
     var(--shadow-xl),
     0 30px 100px -30px color-mix(in srgb, rgb(var(--p-acc)) 60%, transparent);
 }
-.marketing-root .invite-mail {
-  display: grid;
-  justify-items: center;
-}
-.marketing-root .invite-mail .mk-btn {
-  height: 48px;
-  padding: 0 22px 0 24px;
-  border-radius: 999px;
-}

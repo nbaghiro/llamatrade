@@ -116,6 +116,12 @@ describe('inviteMailto', () => {
     );
   });
 
+  it("asks for the visitor's address in the body when given one", () => {
+    expect(inviteMailto('hello@llamatrade.ai', 'me@example.com')).toBe(
+      'mailto:hello@llamatrade.ai?subject=LlamaTrade%20invite&body=Please%20add%20me%40example.com%20to%20the%20LlamaTrade%20waitlist.'
+    );
+  });
+
   it('gives null for a missing or malformed address', () => {
     expect(inviteMailto(undefined)).toBeNull();
     expect(inviteMailto('')).toBeNull();
