@@ -110,12 +110,38 @@
   }
 
   .page {
-    @apply mx-auto w-full max-w-content px-4 py-5 md:px-9 md:py-[26px];
+    @apply mx-auto w-full max-w-content px-4 py-5 md:px-8 md:py-[26px];
   }
 
   .card,
   .panel {
     @apply bg-panel border border-line rounded-panel;
+  }
+
+  /* The hero panel around an annotated curve: an accent rim and a soft glow. */
+  .panel-rim {
+    @apply relative bg-panel border rounded-[10px];
+    border-color: color-mix(in srgb, rgb(var(--accent)) 45%, rgb(var(--line)));
+    box-shadow:
+      var(--shadow),
+      0 0 0 1px color-mix(in srgb, rgb(var(--accent)) 22%, transparent),
+      0 8px 18px -12px color-mix(in srgb, rgb(var(--accent)) 40%, transparent);
+  }
+
+  .panel-rim::before {
+    content: '';
+    position: absolute;
+    left: 10%;
+    right: 10%;
+    top: -1px;
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      color-mix(in srgb, rgb(var(--accent)) 85%, #fff),
+      transparent
+    );
+    pointer-events: none;
   }
 
   .card-shadow {
@@ -343,4 +369,44 @@
   .page-art .sa.acc {
     opacity: 0.25;
   }
+}
+
+/* Holdings map tiles on Markets. The gain and loss tints and text colours for tiles are set
+   here only, from the shared --gain and --loss tokens. */
+:root {
+  --tile-gain: rgb(var(--gain));
+  --tile-loss: rgb(var(--loss));
+  --tile-gain-text: rgb(var(--gain));
+  --tile-loss-text: rgb(var(--loss));
+  --tile-tint-min: 10%;
+  --tile-tint-max: 46%;
+}
+:root:not([data-mode='light']) {
+  --tile-tint-min: 10%;
+  --tile-tint-max: 34%;
+}
+.tile-tint {
+  --tile-k: rgb(var(--panel));
+  --tile-s: 0;
+  background: color-mix(
+    in srgb,
+    var(--tile-k)
+      calc(var(--tile-tint-min) + var(--tile-s) * (var(--tile-tint-max) - var(--tile-tint-min))),
+    rgb(var(--panel))
+  );
+}
+.tile-tint[data-tone='gain'] {
+  --tile-k: var(--tile-gain);
+}
+.tile-tint[data-tone='loss'] {
+  --tile-k: var(--tile-loss);
+}
+.tile-tint[data-tone='flat'] {
+  background: rgb(var(--panel));
+}
+.tile-gain-text {
+  color: var(--tile-gain-text);
+}
+.tile-loss-text {
+  color: var(--tile-loss-text);
 }

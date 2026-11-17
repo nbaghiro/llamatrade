@@ -2,11 +2,13 @@
 
 export type DestinationKey =
   | 'home'
+  | 'markets'
   | 'portfolio'
   | 'strategies'
   | 'backtests'
   | 'sessions'
   | 'copilot'
+  | 'activity'
   | 'account';
 
 export interface Destination {
@@ -17,26 +19,29 @@ export interface Destination {
   match: readonly string[];
 }
 
+/** Seven areas, Markets second because prices are checked most days (frame2 A). */
 export const DESKTOP_NAV: readonly Destination[] = [
   { key: 'home', label: 'Home', to: '/dashboard', match: ['/dashboard'] },
-  { key: 'portfolio', label: 'Portfolio', to: '/portfolio', match: ['/portfolio', '/wallet'] },
+  { key: 'markets', label: 'Markets', to: '/markets', match: ['/markets'] },
   { key: 'strategies', label: 'Strategies', to: '/strategies', match: ['/strategies'] },
   { key: 'backtests', label: 'Backtests', to: '/backtests', match: ['/backtest', '/backtests'] },
   { key: 'sessions', label: 'Sessions', to: '/trading', match: ['/trading', '/sessions'] },
+  { key: 'portfolio', label: 'Portfolio', to: '/portfolio', match: ['/portfolio', '/wallet'] },
   { key: 'copilot', label: 'Copilot', to: '/copilot', match: ['/copilot'] },
 ];
 
-/** Phones fold Sessions into Portfolio and Backtests into Strategies, and add Account. */
+const byKey = (key: DestinationKey): Destination => {
+  const d = DESKTOP_NAV.find((n) => n.key === key);
+  if (!d) throw new Error(`Unknown destination ${key}`);
+  return d;
+};
+
+/** Phones are for checking in (phone-nav2 D); building stays on the web. */
 export const MOBILE_TABS: readonly Destination[] = [
-  DESKTOP_NAV[0],
-  { ...DESKTOP_NAV[1], match: [...DESKTOP_NAV[1].match, '/trading', '/sessions'] },
-  {
-    key: 'strategies',
-    label: 'Strategies',
-    to: '/strategies',
-    match: ['/strategies', '/backtest', '/backtests'],
-  },
-  DESKTOP_NAV[5],
+  byKey('home'),
+  byKey('sessions'),
+  byKey('markets'),
+  { key: 'activity', label: 'Activity', to: '/notifications', match: ['/notifications'] },
   { key: 'account', label: 'Account', to: '/settings', match: ['/settings', '/billing'] },
 ];
 

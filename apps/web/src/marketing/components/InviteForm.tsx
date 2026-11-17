@@ -1,58 +1,42 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { Check } from 'lucide-react';
+import { useState, type FormEvent } from 'react';
 
-import { LOOPS_FORM_ID } from '../../config/marketing';
+import { INVITE_EMAIL, WAITLIST_AUTH_URL } from '../../config/marketing';
+import { useInviteDone } from '../hooks/useInviteDone';
 import {
   INVITE_COPY,
-  INVITE_DONE_KEY,
-  inviteBody,
-  inviteEndpoint,
+  inviteMailto,
   isValidEmail,
   readInviteResponse,
+  waitlistBody,
+  waitlistEndpoint,
+  type WaitlistSource,
 } from '../lib/invite';
 
-const ENDPOINT = inviteEndpoint(LOOPS_FORM_ID);
+const ENDPOINT = waitlistEndpoint(WAITLIST_AUTH_URL);
+const MAILTO = ENDPOINT ? null : inviteMailto(INVITE_EMAIL);
 
-function rememberDone(): void {
-  try {
-    localStorage.setItem(INVITE_DONE_KEY, '1');
-  } catch {
-    /* storage unavailable: the confirmation still shows for this visit */
-  }
-}
-
-/** Email field that posts to the Loops form. Closed, with a note, when no form id is set. */
-export function InviteForm({ id = 'invite' }: { id?: string }) {
+/** Email field that joins the waitlist. Closed, with a note, when no auth URL is configured. */
+export function InviteForm({
+  id = 'invite',
+  source = 'landing',
+}: {
+  id?: string;
+  source?: WaitlistSource;
+}) {
   const [email, setEmail] = useState('');
   const [company, setCompany] = useState('');
   const [message, setMessage] = useState(ENDPOINT ? '' : INVITE_COPY.closed);
-  const [done, setDone] = useState(false);
+  const [done, markDone] = useInviteDone();
   const [sending, setSending] = useState(false);
-
-  useEffect(() => {
-    try {
-      if (localStorage.getItem(INVITE_DONE_KEY) === '1') setDone(true);
-    } catch {
-      /* storage unavailable */
-    }
-  }, []);
-
-  const finish = () => {
-    setMessage('');
-    setDone(true);
-    rememberDone();
-  };
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (company) {
-      finish();
-      return;
-    }
     if (!ENDPOINT) {
       setMessage(INVITE_COPY.closed);
       return;
     }
-    if (!isValidEmail(email)) {
+    if (!company && !isValidEmail(email)) {
       setMessage(INVITE_COPY.invalid);
       return;
     }
@@ -61,13 +45,16 @@ export function InviteForm({ id = 'invite' }: { id?: string }) {
     try {
       const res = await fetch(ENDPOINT, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: inviteBody(email),
+        headers: { 'Content-Type': 'application/json', 'Connect-Protocol-Version': '1' },
+        body: waitlistBody(email, source, company),
       });
       const body: unknown = await res.json().catch(() => null);
       const result = readInviteResponse(res.status, body);
-      if (result.ok) finish();
-      else setMessage(result.message);
+      if (result.ok) {
+        markDone();
+      } else {
+        setMessage(result.message);
+      }
     } catch {
       setMessage(INVITE_COPY.network);
     } finally {
@@ -75,9 +62,26 @@ export function InviteForm({ id = 'invite' }: { id?: string }) {
     }
   };
 
+  if (MAILTO) {
+    return (
+      <div className="invite-mail">
+        <a className="mk-btn pri" href={MAILTO}>
+          Email us for an invite
+          <i className="arr" aria-hidden="true">
+            →
+          </i>
+        </a>
+        <p className="invite-msg note">Places open in small groups. We reply to every request.</p>
+      </div>
+    );
+  }
+
   if (done) {
     return (
       <div className="invite-ok" role="status">
+        <span className="tick" aria-hidden="true">
+          <Check size={15} strokeWidth={2.25} />
+        </span>
         {INVITE_COPY.done}
       </div>
     );
@@ -98,16 +102,16 @@ export function InviteForm({ id = 'invite' }: { id?: string }) {
           disabled={!ENDPOINT}
           aria-describedby={`${id}-msg`}
         />
-        <input
-          className="hp"
-          type="text"
-          name="company"
-          tabIndex={-1}
-          autoComplete="off"
-          aria-hidden="true"
-          value={company}
-          onChange={(e) => setCompany(e.target.value)}
-        />
+        <div className="hp" aria-hidden="true">
+          <input
+            type="text"
+            name="company"
+            tabIndex={-1}
+            autoComplete="off"
+            value={company}
+            onChange={(e) => setCompany(e.target.value)}
+          />
+        </div>
         <button className="mk-btn pri" type="submit" disabled={!ENDPOINT || sending}>
           {sending ? 'Sending…' : 'Request an invite'}
           {!sending && (

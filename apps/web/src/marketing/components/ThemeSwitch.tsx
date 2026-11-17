@@ -1,27 +1,22 @@
+import { Moon, Sun } from 'lucide-react';
+
 import { useResolvedTheme, useThemeStore } from '../../store/theme';
-import type { ThemeMode } from '../../theme/accents';
 
-const MODES: readonly { mode: ThemeMode; label: string }[] = [
-  { mode: 'light', label: 'Light' },
-  { mode: 'dark', label: 'Dark' },
-];
-
-/** Light or Dark, saved with the app's appearance setting. Follows the system until chosen. */
+/** One icon button that flips light and dark, saved with the app's appearance setting. */
 export function ThemeSwitch() {
   const { mode } = useResolvedTheme();
   const setMode = useThemeStore((s) => s.setMode);
+  const next = mode === 'dark' ? 'light' : 'dark';
+  const Icon = mode === 'dark' ? Moon : Sun;
   return (
-    <div className="theme" role="group" aria-label="Appearance">
-      {MODES.map((m) => (
-        <button
-          key={m.mode}
-          type="button"
-          aria-pressed={mode === m.mode}
-          onClick={() => setMode(m.mode)}
-        >
-          {m.label}
-        </button>
-      ))}
-    </div>
+    <button
+      type="button"
+      className="theme"
+      aria-label={`Switch to ${next} mode`}
+      title={`Switch to ${next} mode`}
+      onClick={() => setMode(next)}
+    >
+      <Icon size={15} strokeWidth={1.75} aria-hidden="true" />
+    </button>
   );
 }

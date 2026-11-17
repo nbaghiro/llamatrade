@@ -19,6 +19,8 @@ export interface CompleteSignupPayload {
   password: string;
   firstName?: string;
   lastName?: string;
+  /** Sign-up is invite-only; the auth service checks this against the email. */
+  inviteCode?: string;
 }
 
 /** Full-page redirect to Alpaca to sign in / sign up (no session yet). */

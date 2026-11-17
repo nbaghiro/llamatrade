@@ -10,7 +10,7 @@ export default function StrategyPreviewDialog() {
   const close = useUIStore((s) => s.closePreviewDialog);
   return (
     <Dialog open={open && template !== null} onClose={close} width={720} title="Template">
-      {template && <TemplatePreview template={template} />}
+      {template && <TemplatePreview template={template} showActions />}
     </Dialog>
   );
 }

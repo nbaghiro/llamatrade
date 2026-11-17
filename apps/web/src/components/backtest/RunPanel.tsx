@@ -4,24 +4,24 @@ import { useMemo, useState, type ReactNode } from 'react';
 
 import {
   alignTo,
-  drawdownOf,
-  scheduledRebalances,
+  figuresFromCurve,
+  longDate,
+  monthLabel,
   type LogLine,
   type PartialFigures,
   type RebalanceFrequency,
   type RunPhase,
+  type TradeInput,
 } from '../../lib/backtestView';
-import { formatMoney, formatNumber, formatPct } from '../../lib/format';
-import { DrawdownBand, LineChart } from '../charts';
+import { formatNumber, formatPct } from '../../lib/format';
 import { Pct } from '../ui/Num';
-import { SkeletonChart } from '../ui/Skeleton';
 import { Segmented } from '../ui/Tabs';
 
+import { LOG_SCALE_FROM_YEARS, scheduleFor, yearsBetween } from './annotations';
 import { Cells, KvList, Pending, RunLogList, type Cell } from './parts';
+import { RunCurve } from './RunCurve';
 import { runMeta, toCurve } from './runData';
-
-const EQ_HEIGHT = 262;
-const DD_HEIGHT = 76;
+import { RunProgressFrame } from './RunProgressFrame';
 
 interface RunPanelProps {
   run: BacktestRun | null;
@@ -32,15 +32,14 @@ interface RunPanelProps {
   currentDate: string;
   strategyName: string;
   rebalance: RebalanceFrequency | null;
+  /** The run's trades for the holding lanes: null while loading, omitted where not fetched. */
+  trades?: readonly TradeInput[] | null;
   /** Replaces the result column when a run fails. */
   failure?: ReactNode;
 }
 
-const yMoney = (v: number) =>
-  Math.abs(v) >= 10_000 ? `$${formatNumber(v / 1000, { dp: 0 })}k` : formatMoney(v, { dp: 0 });
-
 /**
- * The results panel, which is also the running state: the log fills beside the curve and
+ * The results panel, which is also the running state: the log fills beside the run's dates and
  * figures that need the whole run wait as dots, so nothing moves when it completes.
  */
 export function RunPanel({
@@ -52,6 +51,7 @@ export function RunPanel({
   currentDate,
   strategyName,
   rebalance,
+  trades,
   failure,
 }: RunPanelProps) {
   const [span, setSpan] = useState<'all' | '1y'>('all');
@@ -61,6 +61,10 @@ export function RunPanel({
   const failed = phase === 'failed' || phase === 'cancelled';
   const pct = done ? 100 : Math.max(0, Math.min(100, progress));
   const bench = meta.benchmark;
+  const long =
+    meta.start && meta.end ? yearsBetween(meta.start, meta.end) > LOG_SCALE_FROM_YEARS : false;
+  const [scaleChoice, setScale] = useState<'linear' | 'log' | null>(null);
+  const scale = scaleChoice ?? (long ? 'log' : 'linear');
 
   const chart = useMemo(() => {
     const eq = toCurve(run?.results?.equityCurve);
@@ -70,18 +74,26 @@ export function RunPanel({
     const values = eq.values.slice(from);
     const benchRaw = alignTo(dates, toCurve(run?.results?.benchmarkEquityCurve));
     const benchOk = benchRaw.every((v): v is number => v !== null);
-    return { dates, values, bench: benchOk ? benchRaw : null, drawdown: drawdownOf(values) };
+    return { dates, values, bench: benchOk ? benchRaw : null };
   }, [run, span]);
 
-  const schedule =
-    meta.start && meta.end
-      ? scheduledRebalances(
-          meta.start,
-          meta.end,
-          rebalance,
-          done ? meta.end : currentDate ? new Date(`${currentDate}T00:00:00Z`) : null
-        )
-      : null;
+  const benchFig = useMemo(
+    () => figuresFromCurve(toCurve(run?.results?.benchmarkEquityCurve).values),
+    [run]
+  );
+
+  const through = currentDate ? new Date(`${currentDate}T00:00:00Z`) : null;
+  const startMs = meta.start?.getTime() ?? null;
+  const endMs = meta.end?.getTime() ?? null;
+  const schedule = useMemo(
+    () =>
+      scheduleFor(
+        startMs === null ? null : new Date(startMs),
+        endMs === null ? null : new Date(endMs),
+        rebalance
+      ),
+    [startMs, endMs, rebalance]
+  );
 
   const afterRun = (label: string, render: () => ReactNode, sub?: ReactNode): Cell => ({
     label,
@@ -89,8 +101,10 @@ export function RunPanel({
     sub: done ? sub : 'after the run',
   });
 
-  const benchSub = (v: number | null) =>
-    bench && v !== null ? `${bench} ${formatPct(v, { dp: 1, signed: true })}` : undefined;
+  const vs = (v: number | undefined, fmt: (x: number) => string) =>
+    bench && benchFig && v !== undefined ? `${bench} ${fmt(v)}` : undefined;
+  const signed = (x: number) => formatPct(x, { dp: 1, signed: true });
+  const ratio = (x: number) => formatNumber(x, { dp: 2 });
 
   const cells: Cell[] = [
     {
@@ -103,14 +117,28 @@ export function RunPanel({
         <Pending />
       ),
       sub: done
-        ? benchSub(bench ? toNumber(metrics?.benchmarkReturn) : null)
-        : partial.totalReturn !== null
-          ? (benchSub(partial.benchmarkReturn) ?? 'so far')
+        ? bench
+          ? `${bench} ${signed(toNumber(metrics?.benchmarkReturn))}`
+          : undefined
+        : partial.totalReturn !== null && partial.benchmarkReturn !== null && bench
+          ? `${bench} ${signed(partial.benchmarkReturn)}`
           : 'so far',
     },
-    afterRun('CAGR', () => <Pct value={toNumber(metrics?.annualizedReturn)} pnl dp={1} />),
-    afterRun('Sharpe', () => formatNumber(toNumber(metrics?.sharpeRatio), { dp: 2 })),
-    afterRun('Sortino', () => formatNumber(toNumber(metrics?.sortinoRatio), { dp: 2 })),
+    afterRun(
+      'CAGR',
+      () => <Pct value={toNumber(metrics?.annualizedReturn)} pnl dp={1} />,
+      vs(benchFig?.cagr, signed)
+    ),
+    afterRun(
+      'Sharpe',
+      () => formatNumber(toNumber(metrics?.sharpeRatio), { dp: 2 }),
+      vs(benchFig?.sharpe, ratio)
+    ),
+    afterRun(
+      'Sortino',
+      () => formatNumber(toNumber(metrics?.sortinoRatio), { dp: 2 }),
+      vs(benchFig?.sortino, ratio)
+    ),
     {
       label: 'Max drawdown',
       value: done ? (
@@ -121,16 +149,22 @@ export function RunPanel({
         <Pending />
       ),
       sub: done
-        ? `${formatNumber(toNumber(metrics?.maxDrawdownDurationDays), { dp: 0 })} days`
+        ? (vs(benchFig?.maxDrawdown, signed) ??
+          `${formatNumber(toNumber(metrics?.maxDrawdownDurationDays), { dp: 0 })} days`)
         : 'so far',
     },
-    afterRun('Volatility', () => formatPct(toNumber(metrics?.volatility), { dp: 1 })),
+    afterRun(
+      'Volatility',
+      () => formatPct(toNumber(metrics?.volatility), { dp: 1 }),
+      vs(benchFig?.volatility, (x) => formatPct(x, { dp: 1 }))
+    ),
   ];
 
+  const passed = through ? schedule.filter((d) => d.getTime() <= through.getTime()).length : 0;
   const status = done
     ? null
     : `${formatNumber(pct, { dp: 0 })}%${currentDate ? ` · through ${currentDate}` : ''}${
-        schedule ? ` · ${schedule.done} of ${schedule.total} rebalances` : ''
+        schedule.length ? ` · ${passed} of ${schedule.length} rebalances` : ''
       }`;
 
   return (
@@ -162,7 +196,9 @@ export function RunPanel({
                 rows={[
                   [
                     'Rebalances',
-                    schedule ? `${schedule.total}, ${rebalance}` : (rebalance ?? 'on schedule'),
+                    schedule.length
+                      ? `${schedule.length}, ${rebalance}`
+                      : (rebalance ?? 'on schedule'),
                   ],
                   ['Trades', formatNumber(metrics?.totalTrades ?? 0, { dp: 0 })],
                   ['Fills', 'close + slippage'],
@@ -191,79 +227,64 @@ export function RunPanel({
                 {status ? (
                   <span className="num text-[11.5px] text-fg-3">{status}</span>
                 ) : (
-                  <Segmented
-                    label="Chart range"
-                    value={span}
-                    onChange={setSpan}
-                    options={[
-                      { key: '1y', label: '1Y' },
-                      { key: 'all', label: 'All' },
-                    ]}
-                  />
+                  <span className="flex flex-wrap gap-2">
+                    {long && (
+                      <Segmented
+                        label="Scale"
+                        value={scale}
+                        onChange={setScale}
+                        options={[
+                          { key: 'linear', label: 'Linear' },
+                          { key: 'log', label: 'Log' },
+                        ]}
+                      />
+                    )}
+                    <Segmented
+                      label="Chart range"
+                      value={span}
+                      onChange={setSpan}
+                      options={[
+                        { key: '1y', label: '1Y' },
+                        { key: 'all', label: 'All' },
+                      ]}
+                    />
+                  </span>
                 )}
               </div>
-              {!done && schedule && schedule.total <= 60 && (
-                <div
-                  className="mb-2 grid gap-[3px]"
-                  style={{ gridTemplateColumns: `repeat(${schedule.total}, minmax(0, 1fr))` }}
-                  aria-label={`${schedule.done} of ${schedule.total} scheduled rebalances`}
-                  role="img"
-                >
-                  {Array.from({ length: schedule.total }, (_, k) => (
-                    <i
-                      key={k}
-                      className={`h-2 rounded-[1px] ${
-                        k < schedule.done
-                          ? !done && k === schedule.done - 1
-                            ? 'bg-accent-fill'
-                            : 'bg-chart-3'
-                          : 'bg-sunk ring-1 ring-inset ring-line'
-                      }`}
-                    />
-                  ))}
-                </div>
-              )}
               {done && chart ? (
-                <LineChart
-                  label={`${strategyName} equity${chart.bench ? ` against ${bench}` : ''}`}
+                <RunCurve
+                  strategyName={strategyName}
+                  benchmark={bench}
                   dates={chart.dates}
-                  height={EQ_HEIGHT}
-                  yFormat={yMoney}
-                  series={[
-                    { values: chart.values, kind: 'main', area: true, label: strategyName },
-                    ...(chart.bench
-                      ? [{ values: chart.bench, kind: 'bench' as const, label: bench }]
-                      : []),
-                  ]}
-                  tooltip={(i) => (
-                    <>
-                      <b className="block font-medium text-fg-3">
-                        {chart.dates[i]?.toISOString().slice(0, 10)}
-                      </b>
-                      {strategyName} {formatMoney(chart.values[i])}
-                      {chart.bench && (
-                        <span className="block text-fg-2">
-                          {bench} {formatMoney(chart.bench[i])}
-                        </span>
-                      )}
-                    </>
-                  )}
+                  values={chart.values}
+                  benchValues={chart.bench}
+                  trades={trades}
+                  log={scale === 'log'}
+                />
+              ) : meta.start && meta.end ? (
+                <RunProgressFrame
+                  start={meta.start}
+                  end={meta.end}
+                  through={done ? meta.end : through}
+                  marker={through ? `Simulated to ${longDate(through)}` : undefined}
+                  rebalances={schedule}
+                  doneNote={
+                    done
+                      ? 'This run has no equity points.'
+                      : 'The curve appears when the run completes.'
+                  }
+                  aheadNote={
+                    through
+                      ? `${monthLabel(currentDate.slice(0, 7))} to ${monthLabel(meta.end.toISOString().slice(0, 7))} hasn't been simulated yet.`
+                      : 'The simulation starts once the price history is loaded.'
+                  }
                 />
               ) : (
-                <div className="relative">
-                  <SkeletonChart height={EQ_HEIGHT} />
-                  <p className="absolute inset-0 m-0 grid place-items-center text-center text-[12.5px] text-fg-3">
-                    {done
-                      ? 'This run has no equity points.'
-                      : 'The curve draws when the run completes.'}
-                  </p>
-                </div>
-              )}
-              <div className="mt-1.5 text-[11px] font-medium text-fg-3">Drawdown from peak</div>
-              {done && chart ? (
-                <DrawdownBand dates={chart.dates} drawdown={chart.drawdown} height={DD_HEIGHT} />
-              ) : (
-                <SkeletonChart height={DD_HEIGHT} />
+                <p className="m-0 py-16 text-center text-[12.5px] text-fg-3">
+                  {done
+                    ? 'This run has no equity points.'
+                    : 'The curve appears when the run completes.'}
+                </p>
               )}
             </div>
           </div>

@@ -10,6 +10,8 @@ const rpc = vi.hoisted(() => ({
   pauseSession: vi.fn(),
   resumeSession: vi.fn(),
   stopSession: vi.fn(),
+  submitOrder: vi.fn(),
+  stopExecution: vi.fn(),
   listExecutions: vi.fn(),
   listSleeves: vi.fn(),
   getStrategyPerformance: vi.fn(),
@@ -32,8 +34,9 @@ vi.mock('@llamatrade/core/net', () => ({
     pauseSession: rpc.pauseSession,
     resumeSession: rpc.resumeSession,
     stopSession: rpc.stopSession,
+    submitOrder: rpc.submitOrder,
   },
-  strategyClient: { listExecutions: rpc.listExecutions },
+  strategyClient: { listExecutions: rpc.listExecutions, stopExecution: rpc.stopExecution },
   ledgerClient: { listSleeves: rpc.listSleeves },
   portfolioClient: {
     getStrategyPerformance: rpc.getStrategyPerformance,
@@ -45,6 +48,7 @@ vi.mock('@llamatrade/core/net', () => ({
 }));
 
 import { Code, ConnectError } from '@connectrpc/connect';
+import type { StrategyExecution } from '@llamatrade/core/proto/strategy_pb';
 import type { TradingSession } from '@llamatrade/core/proto/trading_pb';
 import { useFundingStore } from '@llamatrade/core/stores/funding';
 import { executionFor, sleeveFor, useTradingStore } from '@llamatrade/core/stores/trading';
@@ -68,6 +72,10 @@ beforeEach(() => {
     orderError: null,
     commandPending: null,
     commandError: null,
+    curves: {},
+    curvesLoaded: false,
+    placing: false,
+    placeError: null,
   });
   useFundingStore.setState({ accountId: 'acct-1' });
   rpc.listExecutions.mockResolvedValue({ executions: [{ id: 'e1', sleeveId: 'sl1' }] });
@@ -317,5 +325,117 @@ describe('runCommand', () => {
 
     expect(await useTradingStore.getState().runCommand('s1', 'pause')).toBe(false);
     expect(rpc.pauseSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('stopping closes the sleeve', () => {
+  it('stops the execution behind the session after the session stops', async () => {
+    useTradingStore.setState({
+      sessions: [{ id: 's1', sleeveId: 'sl1', isActive: true }] as unknown as TradingSession[],
+      executions: [{ id: 'e1', sleeveId: 'sl1' }] as unknown as StrategyExecution[],
+    });
+    rpc.stopSession.mockResolvedValue({ session: { id: 's1', sleeveId: 'sl1', isActive: false } });
+    rpc.stopExecution.mockResolvedValue({ execution: { id: 'e1' } });
+
+    expect(await useTradingStore.getState().runCommand('s1', 'stop')).toBe(true);
+    expect(rpc.stopExecution).toHaveBeenCalledWith(
+      expect.objectContaining({ executionId: 'e1', context: tenantContext })
+    );
+    expect(useTradingStore.getState().commandError).toBeNull();
+  });
+
+  it('reports a sleeve that stayed open without failing the stop', async () => {
+    useTradingStore.setState({
+      sessions: [{ id: 's1', sleeveId: 'sl1', isActive: true }] as unknown as TradingSession[],
+      executions: [{ id: 'e1', sleeveId: 'sl1' }] as unknown as StrategyExecution[],
+    });
+    rpc.stopSession.mockResolvedValue({ session: { id: 's1', sleeveId: 'sl1', isActive: false } });
+    rpc.stopExecution.mockRejectedValue(new Error('ledger down'));
+
+    expect(await useTradingStore.getState().runCommand('s1', 'stop')).toBe(true);
+    expect(useTradingStore.getState().commandError).toMatch(/sleeve couldn't be closed/);
+  });
+
+  it('does not stop the execution on pause', async () => {
+    rpc.pauseSession.mockResolvedValue({ session: { id: 's1' } });
+    await useTradingStore.getState().runCommand('s1', 'pause');
+    expect(rpc.stopExecution).not.toHaveBeenCalled();
+  });
+});
+
+describe('loadCurves', () => {
+  it('reads each session execution once and keeps the curves that loaded', async () => {
+    useTradingStore.setState({
+      sessions: [
+        { id: 's1', sleeveId: 'sl1' },
+        { id: 's2', sleeveId: 'sl2' },
+      ] as unknown as TradingSession[],
+      executions: [
+        { id: 'e1', sleeveId: 'sl1' },
+        { id: 'e2', sleeveId: 'sl2' },
+      ] as unknown as StrategyExecution[],
+    });
+    rpc.getStrategyEquityCurve.mockImplementation(({ executionId }: { executionId: string }) =>
+      executionId === 'e1'
+        ? Promise.resolve({
+            equityCurve: [{ equity: { value: '1' } }],
+            benchmark: { equityCurve: [] },
+          })
+        : Promise.reject(new Error('nope'))
+    );
+
+    await useTradingStore.getState().loadCurves();
+
+    const { curves, curvesLoaded } = useTradingStore.getState();
+    expect(curvesLoaded).toBe(true);
+    expect(Object.keys(curves)).toEqual(['e1']);
+    expect(rpc.getStrategyEquityCurve).toHaveBeenCalledWith(
+      expect.objectContaining({ benchmarkSymbol: 'SPY' })
+    );
+  });
+});
+
+describe('placeOrder', () => {
+  it('sends a market day order on the session and adds it to the blotter', async () => {
+    rpc.submitOrder.mockResolvedValue({ order: { id: 'new' } });
+
+    const order = await useTradingStore.getState().placeOrder({
+      sessionId: 's1',
+      symbol: 'TLT',
+      side: 'buy',
+      quantity: 110,
+      sleeveId: 'sl1',
+    });
+
+    expect(order?.id).toBe('new');
+    expect(rpc.submitOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: 's1',
+        symbol: 'TLT',
+        quantity: { value: '110' },
+        sleeveId: 'sl1',
+      })
+    );
+    expect(useTradingStore.getState().orders[0].id).toBe('new');
+  });
+
+  it('refuses an empty quantity and keeps the service reason on failure', async () => {
+    expect(
+      await useTradingStore
+        .getState()
+        .placeOrder({ sessionId: 's1', symbol: 'X', side: 'buy', quantity: 0 })
+    ).toBeNull();
+    expect(rpc.submitOrder).not.toHaveBeenCalled();
+
+    rpc.submitOrder.mockRejectedValue(
+      new ConnectError('Market is closed', Code.FailedPrecondition)
+    );
+    expect(
+      await useTradingStore
+        .getState()
+        .placeOrder({ sessionId: 's1', symbol: 'X', side: 'sell', quantity: 1 })
+    ).toBeNull();
+    expect(useTradingStore.getState().placeError).toBe('Market is closed');
+    expect(useTradingStore.getState().placing).toBe(false);
   });
 });

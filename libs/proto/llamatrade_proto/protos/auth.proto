@@ -161,6 +161,8 @@ message RegisterRequest {
   string password = 3;
   string first_name = 4;
   string last_name = 5;
+  // Required: sign-up is invite-only. Case and dashes are ignored.
+  string invite_code = 6;
 }
 
 message RegisterResponse {
@@ -235,6 +237,19 @@ message ResendVerificationRequest {
 }
 
 message ResendVerificationResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Marketing-site waitlist (unauthenticated). The response is uniform whether or
+// not the email was already on the list.
+message JoinWaitlistRequest {
+  string email = 1;
+  string source = 2;  // "landing" or "join"; empty means "landing"
+  string company = 3; // honeypot: hidden from people, so a value means a bot
+}
+
+message JoinWaitlistResponse {
   bool success = 1;
   string message = 2;
 }
@@ -324,6 +339,9 @@ service AuthService {
   rpc ResetPassword(ResetPasswordRequest) returns (ResetPasswordResponse);
   rpc VerifyEmail(VerifyEmailRequest) returns (VerifyEmailResponse);
   rpc ResendVerification(ResendVerificationRequest) returns (ResendVerificationResponse);
+
+  // Marketing waitlist (unauthenticated)
+  rpc JoinWaitlist(JoinWaitlistRequest) returns (JoinWaitlistResponse);
 
   // Token validation (high-frequency, called by all services)
   rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);

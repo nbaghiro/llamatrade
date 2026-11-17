@@ -13,7 +13,7 @@ from collections.abc import Callable
 
 import pytest
 
-from .client import MeshClient, MeshError, login
+from .client import MeshClient, MeshError, login, mint_invite_code
 
 pytestmark = pytest.mark.e2e
 
@@ -88,7 +88,12 @@ def test_duplicate_registration_is_rejected(
         anon.call(
             "auth",
             "Register",
-            {"tenantName": "dup", "email": email, "password": "e2e-Passw0rd!"},
+            {
+                "tenantName": "dup",
+                "email": email,
+                "password": "e2e-Passw0rd!",
+                "inviteCode": mint_invite_code(),
+            },
             context=False,
         )
     assert excinfo.value.http_status >= 400

@@ -58,6 +58,7 @@ class GeminiClient(LLMClient):
         if self._client is None:
             try:
                 from google.genai import Client
+                from google.genai.types import HttpOptions
             except ImportError as e:
                 raise ImportError(
                     "google-genai package is required. Install with: pip install google-genai"
@@ -67,7 +68,8 @@ class GeminiClient(LLMClient):
             if not api_key:
                 raise ValueError("GOOGLE_API_KEY environment variable is required")
 
-            self._client = Client(api_key=api_key)
+            # Function calling needs v1beta; newer SDKs default to v1.
+            self._client = Client(api_key=api_key, http_options=HttpOptions(api_version="v1beta"))
 
         return self._client
 

@@ -1,14 +1,7 @@
 import { ExecutionStatus } from '@llamatrade/core/stores/portfolio';
 import { describe, expect, it } from 'vitest';
 
-import {
-  accountLine,
-  rebalanceLabel,
-  shortDate,
-  sinceStart,
-  sleeveColor,
-  sleeveRunState,
-} from '../sleeveView';
+import { rebalanceLabel, shortDate, sinceStart, sleeveColor, sleeveRunState } from '../sleeveView';
 
 describe('sleeveRunState', () => {
   it('reads frozen from the ledger before anything the execution reports', () => {
@@ -51,12 +44,5 @@ describe('sleeve labels', () => {
   it('formats dates short and leaves a missing date blank', () => {
     expect(shortDate(new Date(2026, 7, 3))).toBe('Aug 3');
     expect(shortDate(null)).toBe('');
-  });
-
-  it('writes the account line with a correct plural', () => {
-    expect(accountLine(9)).toBe('Alpaca paper account · 9 open positions');
-    expect(accountLine(1)).toBe('Alpaca paper account · 1 open position');
-    expect(accountLine(null, true)).toBe('Loading your paper account');
-    expect(accountLine(null)).toBe('Alpaca paper account');
   });
 });

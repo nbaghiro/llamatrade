@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
-import { AuthCardLayout } from '../../components/auth/AuthCardLayout';
-import { FormHeader } from '../../components/auth/AuthSplitLayout';
-import { authErrorMessage } from '../../components/auth/errors';
+import { AuthSplitLayout } from '../../components/auth/AuthSplitLayout';
+import { registerError, type RegisterField } from '../../components/auth/errors';
 import { Field, FormNote, LINK } from '../../components/auth/fields';
+import { forgetInvite, recalledInvite } from '../../components/auth/invite';
 import { landingAfterSignIn } from '../../components/auth/landing';
 import { completeAlpacaSignup } from '../../services/alpacaOAuth';
 import { useAuthStore } from '../../store/auth';
@@ -16,7 +16,11 @@ export default function CompleteSignupPage() {
   const ticket = params.get('ticket') || '';
   const setSession = useAuthStore((s) => s.setSession);
 
-  const [email, setEmail] = useState('');
+  const [inviteCode, setInviteCode] = useState(() => params.get('code') ?? recalledInvite());
+  const [fieldError, setFieldError] = useState<{ field: RegisterField; message: string } | null>(
+    null
+  );
+  const [email, setEmail] = useState(params.get('email') ?? '');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [password, setPassword] = useState('');
@@ -27,26 +31,36 @@ export default function CompleteSignupPage() {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setFieldError(null);
     try {
-      const session = await completeAlpacaSignup({ ticket, email, password, firstName, lastName });
+      const session = await completeAlpacaSignup({
+        ticket,
+        email,
+        password,
+        firstName,
+        lastName,
+        inviteCode: inviteCode.trim(),
+      });
+      forgetInvite();
       setSession(session.user, session.accessToken, session.refreshToken);
       navigate(await landingAfterSignIn(session.user.id), { replace: true });
     } catch (err: unknown) {
-      setError(authErrorMessage(err, "The account couldn't be created."));
+      const shown = registerError(err);
+      if (shown.field) setFieldError({ field: shown.field, message: shown.message });
+      else setError(shown.message);
       setLoading(false);
     }
   };
 
   return (
-    <AuthCardLayout footnote="Closed beta · invite only · paper and live trading on Alpaca">
-      <FormHeader
-        title="Finish creating your account"
-        subtitle={
-          ticket
-            ? 'Your Alpaca account is connected. Add your details to finish.'
-            : 'This page finishes a sign-up that started on Alpaca.'
-        }
-      />
+    <AuthSplitLayout
+      title="Finish creating your account"
+      subtitle={
+        ticket
+          ? 'Your Alpaca account is connected. Add your details to finish.'
+          : 'This page finishes a sign-up that started on Alpaca.'
+      }
+    >
       {ticket ? (
         <FormNote tone="ok">
           <b>Alpaca account connected.</b> Its keys are stored encrypted.
@@ -64,11 +78,28 @@ export default function CompleteSignupPage() {
         <form onSubmit={handleSubmit} className="grid gap-3.5">
           {error && <FormNote tone="warn">{error}</FormNote>}
           <Field
+            id="inviteCode"
+            label="Invite code"
+            value={inviteCode}
+            onChange={(e) => {
+              setInviteCode(e.target.value);
+              setFieldError(null);
+            }}
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="ABCD-EFGH"
+            help="It's in your invite email."
+            error={fieldError?.field === 'inviteCode' ? fieldError.message : undefined}
+            className="num uppercase"
+            required
+          />
+          <Field
             id="email"
             label="Email address"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            error={fieldError?.field === 'email' ? fieldError.message : undefined}
             autoComplete="email"
             required
           />
@@ -91,7 +122,8 @@ export default function CompleteSignupPage() {
           <Field
             id="password"
             label="Password"
-            help="At least 8 characters."
+            help="At least 8 characters, with a letter and a digit."
+            error={fieldError?.field === 'password' ? fieldError.message : undefined}
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -104,6 +136,6 @@ export default function CompleteSignupPage() {
           </button>
         </form>
       )}
-    </AuthCardLayout>
+    </AuthSplitLayout>
   );
 }

@@ -317,3 +317,73 @@ async def test_critical_overrides_disabled_email(
         )
         await db.commit()
     assert [p.channel for p in result.deliveries] == [notification_pb2.CHANNEL_TYPE_EMAIL]
+
+
+async def test_invite_without_tenant_is_emailed_directly_and_not_persisted(
+    session_factory: async_sessionmaker,
+) -> None:
+    email = StubEmail()
+    dispatcher = DeliveryDispatcher(session_factory, email=email)
+    events = NotificationEvents(bus=EventBus(FakeTransport()))
+    invite = events_pb2.NotificationEvent(
+        category=_E.NOTIFICATION_CATEGORY_INVITE,
+        extra={
+            "to": "invitee@example.com",
+            "code": "ABCD-EFGH",
+            "link": "http://localhost:8800/register?code=ABCD-EFGH",
+        },
+    )
+    await events.publish(invite, tenant_id="", dedup_parts=("ABCDEFGH",))
+
+    await events.consumer(consumer_name="t1").run(
+        make_notification_handler(session_factory, dispatcher)
+    )
+
+    assert [sent[0] for sent in email.sent] == ["invitee@example.com"]
+    assert "ABCD-EFGH" in email.sent[0][2]
+    assert email.html_bodies[0] is not None and "__" not in email.html_bodies[0]
+    async with session_factory() as db:
+        assert list(await db.scalars(select(Notification))) == []
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        events_pb2.NotificationEvent(category=_E.NOTIFICATION_CATEGORY_INVITE),
+        events_pb2.NotificationEvent(
+            category=_E.NOTIFICATION_CATEGORY_ORDER_FILLED, extra={"to": "x@example.com"}
+        ),
+    ],
+)
+async def test_tenantless_event_without_recipient_or_direct_category_is_poison(
+    session_factory: async_sessionmaker, event: events_pb2.NotificationEvent
+) -> None:
+    from llamatrade_events import PoisonError, make_envelope
+
+    email = StubEmail()
+    handler = make_notification_handler(
+        session_factory, DeliveryDispatcher(session_factory, email=email)
+    )
+    envelope = make_envelope(events_pb2.EVENT_TYPE_NOTIFICATION, event, tenant_id="")
+
+    with pytest.raises(PoisonError):
+        await handler(envelope)
+    assert email.sent == []
+
+
+async def test_failed_direct_email_does_not_raise_into_the_consumer(
+    session_factory: async_sessionmaker,
+) -> None:
+    from llamatrade_events import make_envelope
+
+    email = StubEmail(ok=False)
+    handler = make_notification_handler(
+        session_factory, DeliveryDispatcher(session_factory, email=email)
+    )
+    event = events_pb2.NotificationEvent(
+        category=_E.NOTIFICATION_CATEGORY_INVITE, extra={"to": "invitee@example.com"}
+    )
+
+    await handler(make_envelope(events_pb2.EVENT_TYPE_NOTIFICATION, event, tenant_id=""))
+
+    assert len(email.sent) == 1

@@ -29,9 +29,9 @@ describe('filmSize', () => {
     expect(s.trackPad).toBe(0);
   });
 
-  it('pads the track so the first and last frames can sit centred', () => {
+  it('pads the track only by the faded edge, so it never scrolls into blank space', () => {
     const s = filmSize(1440);
-    expect(s.trackPad).toBe((s.view - s.frame) / 2 + s.pad);
+    expect(s.trackPad).toBe(s.pad);
   });
 
   it('never returns a zero or negative frame', () => {
@@ -47,10 +47,22 @@ describe('film scrolling', () => {
     expect(filmOpening(0)).toBe(0);
   });
 
-  it('centres frame i at i steps from the start', () => {
+  it('centres frame i with one frame either side on wide screens', () => {
     const s = filmSize(1440);
     expect(filmStep(s)).toBe(s.frame + s.gap);
-    expect(filmScrollFor(s, 4)).toBe(4 * (s.frame + s.gap));
-    expect(filmScrollFor(s, -1)).toBe(0);
+    expect(filmScrollFor(s, 4, 9)).toBe(3 * (s.frame + s.gap));
+  });
+
+  it('clamps to the ends of the strip', () => {
+    const s = filmSize(1440);
+    expect(filmScrollFor(s, 0, 9)).toBe(0);
+    expect(filmScrollFor(s, -1, 9)).toBe(0);
+    expect(filmScrollFor(s, 8, 9)).toBe(6 * (s.frame + s.gap));
+    expect(filmScrollFor(s, 1, 2)).toBe(0);
+  });
+
+  it('scrolls one frame per index on a phone', () => {
+    const s = filmSize(390);
+    expect(filmScrollFor(s, 4, 9)).toBe(4 * (s.frame + s.gap));
   });
 });

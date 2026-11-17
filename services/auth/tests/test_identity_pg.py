@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from llamatrade_db import system_session
 from llamatrade_db.models.auth import APIKey, AuthToken, Tenant, User
 from llamatrade_proto.generated import auth_pb2
+from tests.conftest import NewInvite
 from tests.fakes import MockRequestContext
 
 from src.services.tokens import PURPOSE_PASSWORD_RESET, consume_token, issue_token
@@ -72,13 +73,16 @@ async def _seed_tenant_user(
 
 
 async def test_register_survives_multiple_commits_under_rls(
-    servicer: AuthServicer, session_factory: async_sessionmaker
+    servicer: AuthServicer, session_factory: async_sessionmaker, new_invite: NewInvite
 ) -> None:
     """Register commits twice (user+tenant, then the verify token); both writes
     must land with the session's RLS system scope intact."""
     response = await servicer.register(
         auth_pb2.RegisterRequest(
-            tenant_name="Acme", email="new@example.com", password="SecurePass123"
+            tenant_name="Acme",
+            email="new@example.com",
+            password="SecurePass123",
+            invite_code=await new_invite(),
         ),
         MockRequestContext(),
     )
@@ -92,15 +96,17 @@ async def test_register_survives_multiple_commits_under_rls(
 
 
 async def test_register_duplicate_email_is_already_exists(
-    servicer: AuthServicer, session_factory: async_sessionmaker
+    servicer: AuthServicer, session_factory: async_sessionmaker, new_invite: NewInvite
 ) -> None:
-    request = auth_pb2.RegisterRequest(
-        tenant_name="Acme", email="dup@example.com", password="SecurePass123"
-    )
-    await servicer.register(request, MockRequestContext())
+    def request(code: str) -> auth_pb2.RegisterRequest:
+        return auth_pb2.RegisterRequest(
+            tenant_name="Acme", email="dup@example.com", password="SecurePass123", invite_code=code
+        )
+
+    await servicer.register(request(await new_invite()), MockRequestContext())
 
     with pytest.raises(ConnectError) as exc_info:
-        await servicer.register(request, MockRequestContext())
+        await servicer.register(request(await new_invite()), MockRequestContext())
 
     assert exc_info.value.code == Code.ALREADY_EXISTS
 

@@ -3,18 +3,27 @@
 Login: ``demo@llamatrade.ai`` / ``demo1234``.
 
 Creates one "lived-in" retail-trader account across every product surface:
-auth, billing, strategies, backtests, the portfolio double-entry ledger
-(account / sleeves / events / equity-curve snapshots), trading
-(sessions / orders / positions), and the AI copilot (sessions / messages /
-memory).
+auth, billing, strategies (with version history), backtests, the portfolio
+double-entry ledger (paper + live accounts / sleeves / events / equity-curve
+snapshots), trading (sessions / orders / positions), and the AI copilot
+(sessions / messages / memory).
 
-Design + invariants: ``.docs/planning/demo-seed-blueprint.md``.
+The story is an ordinary trading day, dated relative to the run date: seven
+strategies, All-Weather Portfolio live, Recession Radar and Momentum Sectors in
+paper, Tech Momentum Rotation stopped and holding cash, Risk Parity backtested
+but never run, Dual Momentum edited since its backtest and Pullback Buyer not yet
+backtested. Three fills land this morning.
 
 Runs INSIDE the ``portfolio`` container so it can reuse the real ledger kernel
 (``src.ledger.*`` + ``src.tasks.equity_snapshot``) rather than hand-writing
-balances — every economic event is appended through ``LedgerWriter`` (which
+balances: every economic event is appended through ``LedgerWriter`` (which
 asserts double-entry conservation), sells resolve cost basis through the real
 FIFO selector, and the equity curve is produced by the real snapshot computer.
+
+Prices come from one deterministic, correlated price path per symbol, pinned to
+anchor prices on the story's key dates. The same path feeds the market-data bars,
+the session simulations (fills), the equity snapshots and the backtests, so the
+session curves, their marks and the "backtest over the same dates" agree.
 
 Idempotent: it transactionally deletes the demo tenant (found by fixed slug) and
 everything scoped to it, then recreates. It never touches another tenant. Global
@@ -23,6 +32,8 @@ everything scoped to it, then recreates. It never touches another tenant. Global
     docker cp scripts/demo_seed_data llamatrade-portfolio:/app/demo_seed_data
     docker cp scripts/seed_demo_account.py llamatrade-portfolio:/app/seed_demo_account.py
     docker exec -w /app llamatrade-portfolio python seed_demo_account.py
+
+``DEMO_SEED_DRY_RUN=1`` prints the simulated sessions without writing anything.
 """
 
 from __future__ import annotations
@@ -35,11 +46,13 @@ import math
 import os
 import random
 import sys
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 from pathlib import Path
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
+from zoneinfo import ZoneInfo
 
 # Make the portfolio service package (`src.*`) importable when invoked as a
 # loose script (`python seed_demo_account.py`) rather than a module.
@@ -61,7 +74,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-# Real ledger kernel — reused, never re-implemented.
+# Real ledger kernel: reused, never re-implemented.
 from llamatrade_common.utils import encrypt_value
 from llamatrade_db import get_session_maker
 from llamatrade_db.models import (
@@ -125,13 +138,8 @@ DEMO_AVATAR_URL = (
 # Fallback for containers without the `bcrypt` module (e.g. portfolio).
 _DEMO_PASSWORD_HASH_FALLBACK = "$2b$12$nY6hP1l0Ig4tHIKkdvYX.uHlErnFjher2YvzZaxftVECaQb3DlNXW"
 
-# Freshness: TODAY tracks the wall clock so the demo is always current, but is
-# floored at the original anchor so it never regresses behind the fixed 2026
-# fills/invoices/backtest window (which would put seeded events in the future).
-# Everything else stays deterministic (fixed RNG seeds, fixed price path shape).
-TODAY = max(date.today(), date(2026, 7, 13))
-DEPOSIT_DAY = date(2026, 1, 6)
-INITIAL_DEPOSIT = Decimal("100000.00")
+ET = ZoneInfo("America/New_York")
+TENANT_CREATED = date(2026, 1, 6)
 
 # Market-data (Timescale) daily bars are seeded so open positions mark to market
 # and the equity-vs-SPY overlays have a benchmark series. The store is a separate
@@ -140,61 +148,6 @@ MARKET_DATA_DB_URL = os.getenv(
     "MARKET_DATA_DB_URL",
     "postgresql+asyncpg://postgres:postgres@timescaledb:5432/market_data",
 )
-BARS_START = date(2026, 1, 2)  # a few sessions before the deposit, for benchmark runway
-
-# Local checkout: sibling of this script. When copied into the container next to
-# the script, the data dir sits at /app/demo_seed_data.
-_local_data_dir = Path(__file__).resolve().parent / "demo_seed_data"
-DATA_DIR = _local_data_dir if _local_data_dir.exists() else Path("/app/demo_seed_data")
-
-ZERO = Decimal("0")
-CENT = Decimal("0.01")
-RNG = random.Random(20260713)
-
-# Deterministic per-symbol price path: (start, end) over [DEPOSIT_DAY, TODAY].
-PRICE_PATH: dict[str, tuple[Decimal, Decimal]] = {
-    "VTI": (Decimal("275"), Decimal("292")),
-    "TLT": (Decimal("92"), Decimal("89")),
-    "IEF": (Decimal("95"), Decimal("96")),
-    "GLD": (Decimal("205"), Decimal("224")),
-    "DBC": (Decimal("22.5"), Decimal("24")),
-    "SPY": (Decimal("500"), Decimal("535")),
-    "LQD": (Decimal("108"), Decimal("109.5")),
-    "VNQ": (Decimal("88"), Decimal("91")),
-    "XLK": (Decimal("235"), Decimal("262")),
-    "XLF": (Decimal("46"), Decimal("49")),
-    "XLV": (Decimal("150"), Decimal("149")),
-    "XLE": (Decimal("92"), Decimal("87")),
-    "AAPL": (Decimal("230"), Decimal("246")),
-    # Extended universe so every seeded strategy's symbols have real bars (no
-    # market-data gaps → backtests run entirely off the store, no Alpaca fetch).
-    "BIL": (Decimal("91.4"), Decimal("91.5")),
-    "BND": (Decimal("72"), Decimal("72.6")),
-    "BNDX": (Decimal("48.5"), Decimal("48.9")),
-    "DBMF": (Decimal("27"), Decimal("28.2")),
-    "EDV": (Decimal("74"), Decimal("70.5")),
-    "IWM": (Decimal("218"), Decimal("231")),
-    "MINT": (Decimal("101.8"), Decimal("102")),
-    "PDBC": (Decimal("13.8"), Decimal("14.5")),
-    "QQQ": (Decimal("440"), Decimal("471")),
-    "SGOV": (Decimal("100.4"), Decimal("100.6")),
-    "SHY": (Decimal("82"), Decimal("82.4")),
-    "TIP": (Decimal("108"), Decimal("109.5")),
-    "UNG": (Decimal("15.5"), Decimal("13.2")),
-    "USFR": (Decimal("50.4"), Decimal("50.6")),
-    "USO": (Decimal("80"), Decimal("75.5")),
-    "VEA": (Decimal("49.5"), Decimal("52.8")),
-    "VGIT": (Decimal("58.5"), Decimal("59.4")),
-    "VNQI": (Decimal("44.5"), Decimal("46.2")),
-    "VWO": (Decimal("43.5"), Decimal("46")),
-    "XLB": (Decimal("89"), Decimal("92.5")),
-    "XLC": (Decimal("98"), Decimal("106")),
-    "XLI": (Decimal("134"), Decimal("142")),
-    "XLP": (Decimal("81.5"), Decimal("83.8")),
-    "XLRE": (Decimal("41.5"), Decimal("42.8")),
-    "XLU": (Decimal("77.5"), Decimal("82")),
-    "XLY": (Decimal("204"), Decimal("216")),
-}
 
 # Core mirror of the market-data store's ``bars_daily`` (services/market-data/
 # src/store/models.py) — lets the seed write daily bars into the separate
@@ -219,6 +172,106 @@ BARS_DAILY = Table(
 )
 
 
+# Local checkout: sibling of this script. When copied into the container next to
+# the script, the data dir sits at /app/demo_seed_data.
+_local_data_dir = Path(__file__).resolve().parent / "demo_seed_data"
+DATA_DIR = _local_data_dir if _local_data_dir.exists() else Path("/app/demo_seed_data")
+
+ZERO = Decimal("0")
+CENT = Decimal("0.01")
+RNG = random.Random(20260713)
+
+# Calendar
+
+NYSE_HOLIDAYS: frozenset[date] = frozenset(
+    date.fromisoformat(d)
+    for d in (
+        "2024-01-01 2024-01-15 2024-02-19 2024-03-29 2024-05-27 2024-06-19 2024-07-04 "
+        "2024-09-02 2024-11-28 2024-12-25 2025-01-01 2025-01-09 2025-01-20 2025-02-17 "
+        "2025-04-18 2025-05-26 2025-06-19 2025-07-04 2025-09-01 2025-11-27 2025-12-25 "
+        "2026-01-01 2026-01-19 2026-02-16 2026-04-03 2026-05-25 2026-06-19 2026-07-03 "
+        "2026-09-07 2026-11-26 2026-12-25 2027-01-01 2027-01-18 2027-02-15 2027-03-26 "
+        "2027-05-31 2027-06-18 2027-07-05 2027-09-06 2027-11-25 2027-12-24 2028-01-17 "
+        "2028-02-21 2028-04-14 2028-05-29 2028-06-19 2028-07-04 2028-09-04 2028-11-23 "
+        "2028-12-25"
+    ).split()
+)
+ONE_DAY = timedelta(days=1)
+
+
+def is_trading_day(d: date) -> bool:
+    return d.weekday() < 5 and d not in NYSE_HOLIDAYS
+
+
+def trading_on_or_before(d: date) -> date:
+    while not is_trading_day(d):
+        d -= ONE_DAY
+    return d
+
+
+def trading_on_or_after(d: date) -> date:
+    while not is_trading_day(d):
+        d += ONE_DAY
+    return d
+
+
+def prev_trading_day(d: date) -> date:
+    return trading_on_or_before(d - ONE_DAY)
+
+
+def trading_days(start: date, end: date) -> list[date]:
+    out: list[date] = []
+    d = start
+    while d <= end:
+        if is_trading_day(d):
+            out.append(d)
+        d += ONE_DAY
+    return out
+
+
+def rebalances_on(freq: str, d: date) -> bool:
+    """First trading day of a new week/month/quarter (mirrors the web's ``rebalancesOn``)."""
+    if not is_trading_day(d):
+        return False
+    if freq == "daily":
+        return True
+    prev = prev_trading_day(d)
+    if freq == "weekly":
+        return prev < d - timedelta(days=d.weekday())
+    if freq == "monthly":
+        return prev.month != d.month
+    if freq == "quarterly":
+        return (prev.month - 1) // 3 != (d.month - 1) // 3
+    return False
+
+
+# The run date anchors the whole story so a re-seed is always current.
+TODAY = datetime.now(ET).date()
+SESSION_DAY = trading_on_or_before(TODAY)
+PREV_DAY = prev_trading_day(SESSION_DAY)
+
+
+def ago(days: int) -> date:
+    """The first trading day on or after ``days`` calendar days before the session day."""
+    return trading_on_or_after(SESSION_DAY - timedelta(days=days))
+
+
+def days_ago(days: int) -> date:
+    return SESSION_DAY - timedelta(days=days)
+
+
+RR_START = ago(168)
+AW_START = ago(105)
+TM_START = ago(69)
+MS_START = ago(42)
+RR_SWITCH = ago(12)
+TM_STOP = ago(5)
+BT_START = trading_on_or_after(SESSION_DAY - timedelta(days=730))
+BARS_START = trading_on_or_after(BT_START - timedelta(days=200))
+MARKET_DAYS = trading_days(BARS_START, SESSION_DAY)
+DAY_INDEX = {d: i for i, d in enumerate(MARKET_DAYS)}
+
+
 def password_hash() -> str:
     """bcrypt hash of DEMO_PASSWORD; fresh if bcrypt is present, else the constant."""
     try:
@@ -231,30 +284,325 @@ def password_hash() -> str:
 
 
 def dt(d: date, hour: int = 15, minute: int = 30) -> datetime:
-    """UTC datetime at a given wall time on a date."""
+    """UTC datetime at a given UTC wall time on a date."""
     return datetime.combine(d, time(hour, minute), tzinfo=UTC)
 
 
-def dt_naive(d: date, hour: int = 15, minute: int = 30) -> datetime:
-    """Naive datetime — for the few columns declared without ``timezone=True``
-    (``strategy_executions.started_at`` / ``stopped_at``)."""
-    return datetime.combine(d, time(hour, minute))
+def et(d: date, hour: int, minute: int, second: int = 0) -> datetime:
+    """UTC instant of a New York wall time on a date."""
+    return datetime.combine(d, time(hour, minute, second), tzinfo=ET).astimezone(UTC)
 
 
-def price_at(symbol: str, d: date) -> Decimal:
-    """Interpolate the symbol's price on date ``d`` with a small deterministic wiggle."""
-    start, end = PRICE_PATH[symbol]
-    span = (TODAY - DEPOSIT_DAY).days or 1
-    frac = max(0.0, min(1.0, (d - DEPOSIT_DAY).days / span))
-    base = start + (end - start) * Decimal(str(frac))
-    # Deterministic per-symbol phase (PYTHONHASHSEED is unset, so ``hash`` would
-    # vary run-to-run and desync snapshots from the seeded market-data bars).
-    phase = sum(ord(c) for c in symbol) % 7
-    days = (d - DEPOSIT_DAY).days
-    # Slow swing shapes the multi-week curve; a faster, per-symbol-decorrelated
-    # term adds realistic day-to-day volatility so a single-session P&L isn't ~0.
-    wiggle = math.sin(days / 11.0 + phase) * 0.012 + math.sin(days * 1.1 + phase * 1.7) * 0.005
-    return (base * (Decimal("1") + Decimal(str(wiggle)))).quantize(CENT)
+def stable_rng(key: str) -> random.Random:
+    """Deterministic RNG seeded from a stable SHA-256 of ``key`` (not ``hash``,
+    whose salt varies run-to-run)."""
+    return random.Random(int.from_bytes(hashlib.sha256(key.encode()).digest()[:4], "big"))
+
+
+def event_id_for(key: str) -> UUID:
+    """Deterministic ledger ``event_id`` from a stable key, the same derivation as
+    the real ingestion ``_event_id_from_client_order_id`` (sha256[:16])."""
+    return UUID(bytes=hashlib.sha256(key.encode()).digest()[:16])
+
+
+# Price paths
+
+# Anchor keys → story dates. Each symbol's path is a correlated random walk bent
+# (piecewise-linearly in log space) to pass exactly through its anchor prices.
+ANCHOR_DATES: dict[str, date] = {
+    "start": BARS_START,
+    "bt": BT_START,
+    "y1": ago(550),
+    "y2": ago(365),
+    "y3": ago(250),
+    "rr": RR_START,
+    "aw": AW_START,
+    "tm": TM_START,
+    "ms": MS_START,
+    "sw": RR_SWITCH,
+    "stop": TM_STOP,
+    "prev": PREV_DAY,
+    "T": SESSION_DAY,
+}
+
+# symbol → (annual vol, market beta, anchor prices)
+PATHS: dict[str, tuple[float, float, dict[str, float]]] = {
+    "SPY": (
+        0.16,
+        1.0,
+        {
+            "start": 470,
+            "bt": 499,
+            "y1": 527,
+            "y2": 548,
+            "y3": 535,
+            "rr": 552,
+            "aw": 571,
+            "tm": 583,
+            "ms": 590,
+            "sw": 598,
+            "stop": 603,
+            "prev": 608.2,
+            "T": 612.0,
+        },
+    ),
+    "VTI": (
+        0.16,
+        1.0,
+        {
+            "start": 236,
+            "bt": 249.5,
+            "y1": 262,
+            "y2": 272,
+            "y3": 266,
+            "rr": 271,
+            "aw": 279,
+            "tm": 284,
+            "ms": 289,
+            "sw": 297,
+            "stop": 299,
+            "prev": 300.4,
+            "T": 302.0,
+        },
+    ),
+    "QQQ": (
+        0.20,
+        1.15,
+        {
+            "start": 380,
+            "bt": 406,
+            "y1": 430,
+            "y2": 452,
+            "y3": 440,
+            "rr": 462,
+            "aw": 486,
+            "tm": 503,
+            "ms": 515,
+            "sw": 531,
+            "stop": 507,
+            "prev": 522.5,
+            "T": 528.0,
+        },
+    ),
+    "IWM": (
+        0.22,
+        1.1,
+        {
+            "start": 200,
+            "bt": 211,
+            "y1": 216,
+            "y2": 220,
+            "y3": 205,
+            "rr": 214,
+            "aw": 222,
+            "tm": 228,
+            "ms": 232,
+            "sw": 236,
+            "stop": 233,
+            "prev": 234.2,
+            "T": 236.0,
+        },
+    ),
+    "EFA": (
+        0.15,
+        0.8,
+        {"start": 73, "bt": 76.5, "y1": 79, "y2": 82, "y3": 81, "rr": 82.5, "ms": 85.5, "T": 88.1},
+    ),
+    "BND": (0.05, -0.05, {"bt": 70.6, "rr": 71.4, "T": 73.4}),
+    "BIL": (0.005, 0.0, {"bt": 91.2, "T": 91.6}),
+    "TLT": (
+        0.14,
+        -0.25,
+        {"bt": 96.3, "rr": 88.5, "aw": 87.2, "sw": 89.6, "prev": 90.10, "T": 90.55},
+    ),
+    "VGLT": (0.13, -0.25, {"bt": 61.3, "rr": 56.2, "aw": 55.0, "prev": 57.98, "T": 58.20}),
+    "IEF": (0.07, -0.1, {"bt": 93.3, "aw": 94.0, "prev": 96.1, "T": 96.4}),
+    "GLD": (
+        0.16,
+        0.05,
+        {"bt": 155.0, "rr": 212, "aw": 203, "sw": 243.2, "prev": 246.40, "T": 248.40},
+    ),
+    "DBC": (0.17, 0.35, {"bt": 22.9, "aw": 22.7, "prev": 23.3, "T": 23.4}),
+    "SMH": (
+        0.30,
+        1.4,
+        {
+            "bt": 173,
+            "rr": 232,
+            "aw": 252,
+            "tm": 262,
+            "ms": 281,
+            "sw": 270,
+            "stop": 240,
+            "prev": 262,
+            "T": 268,
+        },
+    ),
+    "XLK": (
+        0.22,
+        1.2,
+        {
+            "bt": 168,
+            "y2": 190,
+            "rr": 214,
+            "aw": 236,
+            "tm": 246,
+            "ms": 255,
+            "sw": 251,
+            "stop": 232,
+            "prev": 248.5,
+            "T": 252.0,
+        },
+    ),
+    "XLC": (0.18, 1.0, {"bt": 74, "y2": 84, "rr": 96, "ms": 112, "prev": 117.4, "T": 118.9}),
+    "XLI": (0.16, 0.95, {"bt": 118, "y2": 127, "rr": 138, "ms": 157, "prev": 162.6, "T": 164.0}),
+    "XLY": (0.19, 1.1, {"bt": 196, "rr": 205, "ms": 214, "T": 219}),
+    "XLF": (0.17, 1.0, {"bt": 44.5, "rr": 50, "ms": 52.5, "T": 53.5}),
+    "XLE": (0.22, 0.6, {"bt": 92, "rr": 88, "ms": 86, "T": 84}),
+    "XLB": (0.17, 0.9, {"bt": 88, "rr": 90, "ms": 92, "T": 93}),
+    "XLV": (0.14, 0.6, {"bt": 148, "rr": 142, "ms": 145, "T": 147}),
+    "XLP": (0.11, 0.4, {"bt": 79, "rr": 82, "ms": 83, "T": 82.5}),
+    "XLU": (0.15, 0.4, {"bt": 70, "rr": 78, "ms": 83.5, "T": 84}),
+    "XLRE": (0.18, 0.8, {"bt": 40.5, "rr": 41.5, "ms": 43, "T": 43.8}),
+    # Wider universe so template and copilot backtests find bars too.
+    "AAPL": (0.25, 1.2, {"bt": 222, "T": 251}),
+    "BNDX": (0.05, 0.0, {"bt": 48.6, "T": 49.2}),
+    "DBMF": (0.12, 0.1, {"bt": 27, "T": 28.6}),
+    "EDV": (0.18, -0.3, {"bt": 76, "T": 70.5}),
+    "LQD": (0.08, 0.1, {"bt": 107.5, "T": 110.2}),
+    "MINT": (0.01, 0.0, {"bt": 100.2, "T": 100.6}),
+    "PDBC": (0.17, 0.35, {"bt": 13.4, "T": 14.1}),
+    "SGOV": (0.005, 0.0, {"bt": 100.4, "T": 100.6}),
+    "SHY": (0.02, 0.0, {"bt": 81.9, "T": 82.7}),
+    "TIP": (0.06, 0.05, {"bt": 108.2, "T": 110.4}),
+    "UNG": (0.45, 0.2, {"bt": 15.5, "T": 13.6}),
+    "USFR": (0.005, 0.0, {"bt": 50.3, "T": 50.5}),
+    "USO": (0.32, 0.4, {"bt": 78, "T": 74.5}),
+    "VEA": (0.15, 0.8, {"bt": 49.5, "T": 56.6}),
+    "VGIT": (0.05, -0.1, {"bt": 58.4, "T": 60.1}),
+    "VNQ": (0.19, 0.85, {"bt": 87, "T": 92.5}),
+    "VNQI": (0.17, 0.7, {"bt": 43.5, "T": 47.1}),
+    "VWO": (0.18, 0.8, {"bt": 43.2, "T": 48.9}),
+}
+
+MARKET_VOL = 0.15
+
+
+def _build_prices() -> dict[str, list[Decimal]]:
+    n = len(MARKET_DAYS)
+    daily_market = MARKET_VOL / math.sqrt(252.0)
+    mrng = stable_rng("market11")
+    market = [mrng.gauss(0.0, daily_market) for _ in range(n)]
+    out: dict[str, list[Decimal]] = {}
+    for symbol, (vol, beta, anchors) in PATHS.items():
+        rng = stable_rng(f"path:{symbol}")
+        idio = math.sqrt(max(vol**2 - (beta * MARKET_VOL) ** 2, 0.0004)) / math.sqrt(252.0)
+        walk = [0.0]
+        for i in range(1, n):
+            walk.append(walk[-1] + beta * market[i] + rng.gauss(0.0, idio))
+        pins = sorted({DAY_INDEX[ANCHOR_DATES[k]]: math.log(p) for k, p in anchors.items()}.items())
+        corr = [0.0] * n
+        for i in range(n):
+            if i <= pins[0][0]:
+                corr[i] = pins[0][1] - walk[pins[0][0]]
+            elif i >= pins[-1][0]:
+                corr[i] = pins[-1][1] - walk[pins[-1][0]]
+            else:
+                k = next(j for j in range(1, len(pins)) if pins[j][0] >= i)
+                (i0, v0), (i1, v1) = pins[k - 1], pins[k]
+                c0, c1 = v0 - walk[i0], v1 - walk[i1]
+                corr[i] = c0 + (c1 - c0) * (i - i0) / (i1 - i0)
+        out[symbol] = [
+            Decimal(str(round(math.exp(w + c), 2))) for w, c in zip(walk, corr, strict=True)
+        ]
+    return out
+
+
+PRICES = _build_prices()
+
+
+def price(symbol: str, d: date) -> Decimal:
+    """Close on ``d`` (or the last trading day before it)."""
+    return PRICES[symbol][DAY_INDEX[trading_on_or_before(d)]]
+
+
+def intraday_price(symbol: str, at: datetime) -> Decimal:
+    """A mark during the session day, moving from the prior close toward the close."""
+    local = at.astimezone(ET)
+    d = trading_on_or_before(local.date())
+    minutes = local.hour * 60 + local.minute
+    frac = Decimal(str(max(0.0, min(1.0, (minutes - 570) / 390))))
+    prev = price(symbol, prev_trading_day(d))
+    return (prev + (price(symbol, d) - prev) * frac).quantize(CENT)
+
+
+def trailing_return(symbol: str, d: date, n: int) -> float:
+    i = DAY_INDEX[d]
+    series = PRICES[symbol]
+    return float(series[i] / series[max(0, i - n)]) - 1.0
+
+
+def trailing_vol(symbol: str, d: date, n: int) -> float:
+    i = DAY_INDEX[d]
+    series = [float(p) for p in PRICES[symbol][max(0, i - n) : i + 1]]
+    rets = [math.log(b / a) for a, b in zip(series, series[1:], strict=False)]
+    return float(np.std(rets)) if len(rets) > 1 else 0.01
+
+
+# Strategy rules (targets drive both the session simulations and the backtests)
+
+Targets = dict[str, float]
+
+
+def top_by_momentum(universe: list[str], d: date, n: int, k: int) -> Targets:
+    ranked = sorted(universe, key=lambda s: trailing_return(s, d, n), reverse=True)[:k]
+    return {s: 1.0 / k for s in ranked}
+
+
+SECTORS = ["XLK", "XLC", "XLY", "XLF", "XLI", "XLE", "XLB", "XLV", "XLP", "XLU", "XLRE"]
+
+
+def recession_radar(d: date) -> Targets:
+    if d >= RR_SWITCH:
+        return {"TLT": 0.6, "GLD": 0.4}
+    return {"VTI": 1 / 3, "QQQ": 1 / 3, "IWM": 1 / 3}
+
+
+def risk_parity(d: date) -> Targets:
+    inv = {s: 1.0 / trailing_vol(s, d, 60) for s in ("SPY", "TLT", "GLD", "DBC")}
+    total = sum(inv.values())
+    return {s: v / total for s, v in inv.items()}
+
+
+def dual_momentum(lookback: int) -> Callable[[date], Targets]:
+    def rule(d: date) -> Targets:
+        if trailing_return("SPY", d, lookback) > 0:
+            return top_by_momentum(["SPY", "EFA"], d, lookback, 1)
+        return {"BND": 1.0}
+
+    return rule
+
+
+RULES: dict[tuple[str, int], Callable[[date], Targets]] = {
+    ("all-weather", 1): lambda d: {"VTI": 0.3, "TLT": 0.4, "IEF": 0.15, "GLD": 0.075, "DBC": 0.075},
+    ("all-weather", 2): lambda d: {
+        "VTI": 0.3,
+        "VGLT": 0.4,
+        "IEF": 0.15,
+        "GLD": 0.075,
+        "DBC": 0.075,
+    },
+    ("recession-radar", 0): recession_radar,
+    ("momentum-sectors", 0): lambda d: top_by_momentum(SECTORS, d, 90, 3),
+    ("tech-momentum-rotation", 0): lambda d: top_by_momentum(["QQQ", "SMH", "XLK"], d, 20, 2),
+    ("risk-parity", 0): risk_parity,
+    ("dual-momentum", 1): dual_momentum(252),
+    ("dual-momentum", 2): dual_momentum(126),
+}
+
+
+def rule_for(strategy_id: str, version: int) -> Callable[[date], Targets]:
+    return RULES.get((strategy_id, version)) or RULES[(strategy_id, 0)]
 
 
 # Trade plan (drives ledger fills, orders, positions)
@@ -262,104 +610,313 @@ def price_at(symbol: str, d: date) -> Decimal:
 
 @dataclass(frozen=True)
 class Fill:
-    day: date
+    at: datetime
     symbol: str
     side: str  # "buy" | "sell"
     qty: Decimal
     price: Decimal
+    reason: str = "Rebalance to target weights"
     fees: Decimal = ZERO
 
 
+@dataclass(frozen=True)
+class Dividend:
+    at: datetime
+    symbol: str
+    amount: Decimal
+
+
 @dataclass
-class SleevePlan:
+class SessionPlan:
     key: str  # short id used to build client_order_ids
-    name: str
-    kind: SleeveType
-    strategy_id: str  # template id (or "manual")
+    strategy_id: str
+    live: bool
     allocated: Decimal
-    alloc_day: date
-    fills: list[Fill]
-    color: str = "#6366f1"
-    live: bool = False
+    start: date
+    color: str
+    invest: Decimal  # fraction of equity a rebalance puts to work
+    band: Decimal  # skip a trade smaller than this fraction of equity
+    stop: date | None = None
+    today: tuple[Fill, ...] = ()
+    fills: list[Fill] = field(default_factory=list)
+    dividends: list[Dividend] = field(default_factory=list)
 
 
-SLEEVE_PLANS: list[SleevePlan] = [
-    SleevePlan(
-        key="allw",
-        name="All-Weather Portfolio",
-        kind=SleeveType.STRATEGY,
+SESSION_PLANS: list[SessionPlan] = [
+    SessionPlan(
+        key="aw",
         strategy_id="all-weather",
-        allocated=Decimal("35000.00"),
-        alloc_day=date(2026, 1, 15),
+        live=True,
+        allocated=Decimal("45140.00"),
+        start=AW_START,
         color="#0ea5e9",
-        live=True,
-        fills=[
-            Fill(date(2026, 1, 16), "VTI", "buy", Decimal("30"), Decimal("275.00")),
-            Fill(date(2026, 1, 16), "TLT", "buy", Decimal("90"), Decimal("92.00")),
-            Fill(date(2026, 1, 16), "IEF", "buy", Decimal("80"), Decimal("95.00")),
-            Fill(date(2026, 1, 16), "GLD", "buy", Decimal("30"), Decimal("205.00")),
-            Fill(date(2026, 1, 16), "DBC", "buy", Decimal("200"), Decimal("22.50")),
-            # Quarterly rebalance: trim long bonds, top up equities.
-            Fill(date(2026, 4, 15), "TLT", "sell", Decimal("20"), Decimal("89.50")),
-            Fill(date(2026, 4, 15), "VTI", "buy", Decimal("6"), Decimal("286.00")),
-        ],
+        invest=Decimal("0.95"),
+        band=Decimal("0.004"),
+        today=(
+            Fill(
+                et(SESSION_DAY, 9, 45, 12),
+                "VGLT",
+                "buy",
+                Decimal("31"),
+                Decimal("58.12"),
+                "Drift past the band: top up VGLT",
+            ),
+        ),
     ),
-    SleevePlan(
-        key="rp",
-        name="Risk Parity",
-        kind=SleeveType.STRATEGY,
-        strategy_id="risk-parity",
-        allocated=Decimal("30000.00"),
-        alloc_day=date(2026, 1, 15),
-        color="#10b981",
-        live=True,
-        fills=[
-            Fill(date(2026, 1, 17), "SPY", "buy", Decimal("15"), Decimal("500.00")),
-            Fill(date(2026, 1, 17), "TLT", "buy", Decimal("70"), Decimal("92.50")),
-            Fill(date(2026, 1, 17), "GLD", "buy", Decimal("30"), Decimal("205.00")),
-            Fill(date(2026, 1, 17), "LQD", "buy", Decimal("55"), Decimal("108.00")),
-            Fill(date(2026, 1, 17), "VNQ", "buy", Decimal("40"), Decimal("88.00")),
-        ],
-    ),
-    SleevePlan(
-        key="mom",
-        name="Momentum Sectors",
-        kind=SleeveType.STRATEGY,
-        strategy_id="momentum-sectors",
-        allocated=Decimal("20000.00"),
-        alloc_day=date(2026, 1, 20),
-        color="#f59e0b",
-        live=True,
-        fills=[
-            Fill(date(2026, 1, 22), "XLK", "buy", Decimal("30"), Decimal("235.00")),
-            Fill(date(2026, 1, 22), "XLF", "buy", Decimal("60"), Decimal("46.00")),
-            Fill(date(2026, 1, 22), "XLV", "buy", Decimal("40"), Decimal("150.00")),
-            Fill(date(2026, 1, 22), "XLE", "buy", Decimal("40"), Decimal("92.00")),
-            # Monthly momentum rotation: energy weakened, rotate into tech.
-            Fill(date(2026, 5, 11), "XLE", "sell", Decimal("40"), Decimal("87.50")),
-            Fill(date(2026, 5, 11), "XLK", "buy", Decimal("12"), Decimal("250.00")),
-        ],
-    ),
-    SleevePlan(
-        key="man",
-        name="Manual",
-        kind=SleeveType.MANUAL,
-        strategy_id="manual",
-        allocated=Decimal("5000.00"),
-        alloc_day=date(2026, 2, 1),
-        color="#94a3b8",
+    SessionPlan(
+        key="rr",
+        strategy_id="recession-radar",
         live=False,
-        fills=[
-            Fill(date(2026, 2, 5), "AAPL", "buy", Decimal("20"), Decimal("230.00")),
-            Fill(date(2026, 6, 20), "AAPL", "sell", Decimal("20"), Decimal("245.50")),
-        ],
+        allocated=Decimal("28385.00"),
+        start=RR_START,
+        color="#10b981",
+        invest=Decimal("0.94"),
+        band=Decimal("0.02"),
+        today=(
+            Fill(
+                et(SESSION_DAY, 10, 31, 2),
+                "GLD",
+                "sell",
+                Decimal("9"),
+                Decimal("247.86"),
+                "Drift past the band: trim GLD",
+            ),
+            Fill(
+                et(SESSION_DAY, 10, 31, 6),
+                "TLT",
+                "buy",
+                Decimal("42"),
+                Decimal("90.41"),
+                "Drift past the band: top up TLT",
+            ),
+        ),
+    ),
+    SessionPlan(
+        key="tm",
+        strategy_id="tech-momentum-rotation",
+        live=False,
+        allocated=Decimal("26817.00"),
+        start=TM_START,
+        stop=TM_STOP,
+        color="#8b5cf6",
+        invest=Decimal("0.98"),
+        band=Decimal("0.015"),
+    ),
+    SessionPlan(
+        key="ms",
+        strategy_id="momentum-sectors",
+        live=False,
+        allocated=Decimal("21453.00"),
+        start=MS_START,
+        color="#f59e0b",
+        invest=Decimal("0.93"),
+        band=Decimal("0.004"),
     ),
 ]
 
-# Dividends credited to a sleeve (nice flavor; balanced cash↔pnl legs).
-DIVIDENDS: list[tuple[str, date, str, Decimal]] = [
-    ("rp", date(2026, 3, 20), "LQD", Decimal("48.00")),
+# Idle paper cash left in Unallocated; the e2e trading journeys fund a sleeve from it.
+PAPER_FREE_CASH = Decimal("5000.00")
+
+# Monthly distribution yield credited on the first trading day of each month.
+BOND_YIELDS: dict[str, Decimal] = {
+    "TLT": Decimal("0.0035"),
+    "VGLT": Decimal("0.0033"),
+    "IEF": Decimal("0.0030"),
+}
+
+STRATEGY_ORDER = [
+    "all-weather",
+    "recession-radar",
+    "momentum-sectors",
+    "tech-momentum-rotation",
+    "risk-parity",
+    "dual-momentum",
+    "pullback-buyer",
 ]
+
+# Days before the session day each version was saved.
+VERSION_DAYS: dict[str, list[int]] = {
+    "all-weather": [180, 112],
+    "recession-radar": [175, 120, 14],
+    "momentum-sectors": [60, 52, 47, 44, 27],
+    "tech-momentum-rotation": [120, 100, 85, 74],
+    "risk-parity": [48],
+    "dual-momentum": [12, 3],
+    "pullback-buyer": [2],
+}
+
+STRATEGY_STATUS: dict[str, int] = {
+    "all-weather": strategy_pb2.STRATEGY_STATUS_ACTIVE,
+    "recession-radar": strategy_pb2.STRATEGY_STATUS_ACTIVE,
+    "momentum-sectors": strategy_pb2.STRATEGY_STATUS_ACTIVE,
+    "tech-momentum-rotation": strategy_pb2.STRATEGY_STATUS_PAUSED,
+    "risk-parity": strategy_pb2.STRATEGY_STATUS_ACTIVE,
+    "dual-momentum": strategy_pb2.STRATEGY_STATUS_ACTIVE,
+    "pullback-buyer": strategy_pb2.STRATEGY_STATUS_DRAFT,
+}
+
+
+def _floor_shares(amount: Decimal, px: Decimal) -> Decimal:
+    return (amount / px).quantize(Decimal("1"), rounding=ROUND_DOWN) if px > 0 else ZERO
+
+
+def simulate_session(plan: SessionPlan, rebalance: str, version: int) -> None:
+    """Integer-share fills for one session: an initial allocation, drift-banded
+    rebalances on its schedule, a close-to-cash on stop, then today's fills."""
+    rule = rule_for(plan.strategy_id, version)
+    cash = plan.allocated
+    held: dict[str, Decimal] = {}
+    previous: Targets = {}
+    last = plan.stop or PREV_DAY
+    for d in trading_days(plan.start, last):
+        if d != plan.start and prev_trading_day(d).month != d.month:
+            for symbol in sorted(held):
+                if symbol in BOND_YIELDS:
+                    amount = (held[symbol] * price(symbol, d) * BOND_YIELDS[symbol]).quantize(CENT)
+                    plan.dividends.append(Dividend(et(d, 12, 0), symbol, amount))
+                    cash += amount
+        if d == plan.stop:
+            for i, symbol in enumerate(sorted(held)):
+                px = price(symbol, d)
+                qty = held.pop(symbol)
+                plan.fills.append(
+                    Fill(
+                        et(d, 15, 50, 5 + 3 * i),
+                        symbol,
+                        "sell",
+                        qty,
+                        px,
+                        "Session stopped: closing to cash",
+                    )
+                )
+                cash += qty * px
+            break
+        initial = d == plan.start
+        if not initial and not rebalances_on(rebalance, d):
+            continue
+        targets = rule(d)
+        if initial:
+            reason = "Initial allocation"
+        elif set(targets) != set(previous):
+            reason = (
+                "SPY RSI(14) above 70: rotate to TLT and GLD"
+                if plan.strategy_id == "recession-radar"
+                else "Momentum ranking changed"
+            )
+        else:
+            reason = "Rebalance to target weights"
+        previous = targets
+        prices = {s: price(s, d) for s in set(held) | set(targets)}
+        equity = cash + sum((held[s] * prices[s] for s in held), ZERO)
+        desired = {
+            s: _floor_shares(equity * plan.invest * Decimal(str(w)), prices[s])
+            for s, w in targets.items()
+        }
+        sells: list[tuple[str, Decimal]] = []
+        buys: list[tuple[str, Decimal]] = []
+        for s in sorted(set(held) | set(desired)):
+            diff = desired.get(s, ZERO) - held.get(s, ZERO)
+            if diff == 0:
+                continue
+            kept = desired.get(s, ZERO) > 0
+            if not initial and kept and abs(diff) * prices[s] < plan.band * equity:
+                continue
+            (sells if diff < 0 else buys).append((s, abs(diff)))
+        base = et(d, 10, 5) if initial else et(d, 15, 50)
+        n = 0
+        for s, qty in sells:
+            n += 1
+            plan.fills.append(
+                Fill(base + timedelta(seconds=5 + 3 * n), s, "sell", qty, prices[s], reason)
+            )
+            cash += qty * prices[s]
+            held[s] = held[s] - qty
+            if held[s] == 0:
+                del held[s]
+        for s, qty in buys:
+            qty = min(qty, _floor_shares(cash, prices[s]))
+            if qty <= 0:
+                continue
+            n += 1
+            plan.fills.append(
+                Fill(base + timedelta(seconds=5 + 3 * n), s, "buy", qty, prices[s], reason)
+            )
+            cash -= qty * prices[s]
+            held[s] = held.get(s, ZERO) + qty
+    if plan.stop is None:
+        for f in plan.today:
+            if f.side == "sell":
+                if held.get(f.symbol, ZERO) < f.qty:
+                    raise RuntimeError(f"{plan.key}: today's sale of {f.symbol} exceeds holdings")
+                held[f.symbol] -= f.qty
+                cash += f.qty * f.price
+            else:
+                if cash < f.qty * f.price:
+                    raise RuntimeError(f"{plan.key}: not enough cash for today's {f.symbol} buy")
+                held[f.symbol] = held.get(f.symbol, ZERO) + f.qty
+                cash -= f.qty * f.price
+            plan.fills.append(f)
+
+
+@dataclass(frozen=True)
+class RunSpec:
+    version: int
+    completed: datetime
+    end: date
+
+
+def _completed_run(version: int, days: int, hour: int = 20, minute: int = 10) -> RunSpec:
+    at = et(days_ago(days), hour, minute)
+    return RunSpec(version, at, prev_trading_day(days_ago(days)))
+
+
+# Running strategies get a fresh run after yesterday's close, so each session has
+# a completed backtest that covers its own dates.
+BACKTEST_RUNS: dict[str, list[RunSpec]] = {
+    "all-weather": [_completed_run(1, 179), RunSpec(2, et(PREV_DAY, 18, 40), PREV_DAY)],
+    "recession-radar": [_completed_run(1, 174), RunSpec(3, et(PREV_DAY, 18, 42), PREV_DAY)],
+    "momentum-sectors": [_completed_run(1, 59), RunSpec(5, et(PREV_DAY, 18, 44), PREV_DAY)],
+    "tech-momentum-rotation": [_completed_run(4, 74)],
+    "risk-parity": [_completed_run(1, 48)],
+    "dual-momentum": [_completed_run(1, 7)],
+}
+
+# (win rate, profit factor, trade count) for each strategy's synthesized trade log.
+TRADE_STATS: dict[str, tuple[float, float, int]] = {
+    "all-weather": (0.58, 1.66, 88),
+    "recession-radar": (0.60, 1.90, 64),
+    "momentum-sectors": (0.48, 1.28, 156),
+    "tech-momentum-rotation": (0.47, 1.35, 140),
+    "risk-parity": (0.60, 1.91, 120),
+    "dual-momentum": (0.55, 1.60, 40),
+}
+BT_INITIAL = 25000.0
+
+
+@dataclass(frozen=True)
+class BacktestSpec:
+    strategy_id: str
+    win_rate: float
+    profit_factor: float
+    trades: int
+
+
+def backtest_curve(
+    rule: Callable[[date], Targets], rebalance: str, start: date, end: date, initial: float
+) -> list[tuple[date, float]]:
+    """Fractional-share run of a rule over the price paths."""
+    units: dict[str, float] = {}
+    cash = initial
+    out: list[tuple[date, float]] = []
+    for i, d in enumerate(trading_days(start, end)):
+        if i == 0 or rebalances_on(rebalance, d):
+            equity = cash + sum(u * float(price(s, d)) for s, u in units.items())
+            weights = rule(d)
+            units = {s: equity * w / float(price(s, d)) for s, w in weights.items()}
+            cash = equity * (1.0 - sum(weights.values()))
+        out.append((d, cash + sum(u * float(price(s, d)) for s, u in units.items())))
+    return out
+
 
 # In-memory ledger event mirror (for folding the equity curve)
 
@@ -373,60 +930,6 @@ class SeedEvent:
     sequence: int
     occurred_at: datetime
     event_id: str = ""
-
-
-# Backtest specs (varied, not all winners)
-
-
-@dataclass(frozen=True)
-class BacktestSpec:
-    strategy_id: str
-    ann_return: float
-    ann_vol: float
-    sharpe: float
-    sortino: float
-    max_dd: float  # negative
-    win_rate: float
-    profit_factor: float
-    trades: int
-
-
-BACKTEST_SPECS: dict[str, BacktestSpec] = {
-    "classic-60-40": BacktestSpec(
-        "classic-60-40", 0.072, 0.084, 0.85, 1.18, -0.125, 0.55, 1.42, 96
-    ),
-    "all-weather": BacktestSpec("all-weather", 0.068, 0.061, 1.05, 1.55, -0.089, 0.58, 1.66, 88),
-    "risk-parity": BacktestSpec("risk-parity", 0.084, 0.067, 1.25, 1.83, -0.102, 0.60, 1.91, 120),
-    "momentum-sectors": BacktestSpec(
-        "momentum-sectors", 0.115, 0.168, 0.72, 0.98, -0.198, 0.48, 1.28, 156
-    ),
-    "vigilant-asset-allocation": BacktestSpec(
-        "vigilant-asset-allocation", 0.128, 0.082, 1.55, 2.10, -0.095, 0.62, 2.15, 72
-    ),
-    "pullback-buyer": BacktestSpec(
-        "pullback-buyer", 0.042, 0.152, 0.55, 0.71, -0.215, 0.46, 1.12, 210
-    ),
-}
-
-BT_START = date(2024, 7, 1)
-BT_END = date(2026, 6, 30)
-# One SPY buy-&-hold benchmark, shared by every backtest (~9%/yr over the window).
-SPY_ANNUAL_RETURN = 0.09
-
-
-def stable_rng(key: str) -> random.Random:
-    """Deterministic RNG seeded from a stable SHA-256 of ``key`` (not ``hash``,
-    whose salt varies run-to-run) — matches the ``price_at`` determinism note."""
-    return random.Random(int.from_bytes(hashlib.sha256(key.encode()).digest()[:4], "big"))
-
-
-def event_id_for(key: str) -> UUID:
-    """Deterministic ledger ``event_id`` from a stable key — identical derivation
-    to the real ingestion ``_event_id_from_client_order_id`` (sha256[:16]). Fills
-    key on ``client_order_id`` and reservations on ``client_order_id:stage`` so a
-    seeded event carries the SAME identity production would, and re-seeds are
-    byte-stable instead of minting fresh ``uuid4`` ids each run."""
-    return UUID(bytes=hashlib.sha256(key.encode()).digest()[:16])
 
 
 # Engine-faithful metric math (mirrors services/backtest/src/engine/metrics.py
@@ -570,17 +1073,6 @@ def bt_information_ratio(strat: np.ndarray, bench: np.ndarray) -> float | None:
     return float(np.sqrt(252) * np.mean(active) / tracking_error)
 
 
-def bt_trading_days() -> list[date]:
-    """Mon-Fri sessions across the backtest window (daily equity grid)."""
-    days: list[date] = []
-    d = BT_START
-    while d <= BT_END:
-        if d.weekday() < 5:
-            days.append(d)
-        d += timedelta(days=1)
-    return days
-
-
 @dataclass(frozen=True)
 class SynthTrades:
     """Synthesized trades plus counts derived FROM them, so ``total_trades`` /
@@ -614,14 +1106,37 @@ class _RawTrade:
 # Seeder
 
 
+def load_strategy_data() -> dict[str, dict[str, object]]:
+    raw = json.loads((DATA_DIR / "strategies.json").read_text())
+    return {row["id"]: row for row in raw}
+
+
+def latest_version(data: dict[str, object]) -> dict[str, object]:
+    versions: list[dict[str, object]] = data["versions"]  # type: ignore[assignment]
+    return versions[-1]
+
+
+def plan_sessions(strategy_data: dict[str, dict[str, object]]) -> None:
+    for plan in SESSION_PLANS:
+        current = latest_version(strategy_data[plan.strategy_id])
+        simulate_session(plan, str(current["rebalance"]), int(current["version"]))  # type: ignore[call-overload]
+
+
+@dataclass
+class AccountState:
+    key: str
+    account: Account
+    credentials_id: UUID
+    unallocated: Sleeve
+    events: list[SeedEvent] = field(default_factory=list)
+
+
 class Seeder:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
         self.writer = LedgerWriter(db)
         self.counts: dict[str, int] = {}
-        self.seed_events: list[SeedEvent] = []
         self._seq = 0
-        self._order_plan: dict[UUID, str] = {}
 
     def _bump(self, key: str, n: int = 1) -> None:
         self.counts[key] = self.counts.get(key, 0) + n
@@ -680,7 +1195,7 @@ class Seeder:
             slug=DEMO_SLUG,
             is_active=True,
             settings={"onboarded": True, "theme": "dark"},
-            created_at=dt(DEPOSIT_DAY, 9, 0),
+            created_at=dt(TENANT_CREATED, 14, 0),
         )
         self.db.add(self.tenant)
         await self.db.flush()
@@ -698,16 +1213,16 @@ class Seeder:
             role="admin",
             is_active=True,
             is_verified=True,
-            last_login=dt(TODAY - timedelta(days=1), 8, 15),
+            last_login=et(SESSION_DAY, 8, 15),
             settings={"default_view": "dashboard"},
-            created_at=dt(DEPOSIT_DAY, 9, 0),
+            created_at=dt(TENANT_CREATED, 14, 0),
         )
         self.db.add(self.user)
         await self.db.flush()
         self.user_id = self.user.id
         self._bump("users")
 
-        self.creds = AlpacaCredentials(
+        self.paper_creds = AlpacaCredentials(
             id=uuid4(),
             tenant_id=self.tenant_id,
             name="Alpaca Paper (Demo)",
@@ -715,12 +1230,21 @@ class Seeder:
             api_secret_encrypted=encrypt_value("demoSecretSofiaRivera00000000000000000001"),
             is_paper=True,
             is_active=True,
-            created_at=dt(DEPOSIT_DAY, 9, 30),
+            created_at=et(RR_START - timedelta(days=3), 19, 30),
         )
-        self.db.add(self.creds)
+        self.live_creds = AlpacaCredentials(
+            id=uuid4(),
+            tenant_id=self.tenant_id,
+            name="Alpaca Live (Demo)",
+            api_key_encrypted=encrypt_value("AKDEMOSOFIARIVERA0001"),
+            api_secret_encrypted=encrypt_value("demoLiveSecretSofiaRivera000000000000001"),
+            is_paper=False,
+            is_active=True,
+            created_at=et(AW_START - timedelta(days=3), 19, 30),
+        )
+        self.db.add_all([self.paper_creds, self.live_creds])
         await self.db.flush()
-        self.credentials_id = self.creds.id
-        self._bump("alpaca_credentials")
+        self._bump("alpaca_credentials", 2)
 
     # billing
 
@@ -738,9 +1262,7 @@ class Seeder:
             stripe_price_id_yearly="price_demo_pro_yearly",
             features={"live_paper": True, "ai_copilot": True, "backtests": True},
             # Keys must match billing_service DEFAULT_PLANS: the servicer reads
-            # limits["live_strategies"] for BOTH max_strategies and max_live_sessions
-            # (services/billing/src/grpc/servicer.py). "strategies"/"live_sessions"
-            # went over the wire as 0.
+            # limits["live_strategies"] for BOTH max_strategies and max_live_sessions.
             limits={"backtests_per_month": None, "live_strategies": 5, "api_calls_per_day": 100000},
             trial_days=14,
             sort_order=3,
@@ -758,6 +1280,15 @@ class Seeder:
             sort_order=1,
         )
 
+        # Monthly cycle anchored on the 20th, when the 14-day trial converted.
+        anchor = date(2026, 1, 20)
+        cycles: list[date] = []
+        d = anchor
+        while d <= TODAY:
+            cycles.append(d)
+            d = date(d.year + (d.month == 12), d.month % 12 + 1, 20)
+        period_start, period_end = cycles[-1], d
+
         sub = Subscription(
             id=uuid4(),
             tenant_id=self.tenant_id,
@@ -766,16 +1297,15 @@ class Seeder:
             billing_cycle=billing_pb2.BILLING_INTERVAL_MONTHLY,
             stripe_subscription_id="sub_demo_sofiarivera",
             stripe_customer_id="cus_demo_sofiarivera",
-            current_period_start=dt(TODAY - timedelta(days=10), 0, 0),
-            current_period_end=dt(TODAY + timedelta(days=20), 0, 0),
+            current_period_start=dt(period_start, 0, 0),
+            current_period_end=dt(period_end, 0, 0),
             cancel_at_period_end=False,
-            trial_start=dt(DEPOSIT_DAY, 0, 0),
-            trial_end=dt(DEPOSIT_DAY + timedelta(days=14), 0, 0),
-            created_at=dt(DEPOSIT_DAY, 9, 45),
+            trial_start=dt(TENANT_CREATED, 0, 0),
+            trial_end=dt(TENANT_CREATED + timedelta(days=14), 0, 0),
+            created_at=dt(TENANT_CREATED, 14, 45),
         )
         self.db.add(sub)
         await self.db.flush()
-        self.subscription_id = sub.id
         self._bump("subscriptions")
 
         self.db.add(
@@ -790,39 +1320,31 @@ class Seeder:
                 card_exp_month=11,
                 card_exp_year=2028,
                 is_default=True,
-                created_at=dt(DEPOSIT_DAY, 9, 45),
+                created_at=dt(TENANT_CREATED, 14, 45),
             )
         )
         self._bump("payment_methods")
 
-        # Paid monthly invoices Jan-Jun, billed on the 20th (the trial-end anchor,
-        # so the subscription period, invoices, and trial all line up). The first
-        # is the initial Pro charge when the 14-day trial converts on Jan 20.
-        monthly_invoices: list[tuple[int, str, Decimal]] = [
-            (1, "Pro plan — first month", Decimal("49.00")),
-            (2, "Pro plan (monthly)", Decimal("49.00")),
-            (3, "Pro plan (monthly)", Decimal("49.00")),
-            (4, "Pro plan (monthly)", Decimal("49.00")),
-            (5, "Pro plan (monthly)", Decimal("49.00")),
-            (6, "Pro plan (monthly)", Decimal("49.00")),
-        ]
-        for i, (month, desc, amount) in enumerate(monthly_invoices):
+        amount = Decimal("49.00")
+        for i, start in enumerate(cycles):
+            end = cycles[i + 1] if i + 1 < len(cycles) else period_end
+            desc = "Pro plan, first month" if i == 0 else "Pro plan (monthly)"
             self.db.add(
                 Invoice(
                     id=uuid4(),
                     tenant_id=self.tenant_id,
                     subscription_id=sub.id,
-                    stripe_invoice_id=f"in_demo_sofiarivera_2026{month:02d}",
-                    invoice_number=f"LT-2026-{100 + i}",
+                    stripe_invoice_id=f"in_demo_sofiarivera_{start:%Y%m}",
+                    invoice_number=f"LT-{start:%Y}-{100 + i}",
                     status=billing_pb2.INVOICE_STATUS_PAID,
                     amount_due=amount,
                     amount_paid=amount,
                     currency="usd",
-                    period_start=dt(date(2026, month, 20), 0, 0),
-                    period_end=dt(date(2026, month + 1, 20), 0, 0),
-                    paid_at=dt(date(2026, month, 20), 6, 5),
+                    period_start=dt(start, 0, 0),
+                    period_end=dt(end, 0, 0),
+                    paid_at=dt(start, 6, 5),
                     line_items=[{"description": desc, "amount": str(amount)}],
-                    created_at=dt(date(2026, month, 20), 6, 0),
+                    created_at=dt(start, 6, 0),
                 )
             )
             self._bump("invoices")
@@ -843,257 +1365,232 @@ class Seeder:
 
     # strategies
 
-    def _load_strategy_data(self) -> dict[str, dict[str, object]]:
-        raw = json.loads((DATA_DIR / "strategies.json").read_text())
-        return {row["id"]: row for row in raw}
-
     async def seed_strategies(self) -> None:
-        self.strategy_data = self._load_strategy_data()
+        self.strategy_data = load_strategy_data()
         self.strategy_rows: dict[str, Strategy] = {}
-        # Which template ids get a Strategy row (all 6) and which are "live".
-        live_ids = {p.strategy_id for p in SLEEVE_PLANS if p.live}
-        order = [
-            "classic-60-40",
-            "all-weather",
-            "risk-parity",
-            "momentum-sectors",
-            "vigilant-asset-allocation",
-            "pullback-buyer",
-        ]
-        created_days = {
-            "classic-60-40": date(2026, 1, 8),
-            "all-weather": date(2026, 1, 10),
-            "risk-parity": date(2026, 1, 11),
-            "momentum-sectors": date(2026, 1, 18),
-            "vigilant-asset-allocation": date(2026, 3, 2),
-            "pullback-buyer": date(2026, 4, 6),
-        }
-        for sid in order:
+        for sid in STRATEGY_ORDER:
             data = self.strategy_data[sid]
-            is_live = sid in live_ids
-            # "vigilant-asset-allocation" is a built-but-paused strategy.
-            if is_live:
-                status = strategy_pb2.STRATEGY_STATUS_ACTIVE
-            elif sid == "vigilant-asset-allocation":
-                status = strategy_pb2.STRATEGY_STATUS_PAUSED
-            else:
-                status = strategy_pb2.STRATEGY_STATUS_DRAFT
-            created = dt(created_days[sid], 11, 0)
+            versions: list[dict[str, object]] = data["versions"]  # type: ignore[assignment]
+            saved = [et(days_ago(n), 11, 0) for n in VERSION_DAYS[sid]]
             strat = Strategy(
-                id=uuid4(),
+                id=uuid5(NAMESPACE_URL, f"llamatrade:demo:strategy:{sid}"),
                 tenant_id=self.tenant_id,
                 name=str(data["name"]),
                 description=str(data["description"]),
-                status=status,
+                status=STRATEGY_STATUS[sid],
                 is_public=False,
-                current_version=1,
+                current_version=len(versions),
                 created_by=self.user_id,
-                created_at=created,
+                created_at=saved[0],
+                updated_at=saved[-1],
             )
             self.db.add(strat)
             await self.db.flush()
             self.strategy_rows[sid] = strat
             self._bump("strategies")
-
-            self.db.add(
-                StrategyVersion(
-                    id=uuid4(),
-                    tenant_id=self.tenant_id,
-                    strategy_id=strat.id,
-                    version=1,
-                    config_sexpr=str(data["config_sexpr"]),
-                    symbols=data["symbols"],  # type: ignore[arg-type]
-                    rebalance=str(data["rebalance"]),
-                    changelog="Initial version",
-                    created_by=self.user_id,
-                    created_at=created,
+            for v, at in zip(versions, saved, strict=True):
+                self.db.add(
+                    StrategyVersion(
+                        id=uuid4(),
+                        tenant_id=self.tenant_id,
+                        strategy_id=strat.id,
+                        version=int(v["version"]),  # type: ignore[call-overload]
+                        config_sexpr=str(v["config_sexpr"]),
+                        symbols=v["symbols"],  # type: ignore[arg-type]
+                        rebalance=str(v["rebalance"]),
+                        changelog=str(v["changelog"]),
+                        created_by=self.user_id,
+                        created_at=at,
+                    )
                 )
-            )
-            self._bump("strategy_versions")
+                self._bump("strategy_versions")
 
-    # executions + ledger identity
+    # ledger identity: one account per Alpaca credential, a sleeve per session
 
-    async def seed_executions_and_ledger_identity(self) -> None:
-        """Create funded executions for live sleeves, then the ledger account +
-        sleeves, then back-fill the ledger-identity trio onto each execution."""
-        self.account = Account(
-            id=uuid4(),
-            tenant_id=self.tenant_id,
-            credentials_id=self.credentials_id,
-            base_currency="USD",
-            created_at=dt(DEPOSIT_DAY, 10, 0),
-        )
-        self.db.add(self.account)
-        await self.db.flush()
-        self.account_id = self.account.id
-        self._bump("ledger_accounts")
-
-        # Base sleeves.
-        self.base_sleeves: dict[SleeveType, Sleeve] = {}
-        for kind, name in (
-            (SleeveType.UNALLOCATED, "Unallocated"),
-            (SleeveType.MANUAL, "Manual"),
-            (SleeveType.UNMANAGED, "Unmanaged"),
+    async def seed_ledger_identity(self) -> None:
+        self.accounts: dict[str, AccountState] = {}
+        for key, creds, opened in (
+            ("paper", self.paper_creds, RR_START),
+            ("live", self.live_creds, AW_START),
         ):
-            sleeve = Sleeve(
+            account = Account(
                 id=uuid4(),
                 tenant_id=self.tenant_id,
-                account_id=self.account_id,
-                type=kind.value,
-                status=SleeveStatus.ACTIVE.value,
-                name=name,
-                allocated_capital=ZERO,
-                created_at=dt(DEPOSIT_DAY, 10, 0),
+                credentials_id=creds.id,
+                base_currency="USD",
+                created_at=et(opened, 9, 50),
             )
-            self.db.add(sleeve)
-            self.base_sleeves[kind] = sleeve
-        await self.db.flush()
-        self.unallocated = self.base_sleeves[SleeveType.UNALLOCATED]
+            self.db.add(account)
+            await self.db.flush()
+            self._bump("ledger_accounts")
+            base: dict[SleeveType, Sleeve] = {}
+            for kind, name in (
+                (SleeveType.UNALLOCATED, "Unallocated"),
+                (SleeveType.MANUAL, "Manual"),
+                (SleeveType.UNMANAGED, "Unmanaged"),
+            ):
+                sleeve = Sleeve(
+                    id=uuid4(),
+                    tenant_id=self.tenant_id,
+                    account_id=account.id,
+                    type=kind.value,
+                    status=SleeveStatus.ACTIVE.value,
+                    name=name,
+                    allocated_capital=ZERO,
+                    created_at=et(opened, 9, 50),
+                )
+                self.db.add(sleeve)
+                base[kind] = sleeve
+            await self.db.flush()
+            self._bump("ledger_sleeves", 3)
+            self.accounts[key] = AccountState(key, account, creds.id, base[SleeveType.UNALLOCATED])
 
-        # Per-plan sleeve + (for live strategy plans) a funded execution.
         self.plan_sleeve: dict[str, Sleeve] = {}
         self.plan_execution: dict[str, StrategyExecution] = {}
-        self.plan_session: dict[str, TradingSession] = {}
-        for plan in SLEEVE_PLANS:
-            if plan.kind is SleeveType.MANUAL:
-                self.plan_sleeve[plan.key] = self.base_sleeves[SleeveType.MANUAL]
-                continue
-
+        for plan in SESSION_PLANS:
+            acct = self.accounts["live" if plan.live else "paper"]
             strat = self.strategy_rows[plan.strategy_id]
             execution = StrategyExecution(
                 id=uuid4(),
                 tenant_id=self.tenant_id,
                 strategy_id=strat.id,
-                version=1,
-                mode=common_pb2.EXECUTION_MODE_PAPER,
-                status=common_pb2.EXECUTION_STATUS_RUNNING,
-                started_at=dt_naive(plan.alloc_day, 14, 0),
+                version=strat.current_version,
+                mode=common_pb2.EXECUTION_MODE_LIVE
+                if plan.live
+                else common_pb2.EXECUTION_MODE_PAPER,
+                status=(
+                    common_pb2.EXECUTION_STATUS_STOPPED
+                    if plan.stop
+                    else common_pb2.EXECUTION_STATUS_RUNNING
+                ),
+                started_at=et(plan.start, 10, 0),
+                stopped_at=et(plan.stop, 15, 52) if plan.stop else None,
                 allocated_capital=plan.allocated,
                 color=plan.color,
-                credentials_id=self.credentials_id,
-                created_at=dt(plan.alloc_day, 13, 55),
+                credentials_id=acct.credentials_id,
+                created_at=et(plan.start, 9, 55),
             )
             self.db.add(execution)
             await self.db.flush()
-
             sleeve = Sleeve(
                 id=uuid4(),
                 tenant_id=self.tenant_id,
-                account_id=self.account_id,
+                account_id=acct.account.id,
                 type=SleeveType.STRATEGY.value,
                 status=SleeveStatus.ACTIVE.value,
-                name=plan.name,
+                name=str(strat.name),
                 strategy_execution_id=execution.id,
                 allocated_capital=plan.allocated,
-                created_at=dt(plan.alloc_day, 14, 0),
+                created_at=et(plan.start, 9, 58),
             )
             self.db.add(sleeve)
             await self.db.flush()
-
             execution.sleeve_id = sleeve.id
-            execution.account_id = self.account_id
+            execution.account_id = acct.account.id
             self.plan_sleeve[plan.key] = sleeve
             self.plan_execution[plan.key] = execution
             self._bump("strategy_executions")
             self._bump("ledger_sleeves")
 
-        self._bump("ledger_sleeves", 3)  # base sleeves
-
     # ledger events
 
     async def _append(
         self,
+        acct: AccountState,
         event_type: LedgerEventType,
         data: dict[str, str],
         *,
         sleeve_id: UUID | None,
         occurred_at: datetime,
-        event_id: UUID | None = None,
+        event_id: UUID,
     ) -> None:
         event, _ = await self.writer.append(
             tenant_id=self.tenant_id,
-            account_id=self.account_id,
+            account_id=acct.account.id,
             event_type=event_type,
             data=data,
             sleeve_id=sleeve_id,
             event_id=event_id,
             occurred_at=occurred_at,
         )
-        # ``sequence`` is the DB-assigned global serial — the real ledger position,
-        # which flows into each SleeveSnapshot.as_of_sequence. ``_seq`` stays a
-        # local monotonic counter used only for FIFO lot ordering.
         self._seq += 1
-        self.seed_events.append(
+        acct.events.append(
             SeedEvent(event_type.value, dict(data), int(event.sequence), occurred_at)
         )
         self._bump("ledger_events")
 
-    def _coid(self, plan_key: str, n: int) -> str:
-        return f"lt-demo-{plan_key}-{n:03d}"
-
     async def seed_ledger_events(self) -> None:
-        # 1. Deposit into Unallocated.
-        await self._append(
-            LedgerEventType.FUNDS_DEPOSITED,
-            {"sleeve_id": str(self.unallocated.id), "amount": str(INITIAL_DEPOSIT)},
-            sleeve_id=self.unallocated.id,
-            occurred_at=dt(DEPOSIT_DAY, 10, 5),
-            event_id=event_id_for("demo:deposit"),
-        )
+        """Every economic event, appended in global time order so ledger sequence
+        follows ``occurred_at``. Each session is funded by its own deposit and
+        allocation; paper Unallocated also keeps ``PAPER_FREE_CASH`` idle."""
+        timeline: list[tuple[datetime, int, SessionPlan, object]] = []
+        for plan in SESSION_PLANS:
+            timeline.append((et(plan.start, 9, 55), 0, plan, "fund"))
+            timeline.extend((div.at, 1, plan, div) for div in plan.dividends)
+            timeline.extend((f.at, 2, plan, f) for f in plan.fills)
+        timeline.sort(key=lambda row: (row[0], row[1], row[2].key))
 
-        # 2. Allocations (chronological).
-        for plan in sorted(SLEEVE_PLANS, key=lambda p: p.alloc_day):
-            sleeve = self.plan_sleeve[plan.key]
-            await self._append(
-                LedgerEventType.CAPITAL_ALLOCATED,
-                {
-                    "from_sleeve_id": str(self.unallocated.id),
-                    "to_sleeve_id": str(sleeve.id),
-                    "amount": str(plan.allocated),
-                },
-                sleeve_id=sleeve.id,
-                occurred_at=dt(plan.alloc_day, 14, 1),
-                event_id=event_id_for(f"demo:alloc:{plan.key}"),
-            )
-
-        # 3. Fills + dividends, all in global chronological order.
-        self.order_rows: list[Order] = []
-        # Per-(sleeve, symbol) position accounting captured off the fill stream, so
-        # ``seed_positions`` can materialize the ``positions`` table (which the
-        # ledger fold does not feed) from the same lots that explain the fills.
+        self.order_rows: list[tuple[SessionPlan, Order]] = []
         self.pos_realized: dict[tuple[str, str], Decimal] = {}
         self.pos_opened: dict[tuple[str, str], datetime] = {}
         lots: dict[tuple[str, str], list[FifoLot]] = {}
         fill_counter: dict[str, int] = {}
 
-        timeline: list[tuple[date, str, object]] = []
-        for plan in SLEEVE_PLANS:
-            for f in plan.fills:
-                timeline.append((f.day, plan.key, f))
-        for key, day, symbol, amount in DIVIDENDS:
-            timeline.append((day, key, ("dividend", symbol, amount)))
-        timeline.sort(key=lambda row: (row[0], row[1]))
-
-        for day, plan_key, payload in timeline:
-            plan = next(p for p in SLEEVE_PLANS if p.key == plan_key)
-            sleeve = self.plan_sleeve[plan_key]
-            if isinstance(payload, Fill):
-                await self._append_fill(plan, sleeve, payload, lots, fill_counter)
-            else:
-                _, symbol, amount = payload  # type: ignore[misc]
+        paper = self.accounts["paper"]
+        await self._append(
+            paper,
+            LedgerEventType.FUNDS_DEPOSITED,
+            {"sleeve_id": str(paper.unallocated.id), "amount": str(PAPER_FREE_CASH)},
+            sleeve_id=paper.unallocated.id,
+            occurred_at=et(RR_START, 9, 50),
+            event_id=event_id_for("demo:deposit:paper-float"),
+        )
+        for at, _, plan, payload in timeline:
+            acct = self.accounts["live" if plan.live else "paper"]
+            sleeve = self.plan_sleeve[plan.key]
+            if payload == "fund":
                 await self._append(
-                    LedgerEventType.DIVIDEND_RECEIVED,
-                    {"sleeve_id": str(sleeve.id), "amount": str(amount), "symbol": str(symbol)},
-                    sleeve_id=sleeve.id,
-                    occurred_at=dt(day, 12, 0),
-                    event_id=event_id_for(f"demo:div:{plan_key}:{symbol}:{day.isoformat()}"),
+                    acct,
+                    LedgerEventType.FUNDS_DEPOSITED,
+                    {"sleeve_id": str(acct.unallocated.id), "amount": str(plan.allocated)},
+                    sleeve_id=acct.unallocated.id,
+                    occurred_at=at,
+                    event_id=event_id_for(f"demo:deposit:{plan.key}"),
                 )
+                await self._append(
+                    acct,
+                    LedgerEventType.CAPITAL_ALLOCATED,
+                    {
+                        "from_sleeve_id": str(acct.unallocated.id),
+                        "to_sleeve_id": str(sleeve.id),
+                        "amount": str(plan.allocated),
+                    },
+                    sleeve_id=sleeve.id,
+                    occurred_at=at + timedelta(minutes=3),
+                    event_id=event_id_for(f"demo:alloc:{plan.key}"),
+                )
+            elif isinstance(payload, Dividend):
+                await self._append(
+                    acct,
+                    LedgerEventType.DIVIDEND_RECEIVED,
+                    {
+                        "sleeve_id": str(sleeve.id),
+                        "amount": str(payload.amount),
+                        "symbol": payload.symbol,
+                    },
+                    sleeve_id=sleeve.id,
+                    occurred_at=at,
+                    event_id=event_id_for(f"demo:div:{plan.key}:{payload.symbol}:{at.date()}"),
+                )
+            elif isinstance(payload, Fill):
+                await self._append_fill(acct, plan, sleeve, payload, lots, fill_counter)
 
         self.final_lots = lots
 
     async def _append_fill(
         self,
-        plan: SleevePlan,
+        acct: AccountState,
+        plan: SessionPlan,
         sleeve: Sleeve,
         fill: Fill,
         lots: dict[tuple[str, str], list[FifoLot]],
@@ -1102,9 +1599,10 @@ class Seeder:
         key = (str(sleeve.id), fill.symbol)
         n = fill_counter.get(plan.key, 0) + 1
         fill_counter[plan.key] = n
-        client_order_id = self._coid(plan.key, n)
+        client_order_id = f"lt-demo-{plan.key}-{n:03d}"
         order_id = uuid4()
         notional = (fill.qty * fill.price).quantize(CENT)
+        submitted = fill.at - timedelta(seconds=2)
 
         data: dict[str, str] = {
             "sleeve_id": str(sleeve.id),
@@ -1118,11 +1616,9 @@ class Seeder:
         }
 
         if fill.side == "buy":
-            # Reservation lifecycle (§4): a buy earmarks cash before it fills. The
-            # ORDER_SUBMITTED carries no economic postings; the ORDER_FILLED below
-            # (same client_order_id) releases the reservation — mirroring the real
-            # trading→ledger flow, which the seed otherwise never exercises.
+            # A buy reserves cash before it fills; the ORDER_FILLED releases it.
             await self._append(
+                acct,
                 LedgerEventType.ORDER_SUBMITTED,
                 {
                     "sleeve_id": str(sleeve.id),
@@ -1133,16 +1629,15 @@ class Seeder:
                     "order_id": str(order_id),
                 },
                 sleeve_id=sleeve.id,
-                occurred_at=dt(fill.day, 14, 29),
+                occurred_at=submitted,
                 event_id=event_id_for(f"{client_order_id}:order_submitted"),
             )
             lots.setdefault(key, []).append(
                 FifoLot(qty=fill.qty, cost_basis=notional, opened_seq=self._seq + 1)
             )
-            self.pos_opened.setdefault(key, dt(fill.day, 14, 30))
-        else:  # sell — resolve FIFO cost basis with the real kernel selector
-            open_lots = lots.get(key, [])
-            result = select_lots_fifo(open_lots, fill.qty)
+            self.pos_opened.setdefault(key, fill.at)
+        else:
+            result = select_lots_fifo(lots.get(key, []), fill.qty)
             lots[key] = result.remaining_lots
             cost = result.closed_cost_basis.quantize(CENT)
             realized = (notional - cost - fill.fees).quantize(CENT)
@@ -1151,100 +1646,94 @@ class Seeder:
             self.pos_realized[key] = self.pos_realized.get(key, ZERO) + realized
 
         await self._append(
+            acct,
             LedgerEventType.ORDER_FILLED,
             data,
             sleeve_id=sleeve.id,
-            occurred_at=dt(fill.day, 14, 30),
+            occurred_at=fill.at,
             event_id=event_id_for(client_order_id),
         )
-
-        # Trading Order row (only for live strategy sleeves; Manual lives in the ledger).
-        if plan.live:
-            self.order_rows.append(self._make_order(plan, sleeve, fill, order_id, client_order_id))
-            self._order_plan[order_id] = plan.key
-
-    def _make_order(
-        self, plan: SleevePlan, sleeve: Sleeve, fill: Fill, order_id: UUID, client_order_id: str
-    ) -> Order:
-        order = Order(
-            id=order_id,
-            tenant_id=self.tenant_id,
-            alpaca_order_id=f"demo-{client_order_id}",
-            client_order_id=client_order_id,
-            symbol=fill.symbol,
-            side=trading_pb2.ORDER_SIDE_BUY if fill.side == "buy" else trading_pb2.ORDER_SIDE_SELL,
-            order_type=trading_pb2.ORDER_TYPE_MARKET,
-            time_in_force=trading_pb2.TIME_IN_FORCE_DAY,
-            qty=fill.qty,
-            status=trading_pb2.ORDER_STATUS_FILLED,
-            filled_qty=fill.qty,
-            filled_avg_price=fill.price,
-            submitted_at=dt(fill.day, 14, 29),
-            filled_at=dt(fill.day, 14, 30),
-            signal_reason=(
-                "Rebalance to target weights"
-                if fill.day > plan.alloc_day + timedelta(days=7)
-                else "Initial allocation"
-            ),
-            metadata_={"source": "demo_seed", "mode": "paper"},
-            sleeve_id=sleeve.id,
-            account_id=self.account_id,
-            created_at=dt(fill.day, 14, 29),
+        self.order_rows.append(
+            (
+                plan,
+                Order(
+                    id=order_id,
+                    tenant_id=self.tenant_id,
+                    alpaca_order_id=f"demo-{client_order_id}",
+                    client_order_id=client_order_id,
+                    symbol=fill.symbol,
+                    side=(
+                        trading_pb2.ORDER_SIDE_BUY
+                        if fill.side == "buy"
+                        else trading_pb2.ORDER_SIDE_SELL
+                    ),
+                    order_type=trading_pb2.ORDER_TYPE_MARKET,
+                    time_in_force=trading_pb2.TIME_IN_FORCE_DAY,
+                    qty=fill.qty,
+                    status=trading_pb2.ORDER_STATUS_FILLED,
+                    filled_qty=fill.qty,
+                    filled_avg_price=fill.price,
+                    submitted_at=submitted,
+                    filled_at=fill.at,
+                    signal_reason=fill.reason,
+                    metadata_={"source": "demo_seed", "mode": "live" if plan.live else "paper"},
+                    sleeve_id=sleeve.id,
+                    account_id=acct.account.id,
+                    created_at=submitted,
+                ),
+            )
         )
-        return order
 
     # trading rows
 
     async def seed_trading(self) -> None:
-        for plan in SLEEVE_PLANS:
-            if not plan.live:
-                continue
-            sleeve = self.plan_sleeve[plan.key]
+        self.plan_session: dict[str, TradingSession] = {}
+        for plan in SESSION_PLANS:
+            acct = self.accounts["live" if plan.live else "paper"]
             strat = self.strategy_rows[plan.strategy_id]
-            symbols = list(self.strategy_data[plan.strategy_id]["symbols"])  # type: ignore[arg-type]
+            current = latest_version(self.strategy_data[plan.strategy_id])
             session = TradingSession(
                 id=uuid4(),
                 tenant_id=self.tenant_id,
                 strategy_id=strat.id,
-                strategy_version=1,
-                credentials_id=self.credentials_id,
-                name=f"{plan.name} (paper)",
-                mode=common_pb2.EXECUTION_MODE_PAPER,
-                status=common_pb2.EXECUTION_STATUS_RUNNING,  # → 'active'
+                strategy_version=strat.current_version,
+                credentials_id=acct.credentials_id,
+                name=str(strat.name) if plan.live else f"{strat.name} (paper)",
+                mode=common_pb2.EXECUTION_MODE_LIVE
+                if plan.live
+                else common_pb2.EXECUTION_MODE_PAPER,
+                status=(
+                    common_pb2.EXECUTION_STATUS_STOPPED
+                    if plan.stop
+                    else common_pb2.EXECUTION_STATUS_RUNNING
+                ),
                 config={"drift_tolerance": "0.05"},
-                symbols=symbols,
-                started_at=dt(plan.alloc_day, 14, 0),
-                last_heartbeat=dt(TODAY, 15, 0),
+                symbols=list(current["symbols"]),  # type: ignore[call-overload]
+                started_at=et(plan.start, 10, 0),
+                stopped_at=et(plan.stop, 15, 52) if plan.stop else None,
+                last_heartbeat=et(plan.stop, 15, 52) if plan.stop else datetime.now(UTC),
                 created_by=self.user_id,
-                sleeve_id=sleeve.id,
-                account_id=self.account_id,
-                created_at=dt(plan.alloc_day, 14, 0),
+                sleeve_id=self.plan_sleeve[plan.key].id,
+                account_id=acct.account.id,
+                created_at=et(plan.start, 9, 55),
             )
             self.db.add(session)
             await self.db.flush()
             self.plan_session[plan.key] = session
             self._bump("trading_sessions")
 
-        # Attach orders to their sessions.
-        for order in self.order_rows:
-            plan_key = self._order_plan[order.id]
-            order.session_id = self.plan_session[plan_key].id
+        for plan, order in self.order_rows:
+            order.session_id = self.plan_session[plan.key].id
             self.db.add(order)
             self._bump("orders")
         await self.db.flush()
-
         await self.seed_positions()
 
     async def seed_positions(self) -> None:
-        """Open positions per live session — the ``positions`` table backing the
-        Trading page's ``ListPositions`` (which the ledger fold does NOT feed).
-        qty/cost basis come from the same FIFO lots that explain the fills, marked
-        to today's price so the page shows live P&L. A fully-exited live symbol (or
-        the Manual sleeve, which has no session) stays ledger-only — the Trading
-        page lists open positions. These mirror the folded sleeve position exactly."""
-        for plan in SLEEVE_PLANS:
-            if not plan.live:
-                continue
+        """Open positions per session (the ``positions`` table the Trading page
+        reads), from the same FIFO lots that explain the fills, marked to the
+        session day's close."""
+        for plan in SESSION_PLANS:
             session = self.plan_session[plan.key]
             sleeve_key = str(self.plan_sleeve[plan.key].id)
             for (lot_sleeve, symbol), open_lots in self.final_lots.items():
@@ -1252,15 +1741,11 @@ class Seeder:
                     continue
                 qty = sum((lot.qty for lot in open_lots), ZERO)
                 if qty <= ZERO:
-                    continue  # fully exited → realized in the ledger, no open row
+                    continue
                 cost_basis = sum((lot.cost_basis for lot in open_lots), ZERO).quantize(CENT)
-                avg_entry = (cost_basis / qty).quantize(Decimal("0.00000001"))
-                mark = price_at(symbol, TODAY)
+                mark = price(symbol, SESSION_DAY)
                 market_value = (qty * mark).quantize(CENT)
                 unrealized = (market_value - cost_basis).quantize(CENT)
-                unrealized_pct = (
-                    (unrealized / cost_basis).quantize(Decimal("0.000001")) if cost_basis else ZERO
-                )
                 opened_at = self.pos_opened.get((sleeve_key, symbol), session.started_at)
                 self.db.add(
                     Position(
@@ -1270,12 +1755,14 @@ class Seeder:
                         symbol=symbol,
                         side=trading_pb2.POSITION_SIDE_LONG,
                         qty=qty,
-                        avg_entry_price=avg_entry,
+                        avg_entry_price=(cost_basis / qty).quantize(Decimal("0.00000001")),
                         current_price=mark,
                         market_value=market_value,
                         cost_basis=cost_basis,
                         unrealized_pl=unrealized,
-                        unrealized_plpc=unrealized_pct,
+                        unrealized_plpc=(unrealized / cost_basis).quantize(Decimal("0.000001"))
+                        if cost_basis
+                        else ZERO,
                         realized_pl=self.pos_realized.get((sleeve_key, symbol), ZERO),
                         is_open=True,
                         opened_at=opened_at,
@@ -1288,107 +1775,108 @@ class Seeder:
     # equity snapshots
 
     async def seed_snapshots(self) -> None:
-        """Equity-curve snapshots folded from the constructed event stream and
-        marked with the real ``compute_snapshot_values`` kernel — one per sleeve
-        per calendar day across the whole history, so the equity curve is dense
-        and day-P&L has a true 1-day baseline. Stops at ``TODAY - 1``: today's
-        close is the live mark (today's market-data bar, seeded in
-        ``seed_market_bars``), so day-P&L is a real one-session move, not zero.
-        ``as_of_sequence`` carries the real ledger sequence of the latest event
-        as of each day (the read layer keys the curve off ``created_at`` day, so
-        shared sequences on quiet days never collapse the daily points)."""
+        """Sleeve snapshots folded from each account's event stream and marked by
+        the real ``compute_snapshot_values`` kernel: one at every trading day's
+        close, then intraday marks on the session day (before the open's fills and
+        after each one, the last at the live mark), so today's line moves with this
+        morning's trades."""
         from src.ledger.projection import fold
 
-        all_symbols = sorted(PRICE_PATH)
-        snapshot_days: list[date] = []
-        d = DEPOSIT_DAY
-        while d < TODAY:  # today's close is the live mark, not a snapshot
-            snapshot_days.append(d)
-            d += timedelta(days=1)
-
-        for d in snapshot_days:
-            events_upto = [e for e in self.seed_events if e.occurred_at.date() <= d]
-            if not events_upto:
+        symbols = sorted(PATHS)
+        for acct in self.accounts.values():
+            if not acct.events:
                 continue
-            projection = fold(events_upto)  # type: ignore[arg-type]
-            prices = {s: price_at(s, d) for s in all_symbols}
-            seq = events_upto[-1].sequence
-            values: list[SnapshotValue] = compute_snapshot_values(projection, prices, seq)
-            for v in values:
-                self.db.add(
-                    SleeveSnapshot(
-                        id=uuid4(),
-                        tenant_id=self.tenant_id,
-                        sleeve_id=UUID(v.sleeve_id),
-                        as_of_sequence=v.as_of_sequence,
-                        cash_balance=v.cash_balance,
-                        reserved_cash=v.reserved_cash,
-                        equity=v.equity,
-                        lots=v.lots,
-                        created_at=dt(d, 16, 0),
-                    )
+            stamps: list[tuple[datetime, dict[str, Decimal]]] = []
+            for d in trading_days(acct.events[0].occurred_at.astimezone(ET).date(), PREV_DAY):
+                stamps.append((et(d, 16, 0), {s: price(s, d) for s in symbols}))
+            if SESSION_DAY == TODAY:
+                times = {et(SESSION_DAY, 9, 35)}
+                times.update(
+                    e.occurred_at + timedelta(seconds=1)
+                    for e in acct.events
+                    if e.occurred_at.astimezone(ET).date() == SESSION_DAY
                 )
-                self._bump("ledger_sleeve_snapshots")
+                ordered = sorted(times)
+                for at in ordered[:-1]:
+                    stamps.append((at, {s: intraday_price(s, at) for s in symbols}))
+                # The latest mark is the live one the read side prices positions at.
+                now = min(datetime.now(UTC), et(SESSION_DAY, 16, 0))
+                closes = {s: price(s, SESSION_DAY) for s in symbols}
+                stamps.append((max(ordered[-1], now), closes))
+            else:
+                stamps.append((et(SESSION_DAY, 16, 0), {s: price(s, SESSION_DAY) for s in symbols}))
+
+            # The latest stamp per (sequence, UTC day) wins, the snapshot table's unique key.
+            keyed: dict[tuple[int, date], tuple[datetime, dict[str, Decimal], list[SeedEvent]]] = {}
+            for at, prices in stamps:
+                events_upto = [e for e in acct.events if e.occurred_at <= at]
+                if events_upto:
+                    keyed[(events_upto[-1].sequence, at.date())] = (at, prices, events_upto)
+            for (seq, _), (at, prices, events_upto) in keyed.items():
+                projection = fold(events_upto)  # type: ignore[arg-type]
+                values: list[SnapshotValue] = compute_snapshot_values(projection, prices, seq)
+                for v in values:
+                    self.db.add(
+                        SleeveSnapshot(
+                            id=uuid4(),
+                            tenant_id=self.tenant_id,
+                            sleeve_id=UUID(v.sleeve_id),
+                            as_of_sequence=v.as_of_sequence,
+                            cash_balance=v.cash_balance,
+                            reserved_cash=v.reserved_cash,
+                            equity=v.equity,
+                            lots=v.lots,
+                            created_at=at,
+                        )
+                    )
+                    self._bump("ledger_sleeve_snapshots")
+            await self.db.flush()
 
     # market-data bars
 
     async def seed_market_bars(self) -> None:
-        """Daily OHLCV bars in the market-data Timescale store so open positions
-        mark to market. The portfolio prices live positions via the market-data
-        snapshot endpoint, which — with no Alpaca feed in the demo — falls back to
-        the newest stored daily bar's close. Bars follow the same ``price_at``
-        path as the equity snapshots, so the live mark continues the historical
-        curve smoothly (no cliff). Idempotent: upsert keyed on ``(symbol, time)``."""
-        symbols = sorted(PRICE_PATH)
+        """Daily OHLCV bars in the market-data store, from the same price paths as
+        the fills and snapshots. With no Alpaca feed in the demo, the newest bar's
+        close is the live mark. The window is cleared first so a bar left on a
+        holiday by an older seed can't put a spike in the curve."""
+        symbols = sorted(PATHS)
         rows: list[dict[str, object]] = []
-        fetched = dt(TODAY, 20, 5)
+        fetched = datetime.now(UTC)
         for symbol in symbols:
-            d = BARS_START
-            while d <= TODAY:
-                if d.weekday() < 5:  # trading sessions only
-                    close = price_at(symbol, d)
-                    open_ = price_at(symbol, d - timedelta(days=1))
-                    high = (max(open_, close) * Decimal("1.004")).quantize(CENT)
-                    low = (min(open_, close) * Decimal("0.996")).quantize(CENT)
-                    vol = 800_000 + (d.toordinal() * 7919 + sum(ord(c) for c in symbol)) % 5_000_000
-                    rows.append(
-                        {
-                            "time": dt(d, 5, 0),
-                            "symbol": symbol,
-                            "open": open_,
-                            "high": high,
-                            "low": low,
-                            "close": close,
-                            "volume": vol,
-                            "vwap": ((high + low + close) / 3).quantize(CENT),
-                            "trade_count": vol // 100,
-                            "adjustment": "raw",
-                            "fetched_at": fetched,
-                        }
-                    )
-                d += timedelta(days=1)
+            series = PRICES[symbol]
+            for i, d in enumerate(MARKET_DAYS):
+                close = series[i]
+                open_ = series[i - 1] if i else close
+                wiggle = Decimal(str(1 + stable_rng(f"hl:{symbol}:{d}").uniform(0.001, 0.006)))
+                high = (max(open_, close) * wiggle).quantize(CENT)
+                low = (min(open_, close) / wiggle).quantize(CENT)
+                vol = 800_000 + (d.toordinal() * 7919 + sum(ord(c) for c in symbol)) % 5_000_000
+                rows.append(
+                    {
+                        "time": dt(d, 5, 0),
+                        "symbol": symbol,
+                        "open": open_,
+                        "high": high,
+                        "low": low,
+                        "close": close,
+                        "volume": vol,
+                        "vwap": ((high + low + close) / 3).quantize(CENT),
+                        "trade_count": vol // 100,
+                        "adjustment": "raw",
+                        "fetched_at": fetched,
+                    }
+                )
 
         engine = create_async_engine(MARKET_DATA_DB_URL)
         try:
             async with engine.begin() as conn:
-                for i in range(0, len(rows), 500):
-                    chunk = rows[i : i + 500]
-                    stmt = pg_insert(BARS_DAILY).values(chunk)
-                    stmt = stmt.on_conflict_do_update(
-                        index_elements=["symbol", "time"],
-                        set_={
-                            "open": stmt.excluded.open,
-                            "high": stmt.excluded.high,
-                            "low": stmt.excluded.low,
-                            "close": stmt.excluded.close,
-                            "volume": stmt.excluded.volume,
-                            "vwap": stmt.excluded.vwap,
-                            "trade_count": stmt.excluded.trade_count,
-                            "adjustment": stmt.excluded.adjustment,
-                            "fetched_at": stmt.excluded.fetched_at,
-                        },
-                    )
-                    await conn.execute(stmt)
+                await conn.execute(
+                    BARS_DAILY.delete()
+                    .where(BARS_DAILY.c.symbol.in_(symbols))
+                    .where(BARS_DAILY.c.time >= dt(BARS_START, 0, 0))
+                )
+                for i in range(0, len(rows), 1000):
+                    await conn.execute(pg_insert(BARS_DAILY).values(rows[i : i + 1000]))
         finally:
             await engine.dispose()
         self._bump("market_data_bars", len(rows))
@@ -1396,179 +1884,132 @@ class Seeder:
     # backtests
 
     async def seed_backtests(self) -> None:
-        """Completed 2Y backtests whose stored metrics are DERIVED from the same
-        synthesized curve/trades a real engine run would (metrics.py + _persist),
-        so nothing contradicts (e.g. a negative curve can't carry a positive
-        CAGR). One shared SPY buy-&-hold benchmark backs every run's SPY number
-        and CAPM alpha/beta/IR."""
-        days = bt_trading_days()
-        initial = 100000.0
-        # One SPY buy-&-hold series shared by ALL backtests (same number, same
-        # overlay grid) — not a per-strategy re-randomized benchmark.
-        spy_bars, benchmark_curve, benchmark_return, spy_lr = self._synth_benchmark(days)
-
-        for sid, strat in self.strategy_rows.items():
-            spec = BACKTEST_SPECS[sid]
-            symbols = list(self.strategy_data[sid]["symbols"])  # type: ignore[arg-type]
-
-            curve, curve_points, equity = self._synth_curve(spec, days, spy_lr)
-            num_days = len(equity)
-            total_return, annual_return, daily_returns = bt_returns(equity, initial, num_days)
-            daily_arr = np.array(daily_returns)
-            eq_arr = np.array(equity, dtype=float)
-            sharpe = bt_sharpe(daily_arr)
-            sortino = bt_sortino(daily_arr)
-            max_dd_pos, dd_duration = bt_max_drawdown(eq_arr)
-            monthly = bt_monthly_returns(curve_points, initial)
-            final_equity = float(eq_arr[-1])
-
-            # Trades sum EXACTLY to the curve's gain, so Σ(trade pnl) == final_equity − initial.
-            st = self._synth_trades(spec, symbols, final_equity - initial)
-
-            # Alpha / beta / information ratio from the ONE shared SPY series (CAPM,
-            # date-joined daily returns) — not independent randoms.
-            strat_ret, bench_ret = bt_align_daily_returns(curve_points, spy_bars)
-            alpha, beta = bt_alpha_beta(strat_ret, bench_ret)
-            info_ratio = bt_information_ratio(strat_ret, bench_ret)
-
-            bt = Backtest(
-                id=uuid4(),
-                tenant_id=self.tenant_id,
-                strategy_id=strat.id,
-                strategy_version=1,
-                name=f"{strat.name} — 2Y backtest",
-                status=backtest_pb2.BACKTEST_STATUS_COMPLETED,
-                # Engine's config shape (BacktestService.create_backtest). Curve is
-                # daily-resampled regardless of strategy timeframe, so store "1D".
-                config={
-                    "commission": 0.0,
-                    "slippage": 0.0,
-                    "timeframe": "1D",
-                    "benchmark_symbol": "SPY",
-                    "include_benchmark": True,
-                },
-                symbols=symbols,
-                start_date=BT_START,
-                end_date=BT_END,
-                initial_capital=Decimal("100000.00"),
-                started_at=dt(strat.created_at.date(), 12, 0),
-                completed_at=dt(strat.created_at.date(), 12, 4),
-                created_by=self.user_id,
-                created_at=dt(strat.created_at.date(), 12, 0),
-            )
-            self.db.add(bt)
-            await self.db.flush()
-            self._bump("backtests")
-
-            self.db.add(
-                BacktestResult(
-                    id=uuid4(),
-                    backtest_id=bt.id,
-                    total_return=Decimal(str(round(total_return, 6))),
-                    annual_return=Decimal(str(round(annual_return, 6))),
-                    sharpe_ratio=Decimal(str(round(sharpe, 4))),
-                    sortino_ratio=Decimal(str(round(sortino, 4))),
-                    # Stored NEGATIVE (magnitude from the curve). The engine stores
-                    # a positive drawdown fraction, but the current UI renders the
-                    # negative/fraction convention correctly, so we keep it.
-                    max_drawdown=Decimal(str(round(-max_dd_pos, 6))),
-                    max_drawdown_duration=dd_duration,  # trading days (engine convention)
-                    win_rate=Decimal(str(round(st.win_rate, 4))),
-                    profit_factor=Decimal(str(round(st.profit_factor, 4)))
-                    if st.profit_factor is not None
-                    else None,
-                    exposure_time=Decimal(
-                        str(round(stable_rng(sid + ":exposure").uniform(92.0, 99.9), 2))
-                    ),
-                    total_trades=st.total,
-                    winning_trades=st.winning,
-                    losing_trades=st.losing,
-                    avg_trade_return=Decimal(str(round(st.avg_trade_return, 6))),
-                    final_equity=Decimal(str(round(final_equity, 2))),
-                    equity_curve=curve,
-                    trades=st.trades,
-                    daily_returns=[round(r, 8) for r in daily_returns],
-                    monthly_returns={k: round(v, 6) for k, v in monthly.items()},
-                    benchmark_return=Decimal(str(round(benchmark_return, 6))),
-                    benchmark_symbol="SPY",
-                    alpha=Decimal(str(round(alpha, 6))) if alpha is not None else None,
-                    beta=Decimal(str(round(beta, 4))) if beta is not None else None,
-                    information_ratio=Decimal(str(round(info_ratio, 4)))
-                    if info_ratio is not None
-                    else None,
-                    benchmark_equity_curve=benchmark_curve,
+        """Completed backtests run over the same price paths as the sessions, so a
+        session and its backtest over the same dates move together. Metrics are
+        derived from each curve the way the engine derives them (metrics.py)."""
+        for sid, runs in BACKTEST_RUNS.items():
+            strat = self.strategy_rows[sid]
+            versions: list[dict[str, object]] = self.strategy_data[sid]["versions"]  # type: ignore[assignment]
+            win_rate, profit_factor, trades = TRADE_STATS[sid]
+            for run in runs:
+                version = versions[run.version - 1]
+                symbols = list(version["symbols"])  # type: ignore[call-overload]
+                rule = rule_for(sid, run.version)
+                daily = backtest_curve(
+                    rule, str(version["rebalance"]), BT_START, run.end, BT_INITIAL
                 )
-            )
-            self._bump("backtest_results")
+                spy = [(d, float(price("SPY", d))) for d, _ in daily]
+                await self._add_backtest(
+                    strat,
+                    run,
+                    symbols,
+                    daily,
+                    spy,
+                    BacktestSpec(sid, win_rate, profit_factor, trades),
+                )
 
-    def _synth_benchmark(
-        self, days: list[date]
-    ) -> tuple[list[tuple[datetime, float]], list[dict[str, object]], float, list[float]]:
-        """One deterministic SPY close path over the window → buy-&-hold curve +
-        return (benchmarks.calculate_spy_buy_hold), shared by every backtest.
-        Log-returns are re-centered to a realistic ~9%/yr so the SPY number is
-        sensible rather than a random walk that could end anywhere. Returns the
-        SPY log-returns too, so each strategy path can load on the market and
-        produce realistic betas."""
-        rng = stable_rng("SPY-benchmark")
-        sigma = 0.14 / math.sqrt(252.0)
-        n = len(days)
-        lr = [rng.gauss(0.0, sigma) for _ in range(n - 1)]
-        target_log = (n / 252.0) * math.log1p(SPY_ANNUAL_RETURN)
-        if n > 1:
-            adj = (target_log - sum(lr)) / (n - 1)
-            lr = [x + adj for x in lr]
-        closes = [500.0]
-        cum = 0.0
-        for x in lr:
-            cum += x
-            closes.append(500.0 * math.exp(cum))
-        spy_bars = [(dt(days[i], 21, 0), closes[i]) for i in range(n)]
-        shares = 100000.0 / closes[0]
-        curve: list[dict[str, object]] = [
+    async def _add_backtest(
+        self,
+        strat: Strategy,
+        run: RunSpec,
+        symbols: list[str],
+        daily: list[tuple[date, float]],
+        spy: list[tuple[date, float]],
+        spec: BacktestSpec,
+    ) -> None:
+        initial = BT_INITIAL
+        curve_points = [(dt(d, 21, 0), eq) for d, eq in daily]
+        equity = [eq for _, eq in daily]
+        total_return, annual_return, daily_returns = bt_returns(equity, initial, len(equity))
+        daily_arr = np.array(daily_returns)
+        eq_arr = np.array(equity, dtype=float)
+        max_dd_pos, dd_duration = bt_max_drawdown(eq_arr)
+        final_equity = float(eq_arr[-1])
+        st = self._synth_trades(spec, symbols, final_equity - initial, daily[0][0], daily[-1][0])
+
+        spy_bars = [(dt(d, 21, 0), close) for d, close in spy]
+        shares = initial / spy[0][1]
+        benchmark_curve: list[dict[str, object]] = [
             {"date": ts.isoformat(), "equity": round(shares * close, 2)} for ts, close in spy_bars
         ]
-        benchmark_return = (shares * closes[-1] - 100000.0) / 100000.0
-        return spy_bars, curve, benchmark_return, lr
+        benchmark_return = spy[-1][1] / spy[0][1] - 1.0
+        strat_ret, bench_ret = bt_align_daily_returns(curve_points, spy_bars)
+        alpha, beta = bt_alpha_beta(strat_ret, bench_ret)
+        info_ratio = bt_information_ratio(strat_ret, bench_ret)
+        started = run.completed - timedelta(minutes=4)
 
-    def _synth_curve(
-        self, spec: BacktestSpec, days: list[date], spy_lr: list[float]
-    ) -> tuple[list[dict[str, object]], list[tuple[datetime, float]], list[float]]:
-        """Daily equity path whose log-returns are re-centered to hit exactly
-        ``spec.ann_return`` annualized (num_days = len(curve)): the stored
-        annual_return then recovers ``spec.ann_return`` and is sign-consistent
-        with the curve — no hardcoded-CAGR-vs-negative-curve contradiction. Each
-        return loads on the shared SPY series (market beta ≈ ``0.7·vol/0.14``,
-        capped) plus idiosyncratic noise sized so total vol ≈ ``spec.ann_vol``,
-        giving realistic CAPM betas while sharpe/drawdown stay derived from the
-        path. Full datetime+tz date strings; one point per trading day."""
-        rng = stable_rng(spec.strategy_id)
-        sigma_spy = 0.14 / math.sqrt(252.0)
-        sigma_strat = spec.ann_vol / math.sqrt(252.0)
-        # Market loading ≈ target beta; idiosyncratic variance makes up the rest so
-        # var(beta·spy + idio) ≈ var(strat). ``0.7·vol/0.14`` keeps low-vol sleeves
-        # from claiming an impossibly high beta to the 14%-vol index.
-        beta_target = min(0.9, 0.7 * spec.ann_vol / 0.14)
-        sigma_idio = math.sqrt(max(sigma_strat**2 - (beta_target * sigma_spy) ** 2, 0.0))
-        n = len(days)
-        lr = [beta_target * spy_lr[i] + rng.gauss(0.0, sigma_idio) for i in range(n - 1)]
-        target_log = (n / 252.0) * math.log1p(spec.ann_return)
-        if n > 1:
-            adj = (target_log - sum(lr)) / (n - 1)
-            lr = [x + adj for x in lr]
-        equity = [100000.0]
-        cum = 0.0
-        for x in lr:
-            cum += x
-            equity.append(100000.0 * math.exp(cum))
-        curve_points = [(dt(days[i], 21, 0), equity[i]) for i in range(n)]
-        curve: list[dict[str, object]] = [
-            {"date": ts.isoformat(), "equity": round(eq, 2)} for ts, eq in curve_points
-        ]
-        return curve, curve_points, equity
+        bt = Backtest(
+            id=uuid4(),
+            tenant_id=self.tenant_id,
+            strategy_id=strat.id,
+            strategy_version=run.version,
+            name=f"{strat.name} v{run.version}, {daily[0][0]:%b %Y} to {daily[-1][0]:%b %Y}",
+            status=backtest_pb2.BACKTEST_STATUS_COMPLETED,
+            config={
+                "commission": 0.0,
+                "slippage": 0.0,
+                "timeframe": "1D",
+                "benchmark_symbol": "SPY",
+                "include_benchmark": True,
+            },
+            symbols=symbols,
+            start_date=daily[0][0],
+            end_date=daily[-1][0],
+            initial_capital=Decimal(str(initial)),
+            started_at=started,
+            completed_at=run.completed,
+            created_by=self.user_id,
+            created_at=started,
+        )
+        self.db.add(bt)
+        await self.db.flush()
+        self._bump("backtests")
+
+        self.db.add(
+            BacktestResult(
+                id=uuid4(),
+                backtest_id=bt.id,
+                total_return=Decimal(str(round(total_return, 6))),
+                annual_return=Decimal(str(round(annual_return, 6))),
+                sharpe_ratio=Decimal(str(round(bt_sharpe(daily_arr), 4))),
+                sortino_ratio=Decimal(str(round(bt_sortino(daily_arr), 4))),
+                # Stored negative; the UI renders the negative-fraction convention.
+                max_drawdown=Decimal(str(round(-max_dd_pos, 6))),
+                max_drawdown_duration=dd_duration,
+                win_rate=Decimal(str(round(st.win_rate, 4))),
+                profit_factor=Decimal(str(round(st.profit_factor, 4)))
+                if st.profit_factor is not None
+                else None,
+                exposure_time=Decimal(
+                    str(round(stable_rng(f"{spec.strategy_id}:exposure").uniform(92.0, 99.9), 2))
+                ),
+                total_trades=st.total,
+                winning_trades=st.winning,
+                losing_trades=st.losing,
+                avg_trade_return=Decimal(str(round(st.avg_trade_return, 6))),
+                final_equity=Decimal(str(round(final_equity, 2))),
+                equity_curve=[
+                    {"date": ts.isoformat(), "equity": round(eq, 2)} for ts, eq in curve_points
+                ],
+                trades=st.trades,
+                daily_returns=[round(r, 8) for r in daily_returns],
+                monthly_returns={
+                    k: round(v, 6) for k, v in bt_monthly_returns(curve_points, initial).items()
+                },
+                benchmark_return=Decimal(str(round(benchmark_return, 6))),
+                benchmark_symbol="SPY",
+                alpha=Decimal(str(round(alpha, 6))) if alpha is not None else None,
+                beta=Decimal(str(round(beta, 4))) if beta is not None else None,
+                information_ratio=Decimal(str(round(info_ratio, 4)))
+                if info_ratio is not None
+                else None,
+                benchmark_equity_curve=benchmark_curve,
+            )
+        )
+        self._bump("backtest_results")
 
     def _synth_trades(
-        self, spec: BacktestSpec, symbols: list[str], target_pnl: float
+        self, spec: BacktestSpec, symbols: list[str], target_pnl: float, start: date, end: date
     ) -> SynthTrades:
         """The FULL trade list (len == spec.trades) whose P&Ls SUM EXACTLY to
         ``target_pnl`` — the curve's final-equity gain — so the equity curve, the
@@ -1584,14 +2025,14 @@ class Seeder:
         flags = [True] * n_win + [False] * (total - n_win)
         rng.shuffle(flags)  # interleave winners/losers across the window
 
-        span = (BT_END - BT_START).days
+        span = (end - start).days
         raw: list[_RawTrade] = []
         for i, is_win in enumerate(flags):
             entry = round(rng.uniform(40, 320), 2)
             qty = rng.randint(5, 60)
             pct = rng.uniform(0.005, 0.09) if is_win else -rng.uniform(0.005, 0.07)
-            entry_day = BT_START + timedelta(days=rng.randint(0, max(1, span - 10)))
-            exit_day = min(entry_day + timedelta(days=rng.randint(3, 40)), BT_END)
+            entry_day = start + timedelta(days=rng.randint(0, max(1, span - 10)))
+            exit_day = min(entry_day + timedelta(days=rng.randint(3, 40)), end)
             raw.append(
                 _RawTrade(
                     symbol=symbols[i % len(symbols)],
@@ -1667,12 +2108,11 @@ class Seeder:
 
     async def seed_agent(self) -> None:
         # The real "build a strategy" flow calls the genuine ``validate_dsl`` tool
-        # (there is no ``create_strategy`` tool) and, on success, persists a
-        # PENDING strategy artifact as a side effect. Reproduce that instead of a
-        # fabricated tool call with no backing artifact.
+        # and, on success, persists a PENDING strategy artifact as a side effect.
         mom = self.strategy_data["momentum-sectors"]
-        mom_dsl = str(mom["config_sexpr"])
-        mom_symbols = list(mom["symbols"])  # type: ignore[arg-type]
+        mom_current = latest_version(mom)
+        mom_dsl = str(mom_current["config_sexpr"])
+        mom_symbols = list(mom_current["symbols"])  # type: ignore[call-overload]
         mom_description = str(mom["description"])
         momentum_validate_call = [
             {
@@ -1683,7 +2123,7 @@ class Seeder:
                     "valid": True,
                     "errors": [],
                     "strategy_name": "Momentum Sectors",
-                    "rebalance_frequency": "monthly",
+                    "rebalance_frequency": "weekly",
                     "benchmark": "SPY",
                     "symbols": mom_symbols,
                     "indicators": ["momentum"],
@@ -1692,87 +2132,94 @@ class Seeder:
                 "success": True,
             }
         ]
-        sessions = [
+        sessions: list[dict[str, object]] = [
             {
                 "title": "Build a momentum sector strategy",
                 "status": agent_pb2.AGENT_SESSION_STATUS_COMPLETED,
-                "day": date(2026, 1, 17),
+                "day": days_ago(28),
                 "messages": [
                     (
                         "user",
-                        "I want a strategy that rotates into the strongest market sectors each month. Can you help me build one?",
+                        "I want a strategy that rotates into the strongest market sectors. Can you help me build one?",
                         None,
                     ),
                     (
                         "assistant",
-                        "Absolutely. A sector-momentum rotation ranks the 11 S&P sector ETFs by trailing 3-month return and overweights the leaders, rebalancing monthly. I'll split it into cyclical, defensive, and commodity sectors and pick the top performers in each with a momentum filter. Want me to draft it?",
+                        "Sure. A sector-momentum rotation ranks the 11 S&P sector ETFs by their trailing return and holds the leaders in equal weights. Your current Momentum Sectors holds the top 3 by 90-day momentum and rebalances weekly. Want me to add real estate (XLRE) so all 11 sectors compete?",
                         None,
                     ),
-                    (
-                        "user",
-                        "Yes, draft it and keep it diversified so I'm not all-in on tech.",
-                        None,
-                    ),
+                    ("user", "Yes, add XLRE and keep everything else the same.", None),
                     (
                         "assistant",
-                        "Done — I've drafted **Momentum Sectors** and validated it. It holds the top 3 cyclical sectors, top 2 defensive, and momentum-weights the commodity sectors, rebalanced monthly. Backtest shows ~11.5% CAGR with a deeper drawdown (~-20%), which is typical for momentum. Review it below, then save it to your strategies and fund it from the Strategies page.",
+                        "Done. I've updated **Momentum Sectors** and validated it: the top 3 of 11 sector ETFs by 90-day momentum, equal weight, rebalanced weekly. Momentum's drawdowns run deeper than a broad index fund's, so expect bumpier weeks. Review it below, then save it as a new version.",
                         momentum_validate_call,
                     ),
                 ],
                 "summary": (
-                    "Built a monthly sector-momentum rotation strategy (Momentum Sectors), diversified across cyclical/defensive/commodity sectors.",
-                    "User wanted a diversified monthly sector-rotation strategy that avoids concentration in tech. Drafted Momentum Sectors using a top-N momentum filter per sector group; discussed the higher-drawdown tradeoff of momentum.",
-                    ["momentum", "sector rotation", "diversification"],
+                    "Added XLRE to Momentum Sectors so all 11 sector ETFs compete; top 3 by 90-day momentum, weekly.",
+                    "User wanted the sector rotation to cover every sector. Added XLRE to the universe and kept the top-3, 90-day, weekly rules; discussed momentum's deeper drawdowns.",
+                    ["momentum", "sector rotation"],
                     ["Momentum Sectors"],
-                    [
-                        "Chose top-3 cyclical / top-2 defensive with momentum weighting",
-                        "Rebalance monthly",
-                    ],
+                    ["Hold the top 3 of 11 sectors", "Rebalance weekly"],
                 ),
             },
             {
-                "title": "Why did Risk Parity draw down in April?",
+                "title": "Should I keep Tech Momentum Rotation running?",
                 "status": agent_pb2.AGENT_SESSION_STATUS_COMPLETED,
-                "day": date(2026, 4, 22),
+                "day": TM_STOP,
                 "messages": [
-                    ("user", "My Risk Parity sleeve dipped in April. What happened?", None),
-                    (
-                        "assistant",
-                        "The drawdown came from the long-bond leg: TLT fell ~3% as yields backed up, and that's your largest risk-weighted position. Gold (GLD) offset some of it (+9% YTD). Risk parity is working as designed — the bond drag was cushioned by the diversifiers. No action needed unless your risk tolerance changed.",
-                        None,
-                    ),
                     (
                         "user",
-                        "Got it, I'm comfortable holding. Keep max drawdown under about 15% though.",
+                        "Tech Momentum Rotation is down about 2% since it started in paper. Should I keep it running?",
                         None,
                     ),
                     (
                         "assistant",
-                        "Noted — I'll keep an eye on the sleeve and flag it if projected drawdown approaches 15%.",
+                        "Most of the loss came from the last three weeks. Semiconductors led into October, so the session moved into SMH and XLK, and both fell harder than QQQ once the rally turned. A weekly rotation across three funds this closely related tends to switch late and pay for each reversal. Its backtest still shows a strong two-year return, but with a drawdown above 20%.",
+                        None,
+                    ),
+                    ("user", "Stop it and keep the cash in the sleeve for now.", None),
+                    (
+                        "assistant",
+                        "Stopped. The positions were sold at the 15:50 rebalance and the sleeve now holds cash. You can restart it in paper from the Strategies page whenever you like.",
                         None,
                     ),
                 ],
                 "summary": (
-                    "Explained the April Risk Parity drawdown (long-bond weakness, partially offset by gold); user confirmed a ~15% max-drawdown comfort level.",
-                    "User asked why the Risk Parity sleeve drew down in April. Attributed it to TLT weakness offset by GLD strength; reassured that risk parity behaved as designed. User set a ~15% max-drawdown tolerance.",
-                    ["risk parity", "drawdown", "bonds", "gold"],
-                    ["Risk Parity"],
-                    ["Hold the Risk Parity sleeve", "Keep max drawdown under ~15%"],
+                    "Explained Tech Momentum Rotation's paper loss (late rotation into SMH and XLK before a pullback); user stopped the session and kept the cash in its sleeve.",
+                    "User asked whether to keep Tech Momentum Rotation running after a small paper loss. Attributed it to late weekly rotation among highly correlated tech funds. User chose to stop the session and hold cash.",
+                    ["momentum", "drawdown", "semiconductors"],
+                    ["Tech Momentum Rotation"],
+                    ["Stop Tech Momentum Rotation", "Keep the sleeve in cash"],
                 ),
             },
             {
                 "title": "What is dual momentum?",
-                "status": agent_pb2.AGENT_SESSION_STATUS_ACTIVE,
-                "day": date(2026, 7, 10),
+                "status": agent_pb2.AGENT_SESSION_STATUS_COMPLETED,
+                "day": days_ago(13),
                 "messages": [
                     (
                         "user",
-                        "What's the difference between dual momentum and my current momentum strategy?",
+                        "What's the difference between dual momentum and my Momentum Sectors strategy?",
                         None,
                     ),
                     (
                         "assistant",
-                        "Dual momentum combines **relative** momentum (pick the strongest asset among several) with **absolute** momentum (only hold it if it's also beating cash/T-bills). If nothing has positive absolute momentum, it moves to bonds or cash — a built-in defensive switch. Your Momentum Sectors uses relative momentum only, so it stays invested even in downturns. Want me to sketch a dual-momentum version like the Vigilant Asset Allocation template?",
+                        "Dual momentum combines **relative** momentum (hold the stronger of a few assets) with **absolute** momentum (only hold it while it is beating cash). When nothing has positive momentum it moves to bonds, a built-in defensive switch. Momentum Sectors uses relative momentum only, so it stays invested in a downturn. The Dual Momentum template compares SPY with EFA and falls back to BND.",
+                        None,
+                    ),
+                ],
+                "summary": None,
+            },
+            {
+                "title": "Buy SPY after a sharp drop",
+                "status": agent_pb2.AGENT_SESSION_STATUS_ACTIVE,
+                "day": days_ago(2),
+                "messages": [
+                    ("user", "Can you draft a strategy that buys SPY after a sharp drop?", None),
+                    (
+                        "assistant",
+                        "Here's a simple version: hold SPY when its 5-day RSI falls under 25, and park in BIL otherwise, checked each trading day. I've saved it as a draft called **Pullback Buyer**. It hasn't been backtested yet, so run a backtest before you start it in paper.",
                         None,
                     ),
                 ],
@@ -1782,16 +2229,17 @@ class Seeder:
 
         momentum_session_id: UUID | None = None
         for s in sessions:
-            msgs = s["messages"]
+            msgs: list[tuple[str, str, object]] = s["messages"]  # type: ignore[assignment]
+            day: date = s["day"]  # type: ignore[assignment]
             session = AgentSession(
                 id=uuid4(),
                 tenant_id=self.tenant_id,
                 user_id=self.user_id,
                 title=str(s["title"]),
                 status=s["status"],  # type: ignore[arg-type]
-                message_count=len(msgs),  # type: ignore[arg-type]
-                last_activity_at=dt(s["day"], 16, 0),  # type: ignore[arg-type]
-                created_at=dt(s["day"], 15, 30),  # type: ignore[arg-type]
+                message_count=len(msgs),
+                last_activity_at=et(day, 16, 0),
+                created_at=et(day, 15, 30),
             )
             self.db.add(session)
             await self.db.flush()
@@ -1799,7 +2247,7 @@ class Seeder:
             if s["title"] == "Build a momentum sector strategy":
                 momentum_session_id = session.id
 
-            for i, (role, content, tool_calls) in enumerate(msgs):  # type: ignore[arg-type]
+            for i, (role, content, tool_calls) in enumerate(msgs):
                 self.db.add(
                     AgentMessage(
                         id=uuid4(),
@@ -1810,15 +2258,13 @@ class Seeder:
                         else agent_pb2.MESSAGE_ROLE_ASSISTANT,
                         content=content,
                         tool_calls_json=tool_calls,
-                        created_at=dt(s["day"], 15, 30) + timedelta(minutes=i),  # type: ignore[arg-type]
+                        created_at=et(day, 15, 30) + timedelta(minutes=i),
                     )
                 )
                 self._bump("agent_messages")
 
-        # Backing pending artifact for the Momentum Sectors turn (the side effect
-        # of the validate_dsl call above). artifact_json matches ArtifactService.
-        # create_strategy_artifact; left UNCOMMITTED so GetSession surfaces it
-        # (get_pending_artifacts filters committed rows out by default).
+        # Backing pending artifact for the Momentum Sectors turn, left uncommitted
+        # so GetSession surfaces it.
         if momentum_session_id is not None:
             self.db.add(
                 PendingArtifact(
@@ -1835,16 +2281,15 @@ class Seeder:
                         "symbols": mom_symbols,
                     },
                     is_committed=False,
-                    created_at=dt(date(2026, 1, 17), 15, 33),
+                    created_at=et(days_ago(28), 15, 33),
                 )
             )
             self._bump("pending_artifacts")
 
-        # Cross-session memory facts.
         facts = [
             (
                 "risk_tolerance",
-                "Moderate risk tolerance; comfortable with drawdowns up to ~15%.",
+                "Moderate risk tolerance; comfortable with drawdowns up to about 15%.",
                 0.9,
             ),
             (
@@ -1852,15 +2297,19 @@ class Seeder:
                 "Prefers broad, liquid ETFs; likes a tech tilt but wants diversification.",
                 0.85,
             ),
-            ("investment_goal", "Long-term growth, ~15 year horizon toward retirement.", 0.8),
+            (
+                "investment_goal",
+                "Long-term growth, about a 15 year horizon toward retirement.",
+                0.8,
+            ),
             (
                 "strategy_decision",
-                "Runs a core-and-satellite mix: All-Weather + Risk Parity core, Momentum Sectors satellite.",
+                "Runs All-Weather Portfolio live as the core; Recession Radar and Momentum Sectors stay in paper until they prove out.",
                 0.88,
             ),
             (
                 "trading_behavior",
-                "Rebalances roughly monthly and reviews sleeves after notable moves.",
+                "Tests every strategy in paper before going live and stops sessions that lag their backtest.",
                 0.75,
             ),
         ]
@@ -1875,9 +2324,9 @@ class Seeder:
                     confidence=confidence,
                     extraction_method="llm",
                     is_active=True,
-                    last_accessed_at=dt(TODAY - timedelta(days=2), 10, 0),
+                    last_accessed_at=et(days_ago(2), 10, 0),
                     access_count=RNG.randint(1, 6),
-                    created_at=dt(date(2026, 1, 20), 10, 0),
+                    created_at=et(days_ago(160), 10, 0),
                 )
             )
             self._bump("agent_memory_facts")
@@ -1885,11 +2334,12 @@ class Seeder:
     # run
 
     async def run(self) -> None:
+        plan_sessions(load_strategy_data())
         await self.purge_existing()
         await self.seed_identity()
         await self.seed_billing()
         await self.seed_strategies()
-        await self.seed_executions_and_ledger_identity()
+        await self.seed_ledger_identity()
         await self.seed_ledger_events()
         await self.seed_trading()
         await self.seed_snapshots()
@@ -1898,7 +2348,58 @@ class Seeder:
         await self.seed_agent()
 
 
+def dry_run() -> None:
+    plan_sessions(load_strategy_data())
+    for plan in SESSION_PLANS:
+        held: dict[str, Decimal] = {}
+        cash = plan.allocated + sum((d.amount for d in plan.dividends), ZERO)
+        for f in plan.fills:
+            sign = 1 if f.side == "buy" else -1
+            held[f.symbol] = held.get(f.symbol, ZERO) + sign * f.qty
+            cash -= sign * f.qty * f.price
+        value = cash + sum((q * price(s, SESSION_DAY) for s, q in held.items()), ZERO)
+        prev = cash + sum((q * price(s, PREV_DAY) for s, q in held.items()), ZERO)
+        days = {f.at.astimezone(ET).date() for f in plan.fills}
+        logger.info(
+            "%s value=%.2f return=%.2f%% today=%.2f fills=%d days=%d cash=%.2f holds=%s",
+            plan.key,
+            value,
+            float(value / plan.allocated - 1) * 100,
+            value - prev,
+            len(plan.fills),
+            len(days),
+            cash,
+            {s: str(q) for s, q in held.items() if q},
+        )
+    for sid, runs in BACKTEST_RUNS.items():
+        versions: list[dict[str, object]] = load_strategy_data()[sid]["versions"]  # type: ignore[assignment]
+        for run in runs:
+            daily = backtest_curve(
+                rule_for(sid, run.version),
+                str(versions[run.version - 1]["rebalance"]),
+                BT_START,
+                run.end,
+                BT_INITIAL,
+            )
+            eq = np.array([e for _, e in daily])
+            dd, _ = bt_max_drawdown(eq)
+            logger.info(
+                "bt %s v%d %s..%s return=%.1f%% maxdd=%.1f%%",
+                sid,
+                run.version,
+                daily[0][0],
+                daily[-1][0],
+                (eq[-1] / BT_INITIAL - 1) * 100,
+                -dd * 100,
+            )
+    spy = float(price("SPY", PREV_DAY) / price("SPY", BT_START)) - 1
+    logger.info("SPY %s..%s %.1f%%", BT_START, PREV_DAY, spy * 100)
+
+
 async def main() -> None:
+    if os.getenv("DEMO_SEED_DRY_RUN"):
+        dry_run()
+        return
     session_maker = get_session_maker()
     async with session_maker() as db:
         seeder = Seeder(db)
@@ -1911,7 +2412,7 @@ async def main() -> None:
             raise
 
     logger.info("=" * 60)
-    logger.info("DEMO SEED COMPLETE")
+    logger.info("DEMO SEED COMPLETE (session day %s)", SESSION_DAY)
     logger.info("  login: %s / %s", DEMO_EMAIL, DEMO_PASSWORD)
     logger.info("  tenant: %s (%s)", TENANT_NAME, DEMO_SLUG)
     for key in sorted(seeder.counts):

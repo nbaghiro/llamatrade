@@ -1,0 +1,873 @@
+<style>
+  /* Shared bits for Home round two (prefixed hl-) */
+  .hl-leg { display: flex; gap: 14px; align-items: center; font-size: 12px; color: var(--fg-2); }
+  .hl-leg > span { display: inline-flex; align-items: center; gap: 7px; }
+  .hl-leg .l { width: 14px; border-top: 2px solid var(--acc); }
+  .hl-leg .d { width: 14px; border-top: 1.5px dashed var(--fg-3); }
+  .hl-kv > div { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  .hl-kv > div:last-child { border-bottom: 0; }
+  .hl-kv > div > span:first-child { color: var(--fg-2); }
+  .hl-kv > div > span:last-child { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .hl-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hl-meta { font-size: 11.5px; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hl-tag { display: inline-grid; place-items: center; min-width: 38px; height: 20px; padding: 0 5px; border-radius: 4px; border: 1px solid var(--line-2); font: 500 10px var(--mono); color: var(--fg-2); letter-spacing: 0.04em; flex: none; }
+  .hl-n { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--acc); color: var(--bg); font: 600 10px var(--mono); flex: none; }
+  .hl-prow { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 14.5px; }
+  .hl-prow:last-child { border-bottom: 0; }
+  .hl-prow .grow { flex: 1; min-width: 0; }
+  .hl-prow .end { text-align: right; flex: none; }
+  .hl-prow .d { font-size: 12.5px; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hl-src { font-size: 11.5px; color: var(--fg-3); display: inline-flex; align-items: center; gap: 6px; }
+  .hl-src .ic { width: 12px; height: 12px; }
+  .hl-tw { display: grid; grid-template-columns: 44px minmax(0, 1fr) 46px; align-items: center; gap: 10px; font-size: 12px; }
+  .hl-tw .bars { position: relative; height: 14px; }
+  .hl-tw .bars i { position: absolute; left: 0; height: 5px; border-radius: 3px; }
+  .hl-tw .bars .now { top: 0; background: var(--acc); }
+  .hl-tw .bars .tgt { top: 8px; background: var(--fg-4); }
+  .hl-tw .bars .mk { position: absolute; top: -2px; bottom: -2px; width: 1.5px; background: var(--fg); }
+
+  /* ---------- A: annotated curve */
+  .hl-a .page { padding: 22px 32px; }
+  .hl-a .page-head { margin-bottom: 14px; }
+  .hl-a .hero { padding: 16px 20px 6px; }
+  .hl-a .hh { display: flex; align-items: flex-end; gap: 28px; padding-bottom: 12px; }
+  .hl-a .hh .figs2 { display: flex; gap: 26px; padding-bottom: 3px; }
+  .hl-a .hh .figs2 .v { font: 600 15px var(--mono); margin-top: 3px; letter-spacing: -0.02em; }
+  .hl-a .tl { display: grid; grid-template-columns: 212px minmax(0, 1fr) 210px; }
+  .hl-a .tl > .lab { padding-right: 14px; display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 12.5px; }
+  .hl-a .tl > .past, .hl-a .tl > .fut { position: relative; }
+  .hl-a .tl > .fut { background: color-mix(in srgb, var(--sunk) 70%, transparent); border-left: 1.5px solid var(--fg); }
+  .hl-a .pins { height: 40px; }
+  .hl-a .pin { position: absolute; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 5px; height: 18px; padding: 0 7px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line-2); font: 500 10.5px var(--mono); color: var(--fg-2); white-space: nowrap; }
+  .hl-a .pin.end { transform: translateX(-100%); }
+  .hl-a .pin.acc { border-color: var(--acc-line); color: var(--fg); background: var(--acc-soft); }
+  .hl-a .vl { position: absolute; top: 0; bottom: 0; border-left: 1px dashed var(--line-2); pointer-events: none; z-index: 1; }
+  .hl-a .fut .ttl { position: absolute; top: 10px; left: 12px; right: 10px; font-size: 11.5px; color: var(--fg-3); }
+  .hl-a .fut .now { position: absolute; top: 8px; left: -1px; transform: translateX(-50%); padding: 1px 6px; border-radius: 4px; background: var(--fg); color: var(--bg); font: 600 10px var(--mono); }
+  .hl-a .fut .nx { position: absolute; left: 12px; right: 12px; font-size: 11.5px; color: var(--fg-2); }
+  .hl-a .lane { height: 27px; border-top: 1px solid var(--line); }
+  .hl-a .lane .bar { position: absolute; top: 13px; height: 1.5px; background: var(--line-2); }
+  .hl-a .lane .bar.on { background: color-mix(in srgb, var(--acc) 55%, var(--line-2)); }
+  .hl-a .lane .bar.plan { background: none; border-top: 1.5px dashed var(--line-2); height: 0; }
+  .hl-a .m { position: absolute; top: 9px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--panel); border: 1.5px solid var(--acc); }
+  .hl-a .m.plan { border-style: dashed; border-color: var(--fg-3); }
+  .hl-a .m.start { border-radius: 2px; background: var(--acc); border-color: var(--acc); width: 3px; height: 14px; margin-left: -1.5px; top: 7px; }
+  .hl-a .m.stop { border-radius: 2px; background: var(--fg-3); border-color: var(--fg-3); }
+  .hl-a .m.fill { width: 16px; height: 16px; margin-left: -8px; top: 6px; background: var(--acc); border-color: var(--acc); color: var(--bg); font: 600 9.5px/13px var(--mono); text-align: center; z-index: 2; }
+  .hl-a .xl { height: 22px; }
+  .hl-a .xl span { position: absolute; top: 5px; font: 400 10.5px var(--mono); color: var(--fg-3); transform: translateX(-50%); }
+  .hl-a .keys { display: flex; gap: 16px; font-size: 11.5px; color: var(--fg-3); align-items: center; }
+  .hl-a .keys > span { display: inline-flex; align-items: center; gap: 6px; }
+  .hl-a .keys .m { position: static; margin: 0; }
+  .hl-a .lower { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr) minmax(0, 1fr); gap: 16px; margin-top: 16px; }
+  .hl-a .lower .li { padding: 7px 0; }
+  .hl-a .lower .panel-h { min-height: 40px; }
+  .hl-a .ph-lanes { position: relative; display: flex; flex-direction: column; gap: 0; margin-top: 2px; }
+  .hl-a .ph-lanes .lane { position: relative; height: 22px; border-top: 1px solid var(--line); }
+  .hl-a .ph-lanes .lane .m { top: 6px; }
+  .hl-a .ph-lanes .lane .bar { top: 10px; }
+  .hl-a .ph-lanes .lane .m.fill { top: 3px; }
+  .hl-a .ph-lanes .lane .m.start { top: 4px; }
+  .hl-a .ph-lanes .lab { position: absolute; left: 0; top: 4px; font: 500 10px var(--mono); color: var(--fg-3); }
+
+  /* ---------- B: session bento */
+  .hl-b .page { padding: 22px 32px; }
+  .hl-b .page-head { margin-bottom: 16px; }
+  .hl-b .bento { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+  .hl-b .t { padding: 15px 17px; display: flex; flex-direction: column; gap: 9px; }
+  .hl-b .eq { grid-column: 1 / 3; grid-row: 1 / 3; padding: 18px 20px; }
+  .hl-b .fills { grid-column: 2 / 4; }
+  .hl-b .t.stopped { background: transparent; border-style: dashed; }
+  .hl-b .t .alloc-bar { height: 6px; }
+  .hl-b .syms { display: flex; flex-wrap: wrap; gap: 4px 10px; font: 500 11px var(--mono); color: var(--fg-3); }
+  .hl-b .syms b { color: var(--fg-2); font-weight: 600; }
+  .hl-b .tbl td { padding-top: 8px; padding-bottom: 8px; }
+  .hl-b .cd { font: 600 26px/1 var(--mono); letter-spacing: -0.03em; }
+  .hl-b .mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .hl-b .mt { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 11px 12px; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .hl-b .mt.stopped { border-style: dashed; background: transparent; }
+
+  /* ---------- C: against SPY */
+  .hl-c .page { padding: 22px 32px; }
+  .hl-c .page-head { margin-bottom: 14px; }
+  .hl-c .hero { display: grid; grid-template-columns: 330px minmax(0, 1fr); }
+  .hl-c .hero > .f { padding: 22px 24px 18px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 14px; }
+  .hl-c .hero > .c { padding: 14px 20px 12px; display: flex; flex-direction: column; gap: 8px; }
+  .hl-c .vs { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid var(--line); border-radius: var(--r); }
+  .hl-c .vs > div { padding: 10px 12px; }
+  .hl-c .vs > div + div { border-left: 1px solid var(--line); }
+  .hl-c .vs .v { font: 600 22px/1.1 var(--mono); letter-spacing: -0.03em; margin-top: 4px; }
+  .hl-c .lead { font: 600 15px/1.45 var(--sans); }
+  .hl-c .lower { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 16px; margin-top: 16px; }
+  .hl-c .tbl td { padding-top: 9px; padding-bottom: 9px; }
+  .hl-c .diff { display: flex; align-items: center; gap: 8px; }
+  .hl-c .diff .track { position: relative; width: 84px; height: 8px; background: var(--sunk); border-radius: 2px; }
+  .hl-c .diff .track::before { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--line-2); }
+  .hl-c .diff .track i { position: absolute; top: 0; bottom: 0; border-radius: 2px; }
+  .hl-c .diff .track i.g { left: 50%; background: var(--gain); }
+  .hl-c .diff .track i.l { right: 50%; background: var(--loss); }
+  .hl-c .mlab { display: grid; grid-template-columns: repeat(6, 1fr); font: 400 10.5px var(--mono); color: var(--fg-3); text-align: center; margin-top: 6px; }
+
+  /* ---------- D: calendar ahead */
+  .hl-d .page { padding: 22px 32px; }
+  .hl-d .page-head { margin-bottom: 16px; }
+  .hl-d .wrap { display: grid; grid-template-columns: minmax(0, 1fr) 372px; gap: 18px; }
+  .hl-d .cal { display: grid; grid-template-columns: 70px repeat(5, minmax(0, 1fr)); }
+  .hl-d .cal > .hd { padding: 9px 10px; font-size: var(--lbl-size); letter-spacing: var(--lbl-track); text-transform: var(--lbl-tf); color: var(--fg-3); font-weight: 500; border-bottom: 1px solid var(--line); }
+  .hl-d .cal > .wk { padding: 10px; font: 500 11px var(--mono); color: var(--fg-3); border-bottom: 1px solid var(--line); }
+  .hl-d .cal > .day { position: relative; min-height: 178px; padding: 8px 9px; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .hl-d .cal > .day.last { border-bottom: 0; }
+  .hl-d .cal > .wk.last { border-bottom: 0; }
+  .hl-d .day .dn { font: 500 12px var(--mono); color: var(--fg-3); margin-bottom: 2px; }
+  .hl-d .day.past .dn { color: var(--fg-4); }
+  .hl-d .day.today { background: var(--acc-soft); box-shadow: inset 0 0 0 1.5px var(--acc-line); }
+  .hl-d .day.today .dn { color: var(--fg); font-weight: 600; }
+  .hl-d .day.closed { background: repeating-linear-gradient(135deg, transparent 0 7px, var(--sunk) 7px 8px); }
+  .hl-d .ev { display: flex; gap: 6px; align-items: flex-start; font-size: 11.5px; line-height: 1.35; color: var(--fg-2); padding: 4px 6px; border-radius: 5px; background: var(--panel); border: 1px solid var(--line); min-width: 0; }
+  .hl-d .ev b { font-weight: 600; color: var(--fg); }
+  .hl-d .ev .tm { font: 500 10.5px var(--mono); color: var(--fg-3); flex: none; padding-top: 1px; }
+  .hl-d .ev.plan { border-style: dashed; border-color: var(--line-2); background: transparent; }
+  .hl-d .ev.live { border-color: var(--acc-line); }
+  .hl-d .ev.done { background: transparent; border-color: transparent; padding: 1px 6px; }
+  .hl-d .ev.note { background: transparent; border: 0; padding: 0 2px; color: var(--fg-3); }
+  .hl-d .agenda .dh { display: flex; align-items: baseline; gap: 8px; margin: 6px 0 6px; font-weight: 600; font-size: 14.5px; }
+  .hl-d .agenda .dh .s { font-weight: 400; font-size: 12.5px; color: var(--fg-3); }
+
+  /* ---------- E: Copilot brief */
+  .hl-e .page { padding: 22px 32px; }
+  .hl-e .wrap { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 22px; }
+  .hl-e .brief { padding: 22px 26px 18px; }
+  .hl-e .who { display: flex; align-items: center; gap: 10px; }
+  .hl-e .who .av { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--acc-soft); color: var(--acc); }
+  .hl-e .who .av .ic { width: 16px; height: 16px; }
+  .hl-e .txt { font-size: 15px; line-height: 1.6; color: var(--fg-2); }
+  .hl-e .txt b { color: var(--fg); font-weight: 600; }
+  .hl-e .txt .mono { color: var(--fg); }
+  .hl-e .cards { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 12px; }
+  .hl-e .cards .panel { padding: 13px 15px; }
+  .hl-e .contrib { display: grid; grid-template-columns: 150px minmax(0, 1fr) 72px; gap: 8px 10px; align-items: center; font-size: 12px; }
+  .hl-e .contrib .meter { height: 7px; }
+  .hl-e .ask { margin-top: 16px; }
+  .hl-e .ask .email-pill { padding-left: 16px; }
+  .hl-e .sugg { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .hl-e .rail .li { padding: 10px 0; }
+
+  /* ---------- F: written brief with margin figures */
+  .hl-f .page { padding: 0 32px; }
+  .hl-f .doc { max-width: 1080px; margin: 0 auto; }
+  .hl-f .mast { padding: 34px 0 22px; }
+  .hl-f .mast .hl { font: 600 34px/1.15 var(--sans); letter-spacing: -0.03em; max-width: 780px; margin-top: 10px; }
+  .hl-f .mast .by { display: flex; gap: 14px; align-items: center; margin-top: 14px; font-size: 12.5px; color: var(--fg-3); }
+  .hl-f .sec { display: grid; grid-template-columns: 34px minmax(0, 1fr) 300px; gap: 0 26px; padding: 16px 0; border-top: 1px solid var(--line); }
+  .hl-f .sec .no { font: 500 12px var(--mono); color: var(--fg-3); padding-top: 3px; }
+  .hl-f .sec h3 { font: 600 15px/1.3 var(--sans); margin: 0 0 6px; }
+  .hl-f .sec p { font-size: 14.5px; line-height: 1.6; color: var(--fg-2); max-width: 600px; }
+  .hl-f .sec p b { color: var(--fg); font-weight: 600; }
+  .hl-f .sec p .mono { color: var(--fg); }
+  .hl-f .mg { border-left: 1px solid var(--line); padding-left: 18px; display: flex; flex-direction: column; gap: 8px; }
+  .hl-f .ss { display: grid; grid-template-columns: minmax(0, 1fr) 70px 64px; gap: 4px 10px; align-items: center; font-size: 12.5px; }
+  .hl-f .ss > .mono { text-align: right; }
+  .hl-f .m-sec2 { font: 600 13px var(--mono); color: var(--fg-3); }
+</style>
+
+<section class="ax-surface" id="home-layout2"
+  data-surface="home/layout2"
+  data-area="Home"
+  data-title="Home on an ordinary day, round two"
+  data-why="Six more whole-page ideas for an active account with four sessions and nothing to fix: one live sleeve, two paper sleeves running, one stopped, three fills this morning and a rebalance before the close.">
+
+  <!-- ============================================================ A: annotated curve -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="The curve, annotated" data-note="Recommended. One large equity curve with a lane per session under it, so rebalances, starts, the stop on Nov 12 and this morning's fills sit on the same time axis as the money they moved. The lanes run past Now into the next two weeks, which puts what already happened and what is scheduled in one place. It costs some vertical room per session, so past about eight sessions the lanes would need to fold into one combined row.">
+    <div data-frame="desktop" data-path="home">
+      <div class="app hl-a">
+        <div data-tb="Home"></div>
+        <div class="main">
+          <div class="art" data-art="candles" data-seed="5120" style="height:230px"></div>
+          <div class="page over">
+            <div class="page-head">
+              <div><div class="h1">Tuesday, November 17</div><div class="sub">3 sessions running, 1 stopped · 1 rebalance before the close · nothing needs you</div></div>
+              <div class="act"><span class="btn">Run a backtest</span><span class="btn pri"><span data-icon="plus"></span>New strategy</span></div>
+            </div>
+
+            <div class="panel rim hero">
+              <div class="hh">
+                <div>
+                  <div class="lbl">Total equity · paper and live</div>
+                  <div class="row base" style="gap:12px;margin-top:6px"><span class="big">$128,406.12</span><span class="chg gain">+$612.40</span><span class="chg gain">+0.48%</span><span class="xs dim">today</span></div>
+                </div>
+                <div class="figs2">
+                  <div><div class="lbl">3 months</div><div class="v gain">+4.12%</div></div>
+                  <div><div class="lbl">SPY, same period</div><div class="v">+3.05%</div></div>
+                  <div><div class="lbl">Cash</div><div class="v">$31,820.15</div></div>
+                </div>
+                <span class="sp"></span>
+                <div class="col" style="align-items:flex-end;gap:8px">
+                  <div class="seg mono"><span>1M</span><span class="on">3M</span><span>1Y</span><span>All</span></div>
+                  <div class="hl-leg"><span><i class="l"></i>Account</span><span><i class="d"></i>SPY</span></div>
+                </div>
+              </div>
+
+              <!-- pins -->
+              <div class="tl">
+                <div class="lab"></div>
+                <div class="past pins">
+                  <span class="pin" style="left:25%;top:2px">Tech Momentum started</span>
+                  <span class="pin" style="left:54.3%;top:2px">Momentum Sectors started</span>
+                  <span class="pin end" style="left:94.6%;top:21px">Stopped Nov 12</span>
+                  <span class="pin acc end" style="left:100%;top:2px"><span class="hl-n" style="width:13px;height:13px;font-size:8.5px">3</span>Fills today</span>
+                </div>
+                <div class="fut pins" style="border-left-color:transparent;background:none"></div>
+              </div>
+
+              <!-- chart -->
+              <div class="tl">
+                <div class="lab" style="align-items:flex-start;flex-direction:column;gap:2px;padding-top:4px">
+                  <div class="hl-kv" style="width:100%">
+                    <div><span>High</span><span>$128,406</span></div>
+                    <div><span>Low</span><span>$121,880</span></div>
+                    <div><span>Max drawdown</span><span class="loss">−2.31%</span></div>
+                    <div><span>Fills in range</span><span>64</span></div>
+                    <div><span>Rebalances</span><span>21</span></div>
+                  </div>
+                </div>
+                <div class="past">
+                  <div data-chart="area" data-seed="512" data-ret="0.0412" data-vol="0.0042" data-bench="0.0305" data-h="196" data-mark></div>
+                  <i class="vl" style="left:25%"></i><i class="vl" style="left:54.3%"></i><i class="vl" style="left:94.6%"></i>
+                </div>
+                <div class="fut">
+                  <span class="now">Now 10:42</span>
+                  <div class="ttl" style="top:34px">Next two weeks</div>
+                  <div class="nx" style="top:60px"><span class="mono dim">15:50</span> Recession Radar</div>
+                  <div class="nx" style="top:82px"><span class="mono dim">Nov 23</span> Momentum Sectors</div>
+                  <div class="nx" style="top:104px"><span class="mono dim">Nov 26</span> <span class="dim">Market closed</span></div>
+                  <div class="nx" style="top:126px"><span class="mono dim">Nov 30</span> Momentum Sectors</div>
+                  <div class="nx" style="top:148px"><span class="mono dim">Dec 1</span> All-Weather <span class="pill live" style="height:16px;font-size:9px;padding:0 5px">Live</span></div>
+                </div>
+              </div>
+
+              <!-- lanes -->
+              <div class="tl">
+                <div class="lab"><span class="hl-name">All-Weather Portfolio</span><span class="pill live" style="height:17px;font-size:9.5px;padding:0 6px">Live</span></div>
+                <div class="past lane">
+                  <i class="bar on" style="left:0;right:0"></i>
+                  <i class="m" style="left:16.3%"></i><i class="m" style="left:48.9%"></i><i class="m" style="left:83.7%"></i>
+                  <i class="m fill" style="left:100%">1</i>
+                </div>
+                <div class="fut lane"><i class="bar plan" style="left:0;right:0;top:13px"></i><i class="m plan" style="left:100%;margin-left:-10px"></i></div>
+              </div>
+              <div class="tl">
+                <div class="lab"><span class="hl-name">Recession Radar</span><span class="pill paper" style="height:17px;font-size:9.5px;padding:0 6px">Paper</span></div>
+                <div class="past lane">
+                  <i class="bar on" style="left:0;right:0"></i>
+                  <i class="m" style="left:0.8%"></i><i class="m" style="left:33.7%"></i><i class="m" style="left:68.5%"></i>
+                  <i class="m fill" style="left:100%">2</i>
+                </div>
+                <div class="fut lane"><i class="bar plan" style="left:0;right:0;top:13px"></i><i class="m plan" style="left:4%"></i></div>
+              </div>
+              <div class="tl">
+                <div class="lab"><span class="hl-name">Momentum Sectors</span><span class="pill paper" style="height:17px;font-size:9.5px;padding:0 6px">Paper</span></div>
+                <div class="past lane">
+                  <i class="bar on" style="left:54.3%;right:0"></i>
+                  <i class="m start" style="left:54.3%"></i>
+                  <i class="m" style="left:60.9%"></i><i class="m" style="left:68.5%"></i><i class="m" style="left:76.1%"></i><i class="m" style="left:83.7%"></i><i class="m" style="left:91.3%"></i><i class="m" style="left:98.9%"></i>
+                </div>
+                <div class="fut lane"><i class="bar plan" style="left:0;right:0;top:13px"></i><i class="m plan" style="left:42.9%"></i><i class="m plan" style="left:92.9%"></i></div>
+              </div>
+              <div class="tl">
+                <div class="lab"><span class="hl-name" style="color:var(--fg-2)">Tech Momentum Rotation</span><span class="pill paper" style="height:17px;font-size:9.5px;padding:0 6px">Paper</span></div>
+                <div class="past lane">
+                  <i class="bar" style="left:25%;right:5.4%"></i>
+                  <i class="m start" style="left:25%"></i>
+                  <i class="m" style="left:30.4%"></i><i class="m" style="left:38%"></i><i class="m" style="left:45.7%"></i><i class="m" style="left:53.3%"></i><i class="m" style="left:60.9%"></i><i class="m" style="left:68.5%"></i><i class="m" style="left:76.1%"></i><i class="m" style="left:83.7%"></i><i class="m" style="left:91.3%"></i>
+                  <i class="m stop" style="left:94.6%"></i>
+                </div>
+                <div class="fut lane"><span class="xs dim" style="position:absolute;left:12px;top:6px">Stopped, holding cash</span></div>
+              </div>
+              <div class="tl">
+                <div class="lab"><div class="keys"><span><i class="m"></i>Rebalance</span><span><i class="m plan"></i>Planned</span></div></div>
+                <div class="past xl" style="border-top:1px solid var(--line)"><span style="left:0;transform:none">Aug 17</span><span style="left:16.3%">Sep 1</span><span style="left:48.9%">Oct 1</span><span style="left:83.7%">Nov 2</span></div>
+                <div class="fut xl" style="border-top:1px solid var(--line)"><span style="left:42.9%">Nov 23</span><span style="right:0;left:auto;transform:none;padding-right:6px">Dec 1</span></div>
+              </div>
+            </div>
+
+            <div class="lower">
+              <div class="panel">
+                <div class="panel-h">Today's fills<span class="aside">3 filled · all risk checks passed</span></div>
+                <div class="panel-b tight list">
+                  <div class="li"><span class="hl-n">1</span><span class="hl-tag">BUY</span><div style="flex:1;min-width:0"><div class="t">31 VGLT at $58.12</div><div class="d">All-Weather Portfolio · live</div></div><div style="text-align:right"><div class="mono sm">$1,801.72</div><div class="mono xs dim">09:45</div></div></div>
+                  <div class="li"><span class="hl-n">2</span><span class="hl-tag">BUY</span><div style="flex:1;min-width:0"><div class="t">42 TLT at $90.41</div><div class="d">Recession Radar · paper</div></div><div style="text-align:right"><div class="mono sm">$3,797.22</div><div class="mono xs dim">10:31</div></div></div>
+                  <div class="li"><span class="hl-n">2</span><span class="hl-tag">SELL</span><div style="flex:1;min-width:0"><div class="t">9 GLD at $247.86</div><div class="d">Recession Radar · paper</div></div><div style="text-align:right"><div class="mono sm">$2,230.74</div><div class="mono xs dim">10:31</div></div></div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h">Before the close</div>
+                <div class="panel-b" style="padding-top:12px">
+                  <div class="row"><span class="t b">Recession Radar rebalances</span><span class="sp"></span><span class="mono sm">15:50 ET</span></div>
+                  <div class="xs dim" style="margin:4px 0 12px">Orders are worked out from prices at 15:50.</div>
+                  <div class="col" style="gap:9px">
+                    <div class="hl-tw"><span class="sym">TLT</span><div class="bars"><i class="now" style="width:58.2%"></i><i class="tgt" style="width:60%"></i></div><span class="mono xs dim">58.2%</span></div>
+                    <div class="hl-tw"><span class="sym">GLD</span><div class="bars"><i class="now" style="width:41.8%"></i><i class="tgt" style="width:40%"></i></div><span class="mono xs dim">41.8%</span></div>
+                  </div>
+                  <div class="xs dim" style="margin-top:10px">Upper bar is now, lower bar is the target (60% and 40%).</div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h">Today by session<span class="aside"><a class="acc">All sessions</a></span></div>
+                <div class="panel-b tight">
+                  <div class="hl-kv">
+                    <div><span>Momentum Sectors</span><span class="gain">+$266.66</span></div>
+                    <div><span>Recession Radar</span><span class="gain">+$196.62</span></div>
+                    <div><span>All-Weather Portfolio</span><span class="gain">+$149.12</span></div>
+                    <div><span>Tech Momentum Rotation</span><span class="dim">$0.00 · cash</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div data-frame="phone">
+      <div class="m-head"><div class="row"><span data-logo="mark" data-size="30"></span><span class="sp"></span><span class="ic" data-icon="bell" style="width:22px;height:22px"></span></div></div>
+      <div class="m-body hl-a">
+        <div>
+          <div class="lbl">Total equity · paper and live</div>
+          <div class="big" style="margin-top:6px">$128,406.12</div>
+          <div class="row gap-6" style="margin-top:8px"><span class="chg gain">+$612.40</span><span class="chg gain">+0.48%</span><span class="sm dim">today</span></div>
+        </div>
+        <div>
+          <div data-chart="area" data-seed="512" data-ret="0.0412" data-vol="0.0042" data-bench="0.0305" data-h="128" data-mark></div>
+          <div class="ph-lanes">
+            <div class="lane"><span class="lab">AW</span><i class="bar on" style="left:22px;right:0"></i><i class="m" style="left:30%"></i><i class="m" style="left:57%"></i><i class="m" style="left:86%"></i><i class="m fill" style="left:calc(100% - 8px)">1</i></div>
+            <div class="lane"><span class="lab">RR</span><i class="bar on" style="left:22px;right:0"></i><i class="m" style="left:44%"></i><i class="m" style="left:73%"></i><i class="m fill" style="left:calc(100% - 8px)">2</i></div>
+            <div class="lane"><span class="lab">MS</span><i class="bar on" style="left:61%;right:0"></i><i class="m start" style="left:61%"></i><i class="m" style="left:67%"></i><i class="m" style="left:74%"></i><i class="m" style="left:80%"></i><i class="m" style="left:86%"></i><i class="m" style="left:93%"></i></div>
+            <div class="lane"><span class="lab">TM</span><i class="bar" style="left:35%;right:5%"></i><i class="m start" style="left:35%"></i><i class="m stop" style="left:95%"></i></div>
+          </div>
+        </div>
+        <div class="seg mono round" style="align-self:center"><span>1M</span><span class="on">3M</span><span>1Y</span><span>All</span></div>
+        <div class="m-sec">Next<span class="a">Calendar</span></div>
+        <div class="m-card rows">
+          <div class="hl-prow"><div class="grow"><div class="hl-name">Recession Radar</div><div class="d">TLT 58.2% → 60% · GLD 41.8% → 40%</div></div><span class="mono sm">15:50</span></div>
+          <div class="hl-prow"><div class="grow"><div class="hl-name">Momentum Sectors</div><div class="d">Weekly</div></div><span class="mono sm dim">Nov 23</span></div>
+        </div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+
+    <div data-frame="phone" data-caption="Detail · tapping today's marker">
+      <div class="m-head"><div class="row"><span data-logo="mark" data-size="30"></span><span class="sp"></span><span class="ic" data-icon="bell" style="width:22px;height:22px"></span></div></div>
+      <div class="m-body hl-a">
+        <div>
+          <div class="lbl">Total equity · paper and live</div>
+          <div class="big" style="margin-top:6px">$128,406.12</div>
+          <div class="row gap-6" style="margin-top:8px"><span class="chg gain">+$612.40</span><span class="chg gain">+0.48%</span><span class="sm dim">today</span></div>
+        </div>
+        <div data-chart="area" data-seed="512" data-ret="0.0412" data-vol="0.0042" data-bench="0.0305" data-h="128" data-mark></div>
+      </div>
+      <nav data-tabs="home"></nav>
+      <div class="scrim"></div>
+      <div class="sheet">
+        <div class="row"><div><div class="lbl">Tuesday, November 17</div><div class="h2" style="margin-top:4px">3 fills today</div></div><span class="sp"></span><span class="ic dim" data-icon="x" style="width:20px;height:20px"></span></div>
+        <div style="margin-top:8px">
+          <div class="hl-prow"><span class="hl-tag">BUY</span><div class="grow"><div>31 VGLT at $58.12</div><div class="d">All-Weather · live · 09:45</div></div><span class="mono sm">$1,801.72</span></div>
+          <div class="hl-prow"><span class="hl-tag">BUY</span><div class="grow"><div>42 TLT at $90.41</div><div class="d">Recession Radar · paper · 10:31</div></div><span class="mono sm">$3,797.22</span></div>
+          <div class="hl-prow"><span class="hl-tag">SELL</span><div class="grow"><div>9 GLD at $247.86</div><div class="d">Recession Radar · paper · 10:31</div></div><span class="mono sm">$2,230.74</span></div>
+        </div>
+        <div class="callout" style="margin-top:12px;font-size:13.5px"><span data-icon="clock"></span><div>Recession Radar rebalances again at <b>15:50 ET</b>, using prices at that time.</div></div>
+        <div class="m-btn" style="margin-top:14px">Open activity</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ B: session bento -->
+  <div class="ax-opt" data-opt="B" data-name="Session bento" data-note="A grid of tiles: the account curve takes the largest one, each session gets its own tile with a small curve and what it holds, and the next rebalance, today's fills and the account mix fill the last row. Every session is visible at once and easy to compare. It works well for four to six sessions; beyond that the tiles either shrink or push the fills below the fold.">
+    <div data-frame="desktop" data-path="home">
+      <div class="app hl-b">
+        <div data-tb="Home"></div>
+        <div class="main"><div class="page">
+          <div class="page-head">
+            <div><div class="h1">Home</div><div class="sub">Tuesday, November 17 · 3 sessions running, 1 stopped · nothing needs you</div></div>
+            <div class="act"><div class="seg"><span class="on">Both accounts</span><span>Paper</span><span>Live</span></div><span class="btn pri"><span data-icon="plus"></span>New strategy</span></div>
+          </div>
+          <div class="bento">
+            <div class="panel rim t eq">
+              <div class="row top">
+                <div><div class="lbl">Total equity</div><div class="big" style="margin-top:6px">$128,406.12</div><div class="row gap-6" style="margin-top:8px"><span class="chg gain">+$612.40</span><span class="chg gain">+0.48%</span><span class="xs dim">today</span></div></div>
+                <span class="sp"></span>
+                <div class="col" style="align-items:flex-end;gap:8px"><div class="seg mono"><span>1W</span><span class="on">1M</span><span>3M</span><span>All</span></div><div class="hl-leg"><span><i class="l"></i>Account</span><span><i class="d"></i>SPY</span></div></div>
+              </div>
+              <div data-chart="area" data-seed="42" data-ret="0.0196" data-vol="0.0035" data-bench="0.0138" data-start="125940" data-axis="xy" data-x="Oct 17,Oct 24,Oct 31,Nov 7,Nov 14" data-h="248" data-mark></div>
+              <div class="row xs dim" style="gap:18px"><span>1 month <b class="mono gain" style="font-weight:500">+1.96%</b></span><span>SPY <b class="mono" style="font-weight:500;color:var(--fg-2)">+1.38%</b></span><span class="sp"></span><span>Snapshot 10:41 ET</span></div>
+            </div>
+
+            <div class="panel t">
+              <div class="row"><span class="hl-name">All-Weather Portfolio</span><span class="sp"></span><span class="pill live">Live</span></div>
+              <div class="row base"><span class="mono lg b">$48,210.55</span><span class="sp"></span><span class="mono xs gain">+$149.12 · +0.31%</span></div>
+              <div data-chart="area" data-seed="7" data-ret="0.068" data-vol="0.006" data-h="58"></div>
+              <div data-chart="alloc" data-items="VTI:30,VGLT:40,GLD:15,BND:15" data-legend="none"></div>
+              <div class="syms"><span><b>VGLT</b> 40</span><span><b>VTI</b> 30</span><span><b>GLD</b> 15</span><span><b>BND</b> 15</span></div>
+              <div class="row xs dim"><span class="st run">Running</span><span class="sp"></span>Next Dec 1</div>
+            </div>
+            <div class="panel t">
+              <div class="row"><span class="hl-name">Recession Radar</span><span class="sp"></span><span class="pill paper">Paper</span></div>
+              <div class="row base"><span class="mono lg b">$31,904.20</span><span class="sp"></span><span class="mono xs gain">+$196.62 · +0.62%</span></div>
+              <div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.009" data-h="58"></div>
+              <div data-chart="alloc" data-items="TLT:58.2,GLD:41.8" data-legend="none"></div>
+              <div class="syms"><span><b>TLT</b> 58.2</span><span><b>GLD</b> 41.8</span><span class="faint">targets 60 / 40</span></div>
+              <div class="row xs dim"><span class="st run">Running</span><span class="sp"></span><span style="color:var(--fg)">Today 15:50</span></div>
+            </div>
+            <div class="panel t">
+              <div class="row"><span class="hl-name">Momentum Sectors</span><span class="sp"></span><span class="pill paper">Paper</span></div>
+              <div class="row base"><span class="mono lg b">$22,118.07</span><span class="sp"></span><span class="mono xs gain">+$266.66 · +1.22%</span></div>
+              <div data-chart="area" data-seed="33" data-ret="-0.0088" data-vol="0.011" data-h="58"></div>
+              <div data-chart="alloc" data-items="SMH:38,XLK:34,IWM:28" data-legend="none"></div>
+              <div class="syms"><span><b>SMH</b> 38</span><span><b>XLK</b> 34</span><span><b>IWM</b> 28</span></div>
+              <div class="row xs dim"><span class="st run">Running</span><span class="sp"></span>Next Nov 23</div>
+            </div>
+            <div class="panel t stopped">
+              <div class="row"><span class="hl-name" style="color:var(--fg-2)">Tech Momentum Rotation</span><span class="sp"></span><span class="pill paper">Paper</span></div>
+              <div class="row base"><span class="mono lg b" style="color:var(--fg-2)">$26,173.30</span><span class="sp"></span><span class="mono xs dim">−2.40% while running</span></div>
+              <div data-chart="area" data-seed="51" data-ret="-0.024" data-vol="0.012" data-h="58" data-color="muted"></div>
+              <div data-chart="alloc" data-items="Cash:100" data-legend="none"></div>
+              <div class="syms"><span><b>Cash</b> 100</span></div>
+              <div class="row xs dim"><span class="st stop">Stopped Nov 12</span><span class="sp"></span><span class="btn sm">Restart</span></div>
+            </div>
+
+            <div class="panel t">
+              <div class="row"><span class="lbl">Next rebalance</span><span class="sp"></span><span data-icon="clock" class="dim"></span></div>
+              <div class="cd">15:50 <span class="sm dim" style="font-family:var(--sans);letter-spacing:0">today</span></div>
+              <div class="sm muted">Recession Radar moves back to TLT 60% and GLD 40%, using prices at 15:50.</div>
+              <div class="hl-kv" style="margin-top:2px"><div><span>Momentum Sectors</span><span>Nov 23</span></div><div><span>All-Weather</span><span>Dec 1</span></div></div>
+            </div>
+            <div class="panel fills" style="padding:0">
+              <div class="panel-h">Today's fills<span class="aside">3 · $7,829.68 traded</span></div>
+              <table class="tbl compact">
+                <tr><th>Time</th><th>Session</th><th>Order</th><th class="num">Price</th><th class="num">Value</th></tr>
+                <tr><td class="mono dim">10:31</td><td>Recession Radar</td><td><span class="sym">TLT</span> buy 42</td><td class="num">90.41</td><td class="num">$3,797.22</td></tr>
+                <tr><td class="mono dim">10:31</td><td>Recession Radar</td><td><span class="sym">GLD</span> sell 9</td><td class="num">247.86</td><td class="num">$2,230.74</td></tr>
+                <tr><td class="mono dim">09:45</td><td>All-Weather <span class="pill live" style="height:16px;font-size:9px;padding:0 5px;margin-left:4px">Live</span></td><td><span class="sym">VGLT</span> buy 31</td><td class="num">58.12</td><td class="num">$1,801.72</td></tr>
+              </table>
+            </div>
+            <div class="panel t">
+              <div class="lbl">Share of equity</div>
+              <div data-chart="alloc" data-items="All-Weather:37.5,Recession Radar:24.8,Tech Momentum (cash):20.4,Momentum Sectors:17.2" data-legend="none" style="margin-top:4px"></div>
+              <div class="hl-kv"><div><span>All-Weather</span><span>37.5%</span></div><div><span>Recession Radar</span><span>24.8%</span></div><div><span>Tech Momentum, cash</span><span>20.4%</span></div><div><span>Momentum Sectors</span><span>17.2%</span></div></div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+
+    <div data-frame="phone">
+      <div class="m-head"><div class="row"><span data-logo="mark" data-size="30"></span><span class="sp"></span><span class="ic" data-icon="bell" style="width:22px;height:22px"></span></div></div>
+      <div class="m-body hl-b">
+        <div class="m-card rim" style="padding:14px 16px">
+          <div class="lbl">Total equity</div>
+          <div class="row base" style="margin-top:4px"><span class="big" style="font-size:28px">$128,406.12</span></div>
+          <div class="row gap-6" style="margin-top:6px"><span class="chg gain">+$612.40</span><span class="chg gain">+0.48%</span><span class="sm dim">today</span></div>
+          <div data-chart="area" data-seed="42" data-ret="0.0196" data-vol="0.0035" data-bench="0.0138" data-h="96" data-mark style="margin-top:10px"></div>
+        </div>
+        <div class="mgrid">
+          <div class="mt"><div class="row"><span class="hl-name" style="font-size:13.5px">All-Weather</span><span class="sp"></span><span class="pill live" style="height:17px;font-size:9px;padding:0 5px">Live</span></div><span class="mono b">$48,210.55</span><div data-chart="spark" data-seed="7" data-ret="0.068" data-vol="0.02" data-fill style="width:100%;height:32px"></div><span class="mono xs gain">+0.31% today</span></div>
+          <div class="mt"><div class="row"><span class="hl-name" style="font-size:13.5px">Recession Radar</span></div><span class="mono b">$31,904.20</span><div data-chart="spark" data-seed="19" data-ret="0.124" data-vol="0.02" data-fill style="width:100%;height:32px"></div><span class="mono xs gain">+0.62% today</span></div>
+          <div class="mt"><div class="row"><span class="hl-name" style="font-size:13.5px">Momentum Sectors</span></div><span class="mono b">$22,118.07</span><div data-chart="spark" data-seed="33" data-ret="-0.0088" data-vol="0.025" data-fill style="width:100%;height:32px"></div><span class="mono xs gain">+1.22% today</span></div>
+          <div class="mt stopped"><div class="row"><span class="hl-name" style="font-size:13.5px;color:var(--fg-2)">Tech Momentum</span></div><span class="mono b" style="color:var(--fg-2)">$26,173.30</span><div data-chart="spark" data-seed="51" data-ret="-0.024" data-vol="0.025" data-color="muted" style="width:100%;height:32px"></div><span class="xs dim">Stopped Nov 12</span></div>
+        </div>
+        <div class="m-card row" style="padding:12px 16px"><span data-icon="clock" class="dim"></span><div style="flex:1;min-width:0"><div class="hl-name" style="font-size:14px">Recession Radar rebalances</div><div class="d sm dim">3 fills so far today</div></div><span class="mono">15:50</span></div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+  </div>
+
+  <!-- ============================================================ C: against SPY -->
+  <div class="ax-opt" data-opt="C" data-name="Against SPY" data-note="Home leads with one question: is this doing better than holding SPY? The account and each session are shown next to SPY over the same dates, with time-weighted returns so money added later does not distort the comparison. It gives the numbers context, but it frames every visit as a contest with one index, which suits some strategies (Recession Radar is built to hold bonds and gold) less than others.">
+    <div data-frame="desktop" data-path="home">
+      <div class="app hl-c">
+        <div data-tb="Home"></div>
+        <div class="main">
+          <div class="art" data-art="line" data-seed="907" data-ret="0.6" style="height:250px"></div>
+          <div class="page over">
+            <div class="page-head">
+              <div><div class="h1">Home</div><div class="sub">Tuesday, November 17 · 3 sessions running, 1 stopped</div></div>
+              <div class="act"><div class="seg"><span class="on">SPY</span><span>QQQ</span><span>60/40</span></div><span class="btn pri"><span data-icon="plus"></span>New strategy</span></div>
+            </div>
+            <div class="panel rim hero">
+              <div class="f">
+                <div>
+                  <div class="lbl">Since Jun 2 · time-weighted</div>
+                  <div class="huge gain" style="margin-top:10px;font-size:48px">+7.00%</div>
+                </div>
+                <div class="vs">
+                  <div><div class="lbl">SPY</div><div class="v">+5.31%</div></div>
+                  <div><div class="lbl">Difference</div><div class="v gain">+1.69 pts</div></div>
+                </div>
+                <p class="lead">Your accounts are ahead of SPY over the five and a half months since the first session started.</p>
+                <div class="hl-kv">
+                  <div><span>Total equity</span><span>$128,406.12</span></div>
+                  <div><span>Today</span><span class="gain">+0.48% · SPY +0.21%</span></div>
+                  <div><span>Max drawdown</span><span>−3.12% · SPY −5.84%</span></div>
+                </div>
+              </div>
+              <div class="c">
+                <div class="row"><div class="hl-leg"><span><i class="l"></i>Your accounts</span><span><i class="d"></i>SPY</span></div><span class="sp"></span><div class="seg mono"><span>1M</span><span>3M</span><span class="on">Since start</span></div></div>
+                <div data-chart="area" data-seed="604" data-ret="0.07" data-vol="0.0045" data-bench="0.0531" data-axis="xy" data-x="Jun 2,Jul 1,Aug 3,Sep 1,Oct 1,Nov 2,Nov 17" data-h="272" data-mark></div>
+                <div class="row xs dim"><span>Daily returns from the ledger's closing snapshots. Today uses the 10:41 snapshot.</span></div>
+              </div>
+            </div>
+
+            <div class="lower">
+              <div class="panel">
+                <div class="panel-h">Each session against SPY<span class="aside">Over each session's own dates</span></div>
+                <table class="tbl compact">
+                  <tr><th>Session</th><th>Since</th><th class="num">Session</th><th class="num">SPY</th><th>Difference</th><th class="num">Value</th></tr>
+                  <tr><td><div class="hl-name">Recession Radar</div><div class="hl-meta">Paper · TLT and GLD</div></td><td class="mono dim">Jun 2</td><td class="num gain">+12.41%</td><td class="num">+5.31%</td><td><div class="diff"><div class="track"><i class="g" style="width:42px"></i></div><span class="mono xs gain">+7.10</span></div></td><td class="num">$31,904.20</td></tr>
+                  <tr><td><div class="hl-name">All-Weather Portfolio</div><div class="hl-meta">Live · 4 funds</div></td><td class="mono dim">Aug 4</td><td class="num gain">+6.82%</td><td class="num">+4.10%</td><td><div class="diff"><div class="track"><i class="g" style="width:16px"></i></div><span class="mono xs gain">+2.72</span></div></td><td class="num">$48,210.55</td></tr>
+                  <tr><td><div class="hl-name">Momentum Sectors</div><div class="hl-meta">Paper · SMH, XLK, IWM</div></td><td class="mono dim">Oct 6</td><td class="num loss">−0.88%</td><td class="num">+1.94%</td><td><div class="diff"><div class="track"><i class="l" style="width:17px"></i></div><span class="mono xs loss">−2.82</span></div></td><td class="num">$22,118.07</td></tr>
+                  <tr><td><div class="hl-name" style="color:var(--fg-2)">Tech Momentum Rotation</div><div class="hl-meta">Stopped Nov 12 · cash</div></td><td class="mono dim">Sep 9</td><td class="num loss">−2.40%</td><td class="num">+3.02%</td><td><div class="diff"><div class="track"><i class="l" style="width:32px"></i></div><span class="mono xs loss">−5.42</span></div></td><td class="num dim">$26,173.30</td></tr>
+                </table>
+              </div>
+              <div class="col gap-16">
+                <div class="panel">
+                  <div class="panel-h">Month by month<span class="aside">Your return minus SPY, in points</span></div>
+                  <div class="panel-b" style="padding-top:12px;padding-bottom:12px">
+                    <div data-chart="bars" data-values="0.42,-0.31,0.58,0.21,0.47,0.32" data-h="70"></div>
+                    <div class="mlab"><span>Jun</span><span>Jul</span><span>Aug</span><span>Sep</span><span>Oct</span><span>Nov</span></div>
+                  </div>
+                </div>
+                <div class="panel">
+                  <div class="panel-b" style="padding:12px 18px">
+                    <div class="row"><span data-icon="clock" class="dim"></span><span class="sm"><b>Recession Radar</b> rebalances at 15:50</span><span class="sp"></span><span class="xs dim">3 fills today</span><a class="acc sm">Activity</a></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div data-frame="phone">
+      <div class="m-head"><div class="row"><span data-logo="mark" data-size="30"></span><span class="sp"></span><div class="seg round" style="font-size:12px"><span class="on">SPY</span><span>60/40</span></div></div></div>
+      <div class="m-body hl-c">
+        <div>
+          <div class="lbl">Since Jun 2 · time-weighted</div>
+          <div class="row base" style="margin-top:6px;gap:12px"><span class="big gain">+7.00%</span><span class="mono dim">SPY +5.31%</span></div>
+          <div class="sm muted" style="margin-top:6px">1.69 points ahead · $128,406.12 today</div>
+        </div>
+        <div data-chart="area" data-seed="604" data-ret="0.07" data-vol="0.0045" data-bench="0.0531" data-h="140" data-mark></div>
+        <div class="seg mono round" style="align-self:center"><span>1M</span><span>3M</span><span class="on">Since start</span></div>
+        <div class="m-sec">Sessions against SPY</div>
+        <div class="m-card rows">
+          <div class="hl-prow"><div class="grow"><div class="hl-name">Recession Radar</div><div class="d">Since Jun 2 · SPY +5.31%</div></div><div class="end"><div class="mono gain">+12.41%</div><div class="mono xs gain">+7.10 pts</div></div></div>
+          <div class="hl-prow"><div class="grow"><div class="hl-name">All-Weather Portfolio</div><div class="d">Live · since Aug 4 · SPY +4.10%</div></div><div class="end"><div class="mono gain">+6.82%</div><div class="mono xs gain">+2.72 pts</div></div></div>
+          <div class="hl-prow"><div class="grow"><div class="hl-name">Momentum Sectors</div><div class="d">Since Oct 6 · SPY +1.94%</div></div><div class="end"><div class="mono loss">−0.88%</div><div class="mono xs loss">−2.82 pts</div></div></div>
+        </div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+  </div>
+
+  <!-- ============================================================ D: calendar ahead -->
+  <div class="ax-opt" data-opt="D" data-name="Three weeks ahead" data-note="A trading calendar from this Monday to Dec 4 leads the page: what filled today, every scheduled rebalance and the market holidays that move them. The next rebalance is opened on the right with current weights against targets. It answers what happens next better than any other option, and makes the Thanksgiving closure and early close visible in advance. Performance is reduced to one card, so this suits someone checking schedules more than results.">
+    <div data-frame="desktop" data-path="home">
+      <div class="app hl-d">
+        <div data-tb="Home"></div>
+        <div class="main"><div class="page">
+          <div class="page-head">
+            <div><div class="h1">Coming up</div><div class="sub">5 rebalances scheduled in the next three weeks · market closed Nov 26</div></div>
+            <div class="act"><div class="seg"><span>Week</span><span class="on">3 weeks</span><span>Month</span></div><span class="btn pri"><span data-icon="plus"></span>New strategy</span></div>
+          </div>
+          <div class="wrap">
+            <div class="panel">
+              <div class="cal">
+                <div class="hd"></div><div class="hd">Mon</div><div class="hd">Tue</div><div class="hd">Wed</div><div class="hd">Thu</div><div class="hd">Fri</div>
+
+                <div class="wk">Nov 16</div>
+                <div class="day past"><span class="dn">16</span><div class="ev done"><span class="tm">15:50</span><span>Momentum Sectors rebalanced</span></div></div>
+                <div class="day today"><span class="dn">17 · Today</span>
+                  <div class="ev done"><span class="tm">09:45</span><span><b>VGLT</b> buy 31 · All-Weather</span></div>
+                  <div class="ev done"><span class="tm">10:31</span><span><b>TLT</b> buy 42 · Recession Radar</span></div>
+                  <div class="ev done"><span class="tm">10:31</span><span><b>GLD</b> sell 9 · Recession Radar</span></div>
+                  <div class="ev plan"><span class="tm">15:50</span><span><b>Recession Radar</b> rebalance</span></div>
+                </div>
+                <div class="day"><span class="dn">18</span></div>
+                <div class="day"><span class="dn">19</span></div>
+                <div class="day"><span class="dn">20</span></div>
+
+                <div class="wk">Nov 23</div>
+                <div class="day"><span class="dn">23</span><div class="ev plan"><span class="tm">15:50</span><span><b>Momentum Sectors</b> rebalance</span></div></div>
+                <div class="day"><span class="dn">24</span></div>
+                <div class="day"><span class="dn">25</span></div>
+                <div class="day closed"><span class="dn">26</span><div class="ev note">Market closed for Thanksgiving</div></div>
+                <div class="day"><span class="dn">27</span><div class="ev note">Early close at 13:00 ET. Nothing is scheduled.</div></div>
+
+                <div class="wk last">Nov 30</div>
+                <div class="day last"><span class="dn">30</span><div class="ev plan"><span class="tm">15:50</span><span><b>Momentum Sectors</b> rebalance</span></div></div>
+                <div class="day last"><span class="dn">Dec 1</span><div class="ev plan live"><span class="tm">15:50</span><span><b>All-Weather Portfolio</b> rebalance · live</span></div></div>
+                <div class="day last"><span class="dn">2</span></div>
+                <div class="day last"><span class="dn">3</span></div>
+                <div class="day last"><span class="dn">4</span></div>
+              </div>
+            </div>
+
+            <div class="col gap-16">
+              <div class="panel rim">
+                <div class="panel-h bare" style="padding-top:6px"><span class="lbl">Next · today at 15:50 ET</span><span class="aside"><span class="pill paper">Paper</span></span></div>
+                <div class="panel-b" style="padding-top:0">
+                  <div class="h2">Recession Radar</div>
+                  <div class="sm muted" style="margin-top:4px">Monthly rebalance to TLT 60% and GLD 40%. Orders are worked out from prices at 15:50.</div>
+                  <div class="col" style="gap:10px;margin-top:14px">
+                    <div class="hl-tw"><span class="sym">TLT</span><div class="bars"><i class="now" style="width:58.2%"></i><i class="tgt" style="width:60%"></i></div><span class="mono xs">58.2%</span></div>
+                    <div class="hl-tw"><span class="sym">GLD</span><div class="bars"><i class="now" style="width:41.8%"></i><i class="tgt" style="width:40%"></i></div><span class="mono xs">41.8%</span></div>
+                  </div>
+                  <div class="callout" style="margin-top:14px"><span data-icon="info"></span><div>At current prices, about <b>$574</b> of GLD would move to TLT.</div></div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-b">
+                  <div class="row"><div><div class="lbl">Total equity</div><div class="mono b" style="font-size:22px;margin-top:4px;letter-spacing:-0.02em">$128,406.12</div></div><span class="sp"></span><div style="text-align:right"><div class="mono sm gain">+$612.40</div><div class="mono xs gain">+0.48% today</div></div></div>
+                  <div data-chart="area" data-seed="42" data-ret="0.0196" data-vol="0.0035" data-h="70" data-mark style="margin-top:10px"></div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h">Sessions<span class="aside"><a class="acc">All</a></span></div>
+                <div class="panel-b tight list">
+                  <div class="li"><span class="st run"></span><span class="t" style="flex:1">All-Weather Portfolio</span><span class="mono xs dim">Dec 1</span></div>
+                  <div class="li"><span class="st run"></span><span class="t" style="flex:1">Recession Radar</span><span class="mono xs">Today</span></div>
+                  <div class="li"><span class="st run"></span><span class="t" style="flex:1">Momentum Sectors</span><span class="mono xs dim">Nov 23</span></div>
+                  <div class="li"><span class="st stop"></span><span class="t dim" style="flex:1">Tech Momentum Rotation</span><span class="xs dim">Stopped</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+
+    <div data-frame="phone">
+      <div class="m-head"><div class="t">Coming up</div><div class="s">$128,406.12 · <span class="gain">+$612.40 today</span></div></div>
+      <div class="m-body hl-d">
+        <div class="m-card rim">
+          <div class="row"><span class="lbl">Next · today 15:50</span><span class="sp"></span><span class="pill paper">Paper</span></div>
+          <div class="hl-name" style="font-size:17px;margin-top:6px">Recession Radar</div>
+          <div class="col" style="gap:8px;margin-top:10px">
+            <div class="hl-tw"><span class="sym">TLT</span><div class="bars"><i class="now" style="width:58.2%"></i><i class="tgt" style="width:60%"></i></div><span class="mono xs">58.2%</span></div>
+            <div class="hl-tw"><span class="sym">GLD</span><div class="bars"><i class="now" style="width:41.8%"></i><i class="tgt" style="width:40%"></i></div><span class="mono xs">41.8%</span></div>
+          </div>
+        </div>
+        <div class="agenda">
+          <div class="dh">Today<span class="s">Tue, Nov 17</span></div>
+          <div class="m-card rows">
+            <div class="hl-prow"><span class="mono xs dim">09:45</span><div class="grow"><b class="sym">VGLT</b> buy 31<div class="d">All-Weather · live</div></div><span class="mono sm">$1,801.72</span></div>
+            <div class="hl-prow"><span class="mono xs dim">10:31</span><div class="grow"><b class="sym">TLT</b> buy 42 · <b class="sym">GLD</b> sell 9<div class="d">Recession Radar</div></div><span class="mono sm">2 fills</span></div>
+          </div>
+          <div class="dh" style="margin-top:12px">Next week<span class="s">Nov 23 to 27</span></div>
+          <div class="m-card rows">
+            <div class="hl-prow"><span class="mono xs dim">Mon</span><div class="grow">Momentum Sectors rebalance</div><span class="mono xs dim">15:50</span></div>
+            <div class="hl-prow"><span class="mono xs dim">Thu</span><div class="grow dim">Market closed, Thanksgiving</div></div>
+          </div>
+        </div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+  </div>
+
+  <!-- ============================================================ E: Copilot brief -->
+  <div class="ax-opt" data-opt="E" data-name="Copilot's brief" data-note="Copilot writes the top of Home: a short account of the day with the figures it used and where they came from, two small charts, and a prompt for follow-up questions. Account figures and sessions stay in a rail on the right, so nothing depends on reading the text. It's the friendliest way in for someone new, but it needs a model call on each visit, and every number in the text has to come from the ledger rather than the model.">
+    <div data-frame="desktop" data-path="home">
+      <div class="app hl-e">
+        <div data-tb="Home"></div>
+        <div class="main">
+          <div class="glow" style="height:420px"></div>
+          <div class="art" data-art="candles" data-seed="2718" style="height:260px"></div>
+          <div class="page over">
+            <div class="wrap">
+              <div>
+                <div class="panel rim brief">
+                  <div class="who"><span class="av"><span data-icon="copilot"></span></span><div><div class="b">Copilot</div><div class="xs dim">Brief for Tuesday, November 17 · written at 10:42 ET</div></div><span class="sp"></span><span class="btn sm ghost"><span data-icon="refresh"></span>Refresh</span></div>
+                  <div class="txt" style="margin-top:16px">
+                    <p>Your accounts are up <b class="mono">$612.40</b> today, <span class="mono">0.48%</span>, against <span class="mono">0.21%</span> for SPY. Most of it came from <b>Momentum Sectors</b>, which gained <span class="mono">$266.66</span> as SMH and XLK rose.</p>
+                    <p style="margin-top:10px">Three orders filled this morning: All-Weather bought 31 VGLT in the live account, and Recession Radar bought 42 TLT and sold 9 GLD. <b>Recession Radar rebalances again at 15:50.</b> It's 1.8 points under its TLT target, so expect a small TLT buy and GLD sell.</p>
+                    <p style="margin-top:10px">Tech Momentum Rotation has been stopped since Nov 12 and holds <span class="mono">$26,173.30</span> in cash. Nothing needs you today.</p>
+                  </div>
+                  <div class="cards" style="margin-top:16px">
+                    <div class="panel sunk">
+                      <div class="row" style="margin-bottom:10px"><span class="sm b">Where today's gain came from</span><span class="sp"></span><span class="mono xs dim">$612.40</span></div>
+                      <div class="contrib">
+                        <span>Momentum Sectors</span><div class="meter"><i style="width:100%"></i></div><span class="mono xs gain" style="text-align:right">+$266.66</span>
+                        <span>Recession Radar</span><div class="meter"><i style="width:73.7%"></i></div><span class="mono xs gain" style="text-align:right">+$196.62</span>
+                        <span>All-Weather</span><div class="meter"><i style="width:55.9%"></i></div><span class="mono xs gain" style="text-align:right">+$149.12</span>
+                        <span class="dim">Tech Momentum</span><div class="meter"><i style="width:0"></i></div><span class="mono xs dim" style="text-align:right">$0.00</span>
+                      </div>
+                    </div>
+                    <div class="panel sunk">
+                      <div class="row" style="margin-bottom:10px"><span class="sm b">Recession Radar at 15:50</span><span class="sp"></span><span class="xs dim">now vs target</span></div>
+                      <div class="col" style="gap:10px">
+                        <div class="hl-tw"><span class="sym">TLT</span><div class="bars"><i class="now" style="width:58.2%"></i><i class="tgt" style="width:60%"></i></div><span class="mono xs">58.2%</span></div>
+                        <div class="hl-tw"><span class="sym">GLD</span><div class="bars"><i class="now" style="width:41.8%"></i><i class="tgt" style="width:40%"></i></div><span class="mono xs">41.8%</span></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="row" style="margin-top:14px;gap:14px"><span class="hl-src"><span data-icon="ledger"></span>Ledger snapshot 10:41 ET</span><span class="hl-src"><span data-icon="link"></span>Alpaca fills to 10:31 ET</span><span class="hl-src"><span data-icon="backtests"></span>SPY close and 10:41 quote</span></div>
+                </div>
+                <div class="ask">
+                  <div class="email-pill"><span data-icon="copilot" class="acc"></span><input placeholder="Ask about your sessions, fills or a strategy" readonly><span class="btn pri"><span data-icon="send"></span>Ask</span></div>
+                  <div class="sugg"><span class="chip">Why did Momentum Sectors gain today?</span><span class="chip">What will Recession Radar trade at 15:50?</span><span class="chip">Compare All-Weather with its backtest</span></div>
+                </div>
+                <div class="panel" style="margin-top:18px">
+                  <div class="panel-h">Today's fills<span class="aside">3 filled · <a class="acc">Activity</a></span></div>
+                  <table class="tbl compact">
+                    <tr><th>Time</th><th>Session</th><th>Order</th><th class="num">Price</th><th class="num">Value</th></tr>
+                    <tr><td class="mono dim">10:31</td><td>Recession Radar</td><td><span class="sym">TLT</span> buy 42</td><td class="num">90.41</td><td class="num">$3,797.22</td></tr>
+                    <tr><td class="mono dim">10:31</td><td>Recession Radar</td><td><span class="sym">GLD</span> sell 9</td><td class="num">247.86</td><td class="num">$2,230.74</td></tr>
+                    <tr><td class="mono dim">09:45</td><td>All-Weather Portfolio <span class="pill live" style="height:16px;font-size:9px;padding:0 5px;margin-left:4px">Live</span></td><td><span class="sym">VGLT</span> buy 31</td><td class="num">58.12</td><td class="num">$1,801.72</td></tr>
+                  </table>
+                </div>
+              </div>
+
+              <div class="col gap-16 rail">
+                <div class="panel">
+                  <div class="panel-b">
+                    <div class="lbl">Total equity</div>
+                    <div class="mono b" style="font-size:26px;letter-spacing:-0.03em;margin-top:6px">$128,406.12</div>
+                    <div class="row gap-6" style="margin-top:8px"><span class="chg gain">+$612.40</span><span class="chg gain">+0.48%</span></div>
+                    <div data-chart="area" data-seed="42" data-ret="0.0196" data-vol="0.0035" data-bench="0.0138" data-h="96" data-mark style="margin-top:12px"></div>
+                    <div class="row xs dim" style="margin-top:6px"><span>Oct 17</span><span class="sp"></span><span>1 month · SPY dashed</span><span class="sp"></span><span>Nov 17</span></div>
+                  </div>
+                </div>
+                <div class="panel">
+                  <div class="panel-h">Sessions<span class="aside"><a class="acc">All</a></span></div>
+                  <div class="panel-b tight list">
+                    <div class="li"><div style="flex:1;min-width:0"><div class="t">All-Weather Portfolio</div><div class="d">Live · running</div></div><div style="text-align:right"><div class="mono sm">$48,210.55</div><div class="mono xs gain">+0.31%</div></div></div>
+                    <div class="li"><div style="flex:1;min-width:0"><div class="t">Recession Radar</div><div class="d">Paper · rebalances 15:50</div></div><div style="text-align:right"><div class="mono sm">$31,904.20</div><div class="mono xs gain">+0.62%</div></div></div>
+                    <div class="li"><div style="flex:1;min-width:0"><div class="t">Momentum Sectors</div><div class="d">Paper · running</div></div><div style="text-align:right"><div class="mono sm">$22,118.07</div><div class="mono xs gain">+1.22%</div></div></div>
+                    <div class="li"><div style="flex:1;min-width:0"><div class="t dim">Tech Momentum Rotation</div><div class="d">Paper · stopped Nov 12</div></div><div style="text-align:right"><div class="mono sm dim">$26,173.30</div><div class="mono xs dim">cash</div></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div data-frame="phone">
+      <div class="m-head"><div class="row"><span data-logo="mark" data-size="30"></span><span class="sp"></span><span class="mono sm">$128,406.12</span><span class="mono sm gain">+0.48%</span></div></div>
+      <div class="m-body hl-e">
+        <div class="who"><span class="av"><span data-icon="copilot"></span></span><div><div class="b" style="font-size:14px">Copilot</div><div class="xs dim">Today's brief · 10:42 ET</div></div></div>
+        <div class="txt" style="font-size:15px">
+          <p>You're up <b class="mono">$612.40</b> today, <span class="mono">0.48%</span>. Most of it came from <b>Momentum Sectors</b> (<span class="mono">+$266.66</span>).</p>
+          <p style="margin-top:10px">Three orders filled this morning. <b>Recession Radar rebalances at 15:50</b> and should buy a little TLT. Nothing needs you.</p>
+        </div>
+        <div class="m-card" style="padding:12px 14px">
+          <div class="sm b" style="margin-bottom:8px">Where today's gain came from</div>
+          <div class="contrib" style="grid-template-columns:110px minmax(0,1fr) 66px">
+            <span class="sm">Momentum</span><div class="meter"><i style="width:100%"></i></div><span class="mono xs gain" style="text-align:right">+$266.66</span>
+            <span class="sm">Recession</span><div class="meter"><i style="width:73.7%"></i></div><span class="mono xs gain" style="text-align:right">+$196.62</span>
+            <span class="sm">All-Weather</span><div class="meter"><i style="width:55.9%"></i></div><span class="mono xs gain" style="text-align:right">+$149.12</span>
+          </div>
+        </div>
+        <span class="hl-src"><span data-icon="ledger"></span>Ledger 10:41 · Alpaca fills to 10:31</span>
+        <div class="sugg" style="margin-top:0"><span class="chip">What will Recession Radar trade?</span><span class="chip">Show today's fills</span></div>
+        <div class="email-pill" style="margin-top:auto;padding-left:16px"><input placeholder="Ask Copilot" readonly><span class="btn pri icon" style="width:42px"><span data-icon="send"></span></span></div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+  </div>
+
+  <!-- ============================================================ F: written brief -->
+  <div class="ax-opt" data-opt="F" data-name="Written brief" data-note="Home reads like a short daily report: a headline sentence, then four numbered sections with the figures set in the right margin. The sentences come from fixed templates filled from the ledger, with no model involved, so they are cheap and always match the numbers. It reads calmly from top to bottom, but it's slower to scan than a table and the wording needs care for days when things go wrong.">
+    <div data-frame="desktop" data-path="home">
+      <div class="app hl-f">
+        <div data-tb="Home"></div>
+        <div class="main">
+          <div class="glow" style="height:360px"></div>
+          <div class="art center" data-art="candles" data-seed="6161" style="height:300px"></div>
+          <div class="page over">
+            <div class="doc">
+              <div class="mast">
+                <div class="lbl">Tuesday, November 17 · 10:42 ET · market open</div>
+                <div class="hl">Up $612.40 today. Three sessions are running and one rebalance is left before the close.</div>
+                <div class="by"><span class="row gap-6"><span class="dot acc"></span>Paper and live accounts</span><span>Figures from the ledger snapshot at 10:41 ET</span><span class="sp"></span><span class="btn sm">Yesterday</span><span class="btn sm pri">Open sessions</span></div>
+              </div>
+
+              <div class="sec">
+                <span class="no">01</span>
+                <div><h3>Your money</h3><p>Total equity is <b class="mono">$128,406.12</b>, up <span class="mono">0.48%</span> since yesterday's close. Since the first session started on Jun 2 the accounts have returned <b class="mono">7.00%</b>, time-weighted, against <span class="mono">5.31%</span> for SPY. <span class="mono">$31,820.15</span> is in cash, most of it from the stopped Tech Momentum Rotation sleeve.</p></div>
+                <div class="mg">
+                  <div class="row base"><span class="mono b" style="font-size:20px">$128,406.12</span><span class="sp"></span><span class="mono xs gain">+0.48%</span></div>
+                  <div data-chart="area" data-seed="604" data-ret="0.07" data-vol="0.0045" data-bench="0.0531" data-h="64" data-mark></div>
+                  <div class="row xs dim"><span>Jun 2</span><span class="sp"></span><span>SPY dashed</span><span class="sp"></span><span>Today</span></div>
+                </div>
+              </div>
+
+              <div class="sec">
+                <span class="no">02</span>
+                <div><h3>This morning</h3><p>Three orders filled. At 09:45 All-Weather Portfolio bought <b>31 VGLT</b> at <span class="mono">$58.12</span> in the live account. At 10:31 Recession Radar bought <b>42 TLT</b> at <span class="mono">$90.41</span> and sold <b>9 GLD</b> at <span class="mono">$247.86</span>. Every order passed its risk checks.</p></div>
+                <div class="mg">
+                  <div class="ss"><span class="sym">VGLT <span class="dim" style="font-weight:400">buy</span></span><span class="mono xs dim">09:45</span><span class="mono xs">$1,801.72</span></div>
+                  <div class="ss"><span class="sym">TLT <span class="dim" style="font-weight:400">buy</span></span><span class="mono xs dim">10:31</span><span class="mono xs">$3,797.22</span></div>
+                  <div class="ss"><span class="sym">GLD <span class="dim" style="font-weight:400">sell</span></span><span class="mono xs dim">10:31</span><span class="mono xs">$2,230.74</span></div>
+                </div>
+              </div>
+
+              <div class="sec">
+                <span class="no">03</span>
+                <div><h3>Before the close</h3><p>Recession Radar rebalances at <b class="mono">15:50</b>. It holds TLT at <span class="mono">58.2%</span> and GLD at <span class="mono">41.8%</span> against targets of 60% and 40%, so it will buy TLT and sell GLD using prices at that time. After that, Momentum Sectors is next on Monday, Nov 23.</p></div>
+                <div class="mg">
+                  <div class="hl-tw"><span class="sym">TLT</span><div class="bars"><i class="now" style="width:58.2%"></i><i class="tgt" style="width:60%"></i></div><span class="mono xs">58.2%</span></div>
+                  <div class="hl-tw"><span class="sym">GLD</span><div class="bars"><i class="now" style="width:41.8%"></i><i class="tgt" style="width:40%"></i></div><span class="mono xs">41.8%</span></div>
+                </div>
+              </div>
+
+              <div class="sec">
+                <span class="no">04</span>
+                <div><h3>Sessions</h3><p>Momentum Sectors gained the most today, <span class="mono">$266.66</span>. Recession Radar is the strongest since it started, up <span class="mono">12.41%</span>. All-Weather Portfolio is the only live session. Tech Momentum Rotation has been stopped since Nov 12.</p></div>
+                <div class="mg">
+                  <div class="ss"><span class="hl-name" style="font-size:12.5px">All-Weather <span class="pill live" style="height:15px;font-size:8.5px;padding:0 4px">Live</span></span><span data-chart="spark" data-seed="7" data-ret="0.068" data-vol="0.02" style="width:70px;height:18px"></span><span class="mono xs gain">+0.31%</span></div>
+                  <div class="ss"><span class="hl-name" style="font-size:12.5px">Recession Radar</span><span data-chart="spark" data-seed="19" data-ret="0.124" data-vol="0.02" style="width:70px;height:18px"></span><span class="mono xs gain">+0.62%</span></div>
+                  <div class="ss"><span class="hl-name" style="font-size:12.5px">Momentum Sectors</span><span data-chart="spark" data-seed="33" data-ret="-0.0088" data-vol="0.025" style="width:70px;height:18px"></span><span class="mono xs gain">+1.22%</span></div>
+                  <div class="ss"><span class="hl-name dim" style="font-size:12.5px">Tech Momentum</span><span data-chart="spark" data-seed="51" data-ret="-0.024" data-vol="0.025" data-color="muted" style="width:70px;height:18px"></span><span class="xs dim" style="text-align:right">Stopped</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div data-frame="phone">
+      <div class="m-body hl-f" style="padding-top:0">
+        <div class="glow" style="height:300px"></div>
+        <div class="art center" data-art="candles" data-seed="6162" style="height:260px"></div>
+        <div class="over" style="padding-top:22px">
+          <div class="lbl">Tue, Nov 17 · 10:42 ET</div>
+          <div style="font:600 24px/1.2 var(--sans);letter-spacing:-0.025em;margin-top:8px">Up $612.40 today. One rebalance is left before the close.</div>
+        </div>
+        <div class="over">
+          <div class="m-sec2">01 · Your money</div>
+          <p class="muted" style="margin-top:6px;font-size:14.5px;line-height:1.55"><b class="mono" style="color:var(--fg)">$128,406.12</b>, up <span class="mono">7.00%</span> since Jun 2 against <span class="mono">5.31%</span> for SPY.</p>
+          <div data-chart="area" data-seed="604" data-ret="0.07" data-vol="0.0045" data-bench="0.0531" data-h="70" data-mark style="margin-top:8px"></div>
+        </div>
+        <div class="over">
+          <div class="m-sec2">02 · This morning</div>
+          <p class="muted" style="margin-top:6px;font-size:14.5px;line-height:1.55">Three orders filled: <b class="sym" style="color:var(--fg)">VGLT</b> buy 31, <b class="sym" style="color:var(--fg)">TLT</b> buy 42 and <b class="sym" style="color:var(--fg)">GLD</b> sell 9.</p>
+        </div>
+        <div class="over">
+          <div class="m-sec2">03 · Before the close</div>
+          <p class="muted" style="margin-top:6px;font-size:14.5px;line-height:1.55">Recession Radar rebalances at <b class="mono" style="color:var(--fg)">15:50</b>, moving TLT from 58.2% back to 60%.</p>
+        </div>
+        <div class="over">
+          <div class="m-sec2">04 · Sessions</div>
+          <div class="m-card rows" style="margin-top:8px">
+            <div class="hl-prow"><div class="grow"><div class="hl-name">Momentum Sectors</div><div class="d">Paper · next Nov 23</div></div><span class="mono sm gain">+$266.66</span></div>
+            <div class="hl-prow"><div class="grow"><div class="hl-name">Recession Radar</div><div class="d">Paper · 15:50 today</div></div><span class="mono sm gain">+$196.62</span></div>
+            <div class="hl-prow"><div class="grow"><div class="hl-name">All-Weather Portfolio</div><div class="d">Live · next Dec 1</div></div><span class="mono sm gain">+$149.12</span></div>
+          </div>
+        </div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+  </div>
+</section>

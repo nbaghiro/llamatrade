@@ -22,7 +22,11 @@ export function FilmStrip({ frames }: { frames: readonly FilmFrame[] }) {
 
   useLayoutEffect(() => {
     if (!width || !track.current) return;
-    track.current.scrollLeft = filmScrollFor(filmSize(width), filmOpening(frames.length));
+    track.current.scrollLeft = filmScrollFor(
+      filmSize(width),
+      filmOpening(frames.length),
+      frames.length
+    );
   }, [width, frames.length]);
 
   const move = (dir: -1 | 1) =>

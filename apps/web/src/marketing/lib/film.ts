@@ -9,7 +9,7 @@ export interface FilmSize {
   view: number;
   /** Faded edge on each side of the view. */
   pad: number;
-  /** Inline padding on the track, so the first and last frames can sit in the centre. */
+  /** Inline padding on the track: the faded edge, so the first and last frames sit at the view's edges. */
   trackPad: number;
 }
 
@@ -24,7 +24,7 @@ export function filmSize(width: number): FilmSize {
   const frame = Math.max(1, Math.floor((Math.min(w, FILM_MAX) - gap * (count - 1)) / count));
   const view = count * frame + (count - 1) * gap;
   const pad = Math.min(56, Math.max(0, (w - view) / 2));
-  return { count, gap, frame, view, pad, trackPad: (view - frame) / 2 + pad };
+  return { count, gap, frame, view, pad, trackPad: pad };
 }
 
 /** Distance between neighbouring frames, one arrow press. */
@@ -32,9 +32,11 @@ export function filmStep(size: FilmSize): number {
   return size.frame + size.gap;
 }
 
-/** scrollLeft that centres frame `index` in the view. */
-export function filmScrollFor(size: FilmSize, index: number): number {
-  return Math.max(0, index) * filmStep(size);
+/** scrollLeft that centres frame `index` in the view, clamped to the ends of the strip. */
+export function filmScrollFor(size: FilmSize, index: number, frames: number): number {
+  const side = (size.count - 1) / 2;
+  const last = Math.max(0, frames - size.count);
+  return Math.min(last, Math.max(0, index - side)) * filmStep(size);
 }
 
 /** The frame the strip opens on: the middle one. */

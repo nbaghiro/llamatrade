@@ -14,10 +14,13 @@ import type {
   StrategyPerformanceSummary,
 } from "@llamatrade/core/proto/portfolio_pb";
 import type { StrategyExecution } from "@llamatrade/core/proto/strategy_pb";
-import type {
-  Order,
-  Position,
-  TradingSession,
+import {
+  OrderSide,
+  OrderType,
+  TimeInForce,
+  type Order,
+  type Position,
+  type TradingSession,
 } from "@llamatrade/core/proto/trading_pb";
 import {
   ledgerClient,
@@ -40,6 +43,23 @@ export interface SessionDetail {
   performance: StrategyPerformanceSummary | null;
   /** Equity points since `since`, from the portfolio service. */
   curve: StrategyEquityPoint[];
+  /** SPY on the same dates, rebased to the curve's start; empty when unavailable. */
+  benchmark: StrategyEquityPoint[];
+}
+
+/** One execution's equity since it started, with SPY on the same dates. */
+export interface SessionCurve {
+  points: StrategyEquityPoint[];
+  benchmark: StrategyEquityPoint[];
+}
+
+export interface PlaceOrderInput {
+  sessionId: string;
+  symbol: string;
+  side: "buy" | "sell";
+  quantity: number;
+  strategyId?: string;
+  sleeveId?: string;
 }
 
 interface TradingState {
@@ -65,10 +85,21 @@ interface TradingState {
   commandPending: SessionCommand | null;
   commandError: string | null;
 
+  /** Equity curves keyed by execution id; filled by `loadCurves`. */
+  curves: Record<string, SessionCurve>;
+  curvesLoaded: boolean;
+
+  placing: boolean;
+  placeError: string | null;
+
   loadBlotter: () => Promise<void>;
   loadSession: (sessionId: string, since: Date) => Promise<void>;
   loadOrder: (orderId: string) => Promise<void>;
   runCommand: (sessionId: string, command: SessionCommand) => Promise<boolean>;
+  /** Every loaded execution's curve since it started; one failure leaves that curve out. */
+  loadCurves: () => Promise<void>;
+  /** A market day order through the session's own checks; the new order, or null. */
+  placeOrder: (input: PlaceOrderInput) => Promise<Order | null>;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -166,6 +197,12 @@ export const useTradingStore = create<TradingState>((set, get) => ({
 
   commandPending: null,
   commandError: null,
+
+  curves: {},
+  curvesLoaded: false,
+
+  placing: false,
+  placeError: null,
 
   loadBlotter: async () => {
     const context = getTenantContext();
@@ -300,12 +337,16 @@ export const useTradingStore = create<TradingState>((set, get) => ({
                       },
                     },
                     sampleIntervalMinutes: 5,
+                    benchmarkSymbol: "SPY",
                   })
-                  .then((r) => r.equityCurve),
-              [] as StrategyEquityPoint[],
+                  .then((r) => ({
+                    points: r.equityCurve,
+                    benchmark: r.benchmark?.equityCurve ?? [],
+                  })),
+              { points: [], benchmark: [] } as SessionCurve,
             ),
           ])
-        : [null, [] as StrategyEquityPoint[]];
+        : [null, { points: [], benchmark: [] } as SessionCurve];
       set({
         detail: {
           session,
@@ -314,7 +355,8 @@ export const useTradingStore = create<TradingState>((set, get) => ({
           execution,
           sleeve: sleeveFor(session, sleeves),
           performance,
-          curve,
+          curve: curve.points,
+          benchmark: curve.benchmark,
         },
         detailLoading: false,
       });
@@ -355,7 +397,34 @@ export const useTradingStore = create<TradingState>((set, get) => ({
             ? await tradingClient.resumeSession(req)
             : await tradingClient.stopSession(req);
       const updated = res.session;
+      let sleeveError: string | null = null;
+      if (command === "stop") {
+        const state = get();
+        const session =
+          updated ??
+          state.sessions.find((s) => s.id === sessionId) ??
+          state.detail?.session;
+        const execution =
+          (session && executionFor(session, state.executions)) ??
+          (state.detail?.session.id === sessionId
+            ? state.detail.execution
+            : null);
+        // Stopping the execution is what closes the sleeve: holdings to Unmanaged, cash to Unallocated.
+        if (execution) {
+          try {
+            await strategyClient.stopExecution({
+              context,
+              executionId: execution.id,
+              reason: "session stopped",
+            });
+          } catch {
+            sleeveError =
+              "The session stopped, but its sleeve couldn't be closed, so its holdings and cash stay in the sleeve for now.";
+          }
+        }
+      }
       set((state) => ({
+        commandError: sleeveError,
         commandPending: null,
         sessions: updated
           ? state.sessions.map((s) => (s.id === updated.id ? updated : s))
@@ -375,6 +444,95 @@ export const useTradingStore = create<TradingState>((set, get) => ({
             : COMMAND_ERROR[command],
       });
       return false;
+    }
+  },
+
+  loadCurves: async () => {
+    const context = getTenantContext();
+    if (!context) return;
+    const ids = [
+      ...new Set(
+        get()
+          .sessions.map((s) => executionFor(s, get().executions)?.id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const results = await Promise.all(
+      ids.map((executionId) =>
+        optional(
+          () =>
+            portfolioClient
+              .getStrategyEquityCurve({
+                context,
+                executionId,
+                benchmarkSymbol: "SPY",
+                sampleIntervalMinutes: 0,
+              })
+              .then((r): [string, SessionCurve] => [
+                executionId,
+                {
+                  points: r.equityCurve,
+                  benchmark: r.benchmark?.equityCurve ?? [],
+                },
+              ]),
+          null,
+        ),
+      ),
+    );
+    set((state) => ({
+      curves: {
+        ...state.curves,
+        ...Object.fromEntries(
+          results.filter((r): r is [string, SessionCurve] => r !== null),
+        ),
+      },
+      curvesLoaded: true,
+    }));
+  },
+
+  placeOrder: async ({
+    sessionId,
+    symbol,
+    side,
+    quantity,
+    strategyId,
+    sleeveId,
+  }) => {
+    const context = getTenantContext();
+    if (!context || get().placing) return null;
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      set({ placeError: "Enter a quantity greater than zero." });
+      return null;
+    }
+    set({ placing: true, placeError: null });
+    try {
+      const res = await tradingClient.submitOrder({
+        context,
+        sessionId,
+        clientOrderId: crypto.randomUUID(),
+        symbol,
+        side: side === "buy" ? OrderSide.BUY : OrderSide.SELL,
+        type: OrderType.MARKET,
+        timeInForce: TimeInForce.DAY,
+        quantity: { value: String(quantity) },
+        strategyId: strategyId ?? "",
+        sleeveId: sleeveId ?? "",
+      });
+      const order = res.order ?? null;
+      set((state) => ({
+        placing: false,
+        orders: order ? [order, ...state.orders] : state.orders,
+      }));
+      return order;
+    } catch (error) {
+      set({
+        placing: false,
+        placeError:
+          error instanceof ConnectError && error.rawMessage
+            ? error.rawMessage
+            : "The order could not be placed.",
+      });
+      return null;
     }
   },
 }));

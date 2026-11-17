@@ -1,36 +1,61 @@
-import { toDate, useBacktestStore } from '@llamatrade/core/stores/backtest';
+import { ExecutionMode } from '@llamatrade/core/proto/common_pb';
+import { OrderSide, type Order } from '@llamatrade/core/proto/trading_pb';
+import { toDate, toNumber, useBacktestStore } from '@llamatrade/core/stores/backtest';
+import { useBrokerStore } from '@llamatrade/core/stores/broker';
+import { useFundingStore } from '@llamatrade/core/stores/funding';
 import { useTradingStore } from '@llamatrade/core/stores/trading';
 import { Plus } from 'lucide-react';
-import { useEffect, useMemo } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 
-import { PageHead, Panel } from '../../components/backtest/parts';
-import { T } from '../../components/backtest/tableStyles';
+import { Panel } from '../../components/backtest/parts';
 import {
   Blotter,
   buildSessionRow,
   etToday,
-  nextRebalanceCell,
-  railFacts,
   ReadyToDeploy,
-  sinceLabel,
+  rowNextRebalance,
   sortRows,
-  StatusRail,
-  useMarketLine,
+  type SessionRow,
 } from '../../components/sessions';
-import { PageArt } from '../../components/ui';
-import { AttentionLine, type AttentionItem } from '../../components/ui/AttentionLine';
+import { needsYou } from '../../components/sessions/needs';
+import { NeedsYou } from '../../components/sessions/NeedsYou';
+import { SessionsPhoneList } from '../../components/sessions/SessionsPhoneList';
+import { SessionTimeline, type TimelineGroup } from '../../components/sessions/SessionTimeline';
+import {
+  etDayKey,
+  etHm,
+  fillDays,
+  isFilled,
+  nowLabel,
+  orderTime,
+  RANGE_OPTIONS,
+  rangeStart,
+  toSeries,
+  type TimeRange,
+  windowed,
+} from '../../components/sessions/timeline';
+import { usePageScope } from '../../components/shell/usePageScope';
+import {
+  ModeBadge,
+  PageArt,
+  PageHead,
+  ScopeControl,
+  Segmented,
+  StatList,
+} from '../../components/ui';
 import { Money } from '../../components/ui/Num';
 import { PanelError } from '../../components/ui/PanelError';
 import { SkeletonRows } from '../../components/ui/Skeleton';
-import { StatusMark } from '../../components/ui/StatusMark';
-import { formatNumber } from '../../lib/format';
+import { formatMoney, formatNumber } from '../../lib/format';
+import { inScope, maskedKey } from '../../lib/scope';
 
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const COMPACT_OVER = 12;
+const qty = (v: number) => formatNumber(v, { dp: Number.isInteger(v) ? 0 : 2 });
+const isLive = (r: SessionRow) => r.session.mode === ExecutionMode.LIVE;
 
-/** /trading: the sessions console. A status rail, anything that needs you, sessions, then orders. */
+/** /trading: every session on one timeline, what needs you, today's fills (list2 A, phone2 B). */
 export default function TradingPage() {
-  const navigate = useNavigate();
   const [params] = useSearchParams();
   const wantsDeploy = params.has('deploy');
   const sessions = useTradingStore((s) => s.sessions);
@@ -38,20 +63,29 @@ export default function TradingPage() {
   const executions = useTradingStore((s) => s.executions);
   const sleeves = useTradingStore((s) => s.sleeves);
   const performance = useTradingStore((s) => s.performance);
+  const curves = useTradingStore((s) => s.curves);
   const loading = useTradingStore((s) => s.loading);
   const loaded = useTradingStore((s) => s.loaded);
   const error = useTradingStore((s) => s.error);
   const loadBlotter = useTradingStore((s) => s.loadBlotter);
+  const loadCurves = useTradingStore((s) => s.loadCurves);
   const strategies = useBacktestStore((s) => s.strategies);
   const fetchStrategies = useBacktestStore((s) => s.fetchStrategies);
-  const market = useMarketLine();
+  const credentials = useBrokerStore((s) => s.credentials);
+  const paperFree = useFundingStore((s) => s.unallocatedCash);
+  const fundingResolved = useFundingStore((s) => s.resolved);
+  const resolveAccount = useFundingStore((s) => s.resolveAccount);
+  const [range, setRange] = useState<TimeRange>('3M');
 
   useEffect(() => {
-    loadBlotter().catch(() => undefined);
+    loadBlotter()
+      .then(() => loadCurves())
+      .catch(() => undefined);
     fetchStrategies().catch(() => undefined);
-  }, [loadBlotter, fetchStrategies]);
+    resolveAccount().catch(() => undefined);
+  }, [loadBlotter, loadCurves, fetchStrategies, resolveAccount]);
 
-  const rows = useMemo(
+  const allRows = useMemo(
     () =>
       sortRows(
         sessions.map((s) =>
@@ -60,155 +94,263 @@ export default function TradingPage() {
       ),
     [sessions, executions, sleeves, performance, strategies, orders]
   );
-  const names = useMemo(() => Object.fromEntries(rows.map((r) => [r.session.id, r.name])), [rows]);
-  const open = rows.filter((r) => r.view.open).length;
-  const firstOrder = orders
-    .map((o) => toDate(o.submittedAt) ?? toDate(o.createdAt))
-    .filter((d): d is Date => d !== null)
-    .sort((a, b) => a.getTime() - b.getTime())[0];
 
-  const attention: AttentionItem[] = rows
-    .filter((r) => r.view.attention)
-    .map((r) => ({
-      id: r.session.id,
-      title: `${r.name} is ${r.state === 'frozen' ? 'frozen' : 'stopped by an error'}.`,
-      detail:
-        r.state === 'frozen'
-          ? 'The ledger and Alpaca disagree about its holdings, so new orders wait until that is resolved.'
-          : r.execution?.errorMessage || 'It places no new orders.',
-      action: (
-        <Link to={`/trading/${r.session.id}`} className="btn btn-secondary btn-sm">
-          Review
-        </Link>
-      ),
-    }));
-
-  const empty = loaded && !error && sessions.length === 0;
-  const today = etToday();
-  const rail = railFacts(
-    error && !sessions.length ? null : rows,
-    market,
-    sleeves.length > 0,
-    today
+  const sum = (rs: readonly SessionRow[]) =>
+    rs.some((r) => r.figures.equity !== null)
+      ? rs.reduce((n, r) => n + (r.figures.equity ?? 0), 0)
+      : undefined;
+  const openRows = allRows.filter((r) => r.view.open);
+  const { scope, setScope, options } = usePageScope('sessions', {
+    all: sum(openRows),
+    live: sum(openRows.filter(isLive)),
+    paper: sum(openRows.filter((r) => !isLive(r))),
+  });
+  const rows = allRows.filter((r) => inScope(scope, isLive(r)));
+  const names = useMemo(
+    () => Object.fromEntries(allRows.map((r) => [r.session.id, r.name])),
+    [allRows]
   );
 
-  return (
-    <>
-      <StatusRail items={rail} />
-      <div className="page relative isolate grid gap-3.5">
-        <PageArt shape="live" />
-        <PageHead
-          title="Sessions"
-          meta={
-            empty
-              ? 'No sessions yet · paper trading only during the beta'
-              : loaded && !error
-                ? `${rows.length} ${rows.length === 1 ? 'session' : 'sessions'} · ${open} open · ${formatNumber(orders.length, { dp: 0 })} orders${
-                    firstOrder ? ` since ${MON[firstOrder.getMonth()]} ${firstOrder.getDate()}` : ''
-                  }`
-                : undefined
-          }
-          actions={
-            !empty && (
-              <>
-                <Link to="/portfolio" className="btn btn-secondary">
-                  Portfolio positions
-                </Link>
-                <Link to="/trading?deploy=1" className="btn btn-primary">
-                  <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                  Deploy a strategy
-                </Link>
-              </>
-            )
-          }
-        />
-        {empty ? (
-          <ReadyToDeploy />
-        ) : error && !sessions.length ? (
-          <Panel>
-            <PanelError
-              title="Sessions couldn't be loaded"
-              cause={error}
-              unaffected="Running sessions keep trading on schedule."
-              onRetry={() => loadBlotter()}
-              retrying={loading}
-            />
-          </Panel>
-        ) : (
+  const now = new Date();
+  const today = etToday(now);
+  const todayKey = etDayKey(now);
+  const needs = needsYou(rows, orders, now);
+  const ordersBySession = useMemo(() => {
+    const m = new Map<string, Order[]>();
+    for (const o of orders) m.set(o.sessionId, [...(m.get(o.sessionId) ?? []), o]);
+    return m;
+  }, [orders]);
+  const todaysFills = orders
+    .filter((o) => isFilled(o) && rows.some((r) => r.session.id === o.sessionId))
+    .map((o) => ({ o, at: orderTime(o) }))
+    .filter((x): x is { o: Order; at: Date } => x.at !== null && etDayKey(x.at) === todayKey)
+    .sort((a, b) => a.at.getTime() - b.at.getTime());
+
+  const earliest = rows
+    .map((r) => r.startedAt)
+    .filter((d): d is Date => d !== null)
+    .sort((a, b) => a.getTime() - b.getTime())[0];
+  const start = rangeStart(range, now, earliest ?? null);
+
+  const accountLabel = (live: boolean) => {
+    const cred = credentials.find((c) => c.isActive && c.isPaper === !live);
+    const key = cred ? maskedKey(cred.apiKeyPrefix) : '';
+    return `Alpaca ${live ? 'live' : 'paper'}${key ? ` ${key}` : ''}`;
+  };
+  const groups: TimelineGroup[] = [true, false]
+    .map((live) => {
+      const rs = rows.filter((r) => isLive(r) === live);
+      return {
+        key: live ? 'live' : 'paper',
+        heading: (
           <>
-            {wantsDeploy && <ReadyToDeploy />}
-            <AttentionLine items={attention} />
-            <Panel>
-              {!loaded ? (
-                <SkeletonRows rows={4} cols={6} />
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className={T.table}>
-                    <thead>
-                      <tr>
-                        <th className={T.th}>Session</th>
-                        <th className={T.th}>State</th>
-                        <th className={T.th}>Next rebalance</th>
-                        <th className={T.thN}>Equity</th>
-                        <th className={T.thN}>Today</th>
-                        <th className={T.thN}>Total P&amp;L</th>
-                        <th className={T.thN}>Orders</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {rows.map((r) => {
-                        const f = r.figures;
-                        const dot = <span className="text-fg-3">·</span>;
-                        return (
-                          <tr
-                            key={r.session.id}
-                            onClick={() => navigate(`/trading/${r.session.id}`)}
-                            className={`cursor-pointer hover:bg-sunk ${r.state === 'stopped' ? 'text-fg-3' : ''}`}
-                          >
-                            <td className={`${T.td} h-11`}>
-                              <Link
-                                to={`/trading/${r.session.id}`}
-                                className={`font-semibold hover:underline ${r.state === 'stopped' ? 'text-fg-2' : 'text-fg'}`}
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                {r.name}
-                              </Link>
-                              <span className={T.sub}>
-                                {r.version ? `version ${r.version} · ` : ''}
-                                {r.rebalance ? `${r.rebalance.toLowerCase()} · ` : ''}since{' '}
-                                {sinceLabel(r.startedAt)}
-                              </span>
-                            </td>
-                            <td className={T.td}>
-                              <StatusMark state={r.view.mark} label={r.view.label} />
-                            </td>
-                            <td
-                              className={`${T.td} num ${r.state === 'frozen' ? 'text-risk' : ''}`}
-                            >
-                              {nextRebalanceCell(r, today)}
-                            </td>
-                            <td className={T.tdN}>
-                              {f.equity === null ? dot : <Money value={f.equity} />}
-                            </td>
-                            <td className={T.tdN}>
-                              {f.today === null ? dot : <Money value={f.today} pnl />}
-                            </td>
-                            <td className={T.tdN}>
-                              {f.total === null ? dot : <Money value={f.total} pnl />}
-                            </td>
-                            <td className={T.tdN}>{r.orders}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </Panel>
-            {loaded && <Blotter orders={orders} sessionNames={names} />}
+            <ModeBadge mode={live ? 'live' : 'paper'} size="sm" />
+            {accountLabel(live)}
           </>
-        )}
-      </div>
+        ),
+        total: sum(rs.filter((r) => r.view.open)) ?? null,
+        sessions: rs.map((row) => {
+          const curve = row.execution ? curves[row.execution.id] : undefined;
+          const sessionOrders = ordersBySession.get(row.session.id) ?? [];
+          const days = fillDays(sessionOrders);
+          const todayDay = days.find((d) => d.key === todayKey);
+          return {
+            row,
+            series: windowed(toSeries(curve?.points ?? []), start, now, row.figures.equity),
+            days: days.filter((d) => d.key !== todayKey),
+            fillsToday: todayDay?.orders.length ?? 0,
+            next: rowNextRebalance(row, today),
+            ended: row.view.open ? null : (toDate(row.session.endedAt) ?? null),
+          };
+        }),
+      };
+    })
+    .filter((g) => g.sessions.length > 0);
+
+  const empty = loaded && !error && sessions.length === 0;
+  const accounts = new Set(rows.map(isLive)).size;
+  const running = rows.filter((r) => r.view.open).length;
+  const stopped = rows.length - running;
+  const sub = loaded && !error && !empty && (
+    <>
+      {[
+        needs.length
+          ? `${needs.length} ${needs.length === 1 ? 'thing needs' : 'things need'} you`
+          : null,
+        `${rows.length} ${rows.length === 1 ? 'session' : 'sessions'} on ${accounts} Alpaca ${accounts === 1 ? 'account' : 'accounts'}`,
+        `${running} open${stopped ? `, ${stopped} stopped` : ''}`,
+      ]
+        .filter(Boolean)
+        .join(' · ')}
     </>
+  );
+
+  const liveRows = rows.filter((r) => isLive(r) && r.view.open);
+  const paperRows = rows.filter((r) => !isLive(r) && r.view.open);
+  const totals = [
+    ...(liveRows.length
+      ? [
+          {
+            label: `Live, ${liveRows.length} ${liveRows.length === 1 ? 'session' : 'sessions'}`,
+            value: <AccountFigure rows={liveRows} />,
+          },
+        ]
+      : []),
+    ...(paperRows.length
+      ? [
+          {
+            label: `Paper, ${paperRows.length} ${paperRows.length === 1 ? 'session' : 'sessions'}`,
+            value: <AccountFigure rows={paperRows} />,
+          },
+        ]
+      : []),
+    ...(fundingResolved && scope !== 'live'
+      ? [{ label: 'Free cash in paper', value: formatMoney(paperFree) }]
+      : []),
+  ];
+
+  return (
+    <div className="page relative isolate">
+      <PageArt shape="live" />
+      <PageHead
+        title="Sessions"
+        sub={sub}
+        scope={
+          !empty && options.length > 0 ? (
+            <ScopeControl options={options} value={scope} onChange={setScope} />
+          ) : undefined
+        }
+        actions={
+          !empty && (
+            <>
+              <Segmented<TimeRange>
+                label="Time range"
+                value={range}
+                onChange={setRange}
+                options={RANGE_OPTIONS}
+                className="hidden md:inline-flex"
+              />
+              <Link to="/trading?deploy=1" className="btn btn-primary">
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                Deploy a strategy
+              </Link>
+            </>
+          )
+        }
+      />
+      {empty ? (
+        <ReadyToDeploy />
+      ) : error && !sessions.length ? (
+        <Panel>
+          <PanelError
+            title="Sessions couldn't be loaded"
+            cause={error}
+            unaffected="Running sessions keep trading on schedule."
+            onRetry={() => loadBlotter()}
+            retrying={loading}
+          />
+        </Panel>
+      ) : (
+        <div className="grid gap-3.5">
+          {wantsDeploy && <ReadyToDeploy />}
+          <NeedsYou items={needs} />
+          {!loaded ? (
+            <Panel>
+              <SkeletonRows rows={4} cols={6} />
+            </Panel>
+          ) : (
+            <>
+              <div className="hidden md:block">
+                <SessionTimeline
+                  groups={groups}
+                  start={start}
+                  now={now}
+                  nowLabel={nowLabel(now)}
+                  compact={rows.length > COMPACT_OVER}
+                />
+              </div>
+              <div className="md:hidden">
+                <SessionsPhoneList rows={rows} today={today} />
+              </div>
+              <div className="hidden gap-3.5 md:grid md:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
+                <Panel
+                  title="Today's fills"
+                  aside={todaysFills.length ? `${todaysFills.length} filled` : undefined}
+                >
+                  {todaysFills.length === 0 ? (
+                    <p className="m-0 px-3.5 py-4 text-[12.5px] text-fg-3">
+                      Nothing has filled today. Fills appear here as rebalances trade.
+                    </p>
+                  ) : (
+                    <ol className="m-0 list-none p-0">
+                      {todaysFills.map(({ o, at }) => (
+                        <li key={o.id} className="border-b border-line last:border-b-0">
+                          <Link
+                            to={`/trading/orders/${o.id}`}
+                            className="grid grid-cols-[42px_minmax(0,1fr)_auto_52px] items-center gap-3 px-3.5 py-2.5 hover:bg-sunk"
+                          >
+                            <span className="rounded-sm px-[5px] py-[3px] text-center font-mono text-[10px] font-semibold leading-none ring-1 ring-inset ring-line-strong">
+                              {o.side === OrderSide.SELL ? 'SELL' : 'BUY'}
+                            </span>
+                            <span className="min-w-0">
+                              <span className="block truncate text-[13px] text-fg">
+                                {qty(toNumber(o.filledQuantity))} {o.symbol} at{' '}
+                                {formatMoney(toNumber(o.averageFillPrice))}
+                              </span>
+                              <span className="block truncate text-[11.5px] text-fg-3">
+                                {names[o.sessionId] ?? 'Session'}
+                              </span>
+                            </span>
+                            <Money
+                              value={toNumber(o.filledQuantity) * toNumber(o.averageFillPrice)}
+                              className="text-[12.5px]"
+                            />
+                            <span className="num text-right text-[11.5px] text-fg-3">
+                              {etHm(at)}
+                            </span>
+                          </Link>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </Panel>
+                <Panel title="Not added together" aside="each account on its own">
+                  <div className="px-3.5 py-1">
+                    {totals.length ? (
+                      <StatList items={totals} />
+                    ) : (
+                      <p className="m-0 py-3 text-[12.5px] text-fg-3">No open sessions.</p>
+                    )}
+                  </div>
+                </Panel>
+              </div>
+              <div className="hidden md:block">
+                <Blotter
+                  orders={orders.filter((o) => names[o.sessionId] !== undefined)}
+                  sessionNames={names}
+                />
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AccountFigure({ rows }: { rows: readonly SessionRow[] }) {
+  const value = rows.reduce((n, r) => n + (r.figures.equity ?? 0), 0);
+  const known = rows.filter((r) => r.figures.today !== null);
+  const today = known.reduce((n, r) => n + (r.figures.today ?? 0), 0);
+  return (
+    <span className="whitespace-nowrap">
+      {formatMoney(value)}
+      {known.length > 0 && (
+        <>
+          {' · '}
+          <Money value={today} pnl />
+        </>
+      )}
+    </span>
   );
 }

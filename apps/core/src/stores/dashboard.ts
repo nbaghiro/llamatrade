@@ -16,6 +16,7 @@ import {
   type BacktestRun,
 } from "@llamatrade/core/proto/backtest_pb";
 import {
+  ExecutionMode,
   ExecutionStatus,
   type Decimal,
   type Timestamp,
@@ -48,7 +49,7 @@ import { strategyColors as STRATEGY_COLORS } from "../theme/tokens";
 
 import { getTenantContext } from "../net";
 
-export { ExecutionStatus, MarketStatus };
+export { ExecutionMode, ExecutionStatus, MarketStatus };
 
 export type DashboardPeriod = "1W" | "1M" | "3M" | "1Y" | "ALL";
 export const DASHBOARD_PERIODS: DashboardPeriod[] = [
@@ -72,6 +73,13 @@ export interface DashboardStrategy {
   dayReturn: number; // 1-day return as a decimal fraction
   returns: Record<DashboardPeriod, number>; // decimal fractions (0.12 = 12%)
   curve: CurvePoint[]; // cumulative % return series for the sparkline
+  /** Paper or live, from the performance summary. */
+  mode: ExecutionMode;
+  /** Value now from the performance summary, or null when it has none. */
+  currentValue: number | null;
+  startedAt: Date | null;
+  /** Absolute equity at each snapshot, oldest first. */
+  equity: CurvePoint[];
 }
 
 // Dashboard feed kinds: the trade-side subset of wallet activity, plus backtests.
@@ -480,6 +488,10 @@ export const useDashboardStore = create<DashboardState>((set) => ({
               ALL: toNumber(s.returns?.returnAll) / 100,
             },
             curve: [],
+            mode: s.mode,
+            currentValue: s.currentValue ? toNumber(s.currentValue) : null,
+            startedAt: toDate(s.startedAt),
+            equity: [],
           };
         },
       );
@@ -554,6 +566,10 @@ export const useDashboardStore = create<DashboardState>((set) => ({
       curves.forEach((curve, i) => {
         if (!curve) return;
         strategies[i].curve = toPercentCurve(curve.equityCurve);
+        strategies[i].equity = curve.equityCurve.map((p) => ({
+          timestamp: toISO(p.timestamp),
+          value: toNumber(p.equity),
+        }));
         const pts = curve.equityCurve;
         if (pts.length > 0)
           currentValues[i] = toNumber(pts[pts.length - 1].equity);

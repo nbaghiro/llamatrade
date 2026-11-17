@@ -2,6 +2,7 @@ import { ArrowLeft } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 
+import { readLocalDraft } from '../../components/strategy-builder/draft/localDraft';
 import { StrategyBuilder } from '../../components/strategy-builder/StrategyBuilder';
 import { PanelError, Skeleton, SkeletonRows } from '../../components/ui';
 import { useStrategyBuilderStore } from '../../store/strategy-builder';
@@ -20,7 +21,10 @@ export default function StrategyEditorPage() {
     loadTemplate,
     loadFromArtifact,
     createNew,
+    loadFromDSL,
     setViewMode,
+    strategyId,
+    lastSavedAt,
     loading,
     error,
     tree,
@@ -30,6 +34,8 @@ export default function StrategyEditorPage() {
   const key = `${id ?? ''}|${templateId ?? ''}|${artifactId ?? ''}|${mode ?? ''}`;
   const load = () => {
     if (id) {
+      // Saving a new draft moves to its own address; the store already holds it.
+      if (strategyId === id && lastSavedAt && Date.now() - lastSavedAt < 10_000) return;
       loadStrategy(id).catch(() => undefined);
     } else if (artifactId) {
       loadFromArtifact(artifactId).catch(() => undefined);
@@ -37,6 +43,8 @@ export default function StrategyEditorPage() {
       loadTemplate(templateId).catch(() => undefined);
     } else {
       createNew();
+      const local = readLocalDraft();
+      if (local) loadFromDSL(local.dsl, local.name);
       if (mode === 'code') setViewMode('code');
     }
   };
@@ -60,7 +68,7 @@ export default function StrategyEditorPage() {
 
   if (loading) {
     return (
-      <div className="page" aria-busy="true">
+      <div className="page max-w-[1400px]" aria-busy="true">
         <Skeleton className="h-3 w-24" />
         <Skeleton className="mt-3 h-6 w-64" />
         <Skeleton className="mt-2 h-3 w-80" />

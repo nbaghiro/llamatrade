@@ -1,9 +1,12 @@
+import { usagePeriod } from '@llamatrade/core/billing/usage';
+import { LayoutGrid } from 'lucide-react';
 import { useSyncExternalStore, type ReactNode } from 'react';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
 
-import { useAuthStore } from '../../store/auth';
+import { PageHead } from '../../components/ui';
 
 import { MobileAccountList } from './MobileAccountList';
+import { SettingsOverview } from './Overview';
 import { BackToAccount } from './parts';
 import {
   DEFAULT_SECTION,
@@ -18,6 +21,7 @@ import { BrokerSection } from './sections/BrokerSection';
 import { NotificationsSection } from './sections/NotificationsSection';
 import { PlanSection } from './sections/PlanSection';
 import { ProfileSection } from './sections/ProfileSection';
+import { useSettingsSummary, type SectionState } from './useSettingsSummary';
 
 const SECTION_VIEW: Record<SectionKey, () => ReactNode> = {
   profile: () => <ProfileSection />,
@@ -43,23 +47,66 @@ function useIsDesktop(): boolean {
   );
 }
 
-/** /settings: the Account list on a phone, the first section on a wider screen. */
-function SettingsIndex() {
-  const desktop = useIsDesktop();
-  if (desktop) return <Navigate to={sectionPath(DEFAULT_SECTION)} replace />;
-  return <MobileAccountList />;
+const fullDay = (d: Date) => d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+
+function sectionHead(key: SectionKey): { sub: string; actions?: ReactNode } {
+  switch (key) {
+    case 'profile':
+      return { sub: 'Who you are in LlamaTrade and how you sign in.' };
+    case 'broker':
+      return { sub: 'Your Alpaca accounts. Each session trades on one of them.' };
+    case 'notifications':
+      return {
+        sub: 'Everything appears in the app. Choose what also reaches you by email or webhook.',
+      };
+    case 'appearance':
+      return { sub: 'Saved on this device.' };
+    case 'plan': {
+      const { start, end } = usagePeriod(new Date());
+      const reset = new Date(end.getFullYear(), end.getMonth() + 1, 1);
+      return {
+        sub: `${fullDay(start)} to ${end.getDate()} · resets ${fullDay(reset)}`,
+        actions: (
+          <Link to="/settings/plans" className="btn btn-secondary">
+            Compare plans
+          </Link>
+        ),
+      };
+    }
+  }
 }
 
-export function SettingsSidebar({ active }: { active: SectionKey }) {
+function SideState({ state }: { state: SectionState | null }) {
+  if (!state) return null;
+  return (
+    <span
+      className={`ml-auto truncate pl-2 text-[11.5px] ${state.risk ? 'text-risk' : 'text-fg-3'}`}
+    >
+      {state.text}
+    </span>
+  );
+}
+
+const SIDE_ITEM =
+  'flex items-center gap-[9px] rounded-[6px] px-2.5 py-[7px] text-[13px] transition-colors';
+const sideTone = (on: boolean) => (on ? 'bg-sunk text-fg' : 'text-fg-2 hover:text-fg');
+
+/** The settings sidebar; each item carries its section's current state (shell2 A). */
+export function SettingsSidebar({ active }: { active: SectionKey | null }) {
+  const { states } = useSettingsSummary();
   return (
     <nav aria-label="Settings" className="hidden content-start gap-0.5 md:grid">
-      {SECTION_GROUPS.map((group, gi) => (
+      <Link
+        to="/settings"
+        aria-current={active === null ? 'page' : undefined}
+        className={`${SIDE_ITEM} ${sideTone(active === null)}`}
+      >
+        <LayoutGrid className="h-4 w-4 flex-none" strokeWidth={1.7} />
+        Overview
+      </Link>
+      {SECTION_GROUPS.map((group) => (
         <div key={group.label} className="contents">
-          <span
-            className={`px-2.5 pb-1 text-[11px] font-medium text-fg-3 ${gi === 0 ? '' : 'pt-3'}`}
-          >
-            {group.label}
-          </span>
+          <span className="px-2.5 pb-1 pt-3 text-[11px] font-medium text-fg-3">{group.label}</span>
           {group.items.map((item) => {
             const on = item.key === active;
             const Icon = item.icon;
@@ -68,12 +115,11 @@ export function SettingsSidebar({ active }: { active: SectionKey }) {
                 key={item.key}
                 to={sectionPath(item.key)}
                 aria-current={on ? 'page' : undefined}
-                className={`flex items-center gap-[9px] rounded-[6px] px-2.5 py-[7px] text-[13px] transition-colors ${
-                  on ? 'bg-sunk text-fg' : 'text-fg-2 hover:text-fg'
-                }`}
+                className={`${SIDE_ITEM} ${sideTone(on)}`}
               >
                 <Icon className="h-4 w-4 flex-none" strokeWidth={1.7} />
-                {item.label}
+                <span className="truncate">{item.label}</span>
+                <SideState state={states[item.key]} />
               </Link>
             );
           })}
@@ -83,23 +129,34 @@ export function SettingsSidebar({ active }: { active: SectionKey }) {
   );
 }
 
-function SettingsShell({ active, children }: { active: SectionKey; children: ReactNode }) {
-  const email = useAuthStore((s) => s.user?.email);
+function SettingsShell({ active, children }: { active: SectionKey | null; children: ReactNode }) {
+  const head = active ? sectionHead(active) : null;
   return (
     <div className="page">
-      <div className="mb-4 hidden md:block">
-        <h1 className="m-0 text-[21px] leading-tight">Settings</h1>
-        {email && <div className="mt-[3px] text-[12.5px] text-fg-3">Signed in as {email}</div>}
-      </div>
-      <div className="mb-3 md:hidden">
-        <BackToAccount />
-        <h1 className="m-0 text-[27px] leading-tight">{sectionLabel(active)}</h1>
-      </div>
-      <div className="grid gap-6 md:grid-cols-[210px_minmax(0,1fr)]">
+      <div className="grid gap-7 md:grid-cols-[230px_minmax(0,1fr)]">
         <SettingsSidebar active={active} />
-        <div className="min-w-0">{children}</div>
+        <div className="min-w-0">
+          {active && head && (
+            <>
+              <BackToAccount />
+              <PageHead title={sectionLabel(active)} sub={head.sub} actions={head.actions} />
+            </>
+          )}
+          {children}
+        </div>
       </div>
     </div>
+  );
+}
+
+/** /settings: the Account list on a phone, the overview on a wider screen. */
+function SettingsIndex() {
+  const desktop = useIsDesktop();
+  if (!desktop) return <MobileAccountList />;
+  return (
+    <SettingsShell active={null}>
+      <SettingsOverview />
+    </SettingsShell>
   );
 }
 

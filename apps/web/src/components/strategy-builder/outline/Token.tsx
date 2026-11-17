@@ -4,8 +4,12 @@ import type { OutlineToken } from '../../../lib/outline';
 import type { DiffToken } from '../../../lib/strategyDiff';
 import { useDismiss } from '../../ui/useDismiss';
 
+import { tokenKey } from './tokenKey';
+
 /** Returns an error sentence, or null when the edit applied. */
 export type TokenEditHandler = (token: OutlineToken, raw: string) => string | null;
+/** Returns true when it handled the click itself, so the small popover stays closed. */
+export type TokenOpenHandler = (token: OutlineToken) => boolean;
 
 const BASE =
   'mx-px inline-block rounded-[3px] px-[5px] tabular-nums leading-[1.45] transition-shadow';
@@ -28,11 +32,24 @@ export function TrackedWas({ children }: { children: string }) {
 interface TokenProps {
   token: OutlineToken | DiffToken;
   onEdit?: TokenEditHandler;
+  onOpen?: TokenOpenHandler;
+  openKey?: string | null;
 }
 
 /** A value in the outline. Editable tokens open a small editor in place. */
-export function Token({ token, onEdit }: TokenProps) {
+export function Token({ token, onEdit, onOpen, openKey }: TokenProps) {
   const was = 'was' in token ? token.was : undefined;
+  if (was !== undefined && onEdit) {
+    return (
+      <>
+        <EditableToken token={token} onEdit={onEdit} onOpen={onOpen} openKey={openKey} />
+        <span className="ml-0.5 font-mono text-[0.85em] text-fg-3 line-through decoration-fg-3">
+          <span className="sr-only">was </span>
+          {was}
+        </span>
+      </>
+    );
+  }
   if (was !== undefined) {
     return (
       <>
@@ -45,10 +62,20 @@ export function Token({ token, onEdit }: TokenProps) {
     );
   }
   if (!onEdit) return <span className={`${BASE} ${token.bad ? BAD : IDLE}`}>{token.text}</span>;
-  return <EditableToken token={token} onEdit={onEdit} />;
+  return <EditableToken token={token} onEdit={onEdit} onOpen={onOpen} openKey={openKey} />;
 }
 
-function EditableToken({ token, onEdit }: { token: OutlineToken; onEdit: TokenEditHandler }) {
+function EditableToken({
+  token,
+  onEdit,
+  onOpen,
+  openKey,
+}: {
+  token: OutlineToken;
+  onEdit: TokenEditHandler;
+  onOpen?: TokenOpenHandler;
+  openKey?: string | null;
+}) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLSpanElement>(null);
   const button = useRef<HTMLButtonElement>(null);
@@ -65,9 +92,12 @@ function EditableToken({ token, onEdit }: { token: OutlineToken; onEdit: TokenEd
         ref={button}
         type="button"
         aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className={`${BASE} ${open ? OPEN : token.bad ? BAD : IDLE} cursor-pointer hover:shadow-[inset_0_0_0_1px_rgb(var(--line-strong))]`}
+        aria-expanded={open || openKey === tokenKey(token)}
+        onClick={() => {
+          if (!open && onOpen?.(token)) return;
+          setOpen((o) => !o);
+        }}
+        className={`${BASE} ${open || openKey === tokenKey(token) ? OPEN : token.bad ? BAD : IDLE} cursor-pointer hover:shadow-[inset_0_0_0_1px_rgb(var(--line-strong))]`}
       >
         {token.text}
       </button>

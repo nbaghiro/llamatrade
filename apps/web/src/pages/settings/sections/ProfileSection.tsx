@@ -113,7 +113,7 @@ export function ProfileSection() {
 
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <span className="text-xs text-fg-3">
-          Profile changes and account deletion are handled by email during the beta.
+          Name and email can&apos;t be changed here yet. Editing them is planned.
         </span>
         <button
           type="button"

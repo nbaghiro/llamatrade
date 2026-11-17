@@ -27,6 +27,8 @@ from llamatrade_common.auth import user_token_signing_key, user_token_verificati
 from llamatrade_db.models.auth import Tenant, User
 from llamatrade_telemetry import metrics
 
+from src.services.invites import check_invite, redeem_invite
+
 SIGNING_KEY, SIGNING_ALGORITHM = user_token_signing_key()
 VERIFY_KEY, VERIFY_ALGORITHM = user_token_verification_key()
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
@@ -116,15 +118,18 @@ async def create_tenant_and_user(
     email: str,
     password: str,
     tenant_name: str,
+    invite_code: str,
     first_name: str | None = None,
     last_name: str | None = None,
 ) -> tuple[User, Tenant]:
-    """Create a tenant + its first (admin) user; ``flush`` but do not commit.
+    """Create a tenant + its first (admin) user and redeem the invite; ``flush`` but do not commit.
 
-    Raises ``PasswordPolicyError`` for a weak password and
-    ``ValueError("email_taken")`` if the email already exists.
+    Raises ``PasswordPolicyError`` for a weak password, ``InviteCodeError`` for a
+    code this email cannot use, and ``ValueError("email_taken")`` if the email
+    already exists.
     """
     validate_password_strength(password)
+    await check_invite(db, invite_code, email)
 
     existing = await db.scalar(select(User).where(User.email == email))
     if existing is not None:
@@ -152,6 +157,7 @@ async def create_tenant_and_user(
     )
     db.add(user)
     await db.flush()
+    await redeem_invite(db, invite_code, email, user.id)
     return user, tenant
 
 

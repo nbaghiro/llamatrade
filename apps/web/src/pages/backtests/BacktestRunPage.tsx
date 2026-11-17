@@ -13,9 +13,11 @@ import {
   useRunView,
 } from '../../components/backtest';
 import { csvRow, downloadText } from '../../components/backtest/files';
-import { PageHead, RunStatus } from '../../components/backtest/parts';
+import { RunStatus } from '../../components/backtest/parts';
 import { isFinished, runMeta, runSeconds, toTradeInputs } from '../../components/backtest/runData';
+import { YearCurve } from '../../components/backtest/YearCurve';
 import { DeploySheet } from '../../components/sessions/DeploySheet';
+import { PageHead } from '../../components/ui/PageHead';
 import { PanelError } from '../../components/ui/PanelError';
 import { SkeletonChart, SkeletonFigure } from '../../components/ui/Skeleton';
 import {
@@ -74,11 +76,11 @@ export default function BacktestRunPage() {
   }, [run, fetchVersionDsl]);
 
   useEffect(() => {
-    if (!run || run.status !== BacktestStatus.COMPLETED || !tradesView) return;
+    if (!run || run.status !== BacktestStatus.COMPLETED) return;
     if (tradesFor.current === run.id) return;
     tradesFor.current = run.id;
     loadAllTrades(run.id).catch(() => undefined);
-  }, [run, tradesView, loadAllTrades]);
+  }, [run, loadAllTrades]);
 
   const trades = useMemo(
     () =>
@@ -182,7 +184,7 @@ export default function BacktestRunPage() {
         </Link>
         <PageHead
           title={`${view.strategyName} · trades and monthly returns`}
-          meta={
+          sub={
             orderCount === null
               ? 'Loading the orders…'
               : `${formatNumber(orderCount, { dp: 0 })} simulated orders over ${formatNumber(rebalanceCount ?? 0, { dp: 0 })} rebalances · pick a month`
@@ -193,6 +195,13 @@ export default function BacktestRunPage() {
               CSV
             </button>
           }
+        />
+        <YearCurve
+          run={run}
+          trades={trades}
+          month={month}
+          strategyName={view.strategyName}
+          onMonth={(m) => navigate({ hash: `month-${m}` }, { replace: true })}
         />
         <MonthByMonth
           run={run}
@@ -208,7 +217,7 @@ export default function BacktestRunPage() {
     <div className="page grid gap-3.5">
       <PageHead
         title={name}
-        meta={metaLine}
+        sub={metaLine}
         actions={
           <>
             <RunStatus
@@ -248,6 +257,7 @@ export default function BacktestRunPage() {
         currentDate={view.currentDate}
         strategyName={view.strategyName}
         rebalance={view.rebalance}
+        trades={trades}
         failure={
           view.phase === 'failed' || view.phase === 'cancelled' ? (
             <RunFailure
@@ -255,6 +265,7 @@ export default function BacktestRunPage() {
               message={run.statusMessage}
               strategyId={run.strategyId}
               onBack={() => navigate('/backtest')}
+              run={run}
             />
           ) : undefined
         }

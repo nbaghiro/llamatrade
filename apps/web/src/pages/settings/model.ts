@@ -1,14 +1,8 @@
 import type { PlanTierConfig } from '@llamatrade/core/billing/planTiers';
 import type { AlpacaCredentialsListItem } from '@llamatrade/core/proto/auth_pb';
-import type { PaymentMethod, Subscription } from '@llamatrade/core/proto/billing_pb';
+import type { Subscription } from '@llamatrade/core/proto/billing_pb';
 
-import {
-  cardSummary,
-  formatDate,
-  formatUsd,
-  formatUsdWhole,
-  moneyToNumber,
-} from '../../components/billing/format';
+import { formatDate, formatUsdWhole, moneyToNumber } from '../../components/billing/format';
 import type { AuthUser } from '../../store/auth';
 
 export function displayName(user: Pick<AuthUser, 'firstName' | 'lastName'> | null): string {
@@ -39,47 +33,51 @@ export function keyMismatch(pasted: string, prefix: string): string | null {
   return null;
 }
 
-export interface PlanCell {
-  label: string;
-  value: string;
-  sub: string;
+export interface PlanLine {
+  name: string;
+  badge: string | null;
+  note: string;
+  amount: string;
+  ending: boolean;
 }
 
-/** The three figures under the plan name: next invoice, amount and how it's paid. */
-export function planCells(
-  subscription: Subscription,
-  tier: PlanTierConfig,
-  card: PaymentMethod | null,
-  beta: boolean
-): PlanCell[] {
+/** The one rim-lit line at the top of Plan and usage: the plan, the deal and this month's charge. */
+export function planLine(subscription: Subscription, tier: PlanTierConfig): PlanLine {
+  const name = subscription.plan?.name || tier.name;
   const listed = moneyToNumber(subscription.plan?.monthlyPrice) || tier.monthlyPrice;
-  const paidWith: PlanCell = card
-    ? {
-        label: 'Paid with',
-        value: card.cardLast4 ? `•••• ${card.cardLast4}` : cardSummary(card.cardBrand, ''),
-        sub: `${cardSummary(card.cardBrand, '')}, ${card.isDefault ? 'default card' : 'saved card'}`,
-      }
-    : {
-        label: 'Paid with',
-        value: 'No card',
-        sub: beta ? 'not needed yet' : 'add one to keep the plan',
-      };
-  if (beta) {
-    return [
-      { label: 'Next invoice', value: 'None', sub: 'during the beta' },
-      { label: 'Amount', value: formatUsd(0), sub: `listed at ${formatUsdWhole(listed)} a month` },
-      paidWith,
-    ];
+  if (subscription.cancelAtPeriodEnd) {
+    return {
+      name,
+      badge: 'Ending',
+      note: `Ends ${formatDate(subscription.currentPeriodEnd)}. No further charges.`,
+      amount: formatUsdWhole(0),
+      ending: true,
+    };
+  }
+  if (subscription.isTrial) {
+    return {
+      name,
+      badge: 'Trial',
+      note: `Trial ends ${formatDate(subscription.trialEnd)}. Then ${formatUsdWhole(listed)} a month.`,
+      amount: formatUsdWhole(0),
+      ending: false,
+    };
   }
   const amount = moneyToNumber(subscription.currentPrice) || listed;
-  const ends = subscription.cancelAtPeriodEnd;
-  return [
-    {
-      label: ends ? 'Plan ends' : 'Next invoice',
-      value: formatDate(subscription.currentPeriodEnd),
-      sub: ends ? 'no further charges' : 'billed monthly',
-    },
-    { label: 'Amount', value: formatUsd(ends ? 0 : amount), sub: 'a month' },
-    paidWith,
-  ];
+  if (amount <= 0) {
+    return {
+      name,
+      badge: null,
+      note: 'No charge. Compare plans to raise your limits.',
+      amount: formatUsdWhole(0),
+      ending: false,
+    };
+  }
+  return {
+    name,
+    badge: null,
+    note: `Billed monthly. Next invoice ${formatDate(subscription.currentPeriodEnd)}.`,
+    amount: formatUsdWhole(amount),
+    ending: false,
+  };
 }

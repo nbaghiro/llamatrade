@@ -128,6 +128,15 @@ export function PendingArtifactCard({ artifact }: PendingArtifactCardProps) {
         <button
           type="button"
           className="btn btn-primary"
+          onClick={() => navigate(`/strategies/builder?artifact=${artifact.id}`)}
+          disabled={!dsl}
+        >
+          <PenLine className="h-3.5 w-3.5" />
+          Open in the builder
+        </button>
+        <button
+          type="button"
+          className="btn btn-secondary"
           onClick={save}
           disabled={saved || saving || !dsl}
         >
@@ -147,15 +156,6 @@ export function PendingArtifactCard({ artifact }: PendingArtifactCardProps) {
         >
           <FlaskConical className="h-3.5 w-3.5" />
           Backtest
-        </button>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => navigate(`/strategies/builder?artifact=${artifact.id}`)}
-          disabled={!dsl}
-        >
-          <PenLine className="h-3.5 w-3.5" />
-          Open in editor
         </button>
         {dsl && (
           <button

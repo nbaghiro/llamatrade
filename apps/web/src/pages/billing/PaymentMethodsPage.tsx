@@ -1,4 +1,3 @@
-import { CLOSED_BETA } from '@llamatrade/core/billing/planTiers';
 import { useBillingStore } from '@llamatrade/core/stores/billing';
 import { Elements } from '@stripe/react-stripe-js';
 import { loadStripe, type Stripe } from '@stripe/stripe-js';
@@ -111,11 +110,7 @@ export default function PaymentMethodsPage() {
         Plan and usage
       </Link>
       <h1 className="m-0 text-[21px] leading-tight">Payment methods</h1>
-      <p className="mb-4 mt-[3px] text-[12.5px] text-fg-3">
-        {CLOSED_BETA
-          ? "You won't need a card until paid plans open after the beta."
-          : 'The default card pays for your plan.'}
-      </p>
+      <p className="mb-4 mt-[3px] text-[12.5px] text-fg-3">The default card pays for your plan.</p>
 
       {localError && (
         <div

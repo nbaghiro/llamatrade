@@ -79,6 +79,12 @@ class AuthServiceStub(object):
             response_deserializer=auth__pb2.ResendVerificationResponse.FromString,
             _registered_method=True,
         )
+        self.JoinWaitlist = channel.unary_unary(
+            "/llamatrade.AuthService/JoinWaitlist",
+            request_serializer=auth__pb2.JoinWaitlistRequest.SerializeToString,
+            response_deserializer=auth__pb2.JoinWaitlistResponse.FromString,
+            _registered_method=True,
+        )
         self.ValidateToken = channel.unary_unary(
             "/llamatrade.AuthService/ValidateToken",
             request_serializer=auth__pb2.ValidateTokenRequest.SerializeToString,
@@ -208,6 +214,12 @@ class AuthServiceServicer(object):
         context.set_details("Method not implemented!")
         raise NotImplementedError("Method not implemented!")
 
+    def JoinWaitlist(self, request, context):
+        """Marketing waitlist (unauthenticated)"""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
     def ValidateToken(self, request, context):
         """Token validation (high-frequency, called by all services)"""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -320,6 +332,11 @@ def add_AuthServiceServicer_to_server(servicer, server):
             servicer.ResendVerification,
             request_deserializer=auth__pb2.ResendVerificationRequest.FromString,
             response_serializer=auth__pb2.ResendVerificationResponse.SerializeToString,
+        ),
+        "JoinWaitlist": grpc.unary_unary_rpc_method_handler(
+            servicer.JoinWaitlist,
+            request_deserializer=auth__pb2.JoinWaitlistRequest.FromString,
+            response_serializer=auth__pb2.JoinWaitlistResponse.SerializeToString,
         ),
         "ValidateToken": grpc.unary_unary_rpc_method_handler(
             servicer.ValidateToken,
@@ -676,6 +693,36 @@ class AuthService(object):
             "/llamatrade.AuthService/ResendVerification",
             auth__pb2.ResendVerificationRequest.SerializeToString,
             auth__pb2.ResendVerificationResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def JoinWaitlist(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/llamatrade.AuthService/JoinWaitlist",
+            auth__pb2.JoinWaitlistRequest.SerializeToString,
+            auth__pb2.JoinWaitlistResponse.FromString,
             options,
             channel_credentials,
             insecure,

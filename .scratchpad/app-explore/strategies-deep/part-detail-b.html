@@ -1,0 +1,803 @@
+<style>
+  /* Strategy detail, round two: rules, versions, performance (prefixed sr-) */
+  .sr-pg { padding: 22px 32px; max-width: 1300px; margin: 0 auto; }
+  .sr-svg { display: block; width: 100%; overflow: visible; }
+  .sr-ylab { position: absolute; top: 0; bottom: 0; right: 0; width: 48px; }
+  .sr-ylab span { position: absolute; right: 0; transform: translateY(-50%); font: 400 10.5px var(--mono); color: var(--fg-3); }
+  .sr-band { fill: var(--risk-soft); }
+  .sr-zone { fill: var(--acc-soft); }
+  .sr-th { stroke: var(--fg-3); stroke-dasharray: 4 4; stroke-width: 1; }
+  .sr-rsi { fill: none; stroke: var(--fg-2); stroke-width: 1.3; stroke-linejoin: round; }
+  .sr-zero { stroke: var(--fg-3); stroke-width: 1; }
+  .sr-rebl { stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 2 3; }
+  .sr-gapf { fill: var(--loss); fill-opacity: 0.09; }
+  .sr-leg { display: flex; gap: 14px; align-items: center; font-size: 12px; color: var(--fg-2); flex-wrap: wrap; }
+  .sr-leg > span { display: inline-flex; align-items: center; gap: 7px; }
+  .sr-leg .l { width: 14px; border-top: 2px solid var(--acc); }
+  .sr-leg .d { width: 14px; border-top: 1.5px dashed var(--fg-3); }
+  .sr-leg .sw { width: 12px; height: 8px; border-radius: 2px; }
+  .sr-num { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--acc); color: var(--bg); font: 600 10px var(--mono); flex: none; }
+  .sr-num.g { background: var(--fg-3); }
+  .sr-kv > div { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  .sr-kv > div:last-child { border-bottom: 0; }
+  .sr-kv > div > span:first-child { color: var(--fg-2); }
+  .sr-kv > div > span:last-child { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+  .sr-code { font: 400 12.5px/1.7 var(--mono); background: var(--sunk); border-radius: var(--r); padding: 8px 12px; white-space: pre; color: var(--fg-2); overflow: hidden; }
+  .sr-code .k { color: var(--acc); }
+  .sr-code .n { color: var(--fg); font-weight: 600; }
+  .sr-code .hi { background: var(--acc-soft); color: var(--fg); border-radius: 3px; padding: 0 2px; box-shadow: inset 0 -1.5px 0 var(--acc); }
+
+  /* rules A: sentence */
+  .sr-ra .wrap { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 40px; align-items: start; padding-top: 18px; }
+  .sr-say { font: 400 29px/1.62 var(--sans); letter-spacing: -0.022em; color: var(--fg-2); }
+  .sr-t { color: var(--fg); border-bottom: 2px dotted var(--acc-line); padding: 0 1px; cursor: pointer; }
+  .sr-t.on { background: var(--acc-soft); border-bottom: 2px solid var(--acc); border-radius: 4px 4px 0 0; padding: 0 5px; }
+  .sr-ra .card { padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+  .sr-ra .facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 34px; }
+  .sr-ra .facts .fig .v { font-size: 16px; }
+  .sr-msay { font: 400 20px/1.6 var(--sans); letter-spacing: -0.015em; color: var(--fg-2); }
+
+  /* rules B: tree */
+  .sr-tree { position: relative; height: 440px; margin-top: 8px; }
+  .sr-tree > svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .sr-edge { fill: none; stroke: var(--line-2); stroke-linecap: round; }
+  .sr-edge.on { stroke: var(--acc); stroke-opacity: 0.75; }
+  .sr-node { position: absolute; transform: translateY(-50%); background: var(--panel); border: 1px solid var(--line-2); border-radius: 12px; padding: 12px 15px; display: flex; flex-direction: column; gap: 6px; box-shadow: var(--shadow); }
+  .sr-node b { font-weight: 600; font-size: 14px; }
+  .sr-node.on { border-color: var(--acc-line); box-shadow: 0 0 0 3px var(--acc-soft), var(--shadow); }
+  .sr-node .cnt { font: 600 20px/1 var(--mono); letter-spacing: -0.03em; }
+  .sr-node .alloc-legend { margin-top: 4px; font-size: 11px; }
+  .sr-elab { position: absolute; transform: translate(-50%, -50%); padding: 2px 8px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line-2); font: 500 11px var(--mono); color: var(--fg-2); white-space: nowrap; }
+  .sr-elab.on { border-color: var(--acc-line); color: var(--acc); }
+  .sr-mb .meter { height: 8px; }
+
+  /* rules C + perf C: timeline lanes */
+  .sr-tl { display: grid; grid-template-columns: 132px minmax(0, 1fr) 54px; }
+  .sr-tl > .lab { display: flex; align-items: center; font-size: 12px; color: var(--fg-2); padding-right: 12px; min-width: 0; }
+  .sr-tl > .lab.top { align-items: flex-start; padding-top: 6px; }
+  .sr-tl > .tr { position: relative; min-width: 0; }
+  .sr-tl > .rt { position: relative; }
+  .sr-lane { height: 24px; border-top: 1px solid var(--line); }
+  .sr-seg { position: absolute; top: 6px; height: 12px; }
+  .sr-seg.def { background: var(--acc); }
+  .sr-seg.mom { background: var(--c4); }
+  .sr-seg.pQV { background: var(--c2); }
+  .sr-seg.pQI { background: var(--c3); }
+  .sr-seg.pVI { background: var(--c4); }
+  .sr-xl { height: 22px; border-top: 1px solid var(--line); }
+  .sr-xl span { position: absolute; top: 5px; font: 400 10.5px var(--mono); color: var(--fg-3); }
+  .sr-vl { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1.5px solid var(--fg); z-index: 2; pointer-events: none; }
+  .sr-vl .tag { position: absolute; top: -22px; left: 0; transform: translateX(-50%); padding: 1px 6px; border-radius: 4px; background: var(--fg); color: var(--bg); font: 600 10px var(--mono); white-space: nowrap; }
+  .sr-rc .lower { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin-top: 14px; }
+  .sr-rc .hero { padding: 14px 18px 4px; }
+  .sr-mlanes .sr-lane { height: 20px; position: relative; }
+  .sr-mlanes .sr-seg { top: 5px; height: 10px; }
+
+  /* rules D: walk a date */
+  .sr-rd .scrub { display: flex; align-items: center; gap: 14px; padding: 12px 16px; }
+  .sr-rd .ticks { position: relative; flex: 1; height: 34px; }
+  .sr-rd .ticks i { position: absolute; top: 8px; width: 3px; height: 14px; margin-left: -1.5px; border-radius: 1px; background: var(--c4); }
+  .sr-rd .ticks i.def { background: var(--acc); }
+  .sr-rd .ticks i.sel { height: 22px; top: 4px; width: 4px; margin-left: -2px; background: var(--fg); box-shadow: 0 0 0 3px var(--acc-soft); }
+  .sr-rd .ticks span { position: absolute; bottom: -6px; white-space: nowrap; font: 400 10px var(--mono); color: var(--fg-3); transform: translateX(-50%); }
+  .sr-rd .cols2 { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 18px; margin-top: 14px; align-items: start; }
+  .sr-rd .ol .l.off { opacity: 0.45; }
+  .sr-rd .ol .l.lit { background: var(--acc-soft); box-shadow: inset 2px 0 0 var(--acc); }
+  .sr-val { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 999px; font: 500 12px var(--mono); background: var(--sunk); color: var(--fg-2); border: 1px solid var(--line); }
+  .sr-val.no { color: var(--fg-3); }
+  .sr-val.yes { color: var(--acc); border-color: var(--acc-line); background: var(--panel); }
+  .sr-rk { display: grid; grid-template-columns: 50px minmax(0, 1fr) 62px 54px; gap: 10px; align-items: center; font-size: 12.5px; padding: 6px 0; }
+  .sr-rk .meter { height: 7px; }
+  .sr-rk.out { color: var(--fg-3); }
+  .sr-rk.out .meter > i { background: var(--fg-4); }
+
+  /* versions A: on the curve */
+  .sr-va .hero { padding: 14px 0 6px; }
+  .sr-va .grid { display: grid; grid-template-columns: 150px minmax(0, 1fr) 300px; gap: 0; }
+  .sr-va .lab { padding: 0 12px 0 18px; display: flex; align-items: center; font-size: 12px; color: var(--fg-2); }
+  .sr-va .tr { position: relative; }
+  .sr-va .side { grid-row: 1 / 7; grid-column: 3; border-left: 1px solid var(--line); padding: 4px 18px 10px; display: flex; flex-direction: column; gap: 10px; }
+  .sr-pins { height: 52px; }
+  .sr-pin { position: absolute; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line-2); font: 500 10.5px var(--mono); color: var(--fg-2); white-space: nowrap; }
+  .sr-pin.l { transform: none; }
+  .sr-pin.r { transform: translateX(-100%); }
+  .sr-pin.acc { border-color: var(--acc-line); color: var(--fg); background: var(--acc-soft); }
+  .sr-va .vl { position: absolute; top: 0; bottom: 0; border-left: 1px dashed var(--line-2); z-index: 1; }
+  .sr-va .vl.acc { border-left: 1.5px solid var(--acc); }
+  .sr-vlane { height: 30px; border-top: 1px solid var(--line); }
+  .sr-vseg { position: absolute; top: 6px; height: 18px; border-radius: 4px; display: flex; align-items: center; padding: 0 7px; font: 500 10.5px var(--mono); white-space: nowrap; overflow: hidden; background: var(--sunk); color: var(--fg-2); border: 1px solid var(--line); }
+  .sr-vseg.on { background: var(--acc-soft); border-color: var(--acc-line); color: var(--fg); }
+  .sr-vseg.run { background: transparent; border: 1px dashed var(--line-2); }
+  .sr-m { position: absolute; top: 10px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--panel); border: 1.5px solid var(--acc); z-index: 2; }
+  .sr-m.f { border-color: var(--risk); background: var(--risk-soft); }
+  .sr-m.g { border-color: var(--fg-3); }
+  .sr-va .lower { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin-top: 14px; }
+
+  /* versions B: changelog */
+  .sr-vb .doc { max-width: 1080px; margin: 0 auto; }
+  .sr-vb .ent { display: grid; grid-template-columns: 56px minmax(0, 1fr) 280px; gap: 0 24px; padding: 18px 0; border-top: 1px solid var(--line); }
+  .sr-vb .ent .vn { font: 600 13px var(--mono); color: var(--fg-3); padding-top: 3px; }
+  .sr-vb .ent.on .vn { color: var(--acc); }
+  .sr-vb .ent h3 { font: 600 17px/1.3 var(--sans); letter-spacing: -0.012em; margin: 0 0 7px; }
+  .sr-vb .ent p { font-size: 14.5px; line-height: 1.62; color: var(--fg-2); margin: 0; max-width: 640px; }
+  .sr-vb .ent p b { color: var(--fg); font-weight: 600; }
+  .sr-vb .mg { border-left: 1px solid var(--line); padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+  .sr-ba { display: grid; grid-template-columns: minmax(0, 1fr) 54px 54px; gap: 4px 8px; align-items: center; font-size: 12px; }
+  .sr-ba > .mono { text-align: right; }
+  .sr-ba .h { font-size: var(--lbl-size); letter-spacing: var(--lbl-track); text-transform: var(--lbl-tf); color: var(--fg-3); }
+
+  /* versions C: branch */
+  .sr-vc .graph { position: relative; height: 270px; }
+  .sr-vc .ln { position: absolute; height: 0; border-top: 2px solid var(--line-2); }
+  .sr-vc .ln.acc { border-top-color: var(--acc); }
+  .sr-vc .ln.dash { border-top: 2px dashed var(--line-2); }
+  .sr-vc .drop { position: absolute; border-left: 2px solid var(--acc); border-bottom: 2px solid var(--acc); border-bottom-left-radius: 18px; }
+  .sr-vc .drop.dash { border-color: var(--line-2); border-style: dashed; }
+  .sr-vc .nd { position: absolute; transform: translate(-50%, -50%); width: 16px; height: 16px; border-radius: 50%; background: var(--bg); border: 2px solid var(--fg-3); }
+  .sr-vc .nd.on { border-color: var(--acc); background: var(--acc); box-shadow: 0 0 0 5px var(--acc-soft); }
+  .sr-vc .nd.end { width: 12px; height: 12px; background: var(--acc); border-color: var(--acc); }
+  .sr-vc .cap { position: absolute; display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; }
+  .sr-vc .cap b { font-weight: 600; font-size: 14px; }
+  .sr-vc .lower { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+  .sr-mgraph { position: relative; padding-left: 26px; display: flex; flex-direction: column; gap: 12px; }
+  .sr-mgraph::before { content: ""; position: absolute; left: 8px; top: 12px; bottom: 40px; border-left: 2px solid var(--line-2); }
+  .sr-mgraph .it { position: relative; }
+  .sr-mgraph .it::before { content: ""; position: absolute; left: -24px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: var(--bg); border: 2px solid var(--fg-3); }
+  .sr-mgraph .it.on::before { border-color: var(--acc); background: var(--acc); }
+  .sr-mgraph .it.br { margin-left: 22px; }
+  .sr-mgraph .it.br::before { left: -46px; width: 10px; height: 10px; background: var(--acc); border-color: var(--acc); }
+  .sr-mgraph .it.br::after { content: ""; position: absolute; left: -40px; top: -26px; width: 16px; height: 34px; border-left: 2px solid var(--acc); border-bottom: 2px solid var(--acc); border-bottom-left-radius: 10px; display: none; }
+
+  /* performance */
+  .sr-trio { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .sr-trio .fig .v { font-size: 22px; }
+  .sr-pa .cols2 { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; margin-top: 14px; }
+  .sr-pa .ch { position: relative; padding-right: 54px; }
+  .sr-pa .ch .sr-ylab { right: 0; }
+  .sr-anno { position: absolute; transform: translate(-50%, -50%); z-index: 2; }
+  .sr-anno.r { transform: translate(-100%, -50%); }
+  .sr-pa .xl { position: relative; height: 22px; margin-right: 54px; }
+  .sr-pa .xl span { position: absolute; top: 5px; font: 400 10.5px var(--mono); color: var(--fg-3); transform: translateX(-50%); }
+  .sr-why { display: flex; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); align-items: flex-start; }
+  .sr-why:last-child { border-bottom: 0; }
+  .sr-why > div { flex: 1; min-width: 0; }
+  .sr-why b { font-weight: 600; font-size: 13px; }
+  .sr-why .mono { flex: none; font-size: 12.5px; }
+
+  .sr-cal { display: grid; gap: 3px; }
+  .sr-c { height: 30px; border-radius: 3px; background: var(--sunk); position: relative; }
+  .sr-c.pre, .sr-c.fut { background: transparent; box-shadow: inset 0 0 0 1px var(--line); }
+  .sr-c.hol { background: repeating-linear-gradient(135deg, transparent 0 3px, var(--line-2) 3px 4px); }
+  .sr-c.reb { box-shadow: inset 0 0 0 1.5px var(--fg); }
+  .sr-c.sel { outline: 2px solid var(--acc); outline-offset: 2px; z-index: 1; }
+  .sr-c.today { box-shadow: inset 0 0 0 1.5px var(--acc); }
+  .sr-cd { font: 400 10.5px var(--mono); color: var(--fg-3); display: flex; align-items: center; }
+  .sr-cm { font: 500 10.5px var(--mono); color: var(--fg-3); white-space: nowrap; overflow: visible; height: 14px; }
+  .sr-ch { height: 14px; }
+  .sr-pb .cols2 { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; margin-top: 14px; align-items: start; }
+  .sr-scale { display: flex; align-items: center; gap: 6px; font: 400 10.5px var(--mono); color: var(--fg-3); }
+  .sr-scale i { width: 16px; height: 10px; border-radius: 2px; }
+  .sr-mcal .sr-c { height: 13px; border-radius: 2px; }
+  .sr-mcal { gap: 2px; }
+
+  .sr-pc .ch { position: relative; padding-right: 54px; }
+  .sr-pc .wins { position: absolute; inset: 0 54px 0 0; pointer-events: none; }
+  .sr-pc .wins span { position: absolute; top: 6px; transform: translateX(-50%); }
+  .sr-pc .tbl td { padding-top: 9px; padding-bottom: 9px; }
+  .sr-pc .xl { position: relative; height: 22px; margin-right: 54px; }
+  .sr-pc .xl span { position: absolute; top: 5px; font: 400 10.5px var(--mono); color: var(--fg-3); }
+
+  .sr-pd .cols2 { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 22px; align-items: start; }
+  .sr-chk { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 4px 12px; padding: 13px 18px; border-bottom: 1px solid var(--line); align-items: start; }
+  .sr-chk:last-child { border-bottom: 0; }
+  .sr-chk > .ic { width: 20px; height: 20px; margin-top: 1px; }
+  .sr-chk.ok > .ic { color: var(--gain); }
+  .sr-chk.warn > .ic { color: var(--risk); }
+  .sr-chk.miss > .ic { color: var(--fg-3); }
+  .sr-chk b { font-weight: 600; font-size: 13.5px; }
+  .sr-chk .d { font-size: 12.5px; color: var(--fg-2); margin-top: 2px; line-height: 1.5; }
+  .sr-chk .a { font-size: 12px; color: var(--fg-3); white-space: nowrap; padding-top: 2px; }
+  .sr-chk .a.acc { color: var(--acc); font-weight: 500; }
+  .sr-mchk .m-row { align-items: flex-start; }
+  .sr-mchk .m-row .ic { width: 18px; height: 18px; margin-top: 2px; }
+  .sr-mchk .ok .ic, .sr-mchk .ic.ok { color: var(--gain); }
+  .sr-mchk .ic.warn { color: var(--risk); }
+  .sr-mchk .ic.miss { color: var(--fg-3); }
+</style>
+
+<section class="ax-surface" id="strategies-rules2"
+  data-surface="strategies/rules2"
+  data-area="Strategies"
+  data-title="Rules, round two"
+  data-why="Four more ways to show what a strategy does, each using what the backtest already knows: how often a rule mattered, when, and why.">
+
+  <div class="ax-opt" data-opt="A" data-name="One sentence, opened up"
+    data-note="The whole strategy as one sentence, with every value underlined. Opening a value shows its line of code, what it reads today, how often it mattered in the backtest and when it last changed. It's the quickest way for someone new to understand the strategy. The sentence comes from fixed wording for each block type, so deep nesting reads badly: a strategy like Sector RSI Rotation, with four nested conditions, would need to fall back to the numbered outline.">
+<div data-frame="desktop" data-path="strategies/recession-radar/rules"><div class="app"><div data-tb="Strategies"></div><div class="main"><div class="page sr-pg"><div class="row"><span class="h2">Recession Radar</span><span class="st run">Running in paper</span><span class="sp"></span><div class="tabs" style="border:0"><a>Overview</a><a>Would hold today</a><a class="on">Rules</a><a>Performance</a><a>Versions</a></div></div><div class="hr" style="margin:6px 0 18px"></div>
+<div class="sr-ra">
+  <div class="row"><span class="xs dim">Version 3 · written from the rules</span><span class="sp"></span><div class="seg"><span class="on">Sentence</span><span>Outline</span><span>Code</span></div><span class="btn sm pri"><span data-icon="edit"></span>Edit</span></div>
+  <div class="wrap">
+    <div>
+      <p class="sr-say">On the first trading day of each month, if <span class="sr-t">SPY's 14-day RSI</span> is above <span class="sr-t on">70</span>, hold <span class="sr-t">TLT at 60%</span> and <span class="sr-t">GLD at 40%</span>. Otherwise, hold the <span class="sr-t">top 2</span> of <span class="sr-t">VTI, QQQ and IWM</span> ranked by <span class="sr-t">90-day return</span>, with more weight on the stronger one.</p>
+      <div class="sm dim" style="margin-top:18px">Each underlined part opens its rule. The sentence is rebuilt from the code whenever you save, so it always matches what runs.</div>
+      <div class="figs boxed facts" style="--n:4">
+        <div class="fig"><div class="lbl">Trades</div><div class="v">5 symbols</div><div class="s">TLT GLD VTI QQQ IWM</div></div>
+        <div class="fig"><div class="lbl">Reads only</div><div class="v">SPY</div><div class="s">signal and benchmark</div></div>
+        <div class="fig"><div class="lbl">History needed</div><div class="v">90 days</div><div class="s">trading days</div></div>
+        <div class="fig"><div class="lbl">Next rebalance</div><div class="v">Dec 1</div><div class="s">15:50 ET</div></div>
+      </div>
+    </div>
+    <div class="panel rim card">
+      <div class="row"><div><div class="lbl">The RSI line</div><div class="h2" style="margin-top:4px">70</div></div><span class="sp"></span><span class="ic dim" data-icon="x"></span></div>
+      <div class="sr-code">(<span class="k">if</span> (<span class="k">&gt;</span> (<span class="k">rsi</span> <span class="n">SPY</span> <span class="n">14</span>) <span class="hi">70</span>)</div>
+      <div class="sr-kv">
+        <div><span>SPY's RSI today</span><span>73.8, above</span></div>
+        <div><span>So today it holds</span><span>TLT and GLD</span></div>
+        <div><span>Above 70 in the backtest</span><span>6 of 24 months</span></div>
+        <div><span>Changed in version 3</span><span>was 65</span></div>
+      </div>
+      <div class="sm muted" style="line-height:1.5">A higher line means fewer months in treasuries and gold. Version 2 used 65 and was above it in 9 of the same 24 months.</div>
+      <div class="row" style="gap:8px"><span class="btn sm pri">Change the value</span><span class="btn sm"><span data-icon="copilot"></span>Ask Copilot</span></div>
+    </div>
+  </div>
+</div></div></div></div></div>
+<div data-frame="phone"><div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Recession Radar</span><span></span><span></span></div><div class="m-head" style="padding-top:0"><div class="t" style="font-size:24px">Rules</div><div class="s">Version 3 · tap a part to open it</div></div>
+<div class="m-body">
+  <p class="sr-msay" style="margin:0">On the first trading day of each month, if <span class="sr-t">SPY's 14-day RSI</span> is above <span class="sr-t on">70</span>, hold <span class="sr-t">TLT 60%</span> and <span class="sr-t">GLD 40%</span>. Otherwise, the <span class="sr-t">top 2</span> of <span class="sr-t">VTI, QQQ and IWM</span> by <span class="sr-t">90-day return</span>.</p>
+</div>
+<nav data-tabs="strategies"></nav>
+<div class="scrim"></div>
+<div class="sheet">
+  <div class="row"><div><div class="lbl">The RSI line</div><div class="h2" style="margin-top:4px">70</div></div><span class="sp"></span><span class="ic dim" data-icon="x" style="width:20px;height:20px"></span></div>
+  <div class="sr-code" style="margin-top:12px;font-size:12px">(<span class="k">&gt;</span> (<span class="k">rsi</span> <span class="n">SPY</span> <span class="n">14</span>) <span class="hi">70</span>)</div>
+  <div class="sr-kv" style="margin-top:8px">
+    <div><span>SPY's RSI today</span><span>73.8, above</span></div>
+    <div><span>Above 70 in the backtest</span><span>6 of 24</span></div>
+    <div><span>Changed in version 3</span><span>was 65</span></div>
+  </div>
+  <div class="m-btn" style="margin-top:14px">Change the value</div>
+</div>
+</div>
+  </div>
+
+  <div class="ax-opt" data-opt="B" data-name="Tree with backtest counts"
+    data-note="The rules as a tree, with each branch labelled by how many of the backtest's 24 rebalances took it and the line drawn thicker for the busier branch. Under momentum, it shows which pair was picked and how often. It answers how much each rule actually mattered, which a plain outline can't. The counts need the backtest to record which branch each rebalance took, and a switch to paper counts says the same thing for real trading once there are enough rebalances to be worth reading.">
+<div data-frame="desktop" data-path="strategies/recession-radar/rules?view=tree"><div class="app"><div data-tb="Strategies"></div><div class="main"><div class="page sr-pg"><div class="row"><span class="h2">Recession Radar</span><span class="st run">Running in paper</span><span class="sp"></span><div class="tabs" style="border:0"><a>Overview</a><a>Would hold today</a><a class="on">Rules</a><a>Performance</a><a>Versions</a></div></div><div class="hr" style="margin:6px 0 18px"></div>
+<div class="sr-rb">
+  <div class="row"><div class="sm muted">Version 3 · counts come from the backtest of Nov 2024 to Oct 2026, 24 monthly rebalances</div><span class="sp"></span><div class="seg"><span class="on">Backtest, 24</span><span>Paper session, 6</span></div><span class="btn sm pri"><span data-icon="edit"></span>Edit</span></div>
+  <div class="sr-tree">
+    <svg viewBox="0 0 1000 440" preserveAspectRatio="none"><path class="sr-edge on" d="M168,220 C202.0,220 202.0,220 236,220" stroke-width="7" vector-effect="non-scaling-stroke"/><path class="sr-edge on" d="M436,220 C478.0,220 478.0,92 520,92" stroke-width="2.6" vector-effect="non-scaling-stroke"/><path class="sr-edge" d="M436,220 C478.0,220 478.0,300 520,300" stroke-width="5.2" vector-effect="non-scaling-stroke"/><path class="sr-edge" d="M740,300 C770.0,300 770.0,220 800,220" stroke-width="3.6" vector-effect="non-scaling-stroke"/><path class="sr-edge" d="M740,300 C770.0,300 770.0,318 800,318" stroke-width="1.9" vector-effect="non-scaling-stroke"/><path class="sr-edge" d="M740,300 C770.0,300 770.0,410 800,410" stroke-width="1.6" vector-effect="non-scaling-stroke"/></svg>
+    <div class="sr-node" style="left:0;top:50%;width:16.8%"><span class="lbl">Every month</span><b>1st trading day</b><span class="xs dim">24 rebalances</span></div>
+    <div class="sr-node rim" style="left:23.6%;top:50%;width:20%"><span class="lbl">Condition</span><b class="mono">SPY RSI 14 &gt; 70</b><span class="xs dim mono">today 73.8</span></div>
+    <span class="sr-elab on" style="left:47.8%;top:28%">yes · 6</span>
+    <span class="sr-elab" style="left:47.8%;top:60.6%">no · 18</span>
+    <div class="sr-node on" style="left:52%;top:21%;width:22%"><div class="row"><span class="lbl">Fixed weights</span><span class="sp"></span><span class="pill acc">Today</span></div><div class="row base"><span class="cnt">6</span><span class="xs dim">of 24 months · 25%</span></div><div data-chart="alloc" data-items="TLT:60,GLD:40"></div><span class="xs dim">Average month +0.5% · worst −1.9%</span></div>
+    <div class="sr-node" style="left:52%;top:68.2%;width:22%"><span class="lbl">Momentum, 90 days, top 2</span><div class="row base"><span class="cnt">18</span><span class="xs dim">of 24 months · 75%</span></div><span class="xs dim">from VTI, QQQ and IWM</span><span class="xs dim">Average month +0.9% · worst −4.1%</span></div>
+    <div class="sr-node" style="left:80%;top:50%;width:20%;padding:9px 13px"><div class="row"><b class="mono" style="font-size:13px">QQQ + VTI</b><span class="sp"></span><span class="mono sm">11</span></div><div class="meter"><i style="width:61%"></i></div></div>
+    <div class="sr-node" style="left:80%;top:72.3%;width:20%;padding:9px 13px"><div class="row"><b class="mono" style="font-size:13px">QQQ + IWM</b><span class="sp"></span><span class="mono sm">4</span></div><div class="meter"><i style="width:22%"></i></div></div>
+    <div class="sr-node" style="left:80%;top:93.2%;width:20%;padding:9px 13px"><div class="row"><b class="mono" style="font-size:13px">VTI + IWM</b><span class="sp"></span><span class="mono sm">3</span></div><div class="meter"><i style="width:17%"></i></div></div>
+  </div>
+  <div class="row sm dim" style="margin-top:22px;gap:22px"><span class="row gap-6"><i style="width:18px;border-top:3px solid var(--acc);opacity:.75"></i>Path taken today</span><span>Line thickness follows how many months took each branch.</span><span class="sp"></span><span>Select a box to see those months on the curve.</span></div>
+</div></div></div></div></div>
+<div data-frame="phone"><div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Recession Radar</span><span></span><span></span></div><div class="m-head" style="padding-top:0"><div class="t" style="font-size:24px">Rules</div><div class="s">24 rebalances in the backtest</div></div>
+<div class="m-body sr-mb">
+  <div class="m-card col gap-4 rim"><span class="lbl">Each month, check</span><b class="mono">SPY RSI 14 &gt; 70</b><span class="xs dim mono">today 73.8</span></div>
+  <div class="m-card col gap-6" style="border-color:var(--acc-line)">
+    <div class="row"><span class="xs acc b">Yes · fixed weights</span><span class="sp"></span><span class="mono sm">6 of 24</span></div>
+    <div class="meter"><i style="width:25%"></i></div>
+    <div data-chart="alloc" data-items="TLT:60,GLD:40" data-legend="none"></div>
+    <span class="xs dim">TLT 60%, GLD 40% · taken today</span>
+  </div>
+  <div class="m-card col gap-6">
+    <div class="row"><span class="xs b muted">No · momentum top 2</span><span class="sp"></span><span class="mono sm">18 of 24</span></div>
+    <div class="meter ink"><i style="width:75%"></i></div>
+    <div class="sr-kv" style="margin-top:2px">
+      <div><span class="mono">QQQ + VTI</span><span>11</span></div>
+      <div><span class="mono">QQQ + IWM</span><span>4</span></div>
+      <div><span class="mono">VTI + IWM</span><span>3</span></div>
+    </div>
+  </div>
+</div><nav data-tabs="strategies"></nav></div>
+  </div>
+
+  <div class="ax-opt" data-opt="C" data-rec data-name="Rules on the timeline"
+    data-note="Recommended. The longest backtest's curve with a band under it showing which branch held each month, which pair momentum picked and SPY's RSI against the line at 70. Selecting a month explains that rebalance in a sentence. It's Home's annotated curve applied to one strategy, so the rules read as behaviour over time: here, 20 of 94 months in treasuries and gold. The cost is that the band needs one colour per branch, so strategies with more than about five leaves would group the rest into one shade, and it needs the backtest to store each rebalance's branch.">
+<div data-frame="desktop" data-path="strategies/recession-radar/rules?view=timeline"><div class="app"><div data-tb="Strategies"></div><div class="main"><div class="page sr-pg"><div class="row"><span class="h2">Recession Radar</span><span class="st run">Running in paper</span><span class="sp"></span><div class="tabs" style="border:0"><a>Overview</a><a>Would hold today</a><a class="on">Rules</a><a>Performance</a><a>Versions</a></div></div><div class="hr" style="margin:6px 0 18px"></div>
+<div class="sr-rc">
+  <div class="panel rim hero">
+    <div class="row" style="padding-bottom:10px">
+      <div><div class="lbl">Version 3 over its longest backtest</div><div class="row base" style="gap:12px;margin-top:4px"><span class="h3">Jan 2019 to Oct 2026</span><span class="mono sm gain">+88.7%</span><span class="mono sm dim">SPY +141.2%</span><span class="mono sm dim">$25,000 start</span></div></div>
+      <span class="sp"></span>
+      <div class="sr-leg"><span><i class="l"></i>Recession Radar</span><span><i class="d"></i>SPY</span><span><i class="sw" style="background:var(--acc)"></i>Treasuries and gold</span><span><i class="sw" style="background:var(--c4)"></i>Stocks by momentum</span></div>
+    </div>
+    <div class="sr-tl">
+      <div class="lab top"><div class="sr-kv" style="width:100%"><div><span>Rebalances</span><span>94</span></div><div><span>In TLT, GLD</span><span>20</span></div><div><span>Switches</span><span>22</span></div><div><span>Longest</span><span>4 mo</span></div></div></div>
+      <div class="tr"><svg class="sr-svg" viewBox="0 0 1000 176" preserveAspectRatio="none" style="height:176px"><defs><linearGradient id="srg1" x1="0" x2="0" y1="0" y2="1"><stop offset="0" class="ch-stop-a"/><stop offset="1" class="ch-stop-b"/></linearGradient></defs><line class="ch-grid" x1="0" x2="1000" y1="26.5" y2="26.5" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><line class="ch-grid" x1="0" x2="1000" y1="67.5" y2="67.5" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><line class="ch-grid" x1="0" x2="1000" y1="108.5" y2="108.5" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><line class="ch-grid" x1="0" x2="1000" y1="149.5" y2="149.5" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><path d="M0.0,146.1L10.6,148.9L21.3,147.5L31.9,144.4L42.6,145.3L53.2,148.4L63.8,148.1L74.5,146.4L85.1,143.1L95.7,144.6L106.4,146.2L117.0,145.3L127.7,144.7L138.3,140.1L148.9,138.5L159.6,149.7L170.2,144.3L180.9,136.9L191.5,137.2L202.1,139.0L212.8,141.7L223.4,141.0L234.0,140.1L244.7,140.6L255.3,140.2L266.0,139.0L276.6,136.5L287.2,132.8L297.9,132.4L308.5,134.9L319.1,133.9L329.8,135.9L340.4,135.9L351.1,139.7L361.7,139.2L372.3,140.9L383.0,139.8L393.6,142.2L404.3,143.9L414.9,142.6L425.5,145.9L436.2,146.7L446.8,149.3L457.4,146.0L468.1,148.0L478.7,151.2L489.4,148.2L500.0,146.3L510.6,148.0L521.3,142.7L531.9,143.6L542.6,141.2L553.2,140.7L563.8,137.6L574.5,138.8L585.1,135.4L595.7,135.6L606.4,133.8L617.0,132.9L627.7,132.7L638.3,134.5L648.9,131.7L659.6,129.7L670.2,124.0L680.9,124.7L691.5,122.3L702.1,120.0L712.8,118.4L723.4,117.0L734.0,115.8L744.7,117.3L755.3,120.2L766.0,120.8L776.6,118.2L787.2,115.7L797.9,111.6L808.5,116.0L819.1,112.6L829.8,109.4L840.4,109.0L851.1,105.5L861.7,98.0L872.3,98.6L883.0,100.7L893.6,92.1L904.3,91.6L914.9,86.7L925.5,82.0L936.2,86.4L946.8,74.8L957.4,70.8L968.1,69.1L978.7,64.5L989.4,64.2L1000.0,67.8L1000,176L0,176Z" fill="url(#srg1)"/><path class="ch-bench" d="M0.0,146.1L10.6,149.5L21.3,152.6L31.9,149.3L42.6,156.5L53.2,156.1L63.8,162.6L74.5,158.4L85.1,156.9L95.7,151.6L106.4,152.3L117.0,150.0L127.7,150.0L138.3,151.7L148.9,158.6L159.6,168.0L170.2,159.5L180.9,156.4L191.5,155.3L202.1,155.8L212.8,147.6L223.4,146.4L234.0,147.5L244.7,145.9L255.3,146.8L266.0,147.2L276.6,147.5L287.2,139.0L297.9,137.8L308.5,136.0L319.1,132.0L329.8,122.1L340.4,121.9L351.1,123.5L361.7,110.6L372.3,116.8L383.0,117.2L393.6,123.4L404.3,126.6L414.9,122.7L425.5,132.4L436.2,132.2L446.8,140.7L457.4,132.0L468.1,136.1L478.7,145.2L489.4,138.0L500.0,138.6L510.6,132.3L521.3,124.6L531.9,123.2L542.6,124.0L553.2,119.3L563.8,115.6L574.5,119.4L585.1,120.3L595.7,113.9L606.4,113.0L617.0,113.2L627.7,110.7L638.3,109.4L648.9,108.0L659.6,116.8L670.2,106.7L680.9,104.2L691.5,107.4L702.1,100.7L712.8,97.4L723.4,95.7L734.0,88.0L744.7,72.3L755.3,66.6L766.0,53.5L776.6,34.9L787.2,41.2L797.9,43.1L808.5,57.6L819.1,68.2L829.8,68.1L840.4,57.1L851.1,47.3L861.7,40.5L872.3,53.7L883.0,33.7L893.6,26.7L904.3,17.5L914.9,10.5L925.5,24.0L936.2,34.2L946.8,42.1L957.4,24.4L968.1,29.2L978.7,28.9L989.4,28.7L1000.0,21.4" vector-effect="non-scaling-stroke"/><path class="ch-line" d="M0.0,146.1L10.6,148.9L21.3,147.5L31.9,144.4L42.6,145.3L53.2,148.4L63.8,148.1L74.5,146.4L85.1,143.1L95.7,144.6L106.4,146.2L117.0,145.3L127.7,144.7L138.3,140.1L148.9,138.5L159.6,149.7L170.2,144.3L180.9,136.9L191.5,137.2L202.1,139.0L212.8,141.7L223.4,141.0L234.0,140.1L244.7,140.6L255.3,140.2L266.0,139.0L276.6,136.5L287.2,132.8L297.9,132.4L308.5,134.9L319.1,133.9L329.8,135.9L340.4,135.9L351.1,139.7L361.7,139.2L372.3,140.9L383.0,139.8L393.6,142.2L404.3,143.9L414.9,142.6L425.5,145.9L436.2,146.7L446.8,149.3L457.4,146.0L468.1,148.0L478.7,151.2L489.4,148.2L500.0,146.3L510.6,148.0L521.3,142.7L531.9,143.6L542.6,141.2L553.2,140.7L563.8,137.6L574.5,138.8L585.1,135.4L595.7,135.6L606.4,133.8L617.0,132.9L627.7,132.7L638.3,134.5L648.9,131.7L659.6,129.7L670.2,124.0L680.9,124.7L691.5,122.3L702.1,120.0L712.8,118.4L723.4,117.0L734.0,115.8L744.7,117.3L755.3,120.2L766.0,120.8L776.6,118.2L787.2,115.7L797.9,111.6L808.5,116.0L819.1,112.6L829.8,109.4L840.4,109.0L851.1,105.5L861.7,98.0L872.3,98.6L883.0,100.7L893.6,92.1L904.3,91.6L914.9,86.7L925.5,82.0L936.2,86.4L946.8,74.8L957.4,70.8L968.1,69.1L978.7,64.5L989.4,64.2L1000.0,67.8" vector-effect="non-scaling-stroke"/></svg><div class="sr-vl" style="left:14.36%;top:20px;bottom:-103px"><span class="tag">Feb 2020</span></div></div>
+      <div class="rt"><div class="sr-ylab"><span style="top:15.1%">$59k</span><span style="top:38.4%">$47k</span><span style="top:61.6%">$36k</span><span style="top:84.9%">$24k</span></div></div>
+    </div>
+    <div class="sr-tl"><div class="lab">Branch</div><div class="tr sr-lane"><i class="sr-seg mom" style="left:0.00%;width:8.51%"></i><i class="sr-seg def" style="left:8.51%;width:4.26%"></i><i class="sr-seg mom" style="left:12.77%;width:1.06%"></i><i class="sr-seg def" style="left:13.83%;width:1.06%"></i><i class="sr-seg mom" style="left:14.89%;width:1.06%"></i><i class="sr-seg def" style="left:15.96%;width:1.06%"></i><i class="sr-seg mom" style="left:17.02%;width:11.70%"></i><i class="sr-seg def" style="left:28.72%;width:4.26%"></i><i class="sr-seg mom" style="left:32.98%;width:25.53%"></i><i class="sr-seg def" style="left:58.51%;width:4.26%"></i><i class="sr-seg mom" style="left:62.77%;width:12.77%"></i><i class="sr-seg def" style="left:75.53%;width:1.06%"></i><i class="sr-seg mom" style="left:76.60%;width:1.06%"></i><i class="sr-seg def" style="left:77.66%;width:1.06%"></i><i class="sr-seg mom" style="left:78.72%;width:4.26%"></i><i class="sr-seg def" style="left:82.98%;width:1.06%"></i><i class="sr-seg mom" style="left:84.04%;width:5.32%"></i><i class="sr-seg def" style="left:89.36%;width:1.06%"></i><i class="sr-seg mom" style="left:90.43%;width:4.26%"></i><i class="sr-seg def" style="left:94.68%;width:1.06%"></i><i class="sr-seg mom" style="left:95.74%;width:2.13%"></i><i class="sr-seg def" style="left:97.87%;width:1.06%"></i><i class="sr-seg mom" style="left:98.94%;width:1.06%"></i></div><div></div></div>
+    <div class="sr-tl"><div class="lab">Pair held</div><div class="tr sr-lane"><i class="sr-seg pQV" style="left:0.00%;width:3.19%"></i><i class="sr-seg pQI" style="left:3.19%;width:2.13%"></i><i class="sr-seg pQV" style="left:5.32%;width:2.13%"></i><i class="sr-seg pVI" style="left:7.45%;width:1.06%"></i><i class="sr-seg pQV" style="left:12.77%;width:1.06%"></i><i class="sr-seg pQV" style="left:14.89%;width:1.06%"></i><i class="sr-seg pVI" style="left:17.02%;width:1.06%"></i><i class="sr-seg pQV" style="left:18.09%;width:1.06%"></i><i class="sr-seg pVI" style="left:19.15%;width:1.06%"></i><i class="sr-seg pQV" style="left:20.21%;width:1.06%"></i><i class="sr-seg pQI" style="left:21.28%;width:1.06%"></i><i class="sr-seg pQV" style="left:22.34%;width:1.06%"></i><i class="sr-seg pQI" style="left:23.40%;width:1.06%"></i><i class="sr-seg pVI" style="left:24.47%;width:1.06%"></i><i class="sr-seg pQV" style="left:25.53%;width:1.06%"></i><i class="sr-seg pQI" style="left:26.60%;width:2.13%"></i><i class="sr-seg pQV" style="left:32.98%;width:1.06%"></i><i class="sr-seg pQI" style="left:34.04%;width:1.06%"></i><i class="sr-seg pQV" style="left:35.11%;width:3.19%"></i><i class="sr-seg pVI" style="left:38.30%;width:1.06%"></i><i class="sr-seg pQV" style="left:39.36%;width:1.06%"></i><i class="sr-seg pQI" style="left:40.43%;width:1.06%"></i><i class="sr-seg pVI" style="left:41.49%;width:1.06%"></i><i class="sr-seg pQI" style="left:42.55%;width:1.06%"></i><i class="sr-seg pVI" style="left:43.62%;width:1.06%"></i><i class="sr-seg pQV" style="left:44.68%;width:1.06%"></i><i class="sr-seg pQI" style="left:45.74%;width:1.06%"></i><i class="sr-seg pQV" style="left:46.81%;width:1.06%"></i><i class="sr-seg pVI" style="left:47.87%;width:2.13%"></i><i class="sr-seg pQV" style="left:50.00%;width:3.19%"></i><i class="sr-seg pVI" style="left:53.19%;width:1.06%"></i><i class="sr-seg pQV" style="left:54.26%;width:1.06%"></i><i class="sr-seg pQI" style="left:55.32%;width:1.06%"></i><i class="sr-seg pQV" style="left:56.38%;width:2.13%"></i><i class="sr-seg pQV" style="left:62.77%;width:4.26%"></i><i class="sr-seg pVI" style="left:67.02%;width:1.06%"></i><i class="sr-seg pQI" style="left:68.09%;width:1.06%"></i><i class="sr-seg pVI" style="left:69.15%;width:3.19%"></i><i class="sr-seg pQI" style="left:72.34%;width:1.06%"></i><i class="sr-seg pQV" style="left:73.40%;width:1.06%"></i><i class="sr-seg pVI" style="left:74.47%;width:1.06%"></i><i class="sr-seg pQI" style="left:76.60%;width:1.06%"></i><i class="sr-seg pQV" style="left:78.72%;width:1.06%"></i><i class="sr-seg pQI" style="left:79.79%;width:2.13%"></i><i class="sr-seg pQV" style="left:81.91%;width:1.06%"></i><i class="sr-seg pQV" style="left:84.04%;width:1.06%"></i><i class="sr-seg pVI" style="left:85.11%;width:1.06%"></i><i class="sr-seg pQV" style="left:86.17%;width:3.19%"></i><i class="sr-seg pQV" style="left:90.43%;width:2.13%"></i><i class="sr-seg pQI" style="left:92.55%;width:1.06%"></i><i class="sr-seg pQV" style="left:93.62%;width:1.06%"></i><i class="sr-seg pVI" style="left:95.74%;width:1.06%"></i><i class="sr-seg pQV" style="left:96.81%;width:1.06%"></i><i class="sr-seg pQV" style="left:98.94%;width:1.06%"></i></div><div></div></div>
+    <div class="sr-tl"><div class="lab" style="flex-direction:column;align-items:flex-start;justify-content:center;gap:1px"><span>SPY RSI 14</span><span class="xs dim">shaded above 70</span></div><div class="tr" style="border-top:1px solid var(--line);padding:4px 0"><svg class="sr-svg" viewBox="0 0 1000 46" preserveAspectRatio="none" style="height:46px"><rect class="sr-zone" x="0" y="0" width="1000" height="13.1"/><line class="sr-th" x1="0" x2="1000" y1="13.1" y2="13.1" vector-effect="non-scaling-stroke"/><path class="sr-rsi" d="M5.3,23.5L16.0,18.8L26.6,20.4L37.2,22.0L47.9,27.3L58.5,26.2L69.1,16.8L79.8,14.7L90.4,9.2L101.1,10.5L111.7,10.5L122.3,11.8L133.0,24.9L143.6,11.6L154.3,39.6L164.9,12.7L175.5,25.7L186.2,35.2L196.8,36.2L207.4,34.1L218.1,27.6L228.7,25.3L239.4,20.0L250.0,24.0L260.6,20.5L271.3,17.4L281.9,22.3L292.6,10.0L303.2,9.1L313.8,4.2L324.5,12.7L335.1,19.5L345.7,21.6L356.4,21.6L367.0,16.7L377.7,15.7L388.3,25.0L398.9,28.9L409.6,27.2L420.2,25.0L430.9,28.9L441.5,21.0L452.1,25.0L462.8,28.9L473.4,24.5L484.0,25.0L494.7,29.0L505.3,28.1L516.0,26.1L526.6,29.4L537.2,23.0L547.9,22.2L558.5,30.9L569.1,21.9L579.8,16.7L590.4,11.2L601.1,4.1L611.7,6.2L622.3,9.3L633.0,20.7L643.6,16.2L654.3,21.1L664.9,23.4L675.5,30.4L686.2,33.4L696.8,32.6L707.4,20.0L718.1,33.1L728.7,38.5L739.4,31.1L750.0,18.0L760.6,11.0L771.3,28.4L781.9,12.2L792.6,31.8L803.2,37.1L813.8,36.6L824.5,24.9L835.1,11.6L845.7,22.9L856.4,15.2L867.0,16.8L877.7,18.9L888.3,20.9L898.9,5.8L909.6,14.8L920.2,20.3L930.9,18.9L941.5,20.9L952.1,7.5L962.8,23.9L973.4,26.6L984.0,12.7L994.7,30.8" vector-effect="non-scaling-stroke"/></svg></div><div class="rt"><span class="mono xs dim" style="position:absolute;top:10px;right:0">70</span></div></div>
+    <div class="sr-tl"><div class="lab"></div><div class="tr sr-xl"><span style="left:0.00%">2019</span><span style="left:12.77%">2020</span><span style="left:25.53%">2021</span><span style="left:38.30%">2022</span><span style="left:51.06%">2023</span><span style="left:63.83%">2024</span><span style="left:76.60%">2025</span><span style="left:89.36%">2026</span></div><div></div></div>
+    <div class="sr-tl" style="padding:2px 0 8px"><div></div><div class="sr-leg" style="font-size:11.5px"><span class="dim">Pair held</span><span><i class="sw" style="background:var(--c2)"></i>QQQ and VTI</span><span><i class="sw" style="background:var(--c3)"></i>QQQ and IWM</span><span><i class="sw" style="background:var(--c4)"></i>VTI and IWM</span></div><div></div></div>
+  </div>
+  <div class="lower">
+    <div class="panel"><div class="panel-h">February 2020<span class="aside">rebalance on Feb 3</span></div><div class="panel-b col" style="gap:8px">
+      <div class="sm muted" style="line-height:1.55">SPY's RSI was <b class="fg mono">72.4</b>, above 70, so it moved to <b class="fg">TLT 60%</b> and <b class="fg">GLD 40%</b> for the month. On Mar 2 the RSI was 29.8 and it went back to stocks, holding QQQ and VTI through the March drop.</div>
+      <div class="row" style="gap:8px"><span class="pill acc">Line 2 true</span><span class="xs dim">Feb: +2.1% · SPY −8.4%</span></div>
+    </div></div>
+    <div class="panel"><div class="panel-h">How each branch did<span class="aside">94 months</span></div><div class="panel-b tight"><div class="sr-kv">
+      <div><span>Treasuries and gold, 20 months</span><span class="gain">+0.5% a month</span></div>
+      <div><span>Stocks by momentum, 74 months</span><span class="gain">+0.8% a month</span></div>
+      <div><span>Worst month in each</span><span><span class="loss">−2.6%</span> · <span class="loss">−11.2%</span></span></div>
+    </div></div></div>
+    <div class="panel"><div class="panel-h">Stretches in treasuries<span class="aside">11 in all</span></div><div class="panel-b tight"><div class="sr-kv">
+      <div><span>Longest</span><span>Sep 2019, 4 months</span></div>
+      <div><span>Most recent</span><span>Sep 2026, 1 month</span></div>
+      <div><span>Today, at the Nov 2 rebalance</span><span class="acc">In treasuries</span></div>
+    </div></div></div>
+  </div>
+</div></div></div></div></div>
+<div data-frame="phone"><div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Recession Radar</span><span></span><span></span></div><div class="m-head" style="padding-top:0"><div class="t" style="font-size:24px">Rules</div><div class="s">Version 3, Jan 2019 to Oct 2026</div></div>
+<div class="m-body">
+  <div class="sm muted" style="line-height:1.5">Held treasuries and gold when SPY's RSI was above 70: <b class="fg">20 of 94</b> months.</div>
+  <div>
+    <div style="position:relative"><svg class="sr-svg" viewBox="0 0 1000 130" preserveAspectRatio="none" style="height:130px"><defs><linearGradient id="srg2" x1="0" x2="0" y1="0" y2="1"><stop offset="0" class="ch-stop-a"/><stop offset="1" class="ch-stop-b"/></linearGradient></defs><line class="ch-grid" x1="0" x2="1000" y1="20.8" y2="20.8" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><line class="ch-grid" x1="0" x2="1000" y1="50.2" y2="50.2" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><line class="ch-grid" x1="0" x2="1000" y1="79.8" y2="79.8" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><line class="ch-grid" x1="0" x2="1000" y1="109.2" y2="109.2" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><path d="M0.0,106.8L10.6,108.8L21.3,107.8L31.9,105.6L42.6,106.3L53.2,108.5L63.8,108.2L74.5,107.0L85.1,104.6L95.7,105.7L106.4,106.9L117.0,106.2L127.7,105.8L138.3,102.5L148.9,101.4L159.6,109.4L170.2,105.5L180.9,100.2L191.5,100.4L202.1,101.7L212.8,103.7L223.4,103.1L234.0,102.5L244.7,102.8L255.3,102.6L266.0,101.7L276.6,99.9L287.2,97.2L297.9,97.0L308.5,98.8L319.1,98.0L329.8,99.5L340.4,99.4L351.1,102.2L361.7,101.8L372.3,103.0L383.0,102.3L393.6,104.0L404.3,105.2L414.9,104.3L425.5,106.7L436.2,107.2L446.8,109.1L457.4,106.7L468.1,108.2L478.7,110.5L489.4,108.3L500.0,107.0L510.6,108.2L521.3,104.4L531.9,105.0L542.6,103.3L553.2,103.0L563.8,100.7L574.5,101.6L585.1,99.1L595.7,99.2L606.4,98.0L617.0,97.3L627.7,97.1L638.3,98.5L648.9,96.4L659.6,95.0L670.2,90.9L680.9,91.4L691.5,89.6L702.1,88.0L712.8,86.9L723.4,85.9L734.0,85.0L744.7,86.1L755.3,88.2L766.0,88.6L776.6,86.7L787.2,84.9L797.9,82.0L808.5,85.1L819.1,82.7L829.8,80.4L840.4,80.1L851.1,77.6L861.7,72.2L872.3,72.6L883.0,74.1L893.6,68.0L904.3,67.6L914.9,64.0L925.5,60.7L936.2,63.8L946.8,55.5L957.4,52.7L968.1,51.4L978.7,48.1L989.4,47.8L1000.0,50.4L1000,130L0,130Z" fill="url(#srg2)"/><path class="ch-bench" d="M0.0,106.8L10.6,109.2L21.3,111.5L31.9,109.1L42.6,114.3L53.2,114.0L63.8,118.7L74.5,115.7L85.1,114.6L95.7,110.7L106.4,111.3L117.0,109.6L127.7,109.6L138.3,110.8L148.9,115.8L159.6,122.6L170.2,116.4L180.9,114.2L191.5,113.4L202.1,113.8L212.8,107.9L223.4,107.0L234.0,107.8L244.7,106.7L255.3,107.3L266.0,107.6L276.6,107.8L287.2,101.7L297.9,100.8L308.5,99.5L319.1,96.7L329.8,89.6L340.4,89.4L351.1,90.5L361.7,81.3L372.3,85.7L383.0,86.0L393.6,90.4L404.3,92.8L414.9,89.9L425.5,97.0L436.2,96.8L446.8,102.9L457.4,96.6L468.1,99.6L478.7,106.1L489.4,101.0L500.0,101.4L510.6,96.8L521.3,91.3L531.9,90.3L542.6,90.9L553.2,87.5L563.8,84.9L574.5,87.6L585.1,88.2L595.7,83.6L606.4,83.0L617.0,83.1L627.7,81.3L638.3,80.4L648.9,79.4L659.6,85.7L670.2,78.5L680.9,76.6L691.5,79.0L702.1,74.1L712.8,71.8L723.4,70.5L734.0,65.0L744.7,53.7L755.3,49.6L766.0,40.2L776.6,26.8L787.2,31.3L797.9,32.7L808.5,43.1L819.1,50.7L829.8,50.7L840.4,42.8L851.1,35.7L861.7,30.8L872.3,40.3L883.0,25.9L893.6,20.9L904.3,14.3L914.9,9.2L925.5,19.0L936.2,26.3L946.8,32.0L957.4,19.2L968.1,22.7L978.7,22.5L989.4,22.3L1000.0,17.0" vector-effect="non-scaling-stroke"/><path class="ch-line" d="M0.0,106.8L10.6,108.8L21.3,107.8L31.9,105.6L42.6,106.3L53.2,108.5L63.8,108.2L74.5,107.0L85.1,104.6L95.7,105.7L106.4,106.9L117.0,106.2L127.7,105.8L138.3,102.5L148.9,101.4L159.6,109.4L170.2,105.5L180.9,100.2L191.5,100.4L202.1,101.7L212.8,103.7L223.4,103.1L234.0,102.5L244.7,102.8L255.3,102.6L266.0,101.7L276.6,99.9L287.2,97.2L297.9,97.0L308.5,98.8L319.1,98.0L329.8,99.5L340.4,99.4L351.1,102.2L361.7,101.8L372.3,103.0L383.0,102.3L393.6,104.0L404.3,105.2L414.9,104.3L425.5,106.7L436.2,107.2L446.8,109.1L457.4,106.7L468.1,108.2L478.7,110.5L489.4,108.3L500.0,107.0L510.6,108.2L521.3,104.4L531.9,105.0L542.6,103.3L553.2,103.0L563.8,100.7L574.5,101.6L585.1,99.1L595.7,99.2L606.4,98.0L617.0,97.3L627.7,97.1L638.3,98.5L648.9,96.4L659.6,95.0L670.2,90.9L680.9,91.4L691.5,89.6L702.1,88.0L712.8,86.9L723.4,85.9L734.0,85.0L744.7,86.1L755.3,88.2L766.0,88.6L776.6,86.7L787.2,84.9L797.9,82.0L808.5,85.1L819.1,82.7L829.8,80.4L840.4,80.1L851.1,77.6L861.7,72.2L872.3,72.6L883.0,74.1L893.6,68.0L904.3,67.6L914.9,64.0L925.5,60.7L936.2,63.8L946.8,55.5L957.4,52.7L968.1,51.4L978.7,48.1L989.4,47.8L1000.0,50.4" vector-effect="non-scaling-stroke"/></svg></div>
+    <div class="sr-mlanes" style="margin-top:4px"><div class="sr-lane"><i class="sr-seg mom" style="left:0.00%;width:8.51%"></i><i class="sr-seg def" style="left:8.51%;width:4.26%"></i><i class="sr-seg mom" style="left:12.77%;width:1.06%"></i><i class="sr-seg def" style="left:13.83%;width:1.06%"></i><i class="sr-seg mom" style="left:14.89%;width:1.06%"></i><i class="sr-seg def" style="left:15.96%;width:1.06%"></i><i class="sr-seg mom" style="left:17.02%;width:11.70%"></i><i class="sr-seg def" style="left:28.72%;width:4.26%"></i><i class="sr-seg mom" style="left:32.98%;width:25.53%"></i><i class="sr-seg def" style="left:58.51%;width:4.26%"></i><i class="sr-seg mom" style="left:62.77%;width:12.77%"></i><i class="sr-seg def" style="left:75.53%;width:1.06%"></i><i class="sr-seg mom" style="left:76.60%;width:1.06%"></i><i class="sr-seg def" style="left:77.66%;width:1.06%"></i><i class="sr-seg mom" style="left:78.72%;width:4.26%"></i><i class="sr-seg def" style="left:82.98%;width:1.06%"></i><i class="sr-seg mom" style="left:84.04%;width:5.32%"></i><i class="sr-seg def" style="left:89.36%;width:1.06%"></i><i class="sr-seg mom" style="left:90.43%;width:4.26%"></i><i class="sr-seg def" style="left:94.68%;width:1.06%"></i><i class="sr-seg mom" style="left:95.74%;width:2.13%"></i><i class="sr-seg def" style="left:97.87%;width:1.06%"></i><i class="sr-seg mom" style="left:98.94%;width:1.06%"></i></div><div class="sr-lane"><i class="sr-seg pQV" style="left:0.00%;width:3.19%"></i><i class="sr-seg pQI" style="left:3.19%;width:2.13%"></i><i class="sr-seg pQV" style="left:5.32%;width:2.13%"></i><i class="sr-seg pVI" style="left:7.45%;width:1.06%"></i><i class="sr-seg pQV" style="left:12.77%;width:1.06%"></i><i class="sr-seg pQV" style="left:14.89%;width:1.06%"></i><i class="sr-seg pVI" style="left:17.02%;width:1.06%"></i><i class="sr-seg pQV" style="left:18.09%;width:1.06%"></i><i class="sr-seg pVI" style="left:19.15%;width:1.06%"></i><i class="sr-seg pQV" style="left:20.21%;width:1.06%"></i><i class="sr-seg pQI" style="left:21.28%;width:1.06%"></i><i class="sr-seg pQV" style="left:22.34%;width:1.06%"></i><i class="sr-seg pQI" style="left:23.40%;width:1.06%"></i><i class="sr-seg pVI" style="left:24.47%;width:1.06%"></i><i class="sr-seg pQV" style="left:25.53%;width:1.06%"></i><i class="sr-seg pQI" style="left:26.60%;width:2.13%"></i><i class="sr-seg pQV" style="left:32.98%;width:1.06%"></i><i class="sr-seg pQI" style="left:34.04%;width:1.06%"></i><i class="sr-seg pQV" style="left:35.11%;width:3.19%"></i><i class="sr-seg pVI" style="left:38.30%;width:1.06%"></i><i class="sr-seg pQV" style="left:39.36%;width:1.06%"></i><i class="sr-seg pQI" style="left:40.43%;width:1.06%"></i><i class="sr-seg pVI" style="left:41.49%;width:1.06%"></i><i class="sr-seg pQI" style="left:42.55%;width:1.06%"></i><i class="sr-seg pVI" style="left:43.62%;width:1.06%"></i><i class="sr-seg pQV" style="left:44.68%;width:1.06%"></i><i class="sr-seg pQI" style="left:45.74%;width:1.06%"></i><i class="sr-seg pQV" style="left:46.81%;width:1.06%"></i><i class="sr-seg pVI" style="left:47.87%;width:2.13%"></i><i class="sr-seg pQV" style="left:50.00%;width:3.19%"></i><i class="sr-seg pVI" style="left:53.19%;width:1.06%"></i><i class="sr-seg pQV" style="left:54.26%;width:1.06%"></i><i class="sr-seg pQI" style="left:55.32%;width:1.06%"></i><i class="sr-seg pQV" style="left:56.38%;width:2.13%"></i><i class="sr-seg pQV" style="left:62.77%;width:4.26%"></i><i class="sr-seg pVI" style="left:67.02%;width:1.06%"></i><i class="sr-seg pQI" style="left:68.09%;width:1.06%"></i><i class="sr-seg pVI" style="left:69.15%;width:3.19%"></i><i class="sr-seg pQI" style="left:72.34%;width:1.06%"></i><i class="sr-seg pQV" style="left:73.40%;width:1.06%"></i><i class="sr-seg pVI" style="left:74.47%;width:1.06%"></i><i class="sr-seg pQI" style="left:76.60%;width:1.06%"></i><i class="sr-seg pQV" style="left:78.72%;width:1.06%"></i><i class="sr-seg pQI" style="left:79.79%;width:2.13%"></i><i class="sr-seg pQV" style="left:81.91%;width:1.06%"></i><i class="sr-seg pQV" style="left:84.04%;width:1.06%"></i><i class="sr-seg pVI" style="left:85.11%;width:1.06%"></i><i class="sr-seg pQV" style="left:86.17%;width:3.19%"></i><i class="sr-seg pQV" style="left:90.43%;width:2.13%"></i><i class="sr-seg pQI" style="left:92.55%;width:1.06%"></i><i class="sr-seg pQV" style="left:93.62%;width:1.06%"></i><i class="sr-seg pVI" style="left:95.74%;width:1.06%"></i><i class="sr-seg pQV" style="left:96.81%;width:1.06%"></i><i class="sr-seg pQV" style="left:98.94%;width:1.06%"></i></div></div>
+    <div class="sr-xl" style="position:relative;border-top:1px solid var(--line)"><span style="left:0.00%">2019</span><span style="left:12.77%">20</span><span style="left:25.53%">21</span><span style="left:38.30%">22</span><span style="left:51.06%">23</span><span style="left:63.83%">24</span><span style="left:76.60%">25</span><span style="left:89.36%">26</span></div>
+  </div>
+  <div class="sr-leg" style="font-size:12px"><span><i class="sw" style="background:var(--acc)"></i>TLT and GLD</span><span><i class="sw" style="background:var(--c4)"></i>Momentum</span></div>
+  <div class="m-card col gap-4"><div class="row"><span class="lbl">Feb 2020</span><span class="sp"></span><span class="mono xs dim">RSI 72.4</span></div><span class="sm">Moved to TLT and GLD on Feb 3, back to stocks on Mar 2.</span></div>
+  <div class="m-card rows">
+    <div class="m-row"><span style="flex:1">Longest stretch</span><span class="mono sm">4 months</span></div>
+    <div class="m-row"><span style="flex:1">Now</span><span class="mono sm acc">TLT and GLD</span></div>
+  </div>
+</div><nav data-tabs="strategies"></nav></div>
+  </div>
+
+  <div class="ax-opt" data-opt="D" data-name="Walk a date through"
+    data-note="Pick any rebalance from the backtest and the outline lights up the path it took, with the value each rule read that day, the momentum ranking and the orders it placed. Good for answering why it did that in a given month, and for checking that a rule behaves as you meant it to. It's a lookup rather than an overview, and it needs the backtest to keep the indicator values from every rebalance, not only the trades.">
+<div data-frame="desktop" data-path="strategies/recession-radar/rules?date=2025-03-03"><div class="app"><div data-tb="Strategies"></div><div class="main"><div class="page sr-pg"><div class="row"><span class="h2">Recession Radar</span><span class="st run">Running in paper</span><span class="sp"></span><div class="tabs" style="border:0"><a>Overview</a><a>Would hold today</a><a class="on">Rules</a><a>Performance</a><a>Versions</a></div></div><div class="hr" style="margin:6px 0 18px"></div>
+<div class="sr-rd">
+  <div class="panel scrub">
+    <span class="btn icon sm" data-icon="chevron-left"></span>
+    <div style="width:190px"><div class="lbl">Rebalance</div><div class="h3" style="margin-top:2px">Mon, Mar 3, 2025</div></div>
+    <div class="ticks"><i class="" style="left:2.08%"></i><i class="def" style="left:6.25%"></i><i class="" style="left:10.42%"></i><i class="def" style="left:14.58%"></i><i class=" sel" style="left:18.75%"></i><i class="" style="left:22.92%"></i><i class="" style="left:27.08%"></i><i class="" style="left:31.25%"></i><i class="def" style="left:35.42%"></i><i class="" style="left:39.58%"></i><i class="" style="left:43.75%"></i><i class="" style="left:47.92%"></i><i class="" style="left:52.08%"></i><i class="" style="left:56.25%"></i><i class="def" style="left:60.42%"></i><i class="" style="left:64.58%"></i><i class="" style="left:68.75%"></i><i class="" style="left:72.92%"></i><i class="" style="left:77.08%"></i><i class="def" style="left:81.25%"></i><i class="" style="left:85.42%"></i><i class="" style="left:89.58%"></i><i class="def" style="left:93.75%"></i><i class="" style="left:97.92%"></i><span style="left:2.08%">Nov 24</span><span style="left:27.08%">May 25</span><span style="left:52.08%">Nov 25</span><span style="left:77.08%">May 26</span><span style="left:97.92%">Oct 26</span></div>
+    <span class="btn icon sm" data-icon="chevron-right"></span>
+    <span class="btn sm">Today</span>
+  </div>
+  <div class="cols2">
+    <div class="panel">
+      <div class="panel-h">The rules on Mar 3, 2025<span class="aside">values from the backtest</span></div>
+      <div class="ol">
+        <div class="l"><span class="ln-n">1</span><div>Rebalance <span class="tok">monthly</span> and compare with <span class="tok">SPY</span></div></div>
+        <div class="l lit"><span class="ln-n">2</span><div>If <span class="tok">RSI</span> of <span class="tok">SPY</span> over <span class="tok">14 days</span> is above <span class="tok">70</span><span class="sr-val no">41.6 · no</span></div></div>
+        <div class="l in off"><span class="ln-n">3</span><div>Hold <span class="tok ink">TLT</span> at <span class="tok">60%</span> and <span class="tok ink">GLD</span> at <span class="tok">40%</span></div></div>
+        <div class="l lit"><span class="ln-n">4</span><div>Otherwise</div></div>
+        <div class="l in lit"><span class="ln-n">5</span><div>Hold the top <span class="tok">2</span> by <span class="tok">momentum</span> over <span class="tok">90 days</span><span class="sr-val yes">QQQ, VTI</span></div></div>
+        <div class="l in2"><span class="ln-n">6</span><div><span class="tok ink">VTI</span> <span class="tok ink">QQQ</span> <span class="tok ink">IWM</span></div></div>
+      </div>
+      <div class="panel-b" style="border-top:1px solid var(--line)">
+        <div class="lbl" style="margin-bottom:6px">90-day return, ranked</div>
+        <div class="sr-rk"><span class="sym">QQQ</span><div class="meter"><i style="width:68%"></i></div><span class="mono">+3.4%</span><span class="mono xs acc">62%</span></div>
+        <div class="sr-rk"><span class="sym">VTI</span><div class="meter"><i style="width:42%"></i></div><span class="mono">+2.1%</span><span class="mono xs acc">38%</span></div>
+        <div class="sr-rk out"><span class="sym">IWM</span><div class="meter"><i style="width:0%"></i></div><span class="mono">−4.8%</span><span class="mono xs">out</span></div>
+        <div class="xs dim" style="margin-top:6px">Momentum weights split by return: 3.4 and 2.1 become 62% and 38%.</div>
+      </div>
+    </div>
+    <div class="col" style="gap:14px">
+      <div class="panel"><div class="panel-h">What the backtest placed<span class="aside">at the close</span></div>
+        <table class="tbl compact">
+          <tr><th>Side</th><th>Symbol</th><th class="num">Qty</th><th class="num">Value</th></tr>
+          <tr><td>Sell</td><td class="sym">TLT</td><td class="num">178</td><td class="num">$16,041</td></tr>
+          <tr><td>Sell</td><td class="sym">GLD</td><td class="num">46</td><td class="num">$12,144</td></tr>
+          <tr><td>Buy</td><td class="sym">QQQ</td><td class="num">33</td><td class="num">$17,272</td></tr>
+          <tr><td>Buy</td><td class="sym">VTI</td><td class="num">36</td><td class="num">$10,663</td></tr>
+        </table>
+      </div>
+      <div class="panel"><div class="panel-b"><div class="row" style="margin-bottom:10px"><span class="lbl">Held after</span><span class="sp"></span><span class="xs dim">was TLT and GLD in Feb</span></div><div data-chart="alloc" data-items="QQQ:61.4,VTI:37.9,Cash:0.7"></div></div></div>
+      <div class="callout"><span data-icon="info"></span><div>Each tick is one rebalance. Blue ticks held treasuries and gold.</div></div>
+    </div>
+  </div>
+</div></div></div></div></div>
+<div data-frame="phone"><div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Recession Radar</span><span></span><span></span></div><div class="m-head" style="padding-top:0"><div class="t" style="font-size:24px">Rules</div><div class="s">Walk a rebalance through</div></div>
+<div class="m-body">
+  <div class="m-card row" style="padding:10px 12px"><span class="ic dim" data-icon="chevron-left"></span><div style="flex:1;text-align:center"><div class="lbl">Rebalance</div><b>Mar 3, 2025</b></div><span class="ic dim" data-icon="chevron-right"></span></div>
+  <div class="m-card ol m">
+    <div class="l"><span class="ln-n">1</span><div>SPY RSI 14 above <span class="tok">70</span>? <span class="sr-val no">41.6 · no</span></div></div>
+    <div class="l in" style="opacity:.45"><span class="ln-n">2</span><div>Hold TLT 60%, GLD 40%</div></div>
+    <div class="l"><span class="ln-n">3</span><div>Otherwise, top <span class="tok">2</span> by 90-day return <span class="sr-val yes">QQQ, VTI</span></div></div>
+  </div>
+  <div class="m-card rows">
+    <div class="m-row"><span class="sym" style="width:44px">QQQ</span><span style="flex:1" class="mono sm">+3.4%</span><span class="mono sm acc">62%</span></div>
+    <div class="m-row"><span class="sym" style="width:44px">VTI</span><span style="flex:1" class="mono sm">+2.1%</span><span class="mono sm acc">38%</span></div>
+    <div class="m-row"><span class="sym dim" style="width:44px">IWM</span><span style="flex:1" class="mono sm dim">−4.8%</span><span class="mono sm dim">out</span></div>
+  </div>
+  <div class="sm dim">Sold TLT and GLD, bought 33 QQQ and 36 VTI.</div>
+</div><nav data-tabs="strategies"></nav></div>
+  </div>
+</section>
+
+<section class="ax-surface" id="strategies-versions2"
+  data-surface="strategies/versions2"
+  data-area="Strategies"
+  data-title="Versions, round two"
+  data-why="Three more ways to show a strategy's history: when each version was saved, what it changed and did, and which version each session actually runs.">
+
+  <div class="ax-opt" data-opt="A" data-rec data-name="Versions on the curve"
+    data-note="Recommended. The strategy's whole life on one time axis: the paper session's curve, a lane showing which version was latest, a lane for the session with its rebalances, and a lane of backtest runs. The gap between saving version 3 and the session still running version 2 is visible as two lanes that disagree, with the restart action beside it. It matches Home's annotated curve. It needs a session or backtest to have something to draw, so a strategy with only saved versions shows the lanes and no curve.">
+<div data-frame="desktop" data-path="strategies/recession-radar/versions"><div class="app"><div data-tb="Strategies"></div><div class="main"><div class="page sr-pg"><div class="row"><span class="h2">Recession Radar</span><span class="st run">Running in paper</span><span class="sp"></span><div class="tabs" style="border:0"><a>Overview</a><a>Would hold today</a><a>Rules</a><a>Performance</a><a class="on">Versions</a></div></div><div class="hr" style="margin:6px 0 18px"></div>
+<div class="sr-va">
+  <div class="panel rim hero">
+    <div class="grid">
+      <div class="lab" style="grid-column:1/3;padding-bottom:6px;align-items:flex-end">
+        <div><div class="lbl">Paper session, run on version 2</div><div class="row base" style="gap:12px;margin-top:4px"><span class="big" style="font-size:28px">$31,904.20</span><span class="chg gain">+12.4% since Jun 2</span></div></div>
+        <span class="sp"></span><div class="sr-leg"><span><i class="l"></i>Paper equity</span><span><i class="sr-m" style="position:static;margin:0"></i>Rebalance</span><span><i class="sr-m g" style="position:static;margin:0"></i>Backtest run</span></div>
+      </div>
+      <div class="side">
+        <div class="row"><span class="lbl">Selected</span><span class="sp"></span><span class="pill soft">Latest</span></div>
+        <div><div class="h3">Version 3 · Nov 3</div><div class="sm muted" style="margin-top:4px;line-height:1.5">Raised the RSI line from 65 to 70.</div></div>
+        <div class="sm" style="line-height:1.9">If SPY RSI 14 is above <span class="tok old">65</span> <span class="tok new">70</span></div>
+        <div class="sr-ba"><span class="h">2-year backtest</span><span class="h mono">v2</span><span class="h mono">v3</span>
+          <span>Return</span><span class="mono dim">+19.8%</span><span class="mono">+21.4%</span>
+          <span>Worst drop</span><span class="mono dim">−9.9%</span><span class="mono">−8.6%</span>
+          <span>Sharpe</span><span class="mono dim">1.04</span><span class="mono">1.12</span></div>
+        <div class="callout acc" style="padding:10px 12px;font-size:12.5px"><span data-icon="info"></span><div>The paper session still runs version 2. It keeps that version until you restart it.</div></div>
+        <span class="btn sm pri" style="align-self:flex-start">Restart paper on version 3</span>
+      </div>
+      <div></div>
+      <div class="tr sr-pins">
+        <span class="sr-pin l" style="left:0;top:4px">v1 from template</span>
+        <span class="sr-pin l" style="left:7.7%;top:28px">v2 momentum weights · paper started Jun 2</span>
+        <span class="sr-pin acc r" style="left:92.3%;top:4px">v3 RSI line at 70</span>
+      </div>
+      <div></div>
+      <div class="tr" style="height:190px">
+        <div style="position:absolute;left:8.20%;right:0;top:0;bottom:0"><div data-chart="area" data-seed="23" data-ret="0.124" data-vol="0.005" data-h="190" data-mark></div></div>
+        <i class="vl" style="left:7.65%"></i><i class="vl acc" style="left:92.35%"></i>
+        <span class="xs dim" style="position:absolute;left:2px;bottom:6px;width:7.2%;line-height:1.35">No session</span>
+      </div>
+      <div class="lab">Latest version</div>
+      <div class="tr sr-vlane">
+        <span class="sr-vseg" style="left:0;width:7.25%">v1</span>
+        <span class="sr-vseg" style="left:7.65%;width:84.30%">v2 · weight the top 2 by momentum</span>
+        <span class="sr-vseg on" style="left:92.35%;right:0">v3</span>
+      </div>
+      <div class="lab">Paper session, v2</div>
+      <div class="tr sr-vlane">
+        <span class="sr-vseg run" style="left:8.20%;right:0;padding-left:1.5%">&nbsp;</span>
+        <i class="sr-m" style="left:8.20%"></i><i class="sr-m" style="left:24.04%"></i><i class="sr-m" style="left:42.08%"></i><i class="sr-m" style="left:57.92%"></i><i class="sr-m" style="left:74.32%"></i><i class="sr-m" style="left:91.80%"></i>
+      </div>
+      <div class="lab">Backtests</div>
+      <div class="tr sr-vlane">
+        <i class="sr-m g" style="left:0.6%"></i><i class="sr-m f" style="left:2.2%"></i><i class="sr-m g" style="left:7.65%"></i><i class="sr-m g" style="left:90.16%"></i><i class="sr-m g" style="left:91.75%"></i><i class="sr-m g" style="left:93.25%"></i>
+        <span class="xs dim" style="position:absolute;left:9.7%;top:7px">6 runs · 1 failed, it started before 2016</span>
+      </div>
+      <div></div>
+      <div class="tr sr-xl" style="position:relative"><span style="left:0">May 18</span><span style="left:24.0%">Jul 1</span><span style="left:57.9%">Sep 1</span><span style="left:87.8%">Nov</span></div>
+    </div>
+  </div>
+  <div class="lower">
+    <div class="panel"><div class="panel-h">Version 2 · Jun 1<span class="aside">in the paper session</span></div><div class="panel-b sm muted" style="line-height:1.55">Weighted the top 2 by 90-day momentum instead of holding all three equally. Backtest return went from +16.2% to +19.8%.</div></div>
+    <div class="panel"><div class="panel-h">Version 1 · May 18<span class="aside">from the template</span></div><div class="panel-b sm muted" style="line-height:1.55">Recession Radar as the template ships it: RSI line at 65, VTI, QQQ and IWM in equal weight otherwise.</div></div>
+  </div>
+</div></div></div></div></div>
+<div data-frame="phone"><div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Recession Radar</span><span></span><span></span></div><div class="m-head" style="padding-top:0"><div class="t" style="font-size:24px">Versions</div><div class="s">3 saved · paper runs version 2</div></div>
+<div class="m-body">
+  <div>
+    <div style="position:relative;height:120px">
+      <div style="position:absolute;left:8.2%;right:0;top:0;bottom:0"><div data-chart="area" data-seed="23" data-ret="0.124" data-vol="0.005" data-h="120" data-mark></div></div>
+      <i style="position:absolute;top:0;bottom:0;left:92.3%;border-left:1.5px solid var(--acc)"></i>
+    </div>
+    <div class="sr-vlane" style="position:relative;height:26px"><span class="sr-vseg" style="left:0;width:7.2%;padding:0 3px">1</span><span class="sr-vseg" style="left:7.7%;width:83.7%">v2</span><span class="sr-vseg on" style="left:92.3%;right:0;padding:0 4px">3</span></div>
+    <div class="sr-vlane" style="position:relative;height:26px"><span class="sr-vseg run" style="left:8.2%;right:0">paper, v2</span></div>
+  </div>
+  <div class="m-card col gap-6">
+    <div class="row"><b>Version 3</b><span class="pill soft">Latest</span><span class="sp"></span><span class="xs dim">Nov 3</span></div>
+    <div class="sm" style="line-height:1.8">SPY RSI above <span class="tok old">65</span> <span class="tok new">70</span></div>
+    <div class="row mono sm"><span class="dim">v2 +19.8%</span><span data-icon="arrow-right" class="dim" style="width:13px;height:13px"></span><span>v3 +21.4%</span></div>
+  </div>
+  <div class="callout acc"><span data-icon="info"></span><div>Paper still runs version 2.</div></div>
+  <div class="m-btn">Restart paper on v3</div>
+</div><nav data-tabs="strategies"></nav></div>
+  </div>
+
+  <div class="ax-opt" data-opt="B" data-name="What changed and what it did"
+    data-note="A changelog in plain sentences: what each version changed, what that did to the same backtest, and where the version runs, with the figures in a margin. It reads well for someone returning after a few months, and every sentence is filled from saved data rather than written by a model. It is weaker at showing when things happened relative to the paper session, and the wording needs care for changes that touch many lines at once.">
+<div data-frame="desktop" data-path="strategies/recession-radar/versions?view=log"><div class="app"><div data-tb="Strategies"></div><div class="main"><div class="page sr-pg"><div class="row"><span class="h2">Recession Radar</span><span class="st run">Running in paper</span><span class="sp"></span><div class="tabs" style="border:0"><a>Overview</a><a>Would hold today</a><a>Rules</a><a>Performance</a><a class="on">Versions</a></div></div><div class="hr" style="margin:6px 0 18px"></div>
+<div class="sr-vb"><div class="doc">
+  <div class="row" style="margin-bottom:14px"><div><div class="h2">What changed and what it did</div><div class="sm dim" style="margin-top:4px">Each version compared with the one before it, on the same backtest: Nov 2024 to Oct 2026, $25,000, same costs.</div></div><span class="sp"></span><span class="btn sm"><span data-icon="columns"></span>Compare any two</span></div>
+  <div class="ent on">
+    <div class="vn">v3</div>
+    <div>
+      <h3>Raised the RSI line from 65 to 70</h3>
+      <p>The strategy now waits for a higher reading before moving to treasuries and gold. Over the two years it spent <b>3 fewer months</b> there, 6 instead of 9. Return rose from <b>+19.8% to +21.4%</b> and the worst drop shrank from 9.9% to 8.6%.</p>
+      <div class="sm" style="margin-top:10px;line-height:1.9">Line 2: if SPY RSI 14 is above <span class="tok old">65</span> <span class="tok new">70</span></div>
+      <div class="row xs dim" style="margin-top:8px;gap:8px"><span>Nov 3, 2026, 14:12</span><span>·</span><span>Not running anywhere yet</span><span class="acc">Start a paper session</span></div>
+    </div>
+    <div class="mg">
+      <div class="sr-ba"><span class="h"></span><span class="h mono">Before</span><span class="h mono">After</span>
+        <span>Return</span><span class="mono dim">+19.8%</span><span class="mono gain">+21.4%</span>
+        <span>Worst drop</span><span class="mono dim">−9.9%</span><span class="mono">−8.6%</span>
+        <span>Sharpe</span><span class="mono dim">1.04</span><span class="mono">1.12</span>
+        <span>Months in TLT, GLD</span><span class="mono dim">9</span><span class="mono">6</span></div>
+      <div data-chart="line" data-n="120" data-seed="11" data-ret="0.214" data-bench="0.198" data-vol="0.007" data-dip="0.42:0.075" data-h="54" style="margin-top:4px"></div>
+    </div>
+  </div>
+  <div class="ent">
+    <div class="vn">v2</div>
+    <div>
+      <h3>Weighted the top 2 by momentum</h3>
+      <p>Instead of holding VTI, QQQ and IWM equally, it keeps the two with the best 90-day return and gives the stronger one more weight. Return rose from <b>+16.2% to +19.8%</b>. It traded more: <b>64 orders</b> against 51, because the pair changes from month to month.</p>
+      <div class="sm" style="margin-top:10px;line-height:1.9">Line 5: hold <span class="tok old">all in equal weight</span> <span class="tok new">the top 2 by momentum over 90 days</span></div>
+      <div class="row xs dim" style="margin-top:8px;gap:8px"><span>Jun 1, 2026, 09:40</span><span>·</span><span class="pill paper" style="height:17px;font-size:9.5px">Paper</span><span>since Jun 2, +12.4%</span></div>
+    </div>
+    <div class="mg">
+      <div class="sr-ba"><span class="h"></span><span class="h mono">Before</span><span class="h mono">After</span>
+        <span>Return</span><span class="mono dim">+16.2%</span><span class="mono gain">+19.8%</span>
+        <span>Worst drop</span><span class="mono dim">−12.3%</span><span class="mono">−9.9%</span>
+        <span>Sharpe</span><span class="mono dim">0.84</span><span class="mono">1.04</span>
+        <span>Orders</span><span class="mono dim">51</span><span class="mono">64</span></div>
+    </div>
+  </div>
+  <div class="ent">
+    <div class="vn">v1</div>
+    <div>
+      <h3>Created from the Recession Radar template</h3>
+      <p>The template as it ships, with no changes. Its first backtest returned <b>+16.2%</b> against SPY's +22.6%, with a worst drop of 12.3% against SPY's 18.8%.</p>
+      <div class="row xs dim" style="margin-top:8px;gap:8px"><span>May 18, 2026, 20:05</span><span>·</span><span>One backtest failed: Jan 2004 is before the price data starts</span></div>
+    </div>
+    <div class="mg"><span class="xs dim">Nothing to compare with. The template's own figures are on its page.</span></div>
+  </div>
+  <div class="xs dim" style="padding-top:12px;border-top:1px solid var(--line)">These sentences are filled in from the saved changes and backtest results, not written by a model. Restoring an old version saves it as version 4.</div>
+</div></div></div></div></div></div>
+<div data-frame="phone"><div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Recession Radar</span><span></span><span></span></div><div class="m-head" style="padding-top:0"><div class="t" style="font-size:24px">Versions</div><div class="s">What changed and what it did</div></div>
+<div class="m-body">
+  <div class="m-card col gap-6">
+    <div class="row"><span class="lbl acc">Version 3</span><span class="sp"></span><span class="xs dim">Nov 3</span></div>
+    <b style="font-size:16px">Raised the RSI line from 65 to 70</b>
+    <p class="sm muted" style="margin:0;line-height:1.55">3 fewer months in treasuries and gold. Return +19.8% to +21.4%, worst drop 9.9% to 8.6%.</p>
+    <div class="sm" style="line-height:1.8">RSI above <span class="tok old">65</span> <span class="tok new">70</span></div>
+  </div>
+  <div class="m-card col gap-6">
+    <div class="row"><span class="lbl">Version 2</span><span class="pill paper" style="height:17px;font-size:9.5px">Paper</span><span class="sp"></span><span class="xs dim">Jun 1</span></div>
+    <b style="font-size:16px">Weighted the top 2 by momentum</b>
+    <p class="sm muted" style="margin:0;line-height:1.55">Return +16.2% to +19.8%. 64 orders against 51.</p>
+  </div>
+  <div class="m-card col gap-6">
+    <div class="row"><span class="lbl">Version 1</span><span class="sp"></span><span class="xs dim">May 18</span></div>
+    <b style="font-size:16px">Created from the template</b>
+    <p class="sm muted" style="margin:0;line-height:1.55">Backtest +16.2%, worst drop 12.3%.</p>
+  </div>
+</div><nav data-tabs="strategies"></nav></div>
+  </div>
+
+  <div class="ax-opt" data-opt="C" data-name="Where each version runs"
+    data-note="Versions as a line with each session branching off the version it started on, so the paper session reads as one version behind and live as not started. Below, the one changed line and how both versions did over the session's own dates, with keep and restart side by side. It's the clearest view of the version a session runs, which round one only stated in a callout. It says little about older history, and with several sessions on different versions the branches need room.">
+<div data-frame="desktop" data-path="strategies/recession-radar/versions?view=branches"><div class="app"><div data-tb="Strategies"></div><div class="main"><div class="page sr-pg"><div class="row"><span class="h2">Recession Radar</span><span class="st run">Running in paper</span><span class="sp"></span><div class="tabs" style="border:0"><a>Overview</a><a>Would hold today</a><a>Rules</a><a>Performance</a><a class="on">Versions</a></div></div><div class="hr" style="margin:6px 0 18px"></div>
+<div class="sr-vc">
+  <div class="sm muted" style="margin-bottom:6px">Where each version runs. Sessions keep the version they started with, so a session can sit behind the latest edit.</div>
+  <div class="panel" style="padding:10px 24px 0">
+    <div class="graph">
+      <div class="ln" style="left:4%;width:56%;top:70px"></div>
+      <div class="ln dash" style="left:60%;width:36%;top:70px"></div>
+      <div class="nd" style="left:6%;top:71px"></div>
+      <div class="nd" style="left:30%;top:71px"></div>
+      <div class="nd on" style="left:60%;top:71px"></div>
+      <div class="cap" style="left:6%;top:92px;transform:translateX(-12px)"><b>Version 1</b><span class="xs dim">May 18 · from the template</span></div>
+      <div class="cap" style="left:30%;top:6px;transform:translateX(-12px)"><b>Version 2</b><span class="xs dim">Jun 1 · top 2 by momentum</span></div>
+      <div class="cap" style="left:60%;top:6px;transform:translateX(-12px)"><div class="row gap-6"><b>Version 3</b><span class="pill soft">Latest</span></div><span class="xs dim">Nov 3 · RSI line at 70</span></div>
+      <div class="cap" style="left:61.5%;top:84px"><span class="xs dim">No session runs version 3 yet</span><span class="xs acc">Start paper on version 3</span></div>
+      <div class="drop" style="left:30%;top:80px;width:3%;height:110px"></div>
+      <div class="ln acc" style="left:33%;width:63%;top:188px"></div>
+      <div class="nd end" style="left:96%;top:189px"></div>
+      <div class="cap" style="left:34%;top:150px"><div class="row gap-6"><span class="pill paper">Paper</span><b>Recession Radar session</b></div></div>
+      <div class="cap" style="left:34%;top:200px"><span class="xs dim">Started Jun 2 on version 2 · 6 rebalances · 12 orders</span></div>
+      <div class="cap" style="right:0;top:150px;align-items:flex-end"><span class="mono b">$31,904.20</span><span class="xs gain mono">+12.4%</span></div>
+      <div class="cap" style="right:0;top:200px;align-items:flex-end"><span class="pill risk">1 version behind</span></div>
+      <div class="ln dash" style="left:60%;width:0;top:70px"></div>
+      <div class="cap" style="left:4%;top:236px"><span class="xs dim row gap-6"><i class="dash"></i>Live: no session. Nothing has run on real money.</span></div>
+    </div>
+  </div>
+  <div class="lower" style="margin-top:14px">
+    <div class="panel"><div class="panel-h">Between the session and the latest<span class="aside">version 2 to 3 · 1 line</span></div>
+      <div class="ol">
+        <div class="l"><span class="ln-n">1</span><div>Rebalance <span class="tok">monthly</span> and compare with <span class="tok">SPY</span></div></div>
+        <div class="l chg"><span class="ln-n">2</span><div>If <span class="tok">RSI</span> of <span class="tok">SPY</span> over <span class="tok">14 days</span> is above <span class="tok old">65</span><span data-icon="arrow-right" class="dim" style="width:13px;height:13px"></span><span class="tok new">70</span></div></div>
+        <div class="l fold"><span class="ln-n">3–8</span><div class="dim sm">6 lines unchanged</div></div>
+      </div>
+    </div>
+    <div class="panel"><div class="panel-h">Over the session's own dates<span class="aside">Jun 2 to Nov 14</span></div>
+      <table class="tbl compact">
+        <tr><th></th><th class="num">Return</th><th class="num">Months in TLT, GLD</th></tr>
+        <tr><td>Paper session, version 2</td><td class="num gain">+12.4%</td><td class="num">2 of 6</td></tr>
+        <tr><td>Backtest, version 2</td><td class="num">+13.1%</td><td class="num">2 of 6</td></tr>
+        <tr class="sel"><td>Backtest, version 3</td><td class="num">+12.6%</td><td class="num">1 of 6</td></tr>
+      </table>
+      <div class="panel-b row" style="border-top:1px solid var(--line);gap:8px"><span class="xs dim" style="flex:1">Restarting keeps today's holdings and applies version 3 from the Dec 1 rebalance.</span><span class="btn sm">Keep version 2</span><span class="btn sm pri">Restart on version 3</span></div>
+    </div>
+  </div>
+</div></div></div></div></div>
+<div data-frame="phone"><div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Recession Radar</span><span></span><span></span></div><div class="m-head" style="padding-top:0"><div class="t" style="font-size:24px">Versions</div><div class="s">Where each version runs</div></div>
+<div class="m-body">
+  <div class="sr-mgraph">
+    <div class="it on"><div class="row gap-6"><b>Version 3</b><span class="pill soft">Latest</span></div><div class="xs dim">Nov 3 · RSI line at 70 · no session</div></div>
+    <div class="it"><b>Version 2</b><div class="xs dim">Jun 1 · top 2 by momentum</div>
+      <div class="m-card col gap-4" style="margin-top:8px;border-color:var(--acc-line)"><div class="row"><span class="pill paper">Paper</span><span class="sp"></span><span class="pill risk">1 behind</span></div><div class="row base"><span class="mono b">$31,904.20</span><span class="sp"></span><span class="mono sm gain">+12.4%</span></div><span class="xs dim">Since Jun 2 · 6 rebalances</span></div>
+    </div>
+    <div class="it"><b>Version 1</b><div class="xs dim">May 18 · from the template</div></div>
+  </div>
+  <div class="m-card rows">
+    <div class="m-row"><span style="flex:1">v2 backtest, session dates</span><span class="mono sm">+13.1%</span></div>
+    <div class="m-row"><span style="flex:1">v3 backtest, session dates</span><span class="mono sm">+12.6%</span></div>
+  </div>
+  <div class="m-btn">Restart on version 3</div>
+</div><nav data-tabs="strategies"></nav></div>
+  </div>
+</section>
+
+<section class="ax-surface" id="strategies-performance2"
+  data-surface="strategies/performance2"
+  data-area="Strategies"
+  data-title="Performance, round two"
+  data-why="Four more views of how the strategy has done, centred on the paper session against its own backtest and on what the app can say before going live.">
+
+  <div class="ax-opt" data-opt="A" data-rec data-name="The gap, annotated"
+    data-note="Recommended. The difference between paper and the same-dates backtest drawn as its own line, so each step lines up with the rebalance that caused it, and each step is numbered and explained beside the chart. It answers whether the strategy behaves as tested and why it doesn't quite, with the leftover shown so an unexplained gap is visible too. Attributing a step to fill timing needs the open and close prices for each fill day, which the app already has from market data; it can't explain a gap caused by something outside the strategy, such as an order placed in Alpaca directly.">
+<div data-frame="desktop" data-path="strategies/recession-radar/performance"><div class="app"><div data-tb="Strategies"></div><div class="main"><div class="page sr-pg"><div class="row"><span class="h2">Recession Radar</span><span class="st run">Running in paper</span><span class="sp"></span><div class="tabs" style="border:0"><a>Overview</a><a>Would hold today</a><a>Rules</a><a class="on">Performance</a><a>Versions</a></div></div><div class="hr" style="margin:6px 0 18px"></div>
+<div class="sr-pa">
+  <div class="figs boxed sr-trio">
+    <div class="fig"><div class="lbl">Paper session, v2</div><div class="v gain">+12.4%</div><div class="s">Jun 2 to Nov 14</div></div>
+    <div class="fig"><div class="lbl">Backtest, same dates</div><div class="v">+13.1%</div><div class="s">version 2, same capital</div></div>
+    <div class="fig"><div class="lbl">Gap</div><div class="v loss">−0.70 pts</div><div class="s">flagged above 2 pts</div></div>
+    <div class="fig"><div class="lbl">Explained</div><div class="v">−0.70 pts</div><div class="s">3 causes · 0.00 left over</div></div>
+  </div>
+  <div class="cols2">
+    <div class="panel">
+      <div class="panel-h bare" style="padding-top:6px"><span class="row xs dim gap-6" style="font-weight:400">Paper minus backtest, in percentage points · dotted lines are rebalances</span><span class="aside"><div class="seg mono"><span class="on">Gap</span><span>Both curves</span></div></span></div>
+      <div class="panel-b" style="padding-top:0">
+        <div class="ch"><svg class="sr-svg" viewBox="0 0 1000 300" preserveAspectRatio="none" style="height:300px"><line class="ch-grid" x1="0" x2="1000" y1="114.4" y2="114.4" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><line class="ch-grid" x1="0" x2="1000" y1="191.8" y2="191.8" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><line class="ch-grid" x1="0" x2="1000" y1="269.1" y2="269.1" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><line class="sr-rebl" x1="0.0" x2="0.0" y1="0" y2="300" vector-effect="non-scaling-stroke"/><line class="sr-rebl" x1="172.4" x2="172.4" y1="0" y2="300" vector-effect="non-scaling-stroke"/><line class="sr-rebl" x1="362.1" x2="362.1" y1="0" y2="300" vector-effect="non-scaling-stroke"/><line class="sr-rebl" x1="543.1" x2="543.1" y1="0" y2="300" vector-effect="non-scaling-stroke"/><line class="sr-rebl" x1="724.1" x2="724.1" y1="0" y2="300" vector-effect="non-scaling-stroke"/><line class="sr-rebl" x1="913.8" x2="913.8" y1="0" y2="300" vector-effect="non-scaling-stroke"/><line class="sr-zero" x1="0" x2="1000" y1="37.1" y2="37.1" vector-effect="non-scaling-stroke"/><path class="sr-gapf" d="M0.0,58.5L8.6,55.0L17.2,60.4L25.9,64.7L34.5,63.3L43.1,57.4L51.7,58.3L60.3,64.9L69.0,68.1L77.6,68.0L86.2,64.3L94.8,65.5L103.4,67.7L112.1,68.9L120.7,68.5L129.3,71.7L137.9,71.3L146.6,70.3L155.2,64.7L163.8,67.1L172.4,135.4L181.0,141.5L189.7,139.1L198.3,140.1L206.9,143.5L215.5,144.1L224.1,141.4L232.8,144.1L241.4,141.2L250.0,137.5L258.6,134.8L267.2,133.0L275.9,142.4L284.5,143.3L293.1,147.8L301.7,145.2L310.3,146.7L319.0,147.4L327.6,147.1L336.2,150.9L344.8,151.3L353.4,154.6L362.1,189.2L370.7,193.2L379.3,194.4L387.9,201.9L396.6,206.3L405.2,207.2L413.8,202.0L422.4,198.7L431.0,198.2L439.7,201.5L448.3,194.8L456.9,200.8L465.5,204.5L474.1,202.4L482.8,206.4L491.4,204.8L500.0,201.3L508.6,202.8L517.2,202.2L525.9,203.3L534.5,206.9L543.1,199.0L551.7,200.3L560.3,196.9L569.0,200.7L577.6,199.5L586.2,196.1L594.8,189.7L603.4,195.2L612.1,196.2L620.7,194.3L629.3,192.0L637.9,197.6L646.6,189.7L655.2,194.2L663.8,190.5L672.4,192.8L681.0,192.4L689.7,187.6L698.3,187.9L706.9,190.4L715.5,196.5L724.1,204.7L732.8,209.9L741.4,201.1L750.0,208.1L758.6,217.0L767.2,207.8L775.9,203.0L784.5,205.7L793.1,203.4L801.7,208.0L810.3,210.5L819.0,208.5L827.6,207.6L836.2,210.2L844.8,204.6L853.4,204.1L862.1,206.1L870.7,212.5L879.3,212.3L887.9,214.0L896.6,214.4L905.2,211.7L913.8,247.9L922.4,247.3L931.0,245.1L939.7,245.3L948.3,238.5L956.9,248.7L965.5,249.8L974.1,254.9L982.8,254.5L991.4,244.9L1000.0,253.6L1000,37.1L0,37.1Z"/><path class="ch-line" d="M0.0,58.5L8.6,55.0L17.2,60.4L25.9,64.7L34.5,63.3L43.1,57.4L51.7,58.3L60.3,64.9L69.0,68.1L77.6,68.0L86.2,64.3L94.8,65.5L103.4,67.7L112.1,68.9L120.7,68.5L129.3,71.7L137.9,71.3L146.6,70.3L155.2,64.7L163.8,67.1L172.4,135.4L181.0,141.5L189.7,139.1L198.3,140.1L206.9,143.5L215.5,144.1L224.1,141.4L232.8,144.1L241.4,141.2L250.0,137.5L258.6,134.8L267.2,133.0L275.9,142.4L284.5,143.3L293.1,147.8L301.7,145.2L310.3,146.7L319.0,147.4L327.6,147.1L336.2,150.9L344.8,151.3L353.4,154.6L362.1,189.2L370.7,193.2L379.3,194.4L387.9,201.9L396.6,206.3L405.2,207.2L413.8,202.0L422.4,198.7L431.0,198.2L439.7,201.5L448.3,194.8L456.9,200.8L465.5,204.5L474.1,202.4L482.8,206.4L491.4,204.8L500.0,201.3L508.6,202.8L517.2,202.2L525.9,203.3L534.5,206.9L543.1,199.0L551.7,200.3L560.3,196.9L569.0,200.7L577.6,199.5L586.2,196.1L594.8,189.7L603.4,195.2L612.1,196.2L620.7,194.3L629.3,192.0L637.9,197.6L646.6,189.7L655.2,194.2L663.8,190.5L672.4,192.8L681.0,192.4L689.7,187.6L698.3,187.9L706.9,190.4L715.5,196.5L724.1,204.7L732.8,209.9L741.4,201.1L750.0,208.1L758.6,217.0L767.2,207.8L775.9,203.0L784.5,205.7L793.1,203.4L801.7,208.0L810.3,210.5L819.0,208.5L827.6,207.6L836.2,210.2L844.8,204.6L853.4,204.1L862.1,206.1L870.7,212.5L879.3,212.3L887.9,214.0L896.6,214.4L905.2,211.7L913.8,247.9L922.4,247.3L931.0,245.1L939.7,245.3L948.3,238.5L956.9,248.7L965.5,249.8L974.1,254.9L982.8,254.5L991.4,244.9L1000.0,253.6" vector-effect="non-scaling-stroke"/></svg><div class="sr-ylab"><span style="top:12.4%">0</span><span style="top:38.1%">−0.25</span><span style="top:63.9%">−0.50</span><span style="top:89.7%">−0.75</span></div><span class="sr-anno" style="left:0.00%;top:28.5%"><span class="sr-num">1</span></span><span class="sr-anno" style="left:17.24%;top:54.1%"><span class="sr-num">2</span></span><span class="sr-anno" style="left:36.21%;top:72.1%"><span class="sr-num">3</span></span><span class="sr-anno" style="left:54.31%;top:75.3%"><span class="sr-num">4</span></span><span class="sr-anno" style="left:91.38%;top:91.6%"><span class="sr-num">5</span></span>
+          <span class="xs dim" style="position:absolute;left:6px;top:calc(12.4% - 18px)">Backtest</span>
+        </div>
+        <div class="xl"><span style="left:17.2%">Jul 1</span><span style="left:36.2%">Aug 3</span><span style="left:54.3%">Sep 1</span><span style="left:72.4%">Oct 1</span><span style="left:91.4%">Nov 2</span></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-h">What each step was<span class="aside mono">−0.70</span></div>
+      <div class="panel-b" style="padding-top:2px;padding-bottom:2px">
+        <div class="sr-why"><span class="sr-num">1</span><div><b>Jun 2, first orders</b><div class="xs dim">Filled at the next open. 1.5% kept in cash for fees.</div></div><span class="mono">−0.06</span></div>
+        <div class="sr-why"><span class="sr-num">2</span><div><b>Jul 1 rebalance</b><div class="xs dim">GLD opened 0.9% above the close the backtest used.</div></div><span class="mono">−0.21</span></div>
+        <div class="sr-why"><span class="sr-num">3</span><div><b>Aug 3 rebalance</b><div class="xs dim">Switched to QQQ and VTI at the open, both higher.</div></div><span class="mono">−0.12</span></div>
+        <div class="sr-why"><span class="sr-num">4</span><div><b>Sep 1 rebalance</b><div class="xs dim">Opened lower than the close, so the fill helped.</div></div><span class="mono gain">+0.08</span></div>
+        <div class="sr-why"><span class="sr-num">5</span><div><b>Nov 2 rebalance</b><div class="xs dim">Back to TLT and GLD, filled at the open.</div></div><span class="mono">−0.09</span></div>
+        <div class="sr-why"><span class="sr-num g">·</span><div><b>Between rebalances</b><div class="xs dim">Cash kept back −0.20 · fees $38.40 −0.10</div></div><span class="mono">−0.30</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="row sm dim" style="margin-top:12px;gap:16px"><span>Fill timing −0.40 · cash kept back −0.20 · fees −0.10</span><span class="sp"></span><span>Oct 1 kept the same pair and placed no orders.</span></div>
+</div></div></div></div></div>
+<div data-frame="phone"><div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Recession Radar</span><span></span><span></span></div><div class="m-head" style="padding-top:0"><div class="t" style="font-size:24px">Performance</div><div class="s">Paper against the same-dates backtest</div></div>
+<div class="m-body">
+  <div class="pf-mtrio"><div><span class="lbl">Paper</span><b class="gain">+12.4%</b></div><div><span class="lbl">Backtest</span><b>+13.1%</b></div><div><span class="lbl">Gap</span><b class="loss">−0.70</b></div></div>
+  <div style="position:relative"><svg class="sr-svg" viewBox="0 0 1000 150" preserveAspectRatio="none" style="height:150px"><line class="ch-grid" x1="0" x2="1000" y1="57.2" y2="57.2" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><line class="ch-grid" x1="0" x2="1000" y1="95.9" y2="95.9" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><line class="ch-grid" x1="0" x2="1000" y1="134.5" y2="134.5" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><line class="sr-rebl" x1="0.0" x2="0.0" y1="0" y2="150" vector-effect="non-scaling-stroke"/><line class="sr-rebl" x1="172.4" x2="172.4" y1="0" y2="150" vector-effect="non-scaling-stroke"/><line class="sr-rebl" x1="362.1" x2="362.1" y1="0" y2="150" vector-effect="non-scaling-stroke"/><line class="sr-rebl" x1="543.1" x2="543.1" y1="0" y2="150" vector-effect="non-scaling-stroke"/><line class="sr-rebl" x1="724.1" x2="724.1" y1="0" y2="150" vector-effect="non-scaling-stroke"/><line class="sr-rebl" x1="913.8" x2="913.8" y1="0" y2="150" vector-effect="non-scaling-stroke"/><line class="sr-zero" x1="0" x2="1000" y1="18.6" y2="18.6" vector-effect="non-scaling-stroke"/><path class="sr-gapf" d="M0.0,29.2L8.6,27.5L17.2,30.2L25.9,32.3L34.5,31.6L43.1,28.7L51.7,29.2L60.3,32.4L69.0,34.1L77.6,34.0L86.2,32.2L94.8,32.7L103.4,33.8L112.1,34.5L120.7,34.2L129.3,35.8L137.9,35.7L146.6,35.1L155.2,32.4L163.8,33.6L172.4,67.7L181.0,70.7L189.7,69.5L198.3,70.0L206.9,71.7L215.5,72.1L224.1,70.7L232.8,72.0L241.4,70.6L250.0,68.8L258.6,67.4L267.2,66.5L275.9,71.2L284.5,71.7L293.1,73.9L301.7,72.6L310.3,73.4L319.0,73.7L327.6,73.6L336.2,75.5L344.8,75.6L353.4,77.3L362.1,94.6L370.7,96.6L379.3,97.2L387.9,101.0L396.6,103.2L405.2,103.6L413.8,101.0L422.4,99.3L431.0,99.1L439.7,100.7L448.3,97.4L456.9,100.4L465.5,102.2L474.1,101.2L482.8,103.2L491.4,102.4L500.0,100.6L508.6,101.4L517.2,101.1L525.9,101.7L534.5,103.4L543.1,99.5L551.7,100.1L560.3,98.5L569.0,100.3L577.6,99.8L586.2,98.0L594.8,94.8L603.4,97.6L612.1,98.1L620.7,97.2L629.3,96.0L637.9,98.8L646.6,94.9L655.2,97.1L663.8,95.3L672.4,96.4L681.0,96.2L689.7,93.8L698.3,94.0L706.9,95.2L715.5,98.2L724.1,102.4L732.8,105.0L741.4,100.5L750.0,104.1L758.6,108.5L767.2,103.9L775.9,101.5L784.5,102.9L793.1,101.7L801.7,104.0L810.3,105.3L819.0,104.2L827.6,103.8L836.2,105.1L844.8,102.3L853.4,102.0L862.1,103.0L870.7,106.2L879.3,106.1L887.9,107.0L896.6,107.2L905.2,105.8L913.8,124.0L922.4,123.7L931.0,122.5L939.7,122.6L948.3,119.2L956.9,124.3L965.5,124.9L974.1,127.5L982.8,127.3L991.4,122.4L1000.0,126.8L1000,18.6L0,18.6Z"/><path class="ch-line" d="M0.0,29.2L8.6,27.5L17.2,30.2L25.9,32.3L34.5,31.6L43.1,28.7L51.7,29.2L60.3,32.4L69.0,34.1L77.6,34.0L86.2,32.2L94.8,32.7L103.4,33.8L112.1,34.5L120.7,34.2L129.3,35.8L137.9,35.7L146.6,35.1L155.2,32.4L163.8,33.6L172.4,67.7L181.0,70.7L189.7,69.5L198.3,70.0L206.9,71.7L215.5,72.1L224.1,70.7L232.8,72.0L241.4,70.6L250.0,68.8L258.6,67.4L267.2,66.5L275.9,71.2L284.5,71.7L293.1,73.9L301.7,72.6L310.3,73.4L319.0,73.7L327.6,73.6L336.2,75.5L344.8,75.6L353.4,77.3L362.1,94.6L370.7,96.6L379.3,97.2L387.9,101.0L396.6,103.2L405.2,103.6L413.8,101.0L422.4,99.3L431.0,99.1L439.7,100.7L448.3,97.4L456.9,100.4L465.5,102.2L474.1,101.2L482.8,103.2L491.4,102.4L500.0,100.6L508.6,101.4L517.2,101.1L525.9,101.7L534.5,103.4L543.1,99.5L551.7,100.1L560.3,98.5L569.0,100.3L577.6,99.8L586.2,98.0L594.8,94.8L603.4,97.6L612.1,98.1L620.7,97.2L629.3,96.0L637.9,98.8L646.6,94.9L655.2,97.1L663.8,95.3L672.4,96.4L681.0,96.2L689.7,93.8L698.3,94.0L706.9,95.2L715.5,98.2L724.1,102.4L732.8,105.0L741.4,100.5L750.0,104.1L758.6,108.5L767.2,103.9L775.9,101.5L784.5,102.9L793.1,101.7L801.7,104.0L810.3,105.3L819.0,104.2L827.6,103.8L836.2,105.1L844.8,102.3L853.4,102.0L862.1,103.0L870.7,106.2L879.3,106.1L887.9,107.0L896.6,107.2L905.2,105.8L913.8,124.0L922.4,123.7L931.0,122.5L939.7,122.6L948.3,119.2L956.9,124.3L965.5,124.9L974.1,127.5L982.8,127.3L991.4,122.4L1000.0,126.8" vector-effect="non-scaling-stroke"/></svg><span class="sr-anno" style="left:0.00%;top:30.5%"><span class="sr-num">1</span></span><span class="sr-anno" style="left:17.24%;top:56.1%"><span class="sr-num">2</span></span><span class="sr-anno" style="left:36.21%;top:74.1%"><span class="sr-num">3</span></span><span class="sr-anno" style="left:54.31%;top:77.3%"><span class="sr-num">4</span></span><span class="sr-anno" style="left:91.38%;top:93.6%"><span class="sr-num">5</span></span></div>
+  <div class="m-card rows">
+    <div class="m-row"><span class="sr-num">2</span><div style="flex:1"><div>Jul 1 rebalance</div><div class="d">GLD opened above the close</div></div><span class="mono sm">−0.21</span></div>
+    <div class="m-row"><span class="sr-num">3</span><div style="flex:1"><div>Aug 3 rebalance</div><div class="d">QQQ and VTI opened higher</div></div><span class="mono sm">−0.12</span></div>
+    <div class="m-row"><span class="sr-num g">·</span><div style="flex:1"><div>Between rebalances</div><div class="d">Cash kept back and fees</div></div><span class="mono sm">−0.30</span></div>
+  </div>
+  <div class="sm dim">3 more steps · all of the gap is explained</div>
+</div><nav data-tabs="strategies"></nav></div>
+  </div>
+
+  <div class="ax-opt" data-opt="B" data-name="Day by day"
+    data-note="A calendar of every trading day since the session started, shaded by how far paper's return was from the backtest's that day, with rebalance days outlined. The pattern is easy to read: quiet days are close to zero and the outlined days carry most of the gap. Selecting a day shows the orders and prices behind it. It's a good second view under A, but on its own it makes small differences look important, and basis points need explaining for most people.">
+<div data-frame="desktop" data-path="strategies/recession-radar/performance?view=days"><div class="app"><div data-tb="Strategies"></div><div class="main"><div class="page sr-pg"><div class="row"><span class="h2">Recession Radar</span><span class="st run">Running in paper</span><span class="sp"></span><div class="tabs" style="border:0"><a>Overview</a><a>Would hold today</a><a>Rules</a><a class="on">Performance</a><a>Versions</a></div></div><div class="hr" style="margin:6px 0 18px"></div>
+<div class="sr-pb">
+  <div class="row"><div><div class="h3">Each day, paper against the backtest</div><div class="sm dim" style="margin-top:3px">Paper's daily return minus the backtest's on the same day, in basis points (0.01 percentage points)</div></div><span class="sp"></span><div class="sr-scale"><span>Paper behind</span><i style="background:color-mix(in srgb, var(--loss) 80%, var(--sunk))"></i><i style="background:color-mix(in srgb, var(--loss) 30%, var(--sunk))"></i><i style="background:var(--sunk)"></i><i style="background:color-mix(in srgb, var(--gain) 30%, var(--sunk))"></i><i style="background:color-mix(in srgb, var(--gain) 80%, var(--sunk))"></i><span>ahead</span></div></div>
+  <div class="cols2">
+    <div class="panel"><div class="panel-b" style="padding:18px 20px">
+      <div class="sr-cal" style="grid-template-columns:34px repeat(25, minmax(0, 1fr))"><span class="sr-ch"></span><span class="sr-cm">Jun</span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm">Jul</span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm">Aug</span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm">Sep</span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm">Oct</span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm">Nov</span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cd">Mon</span><span class="sr-c pre" style=""></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 10%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 16%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 20%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c reb" style="background:color-mix(in srgb, var(--loss) 48%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 17%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 14%, var(--sunk))"></span><span class="sr-c hol" style=""></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 15%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 10%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 20%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 17%, var(--sunk))"></span><span class="sr-c reb" style="background:color-mix(in srgb, var(--loss) 50%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 21%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 20%, var(--sunk))"></span><span class="sr-cd">Tue</span><span class="sr-c reb" style="background:color-mix(in srgb, var(--loss) 33%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 16%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 10%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 10%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 16%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 17%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 14%, var(--sunk))"></span><span class="sr-c reb" style="background:color-mix(in srgb, var(--gain) 19%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 18%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 10%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c fut today" style=""></span><span class="sr-cd">Wed</span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 13%, var(--sunk))"></span><span class="sr-c reb sel" style="background:color-mix(in srgb, var(--loss) 85%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 15%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 17%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 20%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 15%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 16%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 16%, var(--sunk))"></span><span class="sr-c fut" style=""></span><span class="sr-cd">Thu</span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 16%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 17%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 10%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 17%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 10%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 18%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 10%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 17%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 16%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 11%, var(--sunk))"></span><span class="sr-c reb" style="background:color-mix(in srgb, var(--loss) 19%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 20%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 10%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 10%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 10%, var(--sunk))"></span><span class="sr-c fut" style=""></span><span class="sr-cd">Fri</span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 15%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 14%, var(--sunk))"></span><span class="sr-c hol" style=""></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 11%, var(--sunk))"></span><span class="sr-c hol" style=""></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 15%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 16%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 19%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 15%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 16%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 15%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 18%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 21%, var(--sunk))"></span><span class="sr-c fut" style=""></span></div>
+      <div class="row xs dim" style="margin-top:14px;gap:16px"><span class="row gap-6"><i class="sr-c reb" style="width:14px;height:12px;display:inline-block"></i>Rebalance day</span><span class="row gap-6"><i class="sr-c hol" style="width:14px;height:12px;display:inline-block"></i>Market closed</span><span class="row gap-6"><i class="sr-c fut" style="width:14px;height:12px;display:inline-block"></i>Not yet traded</span></div>
+    </div></div>
+    <div class="col" style="gap:14px">
+      <div class="panel"><div class="panel-h">Wed, Jul 1<span class="aside">rebalance</span></div><div class="panel-b col" style="gap:10px">
+        <div class="row base"><span class="big loss" style="font-size:26px">−21 bp</span><span class="xs dim">the largest day</span></div>
+        <div class="sr-kv">
+          <div><span>Paper</span><span>+0.31%</span></div>
+          <div><span>Backtest</span><span>+0.52%</span></div>
+          <div><span>Orders</span><span>sell 9 GLD, buy 42 TLT</span></div>
+          <div><span>GLD, open against close</span><span>+0.9%</span></div>
+        </div>
+      </div></div>
+      <div class="panel"><div class="panel-h">117 trading days</div><div class="panel-b tight"><div class="sr-kv">
+        <div><span>Within 2 bp either way</span><span>96 days</span></div>
+        <div><span>The 6 rebalance days</span><span class="loss">−40 bp</span></div>
+        <div><span>All other days</span><span class="loss">−30 bp</span></div>
+      </div></div></div>
+    </div>
+  </div>
+</div></div></div></div></div>
+<div data-frame="phone"><div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Recession Radar</span><span></span><span></span></div><div class="m-head" style="padding-top:0"><div class="t" style="font-size:24px">Performance</div><div class="s">Paper against the backtest, by day</div></div>
+<div class="m-body">
+  <div class="m-card" style="padding:12px 12px">
+    <div class="sr-cal sr-mcal" style="grid-template-columns:14px repeat(25, minmax(0, 1fr))"><span class="sr-ch"></span><span class="sr-cm">Jun</span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm">Jul</span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm">Aug</span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm">Sep</span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm">Oct</span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cm">Nov</span><span class="sr-cm"></span><span class="sr-cm"></span><span class="sr-cd">M</span><span class="sr-c pre" style=""></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 10%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 16%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 20%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c reb" style="background:color-mix(in srgb, var(--loss) 48%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 17%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 14%, var(--sunk))"></span><span class="sr-c hol" style=""></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 15%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 10%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 20%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 17%, var(--sunk))"></span><span class="sr-c reb" style="background:color-mix(in srgb, var(--loss) 50%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 21%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 20%, var(--sunk))"></span><span class="sr-cd">T</span><span class="sr-c reb" style="background:color-mix(in srgb, var(--loss) 33%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 16%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 10%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 10%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 16%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 17%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 14%, var(--sunk))"></span><span class="sr-c reb" style="background:color-mix(in srgb, var(--gain) 19%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 18%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 10%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c fut today" style=""></span><span class="sr-cd">W</span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 13%, var(--sunk))"></span><span class="sr-c reb sel" style="background:color-mix(in srgb, var(--loss) 85%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 15%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 17%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 20%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 15%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 16%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 16%, var(--sunk))"></span><span class="sr-c fut" style=""></span><span class="sr-cd">T</span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 16%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 17%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 10%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 17%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 10%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 18%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 10%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 17%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 16%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 11%, var(--sunk))"></span><span class="sr-c reb" style="background:color-mix(in srgb, var(--loss) 19%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 20%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 10%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 10%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 10%, var(--sunk))"></span><span class="sr-c fut" style=""></span><span class="sr-cd">F</span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 15%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 14%, var(--sunk))"></span><span class="sr-c hol" style=""></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 11%, var(--sunk))"></span><span class="sr-c hol" style=""></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 15%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 11%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 14%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 16%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 19%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 15%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 16%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 15%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--loss) 12%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 13%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 18%, var(--sunk))"></span><span class="sr-c" style="background:color-mix(in srgb, var(--gain) 21%, var(--sunk))"></span><span class="sr-c fut" style=""></span></div>
+  </div>
+  <div class="sr-scale" style="justify-content:center"><span>behind</span><i style="background:color-mix(in srgb, var(--loss) 80%, var(--sunk))"></i><i style="background:var(--sunk)"></i><i style="background:color-mix(in srgb, var(--gain) 80%, var(--sunk))"></i><span>ahead</span></div>
+  <div class="m-card col gap-6"><div class="row"><span class="lbl">Wed, Jul 1 · rebalance</span><span class="sp"></span><span class="mono b loss">−21 bp</span></div><span class="sm muted">GLD opened 0.9% above the close the backtest used.</span></div>
+  <div class="m-card rows">
+    <div class="m-row"><span style="flex:1">6 rebalance days</span><span class="mono sm loss">−40 bp</span></div>
+    <div class="m-row"><span style="flex:1">Other 111 days</span><span class="mono sm loss">−30 bp</span></div>
+  </div>
+</div><nav data-tabs="strategies"></nav></div>
+  </div>
+
+  <div class="ax-opt" data-opt="C" data-name="Stress periods"
+    data-note="The backtest's behaviour in the stretches where SPY fell more than 10%, picked by a fixed rule rather than by hand, with what the strategy held going in and how long it took to recover. Good for judging the strategy's purpose, since it was built to step aside before a fall. It's limited by the price data, which starts in 2016, so it has three periods to show, and it says nothing about how the paper session would behave in one.">
+<div data-frame="desktop" data-path="strategies/recession-radar/performance?view=stress"><div class="app"><div data-tb="Strategies"></div><div class="main"><div class="page sr-pg"><div class="row"><span class="h2">Recession Radar</span><span class="st run">Running in paper</span><span class="sp"></span><div class="tabs" style="border:0"><a>Overview</a><a>Would hold today</a><a>Rules</a><a class="on">Performance</a><a>Versions</a></div></div><div class="hr" style="margin:6px 0 18px"></div>
+<div class="sr-pc">
+  <div class="row" style="margin-bottom:12px"><div><div class="h3">How the backtest did in the worst stretches for SPY</div><div class="sm dim" style="margin-top:3px">Version 3, Jan 2019 to Oct 2026, $25,000 · periods where SPY fell more than 10% from a high</div></div><span class="sp"></span><div class="sr-leg"><span><i class="l"></i>Recession Radar</span><span><i class="d"></i>SPY</span></div></div>
+  <div class="panel"><div class="panel-b" style="padding-bottom:8px">
+    <div class="ch"><svg class="sr-svg" viewBox="0 0 1000 210" preserveAspectRatio="none" style="height:210px"><defs><linearGradient id="srg3" x1="0" x2="0" y1="0" y2="1"><stop offset="0" class="ch-stop-a"/><stop offset="1" class="ch-stop-b"/></linearGradient></defs><line class="ch-grid" x1="0" x2="1000" y1="30.8" y2="30.8" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><line class="ch-grid" x1="0" x2="1000" y1="80.2" y2="80.2" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><line class="ch-grid" x1="0" x2="1000" y1="129.8" y2="129.8" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><line class="ch-grid" x1="0" x2="1000" y1="179.2" y2="179.2" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><rect class="sr-band" x="144.7" y="0" width="11.7" height="210"/><rect class="sr-band" x="383.0" y="0" width="100.0" height="210"/><rect class="sr-band" x="797.9" y="0" width="6.0" height="210"/><path d="M0.0,175.2L10.6,178.5L21.3,176.8L31.9,173.1L42.6,174.2L53.2,177.9L63.8,177.6L74.5,175.5L85.1,171.5L95.7,173.3L106.4,175.2L117.0,174.1L127.7,173.4L138.3,167.9L148.9,166.0L159.6,179.5L170.2,173.0L180.9,164.1L191.5,164.5L202.1,166.6L212.8,169.9L223.4,169.0L234.0,167.9L244.7,168.5L255.3,168.1L266.0,166.5L276.6,163.5L287.2,159.0L297.9,158.6L308.5,161.7L319.1,160.4L329.8,162.8L340.4,162.8L351.1,167.4L361.7,166.8L372.3,168.8L383.0,167.5L393.6,170.4L404.3,172.5L414.9,171.0L425.5,174.9L436.2,175.8L446.8,179.1L457.4,175.0L468.1,177.4L478.7,181.4L489.4,177.7L500.0,175.4L510.6,177.4L521.3,171.0L531.9,172.1L542.6,169.3L553.2,168.7L563.8,164.9L574.5,166.3L585.1,162.3L595.7,162.5L606.4,160.3L617.0,159.2L627.7,158.9L638.3,161.1L648.9,157.7L659.6,155.3L670.2,148.5L680.9,149.3L691.5,146.4L702.1,143.6L712.8,141.7L723.4,140.1L734.0,138.5L744.7,140.3L755.3,143.9L766.0,144.6L776.6,141.4L787.2,138.4L797.9,133.5L808.5,138.8L819.1,134.7L829.8,130.8L840.4,130.4L851.1,126.1L861.7,117.0L872.3,117.8L883.0,120.3L893.6,110.0L904.3,109.3L914.9,103.4L925.5,97.8L936.2,103.1L946.8,89.1L957.4,84.3L968.1,82.2L978.7,76.6L989.4,76.2L1000.0,80.6L1000,210L0,210Z" fill="url(#srg3)"/><path class="ch-bench" d="M0.0,175.2L10.6,179.2L21.3,183.0L31.9,179.0L42.6,187.7L53.2,187.2L63.8,195.1L74.5,190.0L85.1,188.2L95.7,181.7L106.4,182.7L117.0,179.9L127.7,179.9L138.3,181.9L148.9,190.2L159.6,201.6L170.2,191.3L180.9,187.6L191.5,186.3L202.1,186.8L212.8,176.9L223.4,175.5L234.0,176.8L244.7,174.9L255.3,176.0L266.0,176.5L276.6,176.8L287.2,166.6L297.9,165.1L308.5,162.9L319.1,158.1L329.8,146.2L340.4,145.9L351.1,147.9L361.7,132.3L372.3,139.8L383.0,140.3L393.6,147.7L404.3,151.6L414.9,146.8L425.5,158.6L436.2,158.4L446.8,168.6L457.4,158.1L468.1,163.1L478.7,174.0L489.4,165.3L500.0,166.1L510.6,158.4L521.3,149.2L531.9,147.4L542.6,148.4L553.2,142.7L563.8,138.3L574.5,142.9L585.1,144.0L595.7,136.3L606.4,135.1L617.0,135.5L627.7,132.4L638.3,130.9L648.9,129.1L659.6,139.7L670.2,127.6L680.9,124.5L691.5,128.5L702.1,120.3L712.8,116.4L723.4,114.3L734.0,104.9L744.7,86.1L755.3,79.2L766.0,63.3L776.6,40.9L787.2,48.5L797.9,50.8L808.5,68.2L819.1,81.1L829.8,81.0L840.4,67.7L851.1,55.8L861.7,47.6L872.3,63.6L883.0,39.4L893.6,31.0L904.3,19.9L914.9,11.4L925.5,27.7L936.2,40.1L946.8,49.6L957.4,28.2L968.1,34.1L978.7,33.7L989.4,33.4L1000.0,24.5" vector-effect="non-scaling-stroke"/><path class="ch-line" d="M0.0,175.2L10.6,178.5L21.3,176.8L31.9,173.1L42.6,174.2L53.2,177.9L63.8,177.6L74.5,175.5L85.1,171.5L95.7,173.3L106.4,175.2L117.0,174.1L127.7,173.4L138.3,167.9L148.9,166.0L159.6,179.5L170.2,173.0L180.9,164.1L191.5,164.5L202.1,166.6L212.8,169.9L223.4,169.0L234.0,167.9L244.7,168.5L255.3,168.1L266.0,166.5L276.6,163.5L287.2,159.0L297.9,158.6L308.5,161.7L319.1,160.4L329.8,162.8L340.4,162.8L351.1,167.4L361.7,166.8L372.3,168.8L383.0,167.5L393.6,170.4L404.3,172.5L414.9,171.0L425.5,174.9L436.2,175.8L446.8,179.1L457.4,175.0L468.1,177.4L478.7,181.4L489.4,177.7L500.0,175.4L510.6,177.4L521.3,171.0L531.9,172.1L542.6,169.3L553.2,168.7L563.8,164.9L574.5,166.3L585.1,162.3L595.7,162.5L606.4,160.3L617.0,159.2L627.7,158.9L638.3,161.1L648.9,157.7L659.6,155.3L670.2,148.5L680.9,149.3L691.5,146.4L702.1,143.6L712.8,141.7L723.4,140.1L734.0,138.5L744.7,140.3L755.3,143.9L766.0,144.6L776.6,141.4L787.2,138.4L797.9,133.5L808.5,138.8L819.1,134.7L829.8,130.8L840.4,130.4L851.1,126.1L861.7,117.0L872.3,117.8L883.0,120.3L893.6,110.0L904.3,109.3L914.9,103.4L925.5,97.8L936.2,103.1L946.8,89.1L957.4,84.3L968.1,82.2L978.7,76.6L989.4,76.2L1000.0,80.6" vector-effect="non-scaling-stroke"/></svg><div class="sr-ylab"><span style="top:14.6%">$59k</span><span style="top:38.2%">$47k</span><span style="top:61.8%">$36k</span><span style="top:85.4%">$24k</span></div>
+      <div class="wins"><span style="left:15.1%"><span class="sr-num">1</span></span><span style="left:43.3%"><span class="sr-num">2</span></span><span style="left:79.9%"><span class="sr-num">3</span></span></div>
+    </div>
+    <div class="xl"><span style="left:0.0%">2019</span><span style="left:12.8%">2020</span><span style="left:25.5%">2021</span><span style="left:38.3%">2022</span><span style="left:51.1%">2023</span><span style="left:63.8%">2024</span><span style="left:76.6%">2025</span><span style="left:89.4%">2026</span></div>
+  </div></div>
+  <div class="panel" style="margin-top:14px">
+    <table class="tbl">
+      <tr><th></th><th>Period</th><th class="num">SPY</th><th class="num">Recession Radar</th><th>What it held going in</th><th class="num">Back to its high</th></tr>
+      <tr><td><span class="sr-num">1</span></td><td>Feb 19 to Mar 23, 2020<div class="xs dim">Covid sell-off</div></td><td class="num loss">−33.7%</td><td class="num loss">−11.2%</td><td class="sm">TLT and GLD from Feb 3, then QQQ and VTI from Mar 2</td><td class="num">4 months</td></tr>
+      <tr><td><span class="sr-num">2</span></td><td>Jan 3 to Oct 12, 2022<div class="xs dim">Rate rises</div></td><td class="num loss">−25.4%</td><td class="num loss">−13.9%</td><td class="sm">Momentum all year; treasuries fell too, so the safe branch would not have helped</td><td class="num">14 months</td></tr>
+      <tr><td><span class="sr-num">3</span></td><td>Apr 2 to Apr 8, 2025<div class="xs dim">Tariff sell-off</div></td><td class="num loss">−12.1%</td><td class="num loss">−3.1%</td><td class="sm">QQQ and VTI, with the RSI at 33.5</td><td class="num">2 months</td></tr>
+    </table>
+  </div>
+  <div class="callout" style="margin-top:12px"><span data-icon="info"></span><div>These are backtest results. The paper session started Jun 2 and its largest drop so far is <b>3.2%</b>, so none of this has been seen with real orders.</div></div>
+</div></div></div></div></div>
+<div data-frame="phone"><div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Recession Radar</span><span></span><span></span></div><div class="m-head" style="padding-top:0"><div class="t" style="font-size:24px">Performance</div><div class="s">The worst stretches for SPY since 2019</div></div>
+<div class="m-body">
+  <div style="position:relative"><svg class="sr-svg" viewBox="0 0 1000 110" preserveAspectRatio="none" style="height:110px"><defs><linearGradient id="srg4" x1="0" x2="0" y1="0" y2="1"><stop offset="0" class="ch-stop-a"/><stop offset="1" class="ch-stop-b"/></linearGradient></defs><line class="ch-grid" x1="0" x2="1000" y1="18.2" y2="18.2" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><line class="ch-grid" x1="0" x2="1000" y1="42.8" y2="42.8" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><line class="ch-grid" x1="0" x2="1000" y1="67.2" y2="67.2" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><line class="ch-grid" x1="0" x2="1000" y1="91.8" y2="91.8" stroke-dasharray="1 3" vector-effect="non-scaling-stroke"/><rect class="sr-band" x="144.7" y="0" width="11.7" height="110"/><rect class="sr-band" x="383.0" y="0" width="100.0" height="110"/><rect class="sr-band" x="797.9" y="0" width="6.0" height="110"/><path d="M0.0,89.7L10.6,91.4L21.3,90.5L31.9,88.7L42.6,89.3L53.2,91.1L63.8,90.9L74.5,89.9L85.1,87.9L95.7,88.8L106.4,89.8L117.0,89.2L127.7,88.9L138.3,86.1L148.9,85.2L159.6,91.9L170.2,88.7L180.9,84.2L191.5,84.4L202.1,85.5L212.8,87.1L223.4,86.7L234.0,86.1L244.7,86.4L255.3,86.2L266.0,85.5L276.6,84.0L287.2,81.7L297.9,81.5L308.5,83.0L319.1,82.4L329.8,83.6L340.4,83.6L351.1,85.9L361.7,85.6L372.3,86.6L383.0,85.9L393.6,87.4L404.3,88.4L414.9,87.6L425.5,89.6L436.2,90.0L446.8,91.7L457.4,89.7L468.1,90.9L478.7,92.8L489.4,91.0L500.0,89.9L510.6,90.8L521.3,87.7L531.9,88.2L542.6,86.8L553.2,86.5L563.8,84.6L574.5,85.4L585.1,83.4L595.7,83.4L606.4,82.4L617.0,81.8L627.7,81.7L638.3,82.8L648.9,81.1L659.6,79.9L670.2,76.5L680.9,76.9L691.5,75.5L702.1,74.1L712.8,73.2L723.4,72.4L734.0,71.6L744.7,72.5L755.3,74.2L766.0,74.6L776.6,73.0L787.2,71.5L797.9,69.1L808.5,71.7L819.1,69.7L829.8,67.8L840.4,67.6L851.1,65.4L861.7,60.9L872.3,61.3L883.0,62.6L893.6,57.5L904.3,57.1L914.9,54.2L925.5,51.4L936.2,54.0L946.8,47.1L957.4,44.7L968.1,43.7L978.7,41.0L989.4,40.8L1000.0,42.9L1000,110L0,110Z" fill="url(#srg4)"/><path class="ch-bench" d="M0.0,89.7L10.6,91.7L21.3,93.6L31.9,91.6L42.6,96.0L53.2,95.7L63.8,99.6L74.5,97.1L85.1,96.2L95.7,93.0L106.4,93.4L117.0,92.0L127.7,92.1L138.3,93.0L148.9,97.2L159.6,102.8L170.2,97.7L180.9,95.9L191.5,95.2L202.1,95.5L212.8,90.6L223.4,89.9L234.0,90.6L244.7,89.6L255.3,90.1L266.0,90.4L276.6,90.5L287.2,85.5L297.9,84.8L308.5,83.7L319.1,81.3L329.8,75.4L340.4,75.2L351.1,76.2L361.7,68.5L372.3,72.2L383.0,72.5L393.6,76.1L404.3,78.1L414.9,75.7L425.5,81.5L436.2,81.4L446.8,86.5L457.4,81.3L468.1,83.7L478.7,89.2L489.4,84.9L500.0,85.2L510.6,81.4L521.3,76.9L531.9,76.0L542.6,76.5L553.2,73.7L563.8,71.5L574.5,73.8L585.1,74.3L595.7,70.5L606.4,69.9L617.0,70.1L627.7,68.6L638.3,67.8L648.9,66.9L659.6,72.2L670.2,66.2L680.9,64.7L691.5,66.6L702.1,62.6L712.8,60.6L723.4,59.6L734.0,55.0L744.7,45.6L755.3,42.2L766.0,34.4L776.6,23.3L787.2,27.0L797.9,28.2L808.5,36.8L819.1,43.2L829.8,43.1L840.4,36.5L851.1,30.6L861.7,26.6L872.3,34.5L883.0,22.5L893.6,18.4L904.3,12.9L914.9,8.7L925.5,16.8L936.2,22.9L946.8,27.6L957.4,17.0L968.1,19.9L978.7,19.7L989.4,19.6L1000.0,15.2" vector-effect="non-scaling-stroke"/><path class="ch-line" d="M0.0,89.7L10.6,91.4L21.3,90.5L31.9,88.7L42.6,89.3L53.2,91.1L63.8,90.9L74.5,89.9L85.1,87.9L95.7,88.8L106.4,89.8L117.0,89.2L127.7,88.9L138.3,86.1L148.9,85.2L159.6,91.9L170.2,88.7L180.9,84.2L191.5,84.4L202.1,85.5L212.8,87.1L223.4,86.7L234.0,86.1L244.7,86.4L255.3,86.2L266.0,85.5L276.6,84.0L287.2,81.7L297.9,81.5L308.5,83.0L319.1,82.4L329.8,83.6L340.4,83.6L351.1,85.9L361.7,85.6L372.3,86.6L383.0,85.9L393.6,87.4L404.3,88.4L414.9,87.6L425.5,89.6L436.2,90.0L446.8,91.7L457.4,89.7L468.1,90.9L478.7,92.8L489.4,91.0L500.0,89.9L510.6,90.8L521.3,87.7L531.9,88.2L542.6,86.8L553.2,86.5L563.8,84.6L574.5,85.4L585.1,83.4L595.7,83.4L606.4,82.4L617.0,81.8L627.7,81.7L638.3,82.8L648.9,81.1L659.6,79.9L670.2,76.5L680.9,76.9L691.5,75.5L702.1,74.1L712.8,73.2L723.4,72.4L734.0,71.6L744.7,72.5L755.3,74.2L766.0,74.6L776.6,73.0L787.2,71.5L797.9,69.1L808.5,71.7L819.1,69.7L829.8,67.8L840.4,67.6L851.1,65.4L861.7,60.9L872.3,61.3L883.0,62.6L893.6,57.5L904.3,57.1L914.9,54.2L925.5,51.4L936.2,54.0L946.8,47.1L957.4,44.7L968.1,43.7L978.7,41.0L989.4,40.8L1000.0,42.9" vector-effect="non-scaling-stroke"/></svg></div>
+  <div class="m-card col gap-6"><div class="row"><span class="sr-num">1</span><b>Covid sell-off</b><span class="sp"></span><span class="xs dim">Feb to Mar 2020</span></div><div class="row mono sm"><span class="dim">SPY</span><span class="loss">−33.7%</span><span class="sp"></span><span class="dim">This</span><span class="loss">−11.2%</span></div><span class="xs dim">In TLT and GLD from Feb 3</span></div>
+  <div class="m-card col gap-6"><div class="row"><span class="sr-num">2</span><b>Rate rises</b><span class="sp"></span><span class="xs dim">2022</span></div><div class="row mono sm"><span class="dim">SPY</span><span class="loss">−25.4%</span><span class="sp"></span><span class="dim">This</span><span class="loss">−13.9%</span></div><span class="xs dim">Treasuries fell too</span></div>
+  <div class="m-card col gap-6"><div class="row"><span class="sr-num">3</span><b>Tariff sell-off</b><span class="sp"></span><span class="xs dim">Apr 2025</span></div><div class="row mono sm"><span class="dim">SPY</span><span class="loss">−12.1%</span><span class="sp"></span><span class="dim">This</span><span class="loss">−3.1%</span></div><span class="xs dim">Held QQQ and VTI</span></div>
+  <div class="callout"><span data-icon="info"></span><div>Backtest only. Paper's largest drop so far is 3.2%.</div></div>
+</div><nav data-tabs="strategies"></nav></div>
+  </div>
+
+  <div class="ax-opt" data-opt="D" data-name="Before going live"
+    data-note="A checklist built only from facts the app already holds: how long paper has run, whether every order filled, the gap to the backtest, the ledger against Alpaca, the version, and whether a live account is connected. What's missing says so, and a short list names what the app can't judge. Useful right before the first live session, though it isn't a performance view, so it may suit the Start live dialog better than a tab here. It must never read as approval, so it avoids a score or a green light.">
+<div data-frame="desktop" data-path="strategies/recession-radar/performance?view=live"><div class="app"><div data-tb="Strategies"></div><div class="main"><div class="page sr-pg"><div class="row"><span class="h2">Recession Radar</span><span class="st run">Running in paper</span><span class="sp"></span><div class="tabs" style="border:0"><a>Overview</a><a>Would hold today</a><a>Rules</a><a class="on">Performance</a><a>Versions</a></div></div><div class="hr" style="margin:6px 0 18px"></div>
+<div class="sr-pd">
+  <div class="row" style="margin-bottom:14px"><div><div class="h3">Before running this with real money</div><div class="sm dim" style="margin-top:3px">What the app can check from the paper session, the backtests and your accounts. Going live is still your decision.</div></div><span class="sp"></span><span class="row sm" style="gap:14px"><span class="row gap-6"><span data-icon="check2" class="gain"></span>5 met</span><span class="row gap-6"><span data-icon="alert" class="risk"></span>2 to look at</span><span class="row gap-6"><span data-icon="minus" class="dim"></span>1 missing</span></span></div>
+  <div class="cols2">
+    <div class="panel">
+      <div class="sr-chk ok"><span data-icon="check2"></span><div><b>Paper has run for 24 weeks</b><div class="d">Since Jun 2: 117 trading days and 6 monthly rebalances.</div></div><span class="a"></span></div><div class="sr-chk ok"><span data-icon="check2"></span><div><b>Every rebalance placed its orders</b><div class="d">12 orders, all filled. None rejected, none left open.</div></div><span class="a"></span></div><div class="sr-chk ok"><span data-icon="check2"></span><div><b>Paper is close to its backtest</b><div class="d">−0.70 points over the same dates. Above 2 points would be flagged.</div></div><span class="a acc">See the gap</span></div><div class="sr-chk ok"><span data-icon="check2"></span><div><b>The ledger matches Alpaca</b><div class="d">Positions and cash agree as of 10:40 today.</div></div><span class="a"></span></div><div class="sr-chk ok"><span data-icon="check2"></span><div><b>All 5 symbols trade on Alpaca</b><div class="d">TLT, GLD, VTI, QQQ and IWM are active and tradable.</div></div><span class="a"></span></div><div class="sr-chk warn"><span data-icon="alert"></span><div><b>Paper ran version 2, the latest is version 3</b><div class="d">Version 3 has a backtest but no paper history. Go live on version 2, or run version 3 in paper first.</div></div><span class="a acc">Compare</span></div><div class="sr-chk warn"><span data-icon="alert"></span><div><b>Paper hasn't seen a large drop</b><div class="d">Its largest drop is 3.2%. The 2-year backtest's was 8.6%, and 13.9% in 2022.</div></div><span class="a acc">Stress periods</span></div><div class="sr-chk miss"><span data-icon="minus"></span><div><b>No live Alpaca account connected</b><div class="d">Live buying power and account restrictions can't be checked until one is.</div></div><span class="a acc">Connect</span></div>
+    </div>
+    <div class="col" style="gap:14px">
+      <div class="panel"><div class="panel-h">What it can't check</div><div class="panel-b sm muted col" style="gap:8px;line-height:1.55">
+        <span>Whether a drop like 2022's is one you'd hold through.</span>
+        <span>How much of your money this should be.</span>
+        <span>Tax on the trades. Each monthly switch can realise gains.</span>
+      </div></div>
+      <div class="panel rim"><div class="panel-b col" style="gap:12px">
+        <div class="lbl">When you're ready</div>
+        <div class="sm muted" style="line-height:1.55">A live session starts from version 2 or 3 with an amount you set. It places its first orders at the next rebalance, Dec 1, not straight away.</div>
+        <span class="btn pri off">Start a live session</span>
+        <span class="xs dim">Connect a live account to enable this.</span>
+      </div></div>
+    </div>
+  </div>
+</div></div></div></div></div>
+<div data-frame="phone"><div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Recession Radar</span><span></span><span></span></div><div class="m-head" style="padding-top:0"><div class="t" style="font-size:24px">Before going live</div><div class="s">5 met · 2 to look at · 1 missing</div></div>
+<div class="m-body">
+  <div class="m-card rows sr-mchk">
+    <div class="m-row"><span class="ic ok" data-icon="check2"></span><div style="flex:1"><div>24 weeks in paper</div><div class="d">6 rebalances, 12 orders filled</div></div></div>
+    <div class="m-row"><span class="ic ok" data-icon="check2"></span><div style="flex:1"><div>Close to its backtest</div><div class="d">−0.70 points, same dates</div></div></div>
+    <div class="m-row"><span class="ic ok" data-icon="check2"></span><div style="flex:1"><div>Ledger matches Alpaca</div><div class="d">As of 10:40</div></div></div>
+    <div class="m-row"><span class="ic warn" data-icon="alert"></span><div style="flex:1"><div>Paper ran version 2</div><div class="d">Version 3 has no paper history</div></div></div>
+    <div class="m-row"><span class="ic warn" data-icon="alert"></span><div style="flex:1"><div>No large drop yet</div><div class="d">3.2% in paper, 8.6% in the backtest</div></div></div>
+    <div class="m-row"><span class="ic miss" data-icon="minus"></span><div style="flex:1"><div>No live account</div><div class="d">Connect one to check buying power</div></div></div>
+  </div>
+  <div class="sm dim">2 more met: symbols tradable, every order filled.</div>
+  <div class="m-btn sec">Connect a live account</div>
+</div><nav data-tabs="strategies"></nav></div>
+  </div>
+</section>

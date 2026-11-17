@@ -256,6 +256,7 @@ class TestExchangeSingleUse:
         assert first["accessToken"] and second["accessToken"]
 
 
+@pytest.mark.usefixtures("accept_any_invite")
 class TestCompleteSignupSingleUse:
     def _body(self, password: str = "SecurePass123") -> CompleteSignupRequest:
         return CompleteSignupRequest(

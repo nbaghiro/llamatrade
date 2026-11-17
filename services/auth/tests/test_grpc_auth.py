@@ -84,6 +84,7 @@ def auth_context(context: MockRequestContext) -> MockRequestContext:
 # ===================
 
 
+@pytest.mark.usefixtures("accept_any_invite")
 class TestRegister:
     """Tests for register RPC."""
 
@@ -193,6 +194,7 @@ class TestRegister:
             email="oauth@example.com",
             password="SecurePass123",
             tenant_name="Acme",
+            invite_code="ABCD2345",
             first_name="Ada",
             last_name="Lovelace",
         )

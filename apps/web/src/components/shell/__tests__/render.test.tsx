@@ -25,23 +25,33 @@ const at = (path: string, node: JSX.Element) =>
   renderToStaticMarkup(<MemoryRouter initialEntries={[path]}>{node}</MemoryRouter>);
 
 describe('shell', () => {
-  it('renders the six destinations, search, Paper and the market chip', () => {
+  it('renders the seven areas as text links with the clock beside search', () => {
     const html = at('/strategies/abc', <TopBar />);
-    for (const label of ['Home', 'Portfolio', 'Strategies', 'Backtests', 'Sessions', 'Copilot']) {
-      expect(html).toContain(`>${label}</a>`);
+    const labels = [
+      'Home',
+      'Markets',
+      'Strategies',
+      'Backtests',
+      'Sessions',
+      'Portfolio',
+      'Copilot',
+    ];
+    for (const label of labels) {
+      expect(html).toMatch(new RegExp(`>${label}</a>`));
     }
     expect(html).toContain('Search or jump to');
-    expect(html).toContain('>Paper<');
-    expect(html).toMatch(/Market (open|closed)|Pre-market|After hours/);
-    expect(html).toMatch(/aria-current="page"[^>]*>Strategies</);
-    expect(html).not.toContain('Wallet');
-    expect(html).not.toContain('Create');
+    expect(html).toMatch(/\d{1,2}:\d{2} ET<span[^>]*>(open|closed|pre-market|after hours)</);
+    expect(html).toMatch(/aria-current="page"[^>]*>Strategies<\/a>/);
+    expect(html).not.toContain('>Paper<');
   });
 
-  it('marks Strategies active on a phone for backtests', () => {
-    const html = at('/backtest', <MobileTabBar />);
-    expect(html).toMatch(/aria-current="page"[^>]*>.*Strategies<\/a>/);
-    expect(html).toContain('Account');
+  it('gives the phone tabs for checking in, with Sessions active for an order', () => {
+    const html = at('/trading/orders/o1', <MobileTabBar />);
+    expect(html).toMatch(/aria-current="page"[^>]*>.*?Sessions<\/a>/);
+    for (const label of ['Home', 'Sessions', 'Markets', 'Activity', 'Account']) {
+      expect(html).toContain(`${label}</a>`);
+    }
+    expect(html).not.toContain('Strategies');
   });
 
   it('renders the Candlesticks mark with the accent candle', () => {

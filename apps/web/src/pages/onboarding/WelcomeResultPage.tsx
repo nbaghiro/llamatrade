@@ -1,114 +1,183 @@
 import { BacktestStatus, type BacktestRun } from '@llamatrade/core/proto/backtest_pb';
-import { toDate, toNumber } from '@llamatrade/core/stores/backtest';
+import { toDate, toNumber, useBacktestStore } from '@llamatrade/core/stores/backtest';
 import { useBrokerStore } from '@llamatrade/core/stores/broker';
 import { ArrowUpRight } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
-import { LineChart } from '../../components/charts';
+import { toCurve, toTradeInputs } from '../../components/backtest/runData';
+import { AnnotatedCurve, type CurveLane } from '../../components/charts';
 import {
   LoadingLabel,
-  Num,
   PanelError,
   Pct,
   SkeletonChart,
   SkeletonFigure,
+  StatList,
 } from '../../components/ui';
-import { formatMoney } from '../../lib/format';
+import { groupRebalances, tradesToOrders, type TradeInput } from '../../lib/backtestView';
+import { formatMoney, formatPct } from '../../lib/format';
 import { getStrategy } from '../../services/strategy';
 
+import { heldPeriods, heldSets, switchesOf, symbolsLabel, worstDrop } from './firstResult';
 import { OnboardingLayout, StepTitle } from './OnboardingLayout';
 import { useBacktestRun } from './useBacktestRun';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const day = (d: Date | null) =>
   d ? `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}` : '';
+const shortDay = (d: Date, withYear: boolean) =>
+  `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}${withYear ? `, ${d.getUTCFullYear()}` : ''}`;
 
-function Figure({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: React.ReactNode;
-  sub?: React.ReactNode;
-}) {
-  return (
-    <div className="grid gap-0.5 py-2.5 text-[11.5px] [&+&]:border-l [&+&]:border-line [&+&]:pl-3.5">
-      <span className="text-[11px] font-medium text-fg-3">{label}</span>
-      <div className="text-[22px] leading-tight tracking-[-0.02em]">{value}</div>
-      {sub && <span className="num text-fg-3">{sub}</span>}
-    </div>
-  );
+function useRunTrades(run: BacktestRun): TradeInput[] | null {
+  const fullTrades = useBacktestStore((s) => s.fullTrades);
+  const tradesLoading = useBacktestStore((s) => s.tradesLoading);
+  const loadAllTrades = useBacktestStore((s) => s.loadAllTrades);
+  const loadedFor = useRef('');
+  const inline = useMemo(() => run.results?.trades ?? [], [run.results]);
+
+  useEffect(() => {
+    if (inline.length > 0 || loadedFor.current === run.id) return;
+    loadedFor.current = run.id;
+    loadAllTrades(run.id).catch(() => undefined);
+  }, [run.id, inline.length, loadAllTrades]);
+
+  return useMemo(() => {
+    if (inline.length > 0) return toTradeInputs(inline);
+    if (loadedFor.current !== run.id || tradesLoading || !fullTrades) return null;
+    return toTradeInputs(fullTrades);
+  }, [inline, fullTrades, tradesLoading, run.id]);
 }
 
-/** A read-only summary of one finished run: the figures and the equity line against its benchmark. */
+/** One finished run as Home's annotated curve: switches as pins, holdings and trades as lanes. */
 function RunSummary({ run, name }: { run: BacktestRun; name: string }) {
   const results = run.results;
   const m = results?.metrics;
   const bench = results?.benchmarkSymbol || run.config?.benchmarkSymbol || '';
-  const series = useMemo(() => {
-    const pts = results?.equityCurve ?? [];
-    const dates = pts.map((p) => toDate(p.timestamp) ?? new Date(0));
-    const main = pts.map((p) => toNumber(p.equity));
-    const benchPts = results?.benchmarkEquityCurve ?? [];
-    const benchVals =
-      benchPts.length === pts.length ? benchPts.map((p) => toNumber(p.equity)) : null;
-    return { dates, main, benchVals };
-  }, [results]);
+  const trades = useRunTrades(run);
+  const curve = useMemo(() => toCurve(results?.equityCurve), [results]);
+  const benchValues = useMemo(() => {
+    const b = toCurve(results?.benchmarkEquityCurve);
+    return b.values.length === curve.values.length ? b.values : undefined;
+  }, [results, curve.values.length]);
+
+  const end = useMemo(() => curve.dates[curve.dates.length - 1] ?? new Date(), [curve.dates]);
+  const periods = useMemo(() => (trades ? heldPeriods(trades, end) : []), [trades, end]);
+  const switches = switchesOf(periods);
+  const sets = heldSets(periods).slice(0, 3);
+  const drop = worstDrop(curve.dates, curve.values);
+  const rebalances = useMemo(
+    () => (trades ? groupRebalances(tradesToOrders(trades)) : []),
+    [trades]
+  );
+  const switchDays = new Set(switches.map((s) => s.from.toISOString().slice(0, 10)));
+
+  const start = toNumber(run.config?.initialCapital);
+  const final = curve.values[curve.values.length - 1] ?? 0;
+  const total = toNumber(m?.totalReturn);
+  const benchTotal = toNumber(m?.benchmarkReturn);
+  const mdd = -Math.abs(toNumber(m?.maxDrawdown));
+
+  const pins = switches.slice(0, 6).map((p, i) => ({
+    at: p.from,
+    label: `${shortDay(p.from, i === 0 || p.from.getUTCFullYear() !== switches[i - 1].from.getUTCFullYear())} · to ${symbolsLabel(p.symbols)}`,
+    tone: (i % 2 === 0 ? 'accent' : 'neutral') as 'accent' | 'neutral',
+    row: (i % 2) as 0 | 1,
+  }));
+
+  const lanes: CurveLane[] = [
+    ...sets.map((set) => ({
+      id: `held-${set.key}`,
+      label: <span title={set.key}>Held {symbolsLabel(set.key.split(' · '), 2)}</span>,
+      spans: periods
+        .filter((p) => p.key === set.key)
+        .map((p) => ({ from: p.from, to: p.to, style: 'bar' as const })),
+    })),
+    {
+      id: 'trades',
+      label: 'Trades',
+      value: <span className="num">{m?.totalTrades ?? rebalances.length}</span>,
+      spans: [{ from: curve.dates[0] ?? end, to: end, style: 'off' as const }],
+      events: rebalances.map((r) => {
+        const switched = switchDays.has(r.date);
+        return {
+          at: new Date(`${r.date}T00:00:00Z`),
+          shape: switched ? ('dot' as const) : ('ring' as const),
+          tone: switched ? ('accent' as const) : ('muted' as const),
+          title: `${r.date}: ${r.orders.length} order${r.orders.length === 1 ? '' : 's'}`,
+        };
+      }),
+    },
+  ];
 
   return (
-    <section className="grid w-full max-w-[880px] grid-cols-[minmax(0,1fr)] gap-[18px] rounded-panel border border-line bg-panel p-4 md:p-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <span className="text-[11px] font-medium text-fg-3">Backtest result</span>
+    <section className="panel-rim grid w-full max-w-[1080px] grid-cols-[minmax(0,1fr)] gap-4 p-4 md:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 max-w-[560px]">
+          <span className="text-[11px] font-medium text-fg-3">Your first backtest</span>
           <h2 className="m-0 mt-1 text-[20px] font-semibold tracking-[-0.015em]">{name}</h2>
           <div className="mt-[3px] text-[12px] text-fg-3">
             {day(toDate(run.config?.startDate))} to {day(toDate(run.config?.endDate))} ·{' '}
-            {formatMoney(toNumber(run.config?.initialCapital), { dp: 0 })}
+            {formatMoney(start, { dp: 0 })}
             {bench && ` · benchmark ${bench}`}
           </div>
+          {m && start > 0 && final > 0 && (
+            <p className="m-0 mt-3 text-[14px] text-fg-2">
+              {formatMoney(start, { dp: 0 })} would have become{' '}
+              <b className="num text-fg">{formatMoney(final, { dp: 0 })}</b>, a{' '}
+              <Pct value={total} pnl dp={1} /> return.
+              {bench && (
+                <>
+                  {' '}
+                  {bench} returned <Pct value={benchTotal} signed dp={1} /> over the same dates.
+                </>
+              )}
+              {switches.length > 0 &&
+                ` It switched holdings ${switches.length === 1 ? 'once' : switches.length === 2 ? 'twice' : `${switches.length} times`}, marked on the curve.`}
+            </p>
+          )}
         </div>
         <Link to={`/backtest/${encodeURIComponent(run.id)}`} className="btn btn-secondary">
           Open full results
           <ArrowUpRight aria-hidden="true" className="h-4 w-4" />
         </Link>
       </div>
-      {m && (
-        <div className="grid grid-cols-3 border-y border-line">
-          <Figure
-            label="Total return"
-            value={<Pct value={toNumber(m.totalReturn)} pnl dp={1} />}
-            sub={
-              bench && (
-                <>
-                  {bench} <Pct value={toNumber(m.benchmarkReturn)} signed dp={1} />
-                </>
-              )
-            }
-          />
-          <Figure label="Sharpe" value={<Num value={toNumber(m.sharpeRatio)} />} />
-          <Figure
-            label="Max drawdown"
-            value={<Pct value={-Math.abs(toNumber(m.maxDrawdown))} pnl dp={1} />}
-          />
-        </div>
-      )}
-      {series.main.length > 1 && (
-        <LineChart
-          label={`Equity of ${name}${series.benchVals ? ` against ${bench}` : ''}`}
-          dates={series.dates}
-          series={[
-            { values: series.main, kind: 'main', area: true },
-            ...(series.benchVals ? [{ values: series.benchVals, kind: 'bench' as const }] : []),
+      {curve.values.length > 1 && (
+        <AnnotatedCurve
+          label={`Equity of ${name}${benchValues ? ` against ${bench}` : ''}`}
+          dates={curve.dates}
+          values={curve.values}
+          benchmark={benchValues}
+          pins={pins}
+          bands={drop ? [{ from: drop.from, to: drop.to, tone: 'loss', through: true }] : []}
+          lanes={trades ? lanes : []}
+          height={230}
+          side={
+            m && (
+              <StatList
+                items={[
+                  {
+                    label: 'CAGR',
+                    value: formatPct(toNumber(m.annualizedReturn)),
+                    tone: toNumber(m.annualizedReturn) >= 0 ? 'gain' : 'loss',
+                  },
+                  { label: 'Sharpe', value: toNumber(m.sharpeRatio).toFixed(2) },
+                  { label: 'Max drawdown', value: formatPct(mdd), tone: 'loss' },
+                  { label: 'Trades', value: String(m.totalTrades) },
+                ]}
+              />
+            )
+          }
+          legend={[
+            { shape: 'dot', label: 'Switch between holdings' },
+            { shape: 'ring', label: 'Rebalance', tone: 'muted' },
           ]}
-          height={240}
-          yFormat={(v) => `${Math.round(v / 1000)}k`}
         />
       )}
       <p className="m-0 text-[11.5px] text-fg-3">
-        A backtest replays history with the same engine that runs paper sessions. Past results
-        don&apos;t predict future returns.
+        {drop &&
+          `The shaded stretch is the worst drop, ${shortDay(drop.from, true)} to ${shortDay(drop.to, true)}. `}
+        Backtests use past prices and assume fills at the close. Real results will differ.
       </p>
     </section>
   );

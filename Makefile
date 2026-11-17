@@ -1,4 +1,4 @@
-.PHONY: dev dev-up dev-down dev-infra dev-setup build test test-e2e lint clean ci migrate migrate-status migrate-history seed-demo emails emails-preview docs-docx
+.PHONY: dev dev-up dev-down dev-infra dev-setup build test test-e2e lint clean ci migrate migrate-status migrate-history waitlist-list waitlist-invite invite-create invite-list seed-demo emails emails-preview docs-docx
 
 # Helper to load .env file
 ifneq (,$(wildcard ./.env))
@@ -333,6 +333,25 @@ migrate-history:
 migrate-new:
 	@read -p "Migration name: " name && \
 	$(LOAD_ENV) && cd libs/db/llamatrade_db/alembic && ../../../../.venv/bin/alembic revision -m "$$name"
+
+# Marketing waitlist (auth service). CSV to stdout; STATUS=waiting|invited filters.
+waitlist-list:
+	@$(LOAD_ENV) && cd services/auth && ../../.venv/bin/python -m src.tools.waitlist list $(if $(STATUS),--status $(STATUS),)
+
+# Invite one waitlisted email: marks it invited, creates a code bound to it and
+# sends the invite email. make waitlist-invite EMAIL=person@example.com [DAYS=30]
+waitlist-invite:
+	@test -n "$(EMAIL)" || (echo "Usage: make waitlist-invite EMAIL=person@example.com" && exit 1)
+	@$(LOAD_ENV) && cd services/auth && ../../.venv/bin/python -m src.tools.waitlist invite "$(EMAIL)" $(if $(DAYS),--days $(DAYS),)
+
+# Sign-up invite codes. With EMAIL the code is bound to it and emailed; without,
+# anyone can use it. make invite-create [EMAIL=person@example.com] [DAYS=30]
+invite-create:
+	@$(LOAD_ENV) && cd services/auth && ../../.venv/bin/python -m src.tools.invites create $(if $(EMAIL),--email "$(EMAIL)",) $(if $(DAYS),--days $(DAYS),)
+
+# Every invite code as CSV, newest first.
+invite-list:
+	@$(LOAD_ENV) && cd services/auth && ../../.venv/bin/python -m src.tools.invites list
 
 # Seed a polished, internally-consistent demo tenant (demo@llamatrade.ai / demo1234).
 # Runs inside the portfolio container to reuse the real ledger kernel. Idempotent:

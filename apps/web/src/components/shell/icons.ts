@@ -1,9 +1,11 @@
 import {
+  Activity,
+  Bell,
+  CandlestickChart,
   FlaskConical,
   Home,
   LineChart,
   Sparkles,
-  Timer,
   User,
   Wallet,
   type LucideIcon,
@@ -13,10 +15,12 @@ import type { DestinationKey } from '../../lib/navigation';
 
 export const DESTINATION_ICON: Record<DestinationKey, LucideIcon> = {
   home: Home,
+  markets: CandlestickChart,
   portfolio: Wallet,
   strategies: LineChart,
   backtests: FlaskConical,
-  sessions: Timer,
+  sessions: Activity,
   copilot: Sparkles,
+  activity: Bell,
   account: User,
 };

@@ -102,8 +102,9 @@ fallback instead of inventing it.
   `SetDefaultPaymentMethod` RPC.
 - **Copilot history during an outage** is served by the same agent service as the model.
 - **Onboarding progress** has no API; dismissals are kept per browser.
-- **Marketing**: the ticker tape uses invented prices (see `marketing-ticker-data.md`), and the
-  invite form stays closed until `VITE_LOOPS_FORM_ID` is set.
+- **Marketing**: the ticker tape uses invented prices (see `marketing-ticker-data.md`). The
+  invite form joins the auth service's waitlist (`JoinWaitlist`); the standalone build keeps it
+  closed until `VITE_AUTH_URL` is set.
 
 ## Open items
 

@@ -1,11 +1,10 @@
-import { Clock } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
-import { AuthCardLayout, CardIcon } from '../../components/auth/AuthCardLayout';
-import { FormHeader } from '../../components/auth/AuthSplitLayout';
+import { AuthSplitLayout } from '../../components/auth/AuthSplitLayout';
 import { authErrorMessage } from '../../components/auth/errors';
 import { landingAfterSignIn } from '../../components/auth/landing';
+import { Pill } from '../../components/ui';
 import { exchangeHandoff } from '../../services/alpacaOAuth';
 import { useAuthStore } from '../../store/auth';
 
@@ -44,24 +43,23 @@ export default function AlpacaCallbackPage() {
 
   if (!error) {
     return (
-      <AuthCardLayout>
-        <FormHeader title="Signing you in" subtitle="Finishing the Alpaca sign-in." />
+      <AuthSplitLayout title="Signing you in" subtitle="Finishing the Alpaca sign-in.">
         <span className="sr-only" role="status">
           Signing you in
         </span>
-      </AuthCardLayout>
+      </AuthSplitLayout>
     );
   }
 
   return (
-    <AuthCardLayout>
-      <CardIcon tone="warn">
-        <Clock />
-      </CardIcon>
-      <FormHeader title="Sign-in didn't finish" subtitle={`${error} Please try again.`} />
+    <AuthSplitLayout
+      title="Sign-in didn't finish"
+      subtitle={`${error} Please try again.`}
+      status={<Pill tone="risk">Not signed in</Pill>}
+    >
       <Link to="/login" className="btn btn-primary btn-lg w-full" replace>
         Back to sign in
       </Link>
-    </AuthCardLayout>
+    </AuthSplitLayout>
   );
 }

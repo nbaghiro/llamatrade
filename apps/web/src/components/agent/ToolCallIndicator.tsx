@@ -19,7 +19,7 @@ export function ToolCallIndicator({
 }: ToolCallIndicatorProps) {
   const meta =
     status === 'waiting'
-      ? 'waiting for your approval'
+      ? 'waiting for your approval below'
       : status === 'error'
         ? 'failed'
         : detail || resultPreview;

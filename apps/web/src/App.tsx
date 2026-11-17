@@ -18,14 +18,18 @@ import PlansPage from './pages/billing/PlansPage';
 import ConnectAlpacaPage from './pages/connect/ConnectAlpacaPage';
 import CopilotPage from './pages/copilot/CopilotPage';
 import DashboardPage from './pages/dashboard/DashboardPage';
+import MarketsPage from './pages/markets/MarketsPage';
 import NotificationsPage from './pages/notifications/NotificationsPage';
 import WelcomePage from './pages/onboarding/WelcomePage';
 import WelcomeResultPage from './pages/onboarding/WelcomeResultPage';
 import WelcomeTemplatePage from './pages/onboarding/WelcomeTemplatePage';
 import ActivityPage from './pages/portfolio/ActivityPage';
+import ChecksPage from './pages/portfolio/ChecksPage';
 import PortfolioPage from './pages/portfolio/PortfolioPage';
 import SleevePage from './pages/portfolio/SleevePage';
+import GoLivePage from './pages/sessions/GoLivePage';
 import OrderCheckPage from './pages/sessions/OrderCheckPage';
+import RebalancesPage from './pages/sessions/RebalancesPage';
 import SessionPage from './pages/sessions/SessionPage';
 import SettingsPage from './pages/settings/SettingsPage';
 import StrategiesPage from './pages/strategies/StrategiesPage';
@@ -127,6 +131,7 @@ export default function App() {
         }
       >
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/markets" element={<MarketsPage />} />
 
         <Route path="/strategies" element={<StrategiesPage />} />
         <Route path="/strategies/templates" element={<TemplatesPage />} />
@@ -144,11 +149,14 @@ export default function App() {
         <Route path="/trading" element={<TradingPage />} />
         <Route path="/trading/orders/:orderId" element={<OrderCheckPage />} />
         <Route path="/trading/:sessionId" element={<SessionPage />} />
+        <Route path="/trading/:sessionId/rebalances" element={<RebalancesPage />} />
+        <Route path="/trading/:sessionId/live" element={<GoLivePage />} />
         <Route path="/sessions" element={<Navigate to="/trading" replace />} />
 
         <Route path="/portfolio" element={<PortfolioPage />} />
         <Route path="/portfolio/sleeves/:sleeveId" element={<SleevePage />} />
         <Route path="/portfolio/activity" element={<ActivityPage />} />
+        <Route path="/portfolio/checks" element={<ChecksPage />} />
         <Route path="/wallet" element={<Navigate to="/portfolio/activity" replace />} />
 
         <Route path="/copilot" element={<CopilotPage />} />

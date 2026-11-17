@@ -1,5 +1,8 @@
+import { Check } from 'lucide-react';
+
 import { LogoMark } from '../../components/common/Logo';
 import { APP_URL, MARKETING_STANDALONE, SIGN_IN_URL } from '../../config/marketing';
+import { useInviteDone } from '../hooks/useInviteDone';
 import { useSignedIn } from '../hooks/useSignedIn';
 import { appHref } from '../lib/session';
 
@@ -13,9 +16,10 @@ const LINKS: readonly [string, string][] = [
 
 const LINK_OPTS = { standalone: MARKETING_STANDALONE, appUrl: APP_URL };
 
-/** Signed-in visitors get "Open app"; everyone else gets "Sign in" beside the invite button. */
+/** Signed-in visitors get "Open app"; everyone else gets "Sign in" beside the invite button, or a quiet "On the list" once they have joined. */
 export function Nav() {
   const signedIn = useSignedIn();
+  const [onList] = useInviteDone();
   const open = appHref('/dashboard', LINK_OPTS);
   const signIn = appHref(SIGN_IN_URL, LINK_OPTS);
   return (
@@ -44,9 +48,16 @@ export function Nav() {
                   Sign in
                 </a>
               )}
-              <a className="mk-btn pri" href="#join">
-                Request an invite
-              </a>
+              {onList ? (
+                <span className="on-list" role="status">
+                  <Check size={14} strokeWidth={2.25} aria-hidden="true" />
+                  On the list
+                </span>
+              ) : (
+                <a className="mk-btn pri" href="#join">
+                  Request an invite
+                </a>
+              )}
             </>
           )}
         </div>

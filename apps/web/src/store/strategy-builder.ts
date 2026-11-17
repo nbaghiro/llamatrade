@@ -39,6 +39,9 @@ export type { ValidationResult, ValidationIssue };
 
 enableMapSet();
 
+/** The name a new draft starts with until someone names it. */
+export const UNTITLED_STRATEGY = 'Untitled strategy';
+
 // View mode type (defined early for use in persistence helpers)
 export type ViewMode = 'tree' | 'code' | 'split';
 
@@ -1559,7 +1562,7 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
               id: rootId,
               type: 'root',
               parentId: null,
-              name: 'New Strategy',
+              name: UNTITLED_STRATEGY,
               childIds: [],
             },
           },
@@ -1578,10 +1581,10 @@ export const useStrategyBuilderStore = create<StrategyBuilderState>()(
         state.strategyId = null;
         state.pendingArtifactId = null;
         state.pendingTemplateId = null;
-        state.strategyName = 'New Strategy';
+        state.strategyName = UNTITLED_STRATEGY;
         state.strategyDescription = '';
-        state.timeframe = '1D';
-        state.benchmark = '';
+        state.timeframe = '1M';
+        state.benchmark = 'SPY';
         state.isDirty = false;
         state.serverVersion = 0;
         state.lastSavedAt = null;

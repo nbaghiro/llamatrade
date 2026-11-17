@@ -87,7 +87,7 @@ describe('run panel states render', () => {
     expect(out).toContain('replaying through 2025-01-20');
     expect(out).toContain('+4.1%');
     expect(out).toContain('after the run');
-    expect(out).toContain('The curve draws when the run completes.');
+    expect(out).toContain('The curve appears when the run completes.');
   });
 
   it('shows metrics and the chart once completed', () => {
@@ -138,6 +138,59 @@ describe('run panel states render', () => {
     expect(out).toContain('couldn&#x27;t finish');
     expect(out).toContain('Open in the editor');
     expect(out).toContain('bg-risk');
+  });
+
+  it('draws holding lanes and the worst fall from the trades', () => {
+    const out = html(
+      <RunPanel
+        {...base}
+        run={completedRun()}
+        phase="completed"
+        log={[]}
+        partial={partialFigures(null)}
+        trades={[
+          {
+            symbol: 'TLT',
+            side: 'BUY',
+            quantity: 10,
+            entryPrice: 90,
+            exitPrice: 91,
+            entryTime: new Date('2025-01-03T00:00:00Z'),
+            exitTime: new Date('2025-01-20T00:00:00Z'),
+            pnl: 10,
+            entryReason: '',
+            exitReason: '',
+          },
+        ]}
+      />
+    );
+    expect(out).toContain('>TLT<');
+    expect(out).toContain('Holdings are rebuilt from the trade list');
+    expect(out).toContain('Drawdown from peak');
+    expect(out).toContain('SPY 0.');
+  });
+
+  it('keeps the dates a failed run reached', () => {
+    const run = create(BacktestRunSchema, {
+      id: 'r9',
+      status: BacktestStatus.FAILED,
+      currentDate: '2025-01-20',
+      config: { startDate: ts('2025-01-02T00:00:00Z'), endDate: ts('2025-03-31T00:00:00Z') },
+    });
+    const out = html(
+      <RunFailure
+        phase="failed"
+        message="rsi(XLU, 14) needs 14 bars, got 9"
+        strategyId="s1"
+        onBack={() => undefined}
+        run={run}
+      />
+    );
+    expect(out).toContain('The run stopped on Jan 20, 2025.');
+    expect(out).toContain('Stopped Jan 20, 2025');
+    expect(out).toContain('rsi(XLU, 14) needs 14 bars, got 9');
+    expect(out).toContain('/backtest?rerun=r9');
+    expect(out).toContain('Copy details for support');
   });
 
   it('writes the summary sentence against the benchmark', () => {

@@ -198,6 +198,34 @@ async def test_sleeve_series_keeps_one_point_per_ledger_sequence() -> None:
     assert [ts for ts, _ in series] == [base + timedelta(hours=1), base + timedelta(hours=2)]
 
 
+async def test_sleeve_series_keeps_a_point_per_day_at_one_sequence() -> None:
+    """A quiet sleeve's daily re-marks share a sequence but are separate points.
+
+    With no ledger event between them, each day's snapshot repeats the last
+    sequence; the price moved, so the curve must keep one point per day rather
+    than flattening weeks of marks into one.
+    """
+    svc = _svc()
+    base = datetime(2026, 1, 5, 21, tzinfo=UTC)
+    snapshots = [
+        SimpleNamespace(created_at=base, as_of_sequence=7, equity=Decimal("100")),
+        SimpleNamespace(
+            created_at=base + timedelta(days=1), as_of_sequence=7, equity=Decimal("103")
+        ),
+        SimpleNamespace(
+            created_at=base + timedelta(days=1, hours=1), as_of_sequence=7, equity=Decimal("104")
+        ),
+        SimpleNamespace(
+            created_at=base + timedelta(days=2), as_of_sequence=7, equity=Decimal("101")
+        ),
+    ]
+    svc.db.scalars = AsyncMock(return_value=SimpleNamespace(all=lambda: snapshots))
+
+    series = await svc._sleeve_series(TENANT, uuid4(), None, None)
+
+    assert [eq for _, eq in series] == [Decimal("100"), Decimal("104"), Decimal("101")]
+
+
 async def test_sleeve_series_passes_the_window_to_the_database() -> None:
     """Rows are filtered in SQL, so the fake returns only what the DB would.
 

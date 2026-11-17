@@ -6,11 +6,16 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { compareColor } from '../../components/backtest/compareColors';
 import { HistoryTable } from '../../components/backtest/HistoryTable';
-import { PageHead, Panel, RunStatus } from '../../components/backtest/parts';
+import { inFlight, strategyRows } from '../../components/backtest/historyTimeline';
+import { LatestRunCard } from '../../components/backtest/LatestRunCard';
+import { Panel, RunStatus } from '../../components/backtest/parts';
 import { phaseOf } from '../../components/backtest/runData';
 import { runWhen, strategyNameOf } from '../../components/backtest/runLabels';
+import { RunningStrip } from '../../components/backtest/RunningStrip';
+import { StrategyTimeline } from '../../components/backtest/StrategyTimeline';
 import { EmptyState, NoMatch } from '../../components/ui/EmptyState';
 import { Pct } from '../../components/ui/Num';
+import { PageHead } from '../../components/ui/PageHead';
 import { PanelError } from '../../components/ui/PanelError';
 import { SkeletonRows } from '../../components/ui/Skeleton';
 import { Segmented } from '../../components/ui/Tabs';
@@ -18,6 +23,7 @@ import { COMPARE_SOFT_LIMIT, longDate, parseRunIds } from '../../lib/backtestVie
 
 type StateFilter = 'all' | 'completed' | 'other';
 const PAGE = 50;
+const LANES = 8;
 
 /** The range every selected run covers, from their configs. */
 function sharedRange(runs: readonly BacktestRun[]): { start: Date; end: Date } | null {
@@ -45,6 +51,9 @@ export default function BacktestHistoryPage() {
   const [state, setState] = useState<StateFilter>('all');
   const [strategyId, setStrategyId] = useState('');
   const [selected, setSelected] = useState<string[]>(() => parseRunIds(params.get('select')));
+  const fetchLatest = useBacktestStore((s) => s.fetchLatestCompletedBacktest);
+  const [latestRun, setLatestRun] = useState<BacktestRun | null>(null);
+  const [showAllLanes, setShowAllLanes] = useState(false);
 
   useEffect(() => {
     fetchStrategies().catch(() => undefined);
@@ -64,6 +73,32 @@ export default function BacktestHistoryPage() {
     [history.runs, strategyId, state]
   );
   const strategyCount = new Set(history.runs.map((r) => r.strategyId)).size;
+  const rows = useMemo(() => strategyRows(history.runs), [history.runs]);
+  const running = useMemo(() => inFlight(history.runs), [history.runs]);
+  const newestDone = useMemo(
+    () =>
+      rows
+        .map((r) => r.latestCompleted)
+        .filter((r) => r !== null)
+        .sort((a, b) => b.at.getTime() - a.at.getTime())[0]?.run ?? null,
+    [rows]
+  );
+  const newestDoneId = newestDone?.id ?? '';
+  const newestStrategy = newestDone?.strategyId ?? '';
+
+  useEffect(() => {
+    if (!newestStrategy) return;
+    let live = true;
+    fetchLatest(newestStrategy)
+      .then((r) => {
+        if (live) setLatestRun(r && r.id === newestDoneId ? r : null);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [fetchLatest, newestStrategy, newestDoneId]);
+
   const picked = history.runs.filter((r) => selected.includes(r.id));
   const range = sharedRange(picked);
   const toggle = (id: string) =>
@@ -95,10 +130,6 @@ export default function BacktestHistoryPage() {
           </option>
         ))}
       </select>
-      <Link to="/backtest" className="btn btn-primary">
-        <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-        New backtest
-      </Link>
     </>
   );
 
@@ -200,15 +231,58 @@ export default function BacktestHistoryPage() {
   return (
     <div className="page grid gap-3.5 pb-28">
       <PageHead
-        title="Backtest history"
-        meta={
+        title="Backtests"
+        sub={
           history.loaded && history.runs.length
-            ? `${history.total} runs · ${strategyCount} ${strategyCount === 1 ? 'strategy' : 'strategies'}`
+            ? `${history.total} ${history.total === 1 ? 'run' : 'runs'} across ${strategyCount} ${strategyCount === 1 ? 'strategy' : 'strategies'}${running.length ? ` · ${running.length} running` : ''} · every result on this page is a backtest`
             : undefined
         }
-        actions={filters}
+        actions={
+          <Link to="/backtest" className="btn btn-primary">
+            <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+            New backtest
+          </Link>
+        }
       />
+      {running.map((r) => (
+        <RunningStrip key={r.id} run={r} strategyName={strategyNameOf(strategies, r.strategyId)} />
+      ))}
+      {latestRun && (
+        <div className="md:hidden">
+          <LatestRunCard
+            run={latestRun}
+            strategyName={strategyNameOf(strategies, latestRun.strategyId)}
+          />
+        </div>
+      )}
+      {rows.length > 0 && (
+        <section className="panel-rim hidden min-w-0 overflow-hidden md:block">
+          <StrategyTimeline
+            rows={showAllLanes ? rows : rows.slice(0, LANES)}
+            metrics={history.metrics}
+            strategies={strategies}
+            selected={strategyId}
+            onSelect={setStrategyId}
+            today={new Date()}
+          />
+          {rows.length > LANES && (
+            <button
+              type="button"
+              className="w-full border-t border-line px-3.5 py-2 text-left text-[12px] text-accent hover:underline"
+              onClick={() => setShowAllLanes((v) => !v)}
+            >
+              {showAllLanes ? 'Show fewer strategies' : `Show all ${rows.length} strategies`}
+            </button>
+          )}
+        </section>
+      )}
       <Panel
+        title={
+          strategyId
+            ? `${strategyNameOf(strategies, strategyId)} · ${runs.length} ${runs.length === 1 ? 'run' : 'runs'}`
+            : 'All runs'
+        }
+        aside={<span className="hidden flex-wrap items-center gap-2 md:flex">{filters}</span>}
         footer={
           history.runs.length > 0 ? (
             <span className="flex items-center justify-between gap-3">

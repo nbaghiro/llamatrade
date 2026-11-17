@@ -1,10 +1,8 @@
-import { CLOSED_BETA } from '@llamatrade/core/billing/planTiers';
 import { useBrokerStore } from '@llamatrade/core/stores/broker';
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert } from 'react-native';
 
-import { useBillingStore } from '../../src/stores/billing';
 import { makeStyles } from '../../src/theme';
 import { Button, Card, Field, ListRow, Notice, Screen, Segmented, StatusMark, Text, type Segment } from '../../src/ui';
 
@@ -19,8 +17,6 @@ const back = { label: 'Account', onPress: () => (router.canGoBack() ? router.bac
 export default function ConnectBrokerScreen() {
   const s = useStyles();
   const { credentials, connecting, error, fetch, connect, remove, clearError } = useBrokerStore();
-  const subscription = useBillingStore((st) => st.subscription);
-  const canLive = !CLOSED_BETA && (subscription?.plan?.maxLiveSessions ?? 0) > 0;
 
   const [env, setEnv] = useState<Env>('paper');
   const [name, setName] = useState('');
@@ -31,16 +27,7 @@ export default function ConnectBrokerScreen() {
     fetch();
   }, [fetch]);
 
-  useEffect(() => {
-    if (!canLive && env === 'live') setEnv('paper');
-  }, [canLive, env]);
-
-  const submit = async () => {
-    clearError();
-    if (!apiKey.trim() || !apiSecret.trim()) {
-      Alert.alert('Missing keys', 'Enter both your API key ID and secret key.');
-      return;
-    }
+  const connectKeys = async () => {
     const ok = await connect({ name, apiKey: apiKey.trim(), apiSecret: apiSecret.trim(), isPaper: env === 'paper' });
     if (ok) {
       setApiKey('');
@@ -48,6 +35,26 @@ export default function ConnectBrokerScreen() {
       setName('');
       Alert.alert('Connected', `Your Alpaca ${env} account is linked.`);
     }
+  };
+
+  const submit = () => {
+    clearError();
+    if (!apiKey.trim() || !apiSecret.trim()) {
+      Alert.alert('Missing keys', 'Enter both your API key ID and secret key.');
+      return;
+    }
+    if (env === 'paper') {
+      connectKeys();
+      return;
+    }
+    Alert.alert(
+      'Connect a live account',
+      'Live keys place real orders with real money in your Alpaca account. Strategies only trade on it when you start a live session.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Connect live account', onPress: () => connectKeys() },
+      ],
+    );
   };
 
   const confirmRemove = (id: string, label: string) => {
@@ -60,7 +67,7 @@ export default function ConnectBrokerScreen() {
   return (
     <Screen title="Connect broker" back={back}>
       <Text variant="small" tone="fg2" style={s.intro}>
-        Paste your Alpaca paper keys.{CLOSED_BETA ? " Live trading isn't available in the beta." : ''}
+        Paste your Alpaca paper or live keys. Live sessions need a paid plan.
       </Text>
 
       {credentials.map((cred) => (
@@ -74,7 +81,7 @@ export default function ConnectBrokerScreen() {
         </Card>
       ))}
 
-      <Segmented options={ENV_OPTIONS} value={env} onChange={setEnv} disabledKeys={canLive ? [] : ['live']} />
+      <Segmented options={ENV_OPTIONS} value={env} onChange={setEnv} />
 
       <Field label="Label (optional)" value={name} onChange={setName} placeholder="My Alpaca account" autoCapitalizeWords />
       <Field label="API key ID" value={apiKey} onChange={setApiKey} placeholder="PK..." mono />
@@ -83,6 +90,10 @@ export default function ConnectBrokerScreen() {
       <Text variant="caption" tone="fg3">
         Keys are checked with Alpaca, encrypted at rest and only sent over TLS.
       </Text>
+
+      {env === 'live' ? (
+        <Notice tone="neutral" detail="Live keys trade real money from your Alpaca account." />
+      ) : null}
 
       {error ? <Notice title="Couldn't connect." detail={error} /> : null}
 

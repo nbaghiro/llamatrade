@@ -1,5 +1,4 @@
 import {
-  CLOSED_BETA,
   PLAN_TIERS,
   resolveCurrentTier,
   tierPricePerMonth,
@@ -9,14 +8,14 @@ import {
 import { errorMessage } from '@llamatrade/core/errors';
 import { BillingInterval, PlanTier, type Plan } from '@llamatrade/core/proto/billing_pb';
 import { useBillingStore } from '@llamatrade/core/stores/billing';
-import { ChevronLeft, Info } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import { formatUsdWhole } from '../../components/billing/format';
 import { Dialog, Segmented, Skeleton } from '../../components/ui';
 import { asSentence } from '../../lib/format';
-import { KV, Note, Panel } from '../settings/parts';
+import { KV, Panel } from '../settings/parts';
 
 import { planAction } from './planAction';
 
@@ -53,7 +52,6 @@ export default function PlansPage() {
   const current = resolveCurrentTier(subscription);
   const yearly = cycle === 'yearly';
   const interval = yearly ? BillingInterval.YEARLY : BillingInterval.MONTHLY;
-  const currentName = PLAN_TIERS.find((t) => t.key === current)?.name;
 
   const confirmSwitch = async () => {
     if (!pending) return;
@@ -102,21 +100,11 @@ export default function PlansPage() {
         />
       </div>
 
-      {CLOSED_BETA && (
-        <div className="mb-3">
-          <Note icon={<Info className="h-4 w-4" />}>
-            <b className="font-semibold text-fg">No charge during the closed beta.</b>{' '}
-            {currentName ? `You're on ${currentName} while the beta runs. ` : ''}Paid plans and live
-            trading open after it, and we&apos;ll email you before anything changes.
-          </Note>
-        </div>
-      )}
-
       <div className="grid gap-3 md:grid-cols-3">
         {PLAN_TIERS.map((tier) => {
           const plan = planRowFor(plans, tier.key);
           const action = subscriptionLoaded
-            ? planAction(tier.key, current, CLOSED_BETA, plan !== undefined)
+            ? planAction(tier.key, current, plan !== undefined)
             : null;
           const isCurrent = action?.kind === 'current';
           return (
@@ -167,12 +155,6 @@ export default function PlansPage() {
           );
         })}
       </div>
-
-      {CLOSED_BETA && (
-        <p className="mt-3 text-center text-xs text-fg-3">
-          Live sessions stay unavailable during the beta, whatever a plan lists.
-        </p>
-      )}
 
       <Dialog
         open={pending !== null}

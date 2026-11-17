@@ -1,5 +1,4 @@
 import {
-  CLOSED_BETA,
   PLAN_TIERS,
   resolveCurrentTier,
   tierPricePerMonth,
@@ -78,7 +77,7 @@ export default function PlansScreen() {
       ))}
 
       <Text variant="small" tone="fg3" style={s.footer}>
-        {CLOSED_BETA ? 'No charge during the closed beta. ' : ''}Manage billing on the web.
+        Manage billing on the web.
       </Text>
     </Screen>
   );

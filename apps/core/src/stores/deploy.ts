@@ -62,6 +62,12 @@ interface DeployState {
     strategyVersion?: number;
     allocation: number;
     goLive: boolean;
+    /** The session's name; defaults to "<strategy> (paper)" or "<strategy> (live)". */
+    name?: string;
+    /** Paper by default. A live deploy needs `account`. */
+    mode?: "paper" | "live";
+    /** The credential and free cash to deploy against; defaults to the paper account. */
+    account?: { credentialsId: string; unallocatedCash: number };
   }) => Promise<DeployResult | null>;
   clearError: () => void;
 }
@@ -76,14 +82,24 @@ export const useDeployStore = create<DeployState>((set) => ({
     strategyVersion = 0,
     allocation,
     goLive,
+    name,
+    mode = "paper",
+    account,
   }) => {
     const funding = useFundingStore.getState();
-    const credentialsId = funding.paperCredentialId;
-    const invalid = validateDeploy({
-      allocation,
-      unallocatedCash: funding.unallocatedCash,
-      hasPaperCredential: credentialsId !== null,
-    });
+    const isLive = mode === "live";
+    const credentialsId =
+      account?.credentialsId ?? (isLive ? null : funding.paperCredentialId);
+    const executionMode = isLive ? ExecutionMode.LIVE : ExecutionMode.PAPER;
+    const invalid =
+      isLive && !credentialsId
+        ? "Connect an Alpaca live account before going live."
+        : validateDeploy({
+            allocation,
+            unallocatedCash:
+              account?.unallocatedCash ?? funding.unallocatedCash,
+            hasPaperCredential: credentialsId !== null,
+          });
     if (invalid || !credentialsId) {
       set({ error: invalid });
       return null;
@@ -97,7 +113,7 @@ export const useDeployStore = create<DeployState>((set) => ({
         context,
         strategyId,
         version: strategyVersion,
-        mode: ExecutionMode.PAPER,
+        mode: executionMode,
         allocatedCapital: toDecimal(allocation),
         credentialsId,
       });
@@ -125,8 +141,9 @@ export const useDeployStore = create<DeployState>((set) => ({
           context,
           strategyId,
           strategyVersion,
-          name: `${strategyName} (paper)`,
-          mode: ExecutionMode.PAPER,
+          name:
+            name?.trim() || `${strategyName} (${isLive ? "live" : "paper"})`,
+          mode: executionMode,
           credentialsId,
           symbols: [],
           executionId,
@@ -137,7 +154,9 @@ export const useDeployStore = create<DeployState>((set) => ({
         liveError =
           e instanceof ConnectError
             ? e.message
-            : "Could not start paper trading.";
+            : isLive
+              ? "Could not start live trading."
+              : "Could not start paper trading.";
       }
     }
 

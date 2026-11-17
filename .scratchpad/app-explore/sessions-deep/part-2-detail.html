@@ -1,0 +1,495 @@
+<style>
+  /* ================= Detail, round two (prefix n2-d-) ================= */
+  .n2-d .page { padding: 20px 32px; }
+  .n2-d .page-head { margin-bottom: 14px; }
+  .n2-d-buy { background: var(--acc) !important; }
+  .n2-d-ticks::before { content: ""; position: absolute; left: 0; right: 0; top: 10px; height: 8px; background: repeating-linear-gradient(to right, var(--line-2) 0 1px, transparent 1px 4.1667%); }
+  .n2-d-ticks.fut::before { left: 2%; background: repeating-linear-gradient(to right, var(--line-2) 0 1px, transparent 1px 48%); }
+
+  /* A: annotated curve */
+  .n2-d-a .hero { padding: 14px 20px 6px; }
+  .n2-d-a .hh { display: flex; align-items: flex-end; gap: 28px; padding-bottom: 8px; }
+  .n2-d-a .figs2 { display: flex; gap: 24px; padding-bottom: 3px; }
+  .n2-d-a .figs2 .v { font: 600 15px var(--mono); margin-top: 3px; letter-spacing: -0.02em; }
+  .n2-d-a .lower { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 0.9fr); gap: 16px; margin-top: 14px; }
+  .n2-d-a .lower .panel-h { min-height: 40px; }
+  .n2-d-a .lower .li { padding: 8px 0; }
+
+  /* B: mix against targets */
+  .n2-d-b .wrap { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 18px; }
+  .n2-d-b .mx { padding: 20px 22px 8px; }
+  .n2-d-b .mrow { display: grid; grid-template-columns: 70px minmax(0, 1fr) 150px; gap: 20px; align-items: center; padding: 18px 0; border-top: 1px solid var(--line); }
+  .n2-d-b .trk { position: relative; height: 44px; }
+  .n2-d-b .trk .base { position: absolute; left: 0; right: 0; top: 20px; height: 4px; border-radius: 2px; background: var(--sunk); }
+  .n2-d-b .trk .band { position: absolute; top: 10px; height: 24px; border-radius: 4px; background: var(--acc-soft); border: 1px dashed var(--acc-line); }
+  .n2-d-b .trk .fillb { position: absolute; left: 0; top: 18px; height: 8px; border-radius: 4px; background: var(--acc); }
+  .n2-d-b .trk .tick { position: absolute; top: 6px; height: 32px; width: 2px; margin-left: -1px; background: var(--fg); border-radius: 1px; }
+  .n2-d-b .trk .tl { position: absolute; top: -4px; transform: translateX(-50%); font: 500 10.5px var(--mono); color: var(--fg-2); white-space: nowrap; }
+  .n2-d-b .trk .bl { position: absolute; bottom: -6px; transform: translateX(-50%); font: 400 10px var(--mono); color: var(--fg-3); white-space: nowrap; }
+  .n2-d-b .scale { display: grid; grid-template-columns: 70px minmax(0, 1fr) 150px; gap: 20px; padding: 6px 0 10px; }
+  .n2-d-b .scale .s { display: flex; justify-content: space-between; font: 400 10.5px var(--mono); color: var(--fg-3); }
+  .n2-d-b .verdict { font-size: 12.5px; color: var(--fg-2); line-height: 1.4; }
+  .n2-d-b .verdict b { display: block; font: 600 15px var(--mono); color: var(--fg); }
+  .n2-d-b .tbl td { padding-top: 9px; padding-bottom: 9px; }
+
+  /* C: what happens next */
+  .n2-d-c .wrap { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; }
+  .n2-d-c .next { padding: 22px 24px; }
+  .n2-d-c .cd { font: 600 44px/1 var(--mono); letter-spacing: -0.04em; }
+  .n2-d-c .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; margin-top: 18px; border: 1px solid var(--line); border-radius: 10px; }
+  .n2-d-c .steps > div { padding: 14px 16px; min-width: 0; }
+  .n2-d-c .steps > div + div { border-left: 1px solid var(--line); }
+  .n2-d-c .steps .k { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--fg-3); }
+  .n2-d-c .steps .t { font-weight: 600; margin-top: 8px; }
+  .n2-d-c .steps .d { font-size: 12.5px; color: var(--fg-2); margin-top: 4px; line-height: 1.45; }
+  .n2-d-c .est { margin-top: 16px; border: 1px dashed var(--line-2); border-radius: 10px; padding: 14px 16px; }
+  .n2-d-c .ag .dh { display: flex; align-items: baseline; gap: 8px; margin: 12px 0 4px; font-weight: 600; font-size: 13.5px; }
+  .n2-d-c .ag .dh:first-child { margin-top: 0; }
+  .n2-d-c .ag .dh .s { font-weight: 400; font-size: 12px; color: var(--fg-3); }
+  .n2-d-c .ag .ev { display: flex; gap: 10px; align-items: center; padding: 7px 10px; border-radius: 6px; border: 1px dashed var(--line-2); font-size: 12.5px; margin-top: 6px; }
+  .n2-d-c .ag .ev.closed { border-style: solid; border-color: transparent; background: repeating-linear-gradient(135deg, transparent 0 7px, var(--sunk) 7px 8px); color: var(--fg-3); }
+
+  /* D: ledger statement */
+  .n2-d-d .wrap { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 22px; align-items: start; }
+  .n2-d-d .sum .ln { display: flex; justify-content: space-between; padding: 8px 0; font-size: 13px; border-bottom: 1px solid var(--line); }
+  .n2-d-d .sum .ln span:last-child { font-family: var(--mono); font-size: 12.5px; }
+  .n2-d-d .sum .ln.tot { border-bottom: 0; border-top: 1px solid var(--line-2); font-weight: 600; }
+  .n2-d-d .sum .ln.sub span:first-child { padding-left: 12px; color: var(--fg-3); }
+  .n2-d-d .day td { background: var(--sunk); font-weight: 600; font-size: 12px; padding-top: 7px; padding-bottom: 7px; }
+  .n2-d-d .day td .dim { font-weight: 400; }
+  .n2-d-d .tbl td { padding-top: 8px; padding-bottom: 8px; }
+  .n2-d-d .ev { font: 400 11px var(--mono); color: var(--fg-4); }
+</style>
+
+<!-- =============================================================== Session detail, round two -->
+<section class="ax-surface" id="sessions-detail2"
+  data-surface="sessions/detail2"
+  data-area="Sessions"
+  data-title="A running session, round two"
+  data-why="Recession Radar on an ordinary morning: running on paper, two fills at 10:31 and another check at 15:50. Four more ways to show what it holds, what it has done and what it does next.">
+
+  <!-- ============================================================ A: its own annotated curve -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="Its own annotated curve"
+    data-note="Recommended. The session gets the same picture as Home, scoped to one sleeve: its equity since Jun 2 with the mix changes pinned, one lane per symbol showing every buy and sell on its date, and a check lane with a tick for each scheduled check. The lanes run past Now into the next two weeks, so 15:50 today and the Thanksgiving closure sit on the same axis as the history. Holdings against target and today's fills sit underneath. It costs height per symbol, so a sleeve with more than about six symbols needs its lanes folded into one.">
+    <div data-frame="desktop" data-path="sessions/recession-radar">
+      <div class="app n2-d n2-d-a">
+        <div data-tb="Sessions"></div>
+        <div class="main">
+          <div class="art" data-art="candles" data-seed="2604" style="height:200px"></div>
+          <div class="page over">
+            <div class="n2-crumb">Sessions<span data-icon="chevron-right"></span>Paper</div>
+            <div class="page-head">
+              <div><div class="row"><span class="h1">Recession Radar</span><span class="pill paper">Paper</span><span class="st run">Running</span></div><div class="sub">Version 4 · Alpaca paper · started Jun 2 with $28,384.52 · checks on Tuesdays at 10:30 and 15:50 ET</div></div>
+              <div class="act"><span class="btn"><span data-icon="pause"></span>Pause</span><span class="btn">Stop</span><span class="btn pri round">Go live</span></div>
+            </div>
+
+            <div class="panel rim hero">
+              <div class="hh">
+                <div>
+                  <div class="lbl">Sleeve equity · paper</div>
+                  <div class="row base" style="gap:12px;margin-top:6px"><span class="big">$31,904.20</span><span class="chg gain">+$196.62</span><span class="chg gain">+0.62%</span><span class="xs dim">today</span></div>
+                </div>
+                <div class="figs2">
+                  <div><div class="lbl">Since Jun 2</div><div class="v gain">+12.4%</div></div>
+                  <div><div class="lbl">SPY, same period</div><div class="v">+9.1%</div></div>
+                  <div><div class="lbl">Cash</div><div class="v">$1.62</div></div>
+                </div>
+                <span class="sp"></span>
+                <div class="col" style="align-items:flex-end;gap:8px">
+                  <div class="seg mono"><span>1M</span><span>3M</span><span class="on">All</span></div>
+                  <div class="n2-leg"><span><i class="l"></i>Sleeve</span><span><i class="d"></i>SPY</span></div>
+                </div>
+              </div>
+
+              <div class="n2-tl" style="--lab:196px;--fut:206px">
+                <div class="lab"></div>
+                <div class="past n2-pins">
+                  <span class="n2-pin start" style="left:0">Started · neutral mix 50/50</span>
+                  <span class="n2-pin" style="left:58.3%">Largest trade · Sep 8</span>
+                  <span class="n2-pin acc end" style="left:100%">Defensive mix 60/40 today</span>
+                </div>
+                <div class="fut n2-pins" style="background:none;border-left-color:transparent"></div>
+              </div>
+
+              <div class="n2-tl" style="--lab:196px;--fut:206px">
+                <div class="lab" style="align-items:flex-start;padding-top:4px">
+                  <div class="n2-kv" style="width:100%">
+                    <div><span>High</span><span>$31,904</span></div>
+                    <div><span>Low</span><span>$27,960</span></div>
+                    <div><span>Max drawdown</span><span class="loss">−4.8%</span></div>
+                    <div><span>Fills</span><span>17</span></div>
+                    <div><span>Dividends</span><span>$312.40</span></div>
+                  </div>
+                </div>
+                <div class="past">
+                  <div data-chart="area" data-seed="2604" data-ret="0.124" data-vol="0.0055" data-bench="0.091" data-h="176" data-mark></div>
+                  <i class="n2-vl" style="left:12.5%"></i><i class="n2-vl" style="left:29.2%"></i><i class="n2-vl" style="left:41.7%"></i><i class="n2-vl" style="left:58.3%"></i><i class="n2-vl" style="left:70.8%"></i><i class="n2-vl" style="left:83.3%"></i><i class="n2-vl" style="left:95.8%"></i>
+                </div>
+                <div class="fut n2-fut">
+                  <span class="n2-now">Now 10:42</span>
+                  <div class="ttl">Next two weeks</div>
+                  <div class="nx" style="top:58px"><span class="mono dim">15:50</span> Second check today</div>
+                  <div class="nx" style="top:80px"><span class="mono dim">Nov 24</span> 10:30 and 15:50</div>
+                  <div class="nx" style="top:102px"><span class="mono dim">Nov 26</span> <span class="dim">Market closed</span></div>
+                  <div class="nx" style="top:124px"><span class="mono dim">Nov 27</span> <span class="dim">Closes at 13:00</span></div>
+                  <div class="nx" style="top:146px"><span class="mono dim">Dec 1</span> 10:30 and 15:50</div>
+                </div>
+              </div>
+
+              <div class="n2-tl" style="--lab:196px;--fut:206px">
+                <div class="lab"><span class="sym">TLT</span><span class="n2-meta">205 shares · 58.2%</span></div>
+                <div class="past n2-lane">
+                  <i class="bar on" style="left:0;right:0"></i>
+                  <i class="n2-m n2-d-buy" style="left:0.6%"></i><i class="n2-m n2-d-buy" style="left:12.5%"></i><i class="n2-m n2-d-buy" style="left:41.7%"></i><i class="n2-m" style="left:58.3%"></i><i class="n2-m n2-d-buy" style="left:83.3%"></i>
+                  <i class="n2-m fill" style="left:100%">+</i>
+                </div>
+                <div class="fut n2-lane"><i class="bar plan" style="left:0;right:0"></i></div>
+              </div>
+              <div class="n2-tl" style="--lab:196px;--fut:206px">
+                <div class="lab"><span class="sym">GLD</span><span class="n2-meta">54 shares · 41.8%</span></div>
+                <div class="past n2-lane">
+                  <i class="bar on" style="left:0;right:0"></i>
+                  <i class="n2-m n2-d-buy" style="left:0.6%"></i><i class="n2-m" style="left:29.2%"></i><i class="n2-m n2-d-buy" style="left:70.8%"></i><i class="n2-m" style="left:95.8%"></i>
+                  <i class="n2-m fill" style="left:100%;background:var(--panel);color:var(--acc)">−</i>
+                </div>
+                <div class="fut n2-lane"><i class="bar plan" style="left:0;right:0"></i></div>
+              </div>
+              <div class="n2-tl" style="--lab:196px;--fut:206px">
+                <div class="lab"><span class="hl-name" style="font-weight:500">Checks</span><span class="n2-meta">48 run · 9 placed orders</span></div>
+                <div class="past n2-lane n2-d-ticks"></div>
+                <div class="fut n2-lane n2-d-ticks fut"><i class="n2-m plan" style="left:2%"></i><i class="n2-m plan" style="left:50%"></i><i class="n2-m plan" style="left:98%"></i></div>
+              </div>
+              <div class="n2-tl" style="--lab:196px;--fut:206px">
+                <div class="lab"><div class="n2-keys"><span><i class="n2-m n2-d-buy"></i>Buy</span><span><i class="n2-m"></i>Sell</span><span><i class="n2-m plan"></i>Planned</span></div></div>
+                <div class="past n2-xl"><span style="left:0;transform:none">Jun 2</span><span style="left:17.3%">Jul 1</span><span style="left:35.7%">Aug 1</span><span style="left:54.2%">Sep 1</span><span style="left:72%">Oct 1</span><span style="left:90.5%">Nov 1</span></div>
+                <div class="fut n2-xl"><span style="left:50%">Nov 24</span><span style="right:6px;left:auto;transform:none">Dec 1</span></div>
+              </div>
+            </div>
+
+            <div class="lower">
+              <div class="panel">
+                <div class="panel-h">Mix now<span class="aside">target 60 / 40</span></div>
+                <div class="panel-b" style="padding-top:12px">
+                  <div class="col" style="gap:10px">
+                    <div class="n2-tw"><span class="sym">TLT</span><div class="bars"><i class="now" style="width:58.2%"></i><i class="tgt" style="width:60%"></i></div><span class="mono xs dim">58.2% of 60%</span></div>
+                    <div class="n2-tw"><span class="sym">GLD</span><div class="bars"><i class="now" style="width:41.8%"></i><i class="tgt" style="width:40%"></i></div><span class="mono xs dim">41.8% of 40%</span></div>
+                  </div>
+                  <div class="xs dim" style="margin-top:10px">Upper bar is now, lower bar is the target. Both are inside the 5% tolerance.</div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h">Today<span class="aside">2 fills from the 10:30 check</span></div>
+                <div class="panel-b tight list">
+                  <div class="li"><span class="n2-tag">BUY</span><div style="flex:1;min-width:0"><div class="t">42 TLT at $90.41</div><div class="d">7 of 7 checks passed</div></div><div style="text-align:right"><div class="mono sm">$3,797.22</div><div class="mono xs dim">10:31</div></div></div>
+                  <div class="li"><span class="n2-tag">SELL</span><div style="flex:1;min-width:0"><div class="t">9 GLD at $247.86</div><div class="d">7 of 7 checks passed</div></div><div style="text-align:right"><div class="mono sm">$2,230.74</div><div class="mono xs dim">10:31</div></div></div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h">Sleeve</div>
+                <div class="panel-b tight">
+                  <div class="n2-kv">
+                    <div><span>Started</span><span>$28,384.52</span></div>
+                    <div><span>Since start</span><span class="gain">+$3,519.68</span></div>
+                    <div><span>Fees</span><span>$0.00 on paper</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span></span><span class="ic" data-icon="more" style="width:22px;height:22px"></span></div>
+      <div class="m-body">
+        <div>
+          <div class="row gap-6"><span class="pill paper">Paper</span><span class="st run">Running</span></div>
+          <div class="h2" style="margin-top:8px;font-size:22px">Recession Radar</div>
+          <div class="row base" style="gap:10px;margin-top:8px"><span class="mono b" style="font-size:26px;letter-spacing:-0.03em">$31,904.20</span><span class="chg gain">+$196.62</span></div>
+          <div class="sm dim" style="margin-top:4px">+12.4% since Jun 2</div>
+        </div>
+        <div>
+          <div data-chart="area" data-seed="2604" data-ret="0.124" data-vol="0.0055" data-h="112" data-mark></div>
+          <div class="n2-plane"><span class="lab">TLT</span><i class="bar on" style="left:28px;right:0"></i><i class="n2-m n2-d-buy" style="left:38%"></i><i class="n2-m" style="left:62%"></i><i class="n2-m n2-d-buy" style="left:84%"></i><i class="n2-m fill" style="left:calc(100% - 8px)">+</i></div>
+          <div class="n2-plane"><span class="lab">GLD</span><i class="bar on" style="left:28px;right:0"></i><i class="n2-m" style="left:49%"></i><i class="n2-m n2-d-buy" style="left:73%"></i><i class="n2-m" style="left:96%"></i><i class="n2-m fill" style="left:calc(100% - 8px);background:var(--panel);color:var(--acc)">−</i></div>
+          <div class="row xs dim" style="justify-content:space-between;margin-top:4px;font-family:var(--mono)"><span>Jun 2</span><span>Today</span></div>
+        </div>
+        <div class="m-sec">Next<span class="a">Schedule</span></div>
+        <div class="m-card rows">
+          <div class="n2-prow"><div class="grow"><div>Second check today</div><div class="d">TLT 58.2% of 60% · GLD 41.8% of 40%</div></div><span class="mono sm">15:50</span></div>
+          <div class="n2-prow"><div class="grow"><div>Tuesday checks</div><div class="d">10:30 and 15:50 ET</div></div><span class="mono sm dim">Nov 24</span></div>
+        </div>
+        <div class="m-sec">Today</div>
+        <div class="m-card rows">
+          <div class="n2-prow"><span class="n2-tag">BUY</span><div class="grow"><div>42 TLT at $90.41</div><div class="d">10:31</div></div><span class="mono sm">$3,797.22</span></div>
+        </div>
+      </div>
+      <nav data-tabs="sessions" data-items="home,strategies,sessions,portfolio,account"></nav>
+    </div>
+  </div>
+
+  <!-- ============================================================ B: mix against targets -->
+  <div class="ax-opt" data-opt="B" data-name="The mix against its targets"
+    data-note="The page leads with what the sleeve holds against what the strategy wants: each symbol on a 0 to 100% track with its target, the 5% tolerance around it drawn as a band, and a plain verdict on whether the next check would trade. It answers whether anything is about to happen better than any chart, and it explains the tolerance, which is easy to misunderstand. The equity curve shrinks to a panel on the right, so the history is one click further away, and the verdict is only true at current prices.">
+    <div data-frame="desktop" data-path="sessions/recession-radar">
+      <div class="app n2-d n2-d-b">
+        <div data-tb="Sessions"></div>
+        <div class="main"><div class="page">
+          <div class="n2-crumb">Sessions<span data-icon="chevron-right"></span>Paper</div>
+          <div class="page-head">
+            <div><div class="row"><span class="h1">Recession Radar</span><span class="pill paper">Paper</span><span class="st run">Running</span></div><div class="sub">Version 4 · Alpaca paper · checks on Tuesdays at 10:30 and 15:50 ET</div></div>
+            <div class="act"><span class="btn"><span data-icon="pause"></span>Pause</span><span class="btn">Stop</span><span class="btn pri round">Go live</span></div>
+          </div>
+          <div class="wrap">
+            <div class="col gap-16">
+              <div class="panel rim mx">
+                <div class="row" style="align-items:flex-end">
+                  <div><div class="lbl">Defensive mix since 10:30 today</div><div class="h2" style="margin-top:6px">Both holdings are inside the tolerance</div><div class="sm muted" style="margin-top:4px">An order is placed only when a holding is more than 5% of its target away. At 10:42 prices the 15:50 check would not trade.</div></div>
+                  <span class="sp"></span>
+                  <div class="n2-leg"><span><i style="width:14px;height:6px;border-radius:3px;background:var(--acc)"></i>Now</span><span><i style="width:2px;height:12px;background:var(--fg)"></i>Target</span><span><i style="width:14px;height:10px;border:1px dashed var(--acc-line);background:var(--acc-soft);border-radius:2px"></i>Tolerance</span></div>
+                </div>
+                <div class="scale" style="margin-top:14px"><span></span><div class="s"><span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span></div><span></span></div>
+                <div class="mrow">
+                  <div><div class="sym" style="font-size:15px">TLT</div><div class="xs dim" style="margin-top:2px">205 shares</div></div>
+                  <div class="trk"><i class="base"></i><i class="band" style="left:57%;width:6%"></i><i class="fillb" style="width:58.2%"></i><i class="tick" style="left:60%"></i><span class="tl" style="left:60%">60%</span><span class="bl" style="left:57%">57%</span><span class="bl" style="left:63%">63%</span></div>
+                  <div class="verdict"><b>58.2%</b>3.0% under target, inside</div>
+                </div>
+                <div class="mrow">
+                  <div><div class="sym" style="font-size:15px">GLD</div><div class="xs dim" style="margin-top:2px">54 shares</div></div>
+                  <div class="trk"><i class="base"></i><i class="band" style="left:38%;width:4%"></i><i class="fillb" style="width:41.8%"></i><i class="tick" style="left:40%"></i><span class="tl" style="left:40%">40%</span><span class="bl" style="left:38%">38%</span><span class="bl" style="left:42%">42%</span></div>
+                  <div class="verdict"><b>41.8%</b>4.5% over target, inside</div>
+                </div>
+                <div class="mrow">
+                  <div><div class="dim" style="font-size:14px">Cash</div><div class="xs dim" style="margin-top:2px">$1.62</div></div>
+                  <div class="trk"><i class="base"></i><i class="fillb" style="width:0.6%;background:var(--fg-3)"></i></div>
+                  <div class="verdict"><b>0.0%</b>Not traded</div>
+                </div>
+              </div>
+              <div class="panel">
+                <table class="tbl">
+                  <tr><th>Symbol</th><th class="num">Shares</th><th class="num">Last</th><th class="num">Value</th><th class="num">Cost</th><th class="num">Unrealised</th><th class="num">Today</th><th class="num">Next check trades if</th></tr>
+                  <tr><td class="sym">TLT</td><td class="num">205</td><td class="num">$90.58</td><td class="num">$18,568.90</td><td class="num">$18,190.15</td><td class="num gain">+$378.75</td><td class="num gain">+$71.75</td><td class="num">below $86.23</td></tr>
+                  <tr><td class="sym">GLD</td><td class="num">54</td><td class="num">$246.92</td><td class="num">$13,333.68</td><td class="num">$12,140.62</td><td class="num gain">+$1,193.06</td><td class="num gain">+$124.87</td><td class="num">above $249.03</td></tr>
+                  <tr class="total"><td>Sleeve</td><td class="num"></td><td class="num"></td><td class="num">$31,904.20</td><td class="num"></td><td class="num gain">+$1,571.81</td><td class="num gain">+$196.62</td><td class="num"></td></tr>
+                </table>
+              </div>
+            </div>
+            <div class="col gap-16">
+              <div class="panel">
+                <div class="panel-h bare" style="padding-top:12px;align-items:flex-start;flex-direction:column;gap:4px"><span class="lbl">Sleeve equity · paper</span><span class="mono b" style="font-size:24px;letter-spacing:-0.03em">$31,904.20</span><span class="mono xs gain" style="font-weight:400">+$196.62 today · +12.4% since Jun 2</span></div>
+                <div class="panel-b" style="padding-top:4px"><div data-chart="area" data-seed="2604" data-ret="0.124" data-vol="0.0055" data-h="110" data-mark></div></div>
+              </div>
+              <div class="panel">
+                <div class="panel-h">Distance from target<span class="aside">last 30 days</span></div>
+                <div class="panel-b" style="padding-top:10px">
+                  <div data-chart="line" data-seed="88" data-ret="-0.03" data-vol="0.012" data-h="70"></div>
+                  <div class="xs dim" style="margin-top:8px">TLT, as a share of its target. Today's trade moved the target, so the line resets at 10:30.</div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h">Next checks</div>
+                <div class="panel-b tight">
+                  <div class="n2-kv">
+                    <div><span>Today</span><span>15:50</span></div>
+                    <div><span>Tuesday, Nov 24</span><span>10:30, 15:50</span></div>
+                    <div><span>Tuesday, Dec 1</span><span>10:30, 15:50</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span></span><span class="ic" data-icon="more" style="width:22px;height:22px"></span></div>
+      <div class="m-body n2-d-b">
+        <div><div class="row gap-6"><span class="pill paper">Paper</span><span class="st run">Running</span></div><div class="h2" style="margin-top:8px;font-size:22px">Recession Radar</div><div class="sm dim" style="margin-top:3px"><span class="mono" style="color:var(--fg)">$31,904.20</span> · <span class="gain">+$196.62 today</span></div></div>
+        <div class="m-card">
+          <div class="b" style="font-size:15px">Inside the tolerance</div>
+          <div class="sm muted" style="margin-top:4px">At current prices the 15:50 check would not trade.</div>
+          <div style="margin-top:14px">
+            <div class="row sm"><span class="sym">TLT</span><span class="sp"></span><span class="mono">58.2% of 60%</span></div>
+            <div class="trk" style="height:36px;margin-top:2px"><i class="base" style="top:16px"></i><i class="band" style="left:57%;width:6%;top:6px"></i><i class="fillb" style="width:58.2%;top:14px"></i><i class="tick" style="left:60%;top:2px"></i></div>
+            <div class="row sm" style="margin-top:8px"><span class="sym">GLD</span><span class="sp"></span><span class="mono">41.8% of 40%</span></div>
+            <div class="trk" style="height:36px;margin-top:2px"><i class="base" style="top:16px"></i><i class="band" style="left:38%;width:4%;top:6px"></i><i class="fillb" style="width:41.8%;top:14px"></i><i class="tick" style="left:40%;top:2px"></i></div>
+          </div>
+          <div class="xs dim" style="margin-top:6px">The band is 5% either side of each target.</div>
+        </div>
+        <div class="m-card rows">
+          <div class="n2-prow"><span class="sym" style="width:40px">TLT</span><div class="grow"><div class="mono sm">205 shares</div><div class="d">Unrealised +$378.75</div></div><span class="mono sm">$18,568.90</span></div>
+          <div class="n2-prow"><span class="sym" style="width:40px">GLD</span><div class="grow"><div class="mono sm">54 shares</div><div class="d">Trades if above $249.03</div></div><span class="mono sm">$13,333.68</span></div>
+        </div>
+        <div class="m-card rows"><div class="n2-prow"><span data-icon="clock" class="dim"></span><div class="grow"><div>Next check</div><div class="d">Today at 15:50 ET</div></div><span class="n2-chev" data-icon="chevron-right"></span></div></div>
+      </div>
+      <nav data-tabs="sessions" data-items="home,strategies,sessions,portfolio,account"></nav>
+    </div>
+  </div>
+
+  <!-- ============================================================ C: what happens next -->
+  <div class="ax-opt" data-opt="C" data-name="What happens next"
+    data-note="The session page is built around its next check: how long until 15:50, which branch of the rule is active and the inputs it reads, and what the check would do at current prices, followed by the schedule for two weeks with the Thanksgiving closure marked. It removes most of the surprise from automated trading. The estimate needs an endpoint that runs the strategy against current holdings and prices without placing anything, which doesn't exist yet; until it does, this panel can only show the schedule and the tolerance.">
+    <div data-frame="desktop" data-path="sessions/recession-radar">
+      <div class="app n2-d n2-d-c">
+        <div data-tb="Sessions"></div>
+        <div class="main"><div class="page">
+          <div class="n2-crumb">Sessions<span data-icon="chevron-right"></span>Paper</div>
+          <div class="page-head">
+            <div><div class="row"><span class="h1">Recession Radar</span><span class="pill paper">Paper</span><span class="st run">Running</span></div><div class="sub"><span class="mono" style="color:var(--fg)">$31,904.20</span> · <span class="gain">+$196.62 today</span> · +12.4% since Jun 2 · version 4</div></div>
+            <div class="act"><span class="btn"><span data-icon="pause"></span>Pause</span><span class="btn">Stop</span><span class="btn pri round">Go live</span></div>
+          </div>
+          <div class="wrap">
+            <div class="col gap-16">
+              <div class="panel rim next">
+                <div class="row" style="align-items:flex-end">
+                  <div><div class="lbl">Next check · today at 15:50 ET</div><div class="cd" style="margin-top:10px">5 h 08 min</div></div>
+                  <span class="sp"></span>
+                  <div class="col" style="align-items:flex-end;gap:4px"><span class="sm dim">Prices are read at 15:50</span><span class="sm dim">Orders go out the same minute</span></div>
+                </div>
+                <div class="steps">
+                  <div><div class="k"><span class="n2-n">1</span>Reads</div><div class="t">10-year and 3-month yields</div><div class="d">Spread now <span class="mono">−0.08%</span>. It was <span class="mono">+0.11%</span> a week ago.</div></div>
+                  <div><div class="k"><span class="n2-n">2</span>Picks a mix</div><div class="t">Defensive, TLT 60 / GLD 40</div><div class="d">Used while the spread is below zero. Otherwise TLT 50 / GLD 50.</div></div>
+                  <div><div class="k"><span class="n2-n">3</span>Trades if needed</div><div class="t">Only outside the 5% tolerance</div><div class="d">TLT is 3.0% under its target and GLD 4.5% over.</div></div>
+                </div>
+                <div class="est">
+                  <div class="row"><span data-icon="eye" class="dim"></span><span class="b">At 10:42 prices this check would place no orders</span><span class="sp"></span><span class="xs dim">Estimate, not a promise</span></div>
+                  <div class="sm muted" style="margin-top:6px;line-height:1.5">It would trade if TLT falls under 57% of the sleeve or GLD rises over 42%. For GLD that's a price above about <span class="mono" style="color:var(--fg)">$249.03</span>. If the spread turns positive before 15:50, the rule moves back to 50 / 50 and both would trade.</div>
+                </div>
+              </div>
+              <div class="g2">
+                <div class="panel"><div class="panel-h">Last check<span class="aside">today 10:30</span></div>
+                  <div class="panel-b tight list">
+                    <div class="li"><span class="n2-tag">BUY</span><span class="sm" style="flex:1">42 TLT at $90.41</span><span class="mono sm">$3,797.22</span></div>
+                    <div class="li"><span class="n2-tag">SELL</span><span class="sm" style="flex:1">9 GLD at $247.86</span><span class="mono sm">$2,230.74</span></div>
+                  </div></div>
+                <div class="panel"><div class="panel-h">Holdings</div>
+                  <div class="panel-b tight list">
+                    <div class="li"><span class="sym" style="width:40px">TLT</span><span class="sm dim" style="flex:1">205 · 58.2%</span><span class="mono sm">$18,568.90</span></div>
+                    <div class="li"><span class="sym" style="width:40px">GLD</span><span class="sm dim" style="flex:1">54 · 41.8%</span><span class="mono sm">$13,333.68</span></div>
+                  </div></div>
+              </div>
+            </div>
+            <div class="col gap-16">
+              <div class="panel">
+                <div class="panel-h">Two weeks ahead<span class="aside">ET</span></div>
+                <div class="panel-b ag">
+                  <div class="dh">Today<span class="s">Tuesday, Nov 17</span></div>
+                  <div class="ev"><span class="mono xs dim">10:30</span><span style="flex:1">Check · 2 orders filled</span><span data-icon="check" class="acc"></span></div>
+                  <div class="ev" style="border-color:var(--fg)"><span class="mono xs">15:50</span><span style="flex:1"><b>Check</b></span><span class="xs dim">in 5 h</span></div>
+                  <div class="dh">Next week<span class="s">Nov 23 to 27</span></div>
+                  <div class="ev"><span class="mono xs dim">Tue</span><span style="flex:1">10:30 and 15:50</span></div>
+                  <div class="ev closed"><span class="mono xs">Thu</span><span style="flex:1">Thanksgiving, market closed</span></div>
+                  <div class="ev closed"><span class="mono xs">Fri</span><span style="flex:1">Closes at 13:00, no check</span></div>
+                  <div class="dh">Week of Nov 30</div>
+                  <div class="ev"><span class="mono xs dim">Tue</span><span style="flex:1">10:30 and 15:50</span></div>
+                </div>
+              </div>
+              <div class="panel"><div class="panel-b" style="padding:12px 16px"><div data-chart="area" data-seed="2604" data-ret="0.124" data-vol="0.0055" data-h="70" data-mark></div><div class="row xs dim" style="margin-top:6px;font-family:var(--mono)"><span>Jun 2</span><span class="sp"></span><span>+12.4%</span></div></div></div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span></span><span class="ic" data-icon="more" style="width:22px;height:22px"></span></div>
+      <div class="m-body n2-d-c">
+        <div><div class="row gap-6"><span class="pill paper">Paper</span><span class="st run">Running</span></div><div class="h2" style="margin-top:8px;font-size:22px">Recession Radar</div><div class="sm dim" style="margin-top:3px"><span class="mono" style="color:var(--fg)">$31,904.20</span> · <span class="gain">+$196.62 today</span></div></div>
+        <div class="m-card rim" style="padding:16px">
+          <div class="lbl">Next check · 15:50 ET</div>
+          <div class="mono b" style="font-size:32px;letter-spacing:-0.04em;margin-top:6px">5 h 08 min</div>
+          <div class="sm muted" style="margin-top:10px;line-height:1.5">The rule is on its defensive mix, TLT 60 / GLD 40. Both are inside the 5% tolerance, so at current prices it would place no orders.</div>
+          <div class="xs dim" style="margin-top:8px">Estimate at 10:42 prices.</div>
+        </div>
+        <div class="m-sec">Ahead</div>
+        <div class="m-card rows">
+          <div class="n2-prow"><div class="grow"><div>Tuesday checks</div><div class="d">10:30 and 15:50</div></div><span class="mono sm dim">Nov 24</span></div>
+          <div class="n2-prow"><div class="grow"><div class="dim">Thanksgiving</div><div class="d">Market closed</div></div><span class="mono sm dim">Nov 26</span></div>
+          <div class="n2-prow"><div class="grow"><div>Tuesday checks</div><div class="d">10:30 and 15:50</div></div><span class="mono sm dim">Dec 1</span></div>
+        </div>
+      </div>
+      <nav data-tabs="sessions" data-items="home,strategies,sessions,portfolio,account"></nav>
+    </div>
+  </div>
+
+  <!-- ============================================================ D: ledger statement -->
+  <div class="ax-opt" data-opt="D" data-name="A statement from the ledger"
+    data-note="The session reads like a bank statement for its sleeve: opening equity for the period, then every ledger event grouped by day (fills, dividends, fees) with running cash, and a summary that adds up to the closing figure. Every line already exists as a ledger event, so it is exact and easy to reconcile with Alpaca, and it answers support questions well. The change in market value is computed, not an event, and has to be labelled that way. It is the least visual option and says nothing about what happens next.">
+    <div data-frame="desktop" data-path="sessions/recession-radar/statement">
+      <div class="app n2-d n2-d-d">
+        <div data-tb="Sessions"></div>
+        <div class="main"><div class="page">
+          <div class="n2-crumb">Sessions<span data-icon="chevron-right"></span>Recession Radar</div>
+          <div class="page-head">
+            <div><div class="row"><span class="h1">Statement</span><span class="pill paper">Paper</span><span class="st run">Running</span></div><div class="sub">Recession Radar sleeve · Nov 1 to Nov 17, 10:42 ET · every line is a ledger event</div></div>
+            <div class="act"><div class="seg"><span>Week</span><span class="on">Month</span><span>Since start</span></div><span class="btn"><span data-icon="download"></span>CSV</span></div>
+          </div>
+          <div class="wrap">
+            <div class="col gap-16">
+              <div class="panel rim">
+                <div class="panel-b sum">
+                  <div class="lbl" style="margin-bottom:6px">November so far</div>
+                  <div class="ln"><span>Opening equity, Nov 1</span><span>$31,402.18</span></div>
+                  <div class="ln"><span>Bought</span><span>−$9,214.07</span></div>
+                  <div class="ln"><span>Sold</span><span>+$9,165.16</span></div>
+                  <div class="ln sub"><span>Fills move cash into holdings</span><span class="dim">no change</span></div>
+                  <div class="ln"><span>Dividends</span><span class="gain">+$50.53</span></div>
+                  <div class="ln"><span>Fees</span><span>$0.00</span></div>
+                  <div class="ln"><span>Change in market value</span><span class="gain">+$451.49</span></div>
+                  <div class="ln tot"><span>Closing equity</span><span>$31,904.20</span></div>
+                </div>
+              </div>
+              <div class="callout"><span data-icon="info"></span><div>Market value change is worked out from prices, not recorded as an event. Everything else above is a sum of the lines on the right.</div></div>
+              <div class="panel"><div class="panel-b" style="padding:12px 16px"><div class="lbl">Equity this month</div><div data-chart="area" data-seed="3110" data-ret="0.016" data-vol="0.004" data-h="74" data-mark style="margin-top:8px"></div></div></div>
+            </div>
+            <div class="panel">
+              <table class="tbl">
+                <tr><th style="width:74px">Time</th><th>Event</th><th class="num">Shares</th><th class="num">Price</th><th class="num">Cash</th><th class="num">Cash after</th><th>Ledger ID</th></tr>
+                <tr class="day"><td colspan="7">Tuesday, Nov 17 <span class="dim">· 10:30 check</span></td></tr>
+                <tr><td class="mono sm dim">10:31:04</td><td>Sold <span class="sym">GLD</span></td><td class="num">−9</td><td class="num">$247.86</td><td class="num gain">+$2,230.74</td><td class="num">$3,798.84</td><td class="ev">ev_9c41a2</td></tr>
+                <tr><td class="mono sm dim">10:31:07</td><td>Bought <span class="sym">TLT</span></td><td class="num">+42</td><td class="num">$90.41</td><td class="num">−$3,797.22</td><td class="num">$1.62</td><td class="ev">ev_9c41a7</td></tr>
+                <tr class="day"><td colspan="7">Tuesday, Nov 10 <span class="dim">· 15:50 check</span></td></tr>
+                <tr><td class="mono sm dim">15:51:12</td><td>Sold <span class="sym">GLD</span></td><td class="num">−4</td><td class="num">$252.15</td><td class="num gain">+$1,008.60</td><td class="num">$1,568.10</td><td class="ev">ev_8f02d1</td></tr>
+                <tr class="day"><td colspan="7">Tuesday, Nov 3 <span class="dim">· 10:30 check</span></td></tr>
+                <tr><td class="mono sm dim">10:31:40</td><td>Sold <span class="sym">GLD</span></td><td class="num">−24</td><td class="num">$247.41</td><td class="num gain">+$5,925.82</td><td class="num">$5,976.35</td><td class="ev">ev_7a90c3</td></tr>
+                <tr><td class="mono sm dim">10:31:44</td><td>Bought <span class="sym">TLT</span></td><td class="num">+60</td><td class="num">$90.28</td><td class="num">−$5,416.85</td><td class="num">$559.50</td><td class="ev">ev_7a90c9</td></tr>
+                <tr class="day"><td colspan="7">Monday, Nov 2</td></tr>
+                <tr><td class="mono sm dim">09:00:00</td><td>Dividend <span class="sym">TLT</span> <span class="dim sm">on 103 shares</span></td><td class="num"></td><td class="num"></td><td class="num gain">+$50.53</td><td class="num">$50.53</td><td class="ev">ev_7a11b0</td></tr>
+                <tr class="day"><td colspan="7">Sunday, Nov 1</td></tr>
+                <tr><td class="mono sm dim">00:00</td><td class="dim">Opening balance</td><td class="num"></td><td class="num"></td><td class="num dim">·</td><td class="num">$0.00</td><td class="ev">·</td></tr>
+              </table>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Recession Radar</span><span>Statement</span><span class="ic" data-icon="download" style="width:20px;height:20px"></span></div>
+      <div class="m-body">
+        <div class="m-card rim" style="padding:14px 16px">
+          <div class="lbl">November so far</div>
+          <div class="n2-kv" style="margin-top:6px">
+            <div><span>Opening, Nov 1</span><span>$31,402.18</span></div>
+            <div><span>Dividends</span><span class="gain">+$50.53</span></div>
+            <div><span>Fees</span><span>$0.00</span></div>
+            <div><span>Market value change</span><span class="gain">+$451.49</span></div>
+            <div><span class="b" style="color:var(--fg)">Closing</span><span class="b">$31,904.20</span></div>
+          </div>
+        </div>
+        <div class="lbl">Nov 17 · 10:30 check</div>
+        <div class="m-card rows">
+          <div class="n2-prow"><span class="n2-tag">SELL</span><div class="grow"><div>9 GLD at $247.86</div><div class="d">10:31:04 · ev_9c41a2</div></div><span class="mono sm gain">+$2,230.74</span></div>
+          <div class="n2-prow"><span class="n2-tag">BUY</span><div class="grow"><div>42 TLT at $90.41</div><div class="d">10:31:07 · ev_9c41a7</div></div><span class="mono sm">−$3,797.22</span></div>
+        </div>
+        <div class="lbl">Nov 10 · 15:50 check</div>
+        <div class="m-card rows">
+          <div class="n2-prow"><span class="n2-tag">SELL</span><div class="grow"><div>4 GLD at $252.15</div><div class="d">15:51:12 · ev_8f02d1</div></div><span class="mono sm gain">+$1,008.60</span></div>
+        </div>
+      </div>
+      <nav data-tabs="sessions" data-items="home,strategies,sessions,portfolio,account"></nav>
+    </div>
+  </div>
+</section>

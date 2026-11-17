@@ -43,11 +43,3 @@ export function shortDate(d: Date | null): string {
 export function sinceStart(sleeve: Pick<SleeveSummary, 'value' | 'allocatedCapital'>): number {
   return sleeve.value - sleeve.allocatedCapital;
 }
-
-/** The header line under "Portfolio". Paper is the only account type in the beta. */
-export function accountLine(openPositions: number | null, loading = false): string {
-  if (loading) return 'Loading your paper account';
-  if (openPositions === null) return 'Alpaca paper account';
-  const positions = `${openPositions} open ${openPositions === 1 ? 'position' : 'positions'}`;
-  return `Alpaca paper account · ${positions}`;
-}

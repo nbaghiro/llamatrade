@@ -1,105 +1,81 @@
-import { OrderStatus } from '@llamatrade/core/proto/trading_pb';
+import { ExecutionMode } from '@llamatrade/core/proto/common_pb';
+import { OrderSide, type Order } from '@llamatrade/core/proto/trading_pb';
 import { toDate, toNumber, useBacktestStore } from '@llamatrade/core/stores/backtest';
+import { useBrokerStore } from '@llamatrade/core/stores/broker';
 import { useTradingStore, type SessionCommand } from '@llamatrade/core/stores/trading';
-import { ArrowLeft } from 'lucide-react';
-import { useCallback, useEffect, useMemo, type ReactNode } from 'react';
+import { MoreHorizontal, Pause, Play, Square } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
-import { Cells, KvList, Panel, SideTag } from '../../components/backtest/parts';
-import { T } from '../../components/backtest/tableStyles';
-import { LineChart } from '../../components/charts';
+import { Panel } from '../../components/backtest/parts';
+import { AnnotatedCurve, type CurveLane, type CurvePin } from '../../components/charts';
+import { Blotter, buildSessionRow, etToday, rowNextRebalance } from '../../components/sessions';
+import { FrozenPanel } from '../../components/sessions/FrozenPanel';
+import { dayLabel } from '../../components/sessions/sessionRows';
+import { StopDialog } from '../../components/sessions/StopDialog';
 import {
-  buildSessionRow,
-  etToday,
-  railFacts,
-  rowNextRebalance,
-  SessionHeader,
-  sideWord,
-  sinceLabel,
-  sortRows,
-  StatusRail,
-  statusSentence,
-  useMarketLine,
-} from '../../components/sessions';
+  asOf,
+  curveStats,
+  etDayKey,
+  etDayLabel,
+  etHm,
+  fillDays,
+  isFilled,
+  orderTime,
+  RANGE_OPTIONS,
+  rangeStart,
+  symbolLanes,
+  toSeries,
+  windowed,
+  type TimeRange,
+} from '../../components/sessions/timeline';
+import {
+  Menu,
+  ModeBadge,
+  PageHead,
+  Segmented,
+  StatList,
+  StatusMark,
+  WeightBar,
+} from '../../components/ui';
 import { Money, Pct } from '../../components/ui/Num';
 import { PanelError } from '../../components/ui/PanelError';
-import { SkeletonChart, SkeletonFigure, SkeletonRows } from '../../components/ui/Skeleton';
-import { WeightBar } from '../../components/ui/WeightBar';
+import { SkeletonChart, SkeletonFigure } from '../../components/ui/Skeleton';
 import { formatMoney, formatNumber, formatPct } from '../../lib/format';
-import { asSentence } from '../../lib/format';
-import { etParts, etToDate } from '../../lib/marketClock';
-import { DEFAULT_RISK_LIMITS } from '../../lib/sessionState';
+import { maskedKey } from '../../lib/scope';
 
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-/** Midnight in New York today, the start of "today's curve". */
-function startOfEtDay(now = new Date()): Date {
-  const p = etParts(now);
-  return etToDate(p.year, p.month, p.day, 0);
-}
-
-const etTime = (d: Date) =>
-  d.toLocaleTimeString('en-US', {
-    timeZone: 'America/New_York',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  });
-
-const etDay = (d: Date) => {
-  const p = etParts(d);
-  return `${MON[p.month]} ${p.day}`;
-};
-
-interface LogEntry {
-  at: Date;
-  text: ReactNode;
-}
-
+const DAY_MS = 86_400_000;
+const MAX_LANES = 6;
 const qty = (v: number) => formatNumber(v, { dp: Number.isInteger(v) ? 0 : 2 });
 
-/** /trading/:sessionId: one paper session on one screen. */
+/** /trading/:sessionId: the session on its own annotated curve (detail2 A), amber when frozen (frozen2 A). */
 export default function SessionPage() {
   const { sessionId = '' } = useParams();
   const detail = useTradingStore((s) => (s.detail?.session.id === sessionId ? s.detail : null));
   const detailLoading = useTradingStore((s) => s.detailLoading);
   const detailError = useTradingStore((s) => s.detailError);
   const loadSession = useTradingStore((s) => s.loadSession);
-  const loadBlotter = useTradingStore((s) => s.loadBlotter);
   const runCommand = useTradingStore((s) => s.runCommand);
   const commandPending = useTradingStore((s) => s.commandPending);
   const commandError = useTradingStore((s) => s.commandError);
-  const sessions = useTradingStore((s) => s.sessions);
-  const executions = useTradingStore((s) => s.executions);
-  const sleeves = useTradingStore((s) => s.sleeves);
   const performance = useTradingStore((s) => s.performance);
-  const orders = useTradingStore((s) => s.orders);
-  const blotterError = useTradingStore((s) => s.error);
   const strategies = useBacktestStore((s) => s.strategies);
   const fetchStrategies = useBacktestStore((s) => s.fetchStrategies);
-  const market = useMarketLine();
+  const credentials = useBrokerStore((s) => s.credentials);
+  const fetchCredentials = useBrokerStore((s) => s.fetch);
+  const [range, setRange] = useState<TimeRange>('all');
+  const [stopping, setStopping] = useState(false);
 
   const reload = useCallback(() => {
-    loadSession(sessionId, startOfEtDay()).catch(() => undefined);
-    loadBlotter().catch(() => undefined);
-  }, [sessionId, loadSession, loadBlotter]);
+    loadSession(sessionId, new Date(0)).catch(() => undefined);
+  }, [sessionId, loadSession]);
 
   useEffect(() => {
     reload();
     fetchStrategies().catch(() => undefined);
-  }, [reload, fetchStrategies]);
+    fetchCredentials().catch(() => undefined);
+  }, [reload, fetchStrategies, fetchCredentials]);
 
-  const allRows = useMemo(
-    () =>
-      sortRows(
-        sessions.map((s) =>
-          buildSessionRow(s, { executions, sleeves, performance, strategies, orders })
-        )
-      ),
-    [sessions, executions, sleeves, performance, strategies, orders]
-  );
   const row = useMemo(
     () =>
       detail
@@ -118,323 +94,463 @@ export default function SessionPage() {
     if (await runCommand(sessionId, command)) reload();
   };
 
-  const rail = (
-    <StatusRail items={railFacts(blotterError ? null : allRows, market, sleeves.length > 0)} />
-  );
-  const back = (
-    <Link
-      to="/trading"
-      className="inline-flex items-center gap-1 justify-self-start text-[12.5px] text-accent hover:underline"
-    >
-      <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-      Sessions
-    </Link>
-  );
+  const crumbs = [{ label: 'Sessions', to: '/trading' }];
 
   if (detailError && !detail) {
     return (
-      <>
-        {rail}
-        <div className="page grid gap-3.5">
-          {back}
-          <Panel>
-            <PanelError
-              title="This session couldn't be loaded"
-              cause={detailError}
-              unaffected="The session keeps trading on schedule either way."
-              onRetry={reload}
-              retrying={detailLoading}
-            />
-          </Panel>
-        </div>
-      </>
+      <div className="page">
+        <PageHead crumbs={crumbs} title="Session" />
+        <Panel>
+          <PanelError
+            title="This session couldn't be loaded"
+            cause={detailError}
+            unaffected="The session keeps trading on schedule either way."
+            onRetry={reload}
+            retrying={detailLoading}
+          />
+        </Panel>
+      </div>
     );
   }
 
   if (!detail || !row) {
     return (
-      <>
-        {rail}
-        <div className="page grid gap-3.5" aria-busy="true">
-          {back}
-          <SkeletonFigure />
-          <div className="grid gap-3.5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-            <div className="rounded-panel border border-line bg-panel p-4">
-              <SkeletonChart height={170} />
-            </div>
-            <div className="rounded-panel border border-line bg-panel">
-              <SkeletonRows rows={4} cols={2} />
-            </div>
-          </div>
+      <div className="page grid gap-3.5" aria-busy="true">
+        <SkeletonFigure />
+        <div className="rounded-panel border border-line bg-panel p-4">
+          <SkeletonChart height={260} />
         </div>
-      </>
+      </div>
     );
   }
 
-  const { session, positions, orders: sessionOrders, execution, curve } = detail;
+  const { session, positions, orders, execution } = detail;
+  const mode = session.mode === ExecutionMode.LIVE ? 'live' : 'paper';
   const f = row.figures;
+  const now = new Date();
+  const today = etToday(now);
   const started = toDate(session.startedAt);
-  const ended = toDate(session.endedAt) ?? (row.view.open ? null : toDate(execution?.stoppedAt));
+  const ended = row.view.open ? null : (toDate(session.endedAt) ?? toDate(execution?.stoppedAt));
+  const end = ended ?? now;
+  const next = rowNextRebalance(row, today);
+  const frozen = row.state === 'frozen';
+  const cred = credentials.find((c) => c.id === execution?.credentialsId);
+  const account = `Alpaca ${mode}${cred ? ` ${maskedKey(cred.apiKeyPrefix)}` : ''}`;
+  const allocated = execution?.allocatedCapital ? toNumber(execution.allocatedCapital) : null;
+  const cash = row.sleeve?.cash ? toNumber(row.sleeve.cash.balance) : null;
+
+  const held = positions
+    .map((p) => ({ p, q: toNumber(p.quantity), value: toNumber(p.marketValue) }))
+    .filter((x) => x.q !== 0)
+    .sort((a, b) => b.value - a.value);
+  const equityForWeights = f.equity ?? held.reduce((s, x) => s + x.value, 0) + (cash ?? 0);
+
+  const full = toSeries(detail.curve);
+  const start = rangeStart(range, end, started);
+  const series = windowed(full, start, end, row.view.open ? f.equity : null);
+  const bench = detail.benchmark.length ? asOf(toSeries(detail.benchmark), series.dates) : [];
+  const benchmark = bench.some(Number.isFinite) ? bench : undefined;
+  const stats = curveStats(series.values);
+  const benchStats = benchmark ? curveStats(benchmark) : null;
+  const sinceStart = f.totalPct;
+  const benchReturn =
+    benchStats && benchStats.first > 0 ? benchStats.last / benchStats.first - 1 : null;
+
+  const filled = orders
+    .filter(isFilled)
+    .map((o) => ({ o, at: orderTime(o) }))
+    .filter((x): x is { o: Order; at: Date } => x.at !== null);
+  const days = fillDays(orders);
+  const todayKey = etDayKey(now);
+  const todays = filled
+    .filter((x) => etDayKey(x.at) === todayKey)
+    .sort((a, b) => a.at.getTime() - b.at.getTime());
+  const value = (o: Order) => toNumber(o.filledQuantity) * toNumber(o.averageFillPrice);
+  const largest = [...filled].sort((a, b) => value(b.o) - value(a.o))[0];
+  const inWindow = (d: Date) => d >= start && d <= end;
+
+  const pins: CurvePin[] = [
+    ...(started && inWindow(started)
+      ? [
+          {
+            at: started,
+            label: allocated ? `Started · ${formatMoney(allocated, { dp: 0 })}` : 'Started',
+          },
+        ]
+      : []),
+    ...(largest && inWindow(largest.at) && filled.length > 1
+      ? [{ at: largest.at, label: `Largest trade · ${etDayLabel(largest.at)}`, row: 1 as const }]
+      : []),
+    ...(todays.length
+      ? [
+          {
+            at: end,
+            label: 'Fills today',
+            tone: 'accent' as const,
+            count: todays.length,
+            guide: false,
+          },
+        ]
+      : []),
+  ];
+
+  const lanesFor = symbolLanes(
+    orders,
+    held.map((x) => x.p.symbol)
+  );
+  const planned = next
+    ? [{ at: next, shape: 'planned' as const, title: `Rebalance ${dayLabel(next)}` }]
+    : [];
+  const fillEvents = (fills: (typeof lanesFor)[number]['fills']) =>
+    fills.map((x) => ({
+      at: x.at,
+      shape: x.side === 'buy' ? ('dot' as const) : ('ring' as const),
+      title: `${x.side === 'buy' ? 'Buy' : 'Sell'} ${qty(toNumber(x.order.filledQuantity))} ${x.order.symbol}, ${etDayLabel(x.at)}`,
+    }));
+  const lanes: CurveLane[] =
+    lanesFor.length > MAX_LANES
+      ? [
+          {
+            id: 'orders',
+            label: 'Orders',
+            sub: `${lanesFor.length} symbols · ${filled.length} fills`,
+            tone: frozen ? 'risk' : row.view.open ? 'default' : 'muted',
+            events: fillEvents(lanesFor.flatMap((l) => l.fills)),
+            future: { events: planned },
+          },
+        ]
+      : lanesFor.map((l) => {
+          const h = held.find((x) => x.p.symbol === l.symbol);
+          return {
+            id: l.symbol,
+            label: <span className="font-mono">{l.symbol}</span>,
+            sub: h
+              ? `${qty(h.q)} shares${equityForWeights > 0 ? ` · ${formatPct(h.value / equityForWeights, { dp: 1 })}` : ''}`
+              : 'not held',
+            tone: frozen ? 'risk' : h ? 'default' : 'muted',
+            spans: [
+              {
+                from: started && started > start ? started : start,
+                to: ended ?? undefined,
+                style: h ? 'on' : 'off',
+              },
+            ],
+            events: fillEvents(l.fills),
+            future: row.view.open ? { events: planned } : { note: 'Stopped' },
+          };
+        });
+
+  const futureEnd = new Date(end.getTime() + 14 * DAY_MS);
+  const futureRows = row.view.open
+    ? frozen
+      ? [
+          ['Waiting on you', ''],
+          ...(next ? [[dayLabel(next), 'Rebalance runs once resolved']] : []),
+        ]
+      : row.state === 'paused'
+        ? [['Paused', 'Rebalances are skipped until you resume']]
+        : next && next.getTime() <= futureEnd.getTime()
+          ? [[dayLabel(next), `${row.rebalance || 'Scheduled'} rebalance`]]
+          : [
+              [
+                next ? dayLabel(next) : '·',
+                next ? 'Next rebalance, after this window' : 'Nothing scheduled',
+              ],
+            ]
+    : [];
+
   const meta = [
     row.version ? `Version ${row.version}` : null,
-    row.rebalance ? row.rebalance.toLowerCase() : null,
+    account,
+    started
+      ? `started ${etDayLabel(started)}${allocated ? ` with ${formatMoney(allocated)}` : ''}`
+      : null,
+    row.rebalance ? `rebalances ${row.rebalance.toLowerCase()}` : null,
     ended
-      ? `ran ${sinceLabel(started)} to ${sinceLabel(ended)}`
-      : row.state === 'running' || row.state === 'frozen'
-        ? `running since ${sinceLabel(started)}`
-        : `started ${sinceLabel(started)}`,
+      ? `stopped ${etDayLabel(ended)}`
+      : next && row.state === 'running'
+        ? `next ${dayLabel(next)}`
+        : null,
   ]
     .filter(Boolean)
     .join(' · ');
 
-  const held = positions
-    .map((p) => ({ p, value: toNumber(p.marketValue) }))
-    .filter((x) => toNumber(x.p.quantity) !== 0)
-    .sort((a, b) => b.value - a.value);
-  const filled = sessionOrders
-    .filter((o) => o.status === OrderStatus.FILLED || o.status === OrderStatus.PARTIAL)
-    .map((o) => ({ o, at: toDate(o.filledAt) ?? toDate(o.submittedAt) ?? toDate(o.createdAt) }))
-    .filter((x): x is { o: (typeof sessionOrders)[number]; at: Date } => x.at !== null)
-    .sort((a, b) => b.at.getTime() - a.at.getTime());
-  const lastDay = filled[0] ? etDay(filled[0].at) : null;
-  const lastRebalance = filled.filter((x) => etDay(x.at) === lastDay).reverse();
-  const cash = row.sleeve?.cash ? toNumber(row.sleeve.cash.balance) : null;
-  const equityForWeights = f.equity ?? held.reduce((s, x) => s + x.value, 0) + (cash ?? 0);
+  const canPause = row.view.actions.includes('pause');
+  const canResume = row.view.actions.includes('resume');
+  const canStop = row.view.actions.includes('stop');
+  const canGoLive = mode === 'paper' && row.state === 'running';
 
-  const curvePoints = curve
-    .map((p) => ({ d: toDate(p.timestamp), v: toNumber(p.equity) }))
-    .filter((x): x is { d: Date; v: number } => x.d !== null && Number.isFinite(x.v) && x.v > 0);
-
-  const log: LogEntry[] = [
-    ...(started
-      ? [{ at: started, text: <b className="font-medium text-fg">Session started.</b> }]
-      : []),
-    ...sessionOrders
-      .map((o): LogEntry | null => {
-        const at = toDate(o.filledAt) ?? toDate(o.submittedAt) ?? toDate(o.createdAt);
-        if (!at) return null;
-        const side = sideWord(o.side);
-        const n = qty(toNumber(o.filledQuantity) || toNumber(o.quantity));
-        const notSent = o.status === OrderStatus.REJECTED && !o.submittedAt?.seconds;
-        const text = notSent ? (
-          <>
-            <b className="font-medium text-risk">
-              {side} {n} {o.symbol} not sent.
-            </b>{' '}
-            {asSentence(o.statusMessage)}
-          </>
-        ) : o.status === OrderStatus.FILLED ? (
-          <>
-            {side} {n} {o.symbol} filled at {formatNumber(toNumber(o.averageFillPrice))}.
-          </>
-        ) : (
-          <>
-            {side} {qty(toNumber(o.quantity))} {o.symbol}:{' '}
-            {asSentence(o.statusMessage) || 'placed.'}
-          </>
-        );
-        return { at, text };
-      })
-      .filter((x): x is LogEntry => x !== null),
-    ...(ended
-      ? [{ at: ended, text: <b className="font-medium text-fg">Session stopped.</b> }]
-      : []),
-  ]
-    .sort((a, b) => b.at.getTime() - a.at.getTime())
-    .slice(0, 12);
-
-  const largest = held[0]?.value ?? 0;
+  const stateLabel = frozen ? 'Frozen' : row.view.label;
 
   return (
-    <>
-      {rail}
-      <div className="page grid gap-3.5">
-        {back}
-        <SessionHeader
-          name={row.name}
-          meta={meta}
-          state={row.state}
-          view={row.view}
-          reason={row.state === 'error' ? execution?.errorMessage || undefined : undefined}
-          aside={
-            row.state === 'paused' || row.state === 'frozen'
-              ? `${held.length} ${held.length === 1 ? 'position' : 'positions'} held`
-              : undefined
-          }
-          strategyId={session.strategyId}
-          pending={commandPending}
-          onCommand={onCommand}
-        />
-        {commandError && (
-          <p role="alert" className="m-0 text-[12.5px] text-risk">
-            {commandError}
-          </p>
-        )}
-        <p className="m-0 max-w-[980px] text-[13.5px] text-fg-2">
-          {statusSentence({
-            holdings: held.map((x) => ({ symbol: x.p.symbol, value: x.value })),
-            rebalance: row.rebalance,
-            open: row.view.open,
-            lastOrder: filled[0]?.at ?? null,
-            next: rowNextRebalance(row, etToday()),
-          })}
-        </p>
+    <div className="page">
+      <PageHead
+        crumbs={[...crumbs, { label: mode === 'live' ? 'Live' : 'Paper' }]}
+        title={row.name}
+        badges={
+          <>
+            <ModeBadge mode={mode} />
+            <StatusMark state={row.view.mark} label={stateLabel} />
+          </>
+        }
+        sub={meta}
+        actions={
+          <>
+            <div className="hidden flex-wrap items-center gap-2 md:flex">
+              <Link to={`/trading/${sessionId}/rebalances`} className="btn btn-ghost">
+                Rebalances
+              </Link>
+              {canPause && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={commandPending !== null}
+                  onClick={() => onCommand('pause')}
+                >
+                  <Pause className="h-3.5 w-3.5" aria-hidden="true" />
+                  {commandPending === 'pause' ? 'Pausing…' : 'Pause'}
+                </button>
+              )}
+              {canResume && (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={commandPending !== null}
+                  onClick={() => onCommand('resume')}
+                >
+                  <Play className="h-3.5 w-3.5" aria-hidden="true" />
+                  {commandPending === 'resume' ? 'Resuming…' : 'Resume'}
+                </button>
+              )}
+              {canStop && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={commandPending !== null}
+                  onClick={() => setStopping(true)}
+                >
+                  {commandPending === 'stop' ? 'Stopping…' : 'Stop'}
+                </button>
+              )}
+              {canGoLive && (
+                <Link to={`/trading/${sessionId}/live`} className="btn btn-primary">
+                  Go live
+                </Link>
+              )}
+              {!row.view.open && (
+                <Link to={`/strategies/${session.strategyId}`} className="btn btn-secondary">
+                  Open the strategy
+                </Link>
+              )}
+            </div>
+            {(canPause || canResume || canStop) && (
+              <div className="md:hidden">
+                <Menu
+                  label="Session actions"
+                  width={220}
+                  trigger={(props) => (
+                    <button type="button" className="btn btn-secondary" {...props}>
+                      <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
+                      Manage
+                    </button>
+                  )}
+                  items={[
+                    ...(canPause
+                      ? [
+                          {
+                            kind: 'action' as const,
+                            label: 'Pause',
+                            icon: Pause,
+                            onSelect: () => onCommand('pause'),
+                          },
+                        ]
+                      : []),
+                    ...(canResume
+                      ? [
+                          {
+                            kind: 'action' as const,
+                            label: 'Resume',
+                            icon: Play,
+                            onSelect: () => onCommand('resume'),
+                          },
+                        ]
+                      : []),
+                    ...(canStop
+                      ? [
+                          {
+                            kind: 'action' as const,
+                            label: 'Stop session',
+                            icon: Square,
+                            onSelect: () => setStopping(true),
+                          },
+                        ]
+                      : []),
+                  ]}
+                />
+              </div>
+            )}
+          </>
+        }
+      />
 
-        <div className="grid items-start gap-3.5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-          <div className="grid min-w-0 gap-3.5">
-            <Panel>
-              <Cells
-                cols={4}
-                cells={[
-                  {
-                    label: 'Sleeve equity',
-                    value: f.equity === null ? '·' : <Money value={f.equity} />,
-                    sub: execution?.allocatedCapital
-                      ? `allocated ${formatMoney(toNumber(execution.allocatedCapital))}`
-                      : undefined,
-                  },
-                  {
-                    label: 'Today',
-                    value: f.today === null ? '·' : <Money value={f.today} pnl />,
-                    sub: f.todayPct === null ? undefined : <Pct value={f.todayPct} pnl />,
-                  },
-                  {
-                    label: 'Total P&L',
-                    value: f.total === null ? '·' : <Money value={f.total} pnl />,
-                    sub: f.totalPct === null ? undefined : <Pct value={f.totalPct} pnl />,
-                  },
-                  {
-                    label: 'Cash',
-                    value: cash === null ? '·' : <Money value={cash} />,
-                    sub:
-                      f.cashShare === null
-                        ? undefined
-                        : `${formatPct(f.cashShare, { dp: 1 })} of sleeve`,
-                  },
-                ]}
-              />
-              <div className="px-3.5 py-3">
-                {curvePoints.length > 1 ? (
-                  <LineChart
-                    label={`${row.name} equity today`}
-                    dates={curvePoints.map((x) => x.d)}
-                    series={[{ values: curvePoints.map((x) => x.v), kind: 'main', area: true }]}
-                    height={170}
-                    xFormat={(d) => etTime(d).slice(0, 5)}
-                    yFormat={(v) => formatMoney(v, { dp: 0 })}
-                    tooltip={(i) => (
-                      <>
-                        <b className="block font-medium text-fg-3">{etTime(curvePoints[i].d)} ET</b>
-                        {formatMoney(curvePoints[i].v)}
-                      </>
+      {commandError && (
+        <p role="alert" className="-mt-2 mb-3 text-[12.5px] text-risk">
+          {commandError}
+        </p>
+      )}
+      {row.state === 'paused' && (
+        <div className="mb-3.5 flex flex-wrap items-center gap-3 rounded-[8px] border border-line bg-sunk px-3.5 py-2.5 text-[12.5px]">
+          <Pause className="h-4 w-4 text-fg-3" aria-hidden="true" />
+          <span className="min-w-0 flex-1 text-fg-2">
+            <b className="font-semibold text-fg">Paused.</b> The sleeve and its holdings stay as
+            they are, and rebalances are skipped until you resume.
+          </span>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            disabled={commandPending !== null}
+            onClick={() => onCommand('resume')}
+          >
+            Resume
+          </button>
+        </div>
+      )}
+      {row.state === 'error' && (
+        <p className="mb-3.5 rounded-[8px] border border-risk-line bg-risk-soft px-3.5 py-2.5 text-[12.5px]">
+          <b className="font-semibold text-risk">Stopped by an error.</b>{' '}
+          {execution?.errorMessage || 'It places no new orders.'}
+        </p>
+      )}
+
+      <div
+        className={`grid items-start gap-3.5 ${frozen ? 'lg:grid-cols-[minmax(0,1fr)_380px]' : ''}`}
+      >
+        <div className="grid min-w-0 gap-3.5">
+          <div className="panel-rim px-5 pb-2 pt-4">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-4">
+              <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
+                <div>
+                  <div className="text-[10.5px] font-medium uppercase tracking-[0.06em] text-fg-3">
+                    Sleeve equity · {mode}
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-baseline gap-2">
+                    {f.equity === null ? (
+                      <span className="text-[30px] text-fg-3">·</span>
+                    ) : (
+                      <Money
+                        value={f.equity}
+                        className="text-[30px] font-semibold tracking-[-0.03em]"
+                      />
                     )}
-                  />
-                ) : (
-                  <p className="m-0 grid h-[120px] place-items-center text-center text-[12.5px] text-fg-3">
-                    No equity points yet today. They appear once the market opens and the session is
-                    valued.
-                  </p>
+                    {f.today !== null && row.view.open && (
+                      <span className="flex items-center gap-1.5 text-[12px]">
+                        <span
+                          className={`rounded px-1.5 py-0.5 ${f.today < 0 ? 'bg-loss/10' : 'bg-gain/10'}`}
+                        >
+                          <Money value={f.today} pnl />
+                        </span>
+                        {f.todayPct !== null && (
+                          <span
+                            className={`rounded px-1.5 py-0.5 ${f.today < 0 ? 'bg-loss/10' : 'bg-gain/10'}`}
+                          >
+                            <Pct value={f.todayPct} pnl />
+                          </span>
+                        )}
+                        <span className="text-fg-3">today</span>
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {sinceStart !== null && (
+                  <Figure label={started ? `Since ${etDayLabel(started)}` : 'Since start'}>
+                    <Pct value={sinceStart} pnl dp={1} />
+                  </Figure>
+                )}
+                {benchReturn !== null && (
+                  <Figure label="SPY, same period">
+                    <Pct value={benchReturn} signed dp={1} />
+                  </Figure>
+                )}
+                {cash !== null && (
+                  <Figure label="Cash">
+                    <Money value={cash} />
+                  </Figure>
                 )}
               </div>
-            </Panel>
-
-            <Panel title="Positions" aside="ledger quantities, IEX marks">
-              {held.length === 0 ? (
-                <p className="m-0 px-3.5 py-4 text-[12.5px] text-fg-3">
-                  {row.view.open
-                    ? 'No positions yet. The session holds cash until it rebalances.'
-                    : 'No positions are held.'}
-                </p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className={T.table}>
-                    <thead>
-                      <tr>
-                        <th className={T.th}>Symbol</th>
-                        <th className={T.thN}>Qty</th>
-                        <th className={T.thN}>Avg cost</th>
-                        <th className={T.thN}>Last</th>
-                        <th className={T.thN}>Market value</th>
-                        <th className={T.thN}>Unrealised</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {held.map(({ p, value }) => (
-                        <tr key={p.symbol}>
-                          <td className={`${T.td} ${T.sym}`}>{p.symbol}</td>
-                          <td className={T.tdN}>{qty(toNumber(p.quantity))}</td>
-                          <td className={T.tdN}>{formatNumber(toNumber(p.averageEntryPrice))}</td>
-                          <td className={T.tdN}>{formatNumber(toNumber(p.currentPrice))}</td>
-                          <td className={T.tdN}>{formatNumber(value)}</td>
-                          <td className={T.tdN}>
-                            <Money value={toNumber(p.unrealizedPnl)} pnl />
-                          </td>
-                        </tr>
-                      ))}
-                      {cash !== null && (
-                        <tr className="text-fg-3">
-                          <td className={T.td}>Cash</td>
-                          <td className={T.tdN} colSpan={3} />
-                          <td className={T.tdN}>{formatNumber(cash)}</td>
-                          <td className={T.tdN} />
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </Panel>
-
-            <Panel
-              title="Last rebalance"
-              aside={
-                lastRebalance.length
-                  ? `${DAYS[etParts(lastRebalance[0].at).weekday]} ${etDay(lastRebalance[0].at)} · ${lastRebalance.length} ${lastRebalance.length === 1 ? 'order' : 'orders'} filled`
-                  : undefined
-              }
-            >
-              {lastRebalance.length === 0 ? (
-                <p className="m-0 px-3.5 py-4 text-[12.5px] text-fg-3">No filled orders yet.</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className={T.table}>
-                    <thead>
-                      <tr>
-                        <th className={T.th}>Time, ET</th>
-                        <th className={T.th}>Side</th>
-                        <th className={T.th}>Symbol</th>
-                        <th className={T.thN}>Filled</th>
-                        <th className={T.thN}>Avg fill</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {lastRebalance.map(({ o, at }) => (
-                        <tr key={o.id} className="cursor-pointer hover:bg-sunk">
-                          <td className={`${T.td} num text-fg-3`}>
-                            <Link to={`/trading/orders/${o.id}`} className="hover:underline">
-                              {etTime(at)}
-                            </Link>
-                          </td>
-                          <td className={T.td}>
-                            <SideTag side={sideWord(o.side)} />
-                          </td>
-                          <td className={`${T.td} ${T.sym}`}>{o.symbol}</td>
-                          <td className={T.tdN}>
-                            {qty(toNumber(o.filledQuantity))} / {qty(toNumber(o.quantity))}
-                          </td>
-                          <td className={T.tdN}>{formatNumber(toNumber(o.averageFillPrice))}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </Panel>
+              <Segmented<TimeRange>
+                label="Time range"
+                value={range}
+                onChange={setRange}
+                options={RANGE_OPTIONS}
+              />
+            </div>
+            {series.dates.length > 1 ? (
+              <AnnotatedCurve
+                label={`${row.name} sleeve equity`}
+                dates={series.dates}
+                values={series.values}
+                benchmark={benchmark}
+                start={start}
+                end={end}
+                now={row.view.open ? { label: `Now ${etHm(now)}` } : undefined}
+                future={
+                  row.view.open
+                    ? {
+                        end: futureEnd,
+                        title: 'Next two weeks',
+                        content: (
+                          <div className="grid gap-1">
+                            {futureRows.map(([a, b]) => (
+                              <div key={a} className="flex gap-2">
+                                <span className="num flex-none text-fg-3">{a}</span>
+                                <span className={frozen ? 'text-risk' : ''}>{b}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ),
+                      }
+                    : undefined
+                }
+                pins={pins}
+                side={
+                  stats && (
+                    <StatList
+                      items={[
+                        { label: 'High', value: formatMoney(stats.high, { dp: 0 }) },
+                        { label: 'Low', value: formatMoney(stats.low, { dp: 0 }) },
+                        {
+                          label: 'Max drawdown',
+                          value: formatPct(stats.maxDrawdown, { dp: 1 }),
+                          tone: stats.maxDrawdown < 0 ? 'loss' : undefined,
+                        },
+                        { label: 'Fills', value: String(filled.length) },
+                      ]}
+                    />
+                  )
+                }
+                lanes={lanes}
+                legend={[
+                  { shape: 'dot', label: 'Buy' },
+                  { shape: 'ring', label: 'Sell' },
+                  { shape: 'planned', label: 'Planned' },
+                ]}
+                tooltip={(i) => (
+                  <>
+                    <b className="block font-medium text-fg-3">{etDayLabel(series.dates[i])}</b>
+                    {formatMoney(series.values[i])}
+                  </>
+                )}
+              />
+            ) : (
+              <p className="m-0 grid h-[160px] place-items-center text-center text-[12.5px] text-fg-3">
+                The curve appears once the sleeve has been valued.
+              </p>
+            )}
           </div>
 
-          <div className="grid min-w-0 gap-3.5">
-            <Panel title="Weights" aside="share of sleeve equity">
-              <div className="grid gap-1 px-3.5 py-3">
+          <div className="grid gap-3.5 md:grid-cols-3">
+            <Panel title="Mix now" aside="share of the sleeve">
+              <div className="grid gap-2 px-3.5 py-3">
                 {equityForWeights > 0 && (held.length > 0 || cash) ? (
                   <>
                     {[
@@ -443,86 +559,151 @@ export default function SessionPage() {
                     ].map((w) => (
                       <div
                         key={w.k}
-                        className="grid grid-cols-[46px_minmax(0,1fr)_52px] items-center gap-2.5 py-1.5 text-xs"
+                        className="grid grid-cols-[42px_minmax(0,1fr)_48px] items-center gap-2.5 text-xs"
                       >
-                        <span className={w.cash ? 'text-fg-2' : T.sym}>{w.k}</span>
+                        <span className={w.cash ? 'text-fg-2' : 'font-mono font-semibold'}>
+                          {w.k}
+                        </span>
                         <WeightBar
                           weight={w.v / equityForWeights}
-                          height={6}
+                          height={5}
+                          frozen={frozen}
                           label={`${w.k} weight`}
-                          color={w.cash ? 'rgb(var(--chart-4))' : 'rgb(var(--chart-2))'}
+                          color={w.cash ? 'rgb(var(--fg-3))' : undefined}
                         />
-                        <span className="num text-right">
+                        <span className="num text-right text-fg-2">
                           {formatPct(w.v / equityForWeights, { dp: 1 })}
                         </span>
                       </div>
                     ))}
-                    <p className="m-0 mt-2 text-[11px] text-fg-3">
-                      Target weights aren&apos;t available yet, so the bars show current weights
-                      only.
+                    <p className="m-0 text-[11.5px] text-fg-3">
+                      The target mix isn&apos;t recorded, so these are current weights only.
                     </p>
                   </>
                 ) : (
                   <p className="m-0 text-[12.5px] text-fg-3">
-                    Weights appear once the sleeve holds something.
+                    {row.view.open
+                      ? 'The sleeve holds cash until its first rebalance.'
+                      : 'No positions are held.'}
                   </p>
                 )}
               </div>
             </Panel>
-
-            <Panel title="Session limits">
-              <div className="px-3.5 py-1">
-                <KvList
-                  rows={[
-                    [
-                      'Order value',
-                      `up to ${formatMoney(DEFAULT_RISK_LIMITS.maxOrderValue, { dp: 0 })}`,
-                    ],
-                    [
-                      'Largest position',
-                      <span key="p" className="num">
-                        {formatMoney(largest, { dp: 0 })} of{' '}
-                        {formatMoney(DEFAULT_RISK_LIMITS.maxPositionSize, { dp: 0 })}
-                      </span>,
-                    ],
-                    [
-                      'Daily loss',
-                      `up to ${formatMoney(DEFAULT_RISK_LIMITS.maxDailyLoss, { dp: 0 })}`,
-                    ],
-                    ['Order rate', `${DEFAULT_RISK_LIMITS.ordersPerMinute} a minute`],
-                  ]}
-                />
-                <p className="m-0 pb-2 pt-1 text-[11px] text-fg-3">
-                  Default limits. If your account has its own, those apply; they can&apos;t be
-                  viewed here yet.
-                </p>
-              </div>
-            </Panel>
-
-            <Panel title="Session log" aside="from orders and session events">
-              {log.length === 0 ? (
-                <p className="m-0 px-3.5 py-4 text-[12.5px] text-fg-3">
-                  Nothing has happened in this session yet.
+            <Panel
+              title="Today"
+              aside={
+                todays.length
+                  ? `${todays.length} ${todays.length === 1 ? 'fill' : 'fills'}`
+                  : undefined
+              }
+            >
+              {todays.length === 0 ? (
+                <p className="m-0 px-3.5 py-3 text-[12.5px] text-fg-3">
+                  Nothing traded today.
+                  {next && row.state === 'running'
+                    ? ` The next rebalance is ${dayLabel(next)}.`
+                    : ''}
                 </p>
               ) : (
-                <ol className="m-0 list-none p-0 text-xs">
-                  {log.map((l, i) => (
-                    <li
-                      key={i}
-                      className="grid grid-cols-[86px_1fr] gap-2.5 border-b border-line px-3.5 py-1.5 last:border-b-0"
-                    >
-                      <span className="num text-[11.5px] text-fg-3">
-                        {etDay(l.at)} {etTime(l.at).slice(0, 5)}
-                      </span>
-                      <span className="text-fg-2">{l.text}</span>
+                <ol className="m-0 list-none p-0">
+                  {todays.map(({ o, at }) => (
+                    <li key={o.id} className="border-b border-line last:border-b-0">
+                      <Link
+                        to={`/trading/orders/${o.id}`}
+                        className="flex items-center gap-3 px-3.5 py-2.5 hover:bg-sunk"
+                      >
+                        <span className="rounded-sm px-[5px] py-[3px] font-mono text-[10px] font-semibold leading-none ring-1 ring-inset ring-line-strong">
+                          {o.side === OrderSide.SELL ? 'SELL' : 'BUY'}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[12.5px]">
+                          {qty(toNumber(o.filledQuantity))} {o.symbol} at{' '}
+                          {formatMoney(toNumber(o.averageFillPrice))}
+                        </span>
+                        <span className="text-right">
+                          <Money value={value(o)} className="block text-[12px]" />
+                          <span className="num text-[11px] text-fg-3">{etHm(at)}</span>
+                        </span>
+                      </Link>
                     </li>
                   ))}
                 </ol>
               )}
             </Panel>
+            <Panel title="Sleeve">
+              <div className="px-3.5 py-1">
+                <StatList
+                  items={[
+                    ...(allocated !== null
+                      ? [{ label: 'Started with', value: formatMoney(allocated) }]
+                      : []),
+                    ...(f.total !== null
+                      ? [
+                          {
+                            label: 'Since start',
+                            value: formatMoney(f.total, { signed: true }),
+                            tone:
+                              f.total < 0
+                                ? ('loss' as const)
+                                : f.total > 0
+                                  ? ('gain' as const)
+                                  : undefined,
+                          },
+                        ]
+                      : []),
+                    { label: 'Rebalances that traded', value: String(days.length) },
+                  ]}
+                />
+              </div>
+            </Panel>
+          </div>
+
+          <div className="hidden md:block">
+            <Blotter orders={orders} sessionNames={{ [session.id]: row.name }} limit={8} />
           </div>
         </div>
+
+        {frozen && (
+          <FrozenPanel
+            name={row.name}
+            holdings={held.map((x) => ({ symbol: x.p.symbol, quantity: x.q, value: x.value }))}
+            next={next}
+            onStop={() => setStopping(true)}
+          />
+        )}
       </div>
-    </>
+
+      <StopDialog
+        open={stopping}
+        onClose={() => setStopping(false)}
+        name={row.name}
+        mode={mode}
+        holdings={held.map((x) => ({ symbol: x.p.symbol, quantity: x.q, value: x.value }))}
+        cash={cash}
+        recent={days.map((d) => d.at)}
+        nextLabel={next && row.state === 'running' ? `${dayLabel(next)} rebalance` : null}
+        now={now}
+        onPause={
+          canPause
+            ? () => {
+                setStopping(false);
+                onCommand('pause');
+              }
+            : undefined
+        }
+        onStop={() => {
+          setStopping(false);
+          onCommand('stop');
+        }}
+      />
+    </div>
+  );
+}
+
+function Figure({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="text-[10.5px] font-medium uppercase tracking-[0.06em] text-fg-3">{label}</div>
+      <div className="mt-1 text-[15px] font-semibold">{children}</div>
+    </div>
   );
 }

@@ -47,6 +47,7 @@ from llamatrade_db.models.auth import (
 from src.client_ip import trusted_client_ip
 from src.oauth_state import mint_state, verify_state
 from src.redis_client import get_redis
+from src.services.invites import InviteCodeError
 from src.session import (
     HANDOFF_TTL_SECONDS,
     PasswordPolicyError,
@@ -320,6 +321,7 @@ class CompleteSignupRequest(BaseModel):
     ticket: str
     email: str
     password: str
+    invite_code: str = ""
     first_name: str = ""
     last_name: str = ""
 
@@ -359,10 +361,13 @@ async def alpaca_oauth_complete_signup(
                 email=body.email,
                 password=body.password,
                 tenant_name=body.email.split("@")[0] or "My Workspace",
+                invite_code=body.invite_code,
                 first_name=body.first_name or None,
                 last_name=body.last_name or None,
             )
         except PasswordPolicyError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from None
+        except InviteCodeError as e:
             raise HTTPException(status_code=400, detail=str(e)) from None
         except ValueError:
             raise HTTPException(status_code=409, detail="Email already registered") from None

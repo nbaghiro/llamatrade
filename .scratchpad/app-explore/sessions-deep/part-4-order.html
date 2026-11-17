@@ -1,0 +1,383 @@
+<style>
+  /* ---------- order round two (prefix n2-o-) */
+  .n2-o .page { padding: 22px 32px; }
+  .n2-o .page-head { margin-bottom: 16px; }
+  /* limit bar */
+  .n2-o-lim { position: relative; padding: 26px 0 20px; }
+  .n2-o-lim .trk { position: relative; height: 16px; border-radius: 3px; background: var(--sunk); box-shadow: inset 0 0 0 1px var(--line); }
+  .n2-o-lim .trk i { position: absolute; top: 0; bottom: 0; }
+  .n2-o-lim .trk .ok { left: 0; background: var(--acc); border-radius: 3px 0 0 3px; }
+  .n2-o-lim .trk .over { background: var(--risk); border-radius: 0 3px 3px 0; }
+  .n2-o-lim .trk .alt { top: -5px; bottom: -5px; width: 0; border-left: 1.5px dashed var(--fg-3); }
+  .n2-o-lim .ln { position: absolute; top: 18px; height: 32px; width: 0; border-left: 2px solid var(--fg); }
+  .n2-o-lim .lt { position: absolute; top: 0; transform: translateX(-50%); font: 600 11px var(--mono); color: var(--fg); white-space: nowrap; }
+  .n2-o-lim .lt.r { transform: translateX(-100%); color: var(--risk); }
+  .n2-o-lim .sc { position: relative; height: 16px; margin-top: 8px; }
+  .n2-o-lim .sc span { position: absolute; transform: translateX(-50%); font: 400 10.5px var(--mono); color: var(--fg-3); white-space: nowrap; }
+  .n2-o-lim.sm { padding: 20px 0 6px; }
+  .n2-o-lim.sm .trk { height: 10px; }
+  .n2-o-lim.sm .ln { top: 14px; height: 22px; }
+  .n2-o-lim.sm .lt { font-size: 10px; }
+  /* checks */
+  .n2-o-ck > div { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: center; min-height: 37px; padding: 0 18px; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .n2-o-ck > div:last-child { border-bottom: 0; }
+  .n2-o-ck .ic { width: 15px; height: 15px; color: var(--acc); }
+  .n2-o-ck .r { font-size: 12px; color: var(--fg-3); text-align: right; }
+  .n2-o-ck .hit { background: var(--risk-soft); box-shadow: inset 2px 0 0 var(--risk); }
+  .n2-o-ck .hit .ic, .n2-o-ck .hit .r { color: var(--risk); }
+  .n2-o-ck .hit .r { font-weight: 600; }
+  .n2-o-ck.tight > div { min-height: 34px; padding: 0 14px; font-size: 12.5px; }
+  .n2-o-quote { font: 400 12px/1.5 var(--mono); color: var(--fg-2); padding: 8px 10px; border-radius: 6px; background: var(--sunk); border: 1px solid var(--line); }
+  .n2-o-a .grid { display: grid; grid-template-columns: minmax(0, 1fr) 410px; gap: 18px; }
+  /* B: popover card on the lanes */
+  .n2-o-b .hero { padding: 14px 20px 4px; }
+  .n2-o-b .n2-tl { --lab: 170px; --fut: 230px; }
+  .n2-o-pop { position: absolute; z-index: 6; width: 360px; padding: 14px 16px; border-radius: 12px; background: var(--panel); border: 1px solid var(--risk-line); box-shadow: var(--shadow-lg); }
+  .n2-o-pop::before { content: ""; position: absolute; top: 142px; right: -6px; width: 10px; height: 10px; background: var(--panel); border-right: 1px solid var(--risk-line); border-top: 1px solid var(--risk-line); transform: rotate(45deg); }
+  .n2-o-b .lower { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; margin-top: 16px; }
+  .n2-o-b .lower .panel-h { min-height: 40px; }
+  /* C: thread */
+  .n2-o-c .split { display: grid; grid-template-columns: 340px minmax(0, 1fr); height: 100%; }
+  .n2-o-c .inbox { border-right: 1px solid var(--line); padding: 18px 14px; display: flex; flex-direction: column; gap: 4px; }
+  .n2-o-c .it { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 10px; padding: 11px 12px; border-radius: 8px; align-items: start; }
+  .n2-o-c .it .dot { margin-top: 6px; }
+  .n2-o-c .it.on { background: var(--sunk); box-shadow: inset 2px 0 0 var(--risk); }
+  .n2-o-c .it .t { font-weight: 500; font-size: 13px; }
+  .n2-o-c .it .d { font-size: 12px; color: var(--fg-3); margin-top: 2px; }
+  .n2-o-c .thread { padding: 24px 40px; max-width: 900px; display: flex; flex-direction: column; gap: 14px; }
+  .n2-o-ev { display: grid; grid-template-columns: 70px 26px minmax(0, 1fr); gap: 10px; align-items: start; position: relative; }
+  .n2-o-ev .tm { font: 400 12px var(--mono); color: var(--fg-3); padding-top: 4px; }
+  .n2-o-ev .av { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--sunk); color: var(--fg-2); box-shadow: inset 0 0 0 1px var(--line-2); }
+  .n2-o-ev .av .ic { width: 14px; height: 14px; }
+  .n2-o-ev .av.risk { background: var(--risk-soft); color: var(--risk); box-shadow: inset 0 0 0 1px var(--risk-line); }
+  .n2-o-ev .bd { font-size: 13.5px; color: var(--fg-2); line-height: 1.5; padding-top: 3px; }
+  .n2-o-ev .bd b { color: var(--fg); font-weight: 600; }
+  .n2-o-reply { display: flex; flex-wrap: wrap; gap: 8px; }
+  .n2-o-reply .btn { border-radius: 999px; }
+  /* D: dense log */
+  .n2-o-d .tbl td { padding-top: 8px; padding-bottom: 8px; }
+  .n2-o-d .tbl td.mono { white-space: nowrap; }
+  .n2-o-d .tbl tr.rej td { background: var(--risk-soft); }
+  .n2-o-d .tbl tr.rej td:first-child { box-shadow: inset 2px 0 0 var(--risk); }
+  .n2-o-d .tbl tr.exp td { background: var(--panel); padding: 0; border-bottom: 1px solid var(--line-2); }
+  .n2-o-d .xp { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) 260px; gap: 26px; padding: 16px 18px 18px 18px; box-shadow: inset 2px 0 0 var(--risk); }
+</style>
+
+<!-- =============================================================== Order, round two -->
+<section class="ax-surface" id="sessions-order2"
+  data-surface="sessions/order2"
+  data-area="Sessions"
+  data-title="A rejected order, round two"
+  data-why="Recession Radar's buy of 124 TLT ($11,210.84) was rejected at 10:31 because the session's limit is $10,000 per order. Nothing reached Alpaca. These options say what happened, what the checks found and what you can do about it.">
+
+  <!-- ============================================================ A -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="The order against its limit"
+    data-note="Recommended. The page leads with the one thing that went wrong: a bar for the order's value with the $10,000 limit drawn across it and the $1,210.84 over it in amber. Below it every check is listed with what it found, and the three ways forward sit on the right with what each one does. The bar uses the order's estimated value and the session's limit, which are both stored. Showing the other checks as clear is inferred from the stored list of violations, which only holds text for checks that failed, so a check that was skipped (position size, daily loss and order rate need database access) would read the same as one that passed.">
+    <div data-frame="desktop" data-path="sessions/recession-radar/orders/ord_3c9t07">
+      <div class="app n2-o n2-o-a">
+        <div data-tb="Sessions"></div>
+        <div class="main"><div class="page">
+          <div class="n2-crumb">Sessions<span data-icon="chevron-right"></span>Recession Radar<span data-icon="chevron-right"></span>Orders</div>
+          <div class="page-head">
+            <div><div class="row"><span class="h1">Buy 124 TLT</span><span class="pill paper">Paper</span><span class="st warn">Rejected at 10:31</span></div><div class="sub">Recession Radar · from today's 10:30 rebalance · nothing was sent to Alpaca</div></div>
+            <div class="act"><span class="btn"><span data-icon="copy"></span>Copy order ID</span><span class="btn">Open the session</span></div>
+          </div>
+          <div class="grid">
+            <div class="col gap-16">
+              <div class="panel">
+                <div class="panel-h">Order value against the limit<span class="aside">limit set for this session</span></div>
+                <div class="panel-b" style="padding:12px 22px 18px">
+                  <div class="n2-o-lim">
+                    <span class="lt" style="left:83.33%">Limit $10,000.00</span>
+                    <span class="lt r" style="left:93.42%;top:52px">$1,210.84 over</span>
+                    <div class="trk"><i class="ok" style="width:83.33%"></i><i class="over" style="left:83.33%;width:10.09%"></i><i class="alt" style="left:82.88%"></i></div>
+                    <i class="ln" style="left:83.33%"></i>
+                    <div class="sc"><span style="left:0;transform:none">$0</span><span style="left:25%">$3,000</span><span style="left:50%">$6,000</span><span style="left:75%">$9,000</span><span style="left:100%;transform:translateX(-100%)">$12,000</span></div>
+                  </div>
+                  <div class="row" style="gap:28px;margin-top:6px">
+                    <div><div class="lbl">This order</div><div class="mono b" style="font-size:20px;margin-top:3px">$11,210.84</div><div class="xs dim mono">124 × $90.41</div></div>
+                    <div><div class="lbl">Limit</div><div class="mono b" style="font-size:20px;margin-top:3px">$10,000.00</div><div class="xs dim">per order</div></div>
+                    <div><div class="lbl">Largest that fits</div><div class="mono b" style="font-size:20px;margin-top:3px">110 TLT</div><div class="xs dim mono">$9,945.10, dashed line</div></div>
+                  </div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h">What the checks found<span class="aside">market hours first, then every other check</span></div>
+                <div class="n2-o-ck">
+                  <div><span data-icon="check"></span><span>Market is open</span><span class="r">Open since 09:30</span></div>
+                  <div class="hit"><span data-icon="alert"></span><span>Order value</span><span class="r">$11,210.84 is over $10,000.00</span></div>
+                  <div><span data-icon="check"></span><span>Sleeve is active and has the cash</span><span class="r">Nothing found</span></div>
+                  <div><span data-icon="check"></span><span>Symbol is allowed</span><span class="r">Nothing found</span></div>
+                  <div><span data-icon="check"></span><span>Position size after the order</span><span class="r">Nothing found</span></div>
+                  <div><span data-icon="check"></span><span>Daily loss</span><span class="r">Nothing found</span></div>
+                  <div><span data-icon="check"></span><span>Order rate</span><span class="r">Nothing found</span></div>
+                </div>
+                <div style="padding:10px 18px 14px;border-top:1px solid var(--line)"><div class="lbl" style="margin-bottom:6px">Recorded with the order</div><div class="n2-o-quote">Order value $11210.84 exceeds limit $10000.00</div></div>
+              </div>
+            </div>
+            <div class="col gap-16">
+              <div class="panel">
+                <div class="panel-h">What you can do</div>
+                <div class="panel-b col" style="gap:8px">
+                  <div class="n2-radio on"><span class="rd"></span><div><div class="t">Place 110 TLT now</div><div class="d">$9,945.10 at the last price. It runs through the same checks, and the next rebalance sizes around what the sleeve then holds.</div></div></div>
+                  <div class="n2-radio"><span class="rd"></span><div><div class="t">Raise this session's limit</div><div class="d">To $12,000 per order, for Recession Radar only. Nothing is placed now; the 15:50 rebalance works out a fresh order.</div></div></div>
+                  <div class="n2-radio"><span class="rd"></span><div><div class="t">Leave it</div><div class="d">The 15:50 rebalance tries again with the same limit and may be rejected for the same reason.</div></div></div>
+                  <div class="row" style="justify-content:flex-end;margin-top:6px"><span class="btn ghost">Not now</span><span class="btn pri round">Place 110 TLT</span></div>
+                </div>
+              </div>
+              <div class="panel">
+                <div class="panel-h">Order</div>
+                <div class="panel-b tight n2-kv">
+                  <div><span>Type</span><span>Market, day</span></div>
+                  <div><span>Price used</span><span>$90.41 at 10:30</span></div>
+                  <div><span>Created</span><span>Nov 17 10:31:02 ET</span></div>
+                  <div><span>Order ID</span><span class="dim">ord_3c9t07</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Orders</span><span></span><span></span></div>
+      <div class="m-body n2-o">
+        <div><div class="row gap-6"><span class="pill paper">Paper</span><span class="st warn">Rejected 10:31</span></div><div class="h2" style="margin-top:8px;font-size:22px">Buy 124 TLT</div><div class="sm dim" style="margin-top:3px">Recession Radar · nothing sent to Alpaca</div></div>
+        <div class="m-card" style="padding:12px 16px 10px">
+          <div class="row base"><span class="mono b" style="font-size:20px">$11,210.84</span><span class="sp"></span><span class="mono sm risk">$1,210.84 over</span></div>
+          <div class="n2-o-lim sm">
+            <span class="lt" style="left:83.33%">$10,000 limit</span>
+            <div class="trk"><i class="ok" style="width:83.33%"></i><i class="over" style="left:83.33%;width:10.09%"></i></div>
+            <i class="ln" style="left:83.33%"></i>
+          </div>
+        </div>
+        <div class="m-card" style="padding:0;overflow:hidden">
+          <div class="n2-o-ck tight">
+            <div class="hit"><span data-icon="alert"></span><span>Order value</span><span class="r">Over</span></div>
+            <div><span data-icon="check"></span><span>The other six checks</span><span class="r">Nothing found</span></div>
+          </div>
+        </div>
+        <div class="b" style="font-size:15px">What you can do</div>
+        <div class="n2-radio on" style="padding:11px 13px"><span class="rd"></span><div><div class="t" style="font-size:14px">Place 110 TLT now</div><div class="d">$9,945.10, through the same checks.</div></div></div>
+        <div class="n2-radio" style="padding:11px 13px"><span class="rd"></span><div><div class="t" style="font-size:14px">Raise the limit to $12,000</div><div class="d">For this session. 15:50 tries again.</div></div></div>
+        <div class="m-btn">Place 110 TLT</div>
+      </div>
+      <nav data-tabs="sessions" data-items="home,strategies,sessions,portfolio,account"></nav>
+    </div>
+  </div>
+
+  <!-- ============================================================ B -->
+  <div class="ax-opt" data-opt="B" data-name="A marker on today's lanes"
+    data-note="The rejected order is an amber marker on today's lanes, beside the GLD sale that did go through, and its card opens from the marker. It's good at showing what the rejection left behind: the sleeve sold gold and didn't buy bonds, so it holds more cash than its targets until 15:50. The card is small, so the checks become one line and the fixes link to the full order page. It uses the same lanes as Home, so it adds no new data needs.">
+    <div data-frame="desktop" data-path="sessions/recession-radar">
+      <div class="app n2-o n2-o-b">
+        <div data-tb="Sessions"></div>
+        <div class="main"><div class="page">
+          <div class="n2-crumb">Sessions<span data-icon="chevron-right"></span>Paper</div>
+          <div class="page-head">
+            <div><div class="row"><span class="h1">Recession Radar</span><span class="pill paper">Paper</span><span class="st run">Running</span></div><div class="sub">Version 4 · TLT 60%, GLD 40% · rebalances again at 15:50 ET</div></div>
+            <div class="act"><div class="seg mono"><span class="on">Today</span><span>1M</span><span>3M</span><span>All</span></div><span class="btn">Pause</span><span class="btn">Stop</span></div>
+          </div>
+          <div class="panel rim hero">
+            <div class="row" style="gap:28px;padding-bottom:10px">
+              <div><div class="lbl">Sleeve equity</div><div class="row base" style="gap:10px;margin-top:4px"><span class="big" style="font-size:28px">$31,904.20</span><span class="chg gain">+$196.62</span><span class="chg gain">+0.62%</span></div></div>
+              <div><div class="lbl">Cash in the sleeve</div><div class="mono b" style="margin-top:6px;font-size:15px">$4,118.36</div></div>
+              <div><div class="lbl">Orders today</div><div class="mono b" style="margin-top:6px;font-size:15px">1 filled · <span class="risk">1 rejected</span></div></div>
+            </div>
+            <div class="n2-tl">
+              <div class="lab"></div>
+              <div class="past n2-pins">
+                <span class="n2-pin start" style="left:0">Open 09:30</span>
+                <span class="n2-pin" style="left:83.3%">Rebalance 10:30</span>
+              </div>
+              <div class="fut n2-pins" style="background:none;border-left-color:transparent"></div>
+            </div>
+            <div class="n2-tl">
+              <div class="lab" style="align-items:flex-start;padding-top:6px"><div class="n2-kv" style="width:100%"><div><span>High</span><span>$31,962</span></div><div><span>Low</span><span>$31,688</span></div><div><span>Fills today</span><span>1</span></div></div></div>
+              <div class="past"><div data-chart="area" data-seed="914" data-ret="0.0062" data-vol="0.0011" data-h="150" data-mark></div><i class="n2-vl" style="left:83.3%"></i><i class="n2-vl risk" style="left:84.7%"></i></div>
+              <div class="fut n2-fut">
+                <span class="n2-now">Now 10:42</span>
+                <div class="ttl">Later today</div>
+                <div class="nx" style="top:58px"><span class="mono dim">15:50</span> Rebalance, same limit</div>
+                <div class="nx" style="top:80px"><span class="mono dim">16:00</span> <span class="dim">Market closes</span></div>
+              </div>
+            </div>
+            <div class="n2-tl">
+              <div class="lab"><span class="n2-name">Rebalances</span></div>
+              <div class="past n2-lane"><i class="bar on" style="left:0;right:0"></i><i class="n2-m" style="left:83.3%"></i></div>
+              <div class="fut n2-lane"><i class="bar plan" style="left:0;right:0"></i><i class="n2-m plan" style="left:72%"></i></div>
+            </div>
+            <div class="n2-tl">
+              <div class="lab"><span class="sym">TLT</span><span class="xs dim">58.2% → 60%</span></div>
+              <div class="past n2-lane"><i class="bar on" style="left:0;right:0"></i><i class="n2-m risk fill" style="left:84.7%">!</i></div>
+              <div class="fut n2-lane"><i class="bar plan" style="left:0;right:0"></i></div>
+            </div>
+            <div class="n2-tl">
+              <div class="lab"><span class="sym">GLD</span><span class="xs dim">41.8% → 40%</span></div>
+              <div class="past n2-lane"><i class="bar on" style="left:0;right:0"></i><i class="n2-m fill" style="left:84.7%">1</i></div>
+              <div class="fut n2-lane"><i class="bar plan" style="left:0;right:0"></i></div>
+            </div>
+            <div class="n2-tl">
+              <div class="lab"><div class="n2-keys"><span><i class="n2-m"></i>Rebalance</span><span><i class="n2-m risk" style="width:10px;height:10px"></i>Rejected</span></div></div>
+              <div class="past n2-xl"><span style="left:0;transform:none">09:30</span><span style="left:41.7%">10:00</span><span style="left:83.3%">10:30</span></div>
+              <div class="fut n2-xl"><span style="left:72%">15:50</span></div>
+            </div>
+            <div class="n2-o-pop" style="left:606px;top:150px">
+              <div class="row"><span class="n2-tag risk">BUY</span><span class="b">124 TLT rejected</span><span class="sp"></span><span class="mono xs dim">10:31:02</span></div>
+              <div class="sm muted" style="margin-top:8px;line-height:1.5">$11,210.84 is over this session's limit of $10,000 per order. Nothing was sent to Alpaca. The other checks found nothing.</div>
+              <div class="sm muted" style="margin-top:6px;line-height:1.5">The GLD sale filled, so the sleeve holds <b style="color:var(--fg)">$2,230.74</b> more cash than planned until 15:50.</div>
+              <div class="row" style="margin-top:12px;gap:6px"><span class="btn sm pri">Place 110 TLT</span><span class="btn sm">Raise the limit</span><span class="sp"></span><span class="xs acc">Order page</span></div>
+            </div>
+          </div>
+          <div class="lower">
+            <div class="panel">
+              <div class="panel-h">Holdings against targets</div>
+              <div class="panel-b col" style="gap:10px;padding-top:12px">
+                <div class="n2-tw"><span class="sym">TLT</span><div class="bars"><i class="now" style="width:51.9%"></i><i class="tgt" style="width:60%"></i></div><span class="mono xs dim">51.9% / 60%</span></div>
+                <div class="n2-tw"><span class="sym">GLD</span><div class="bars"><i class="now" style="width:35.2%"></i><i class="tgt" style="width:40%"></i></div><span class="mono xs dim">35.2% / 40%</span></div>
+                <div class="n2-tw"><span class="sym">Cash</span><div class="bars"><i class="now" style="width:12.9%;background:var(--fg-3)"></i><i class="tgt" style="width:0"></i></div><span class="mono xs dim">12.9% / 0%</span></div>
+              </div>
+            </div>
+            <div class="panel">
+              <div class="panel-h">Today's orders<span class="aside">2</span></div>
+              <div class="panel-b tight list">
+                <div class="li"><span class="n2-tag">SELL</span><div style="flex:1;min-width:0"><div class="t">9 GLD at $247.86</div><div class="d">Filled 10:31:07 by Alpaca</div></div><span class="mono sm">$2,230.74</span></div>
+                <div class="li"><span class="n2-tag risk">BUY</span><div style="flex:1;min-width:0"><div class="t">124 TLT at about $90.41</div><div class="d risk">Rejected 10:31:02, over the $10,000 limit</div></div><span class="mono sm">$11,210.84</span></div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span></span><span class="ic" data-icon="more" style="width:22px;height:22px"></span></div>
+      <div class="m-body">
+        <div><div class="row gap-6"><span class="pill paper">Paper</span><span class="st run">Running</span></div><div class="h2" style="margin-top:8px;font-size:22px">Recession Radar</div><div class="row base" style="gap:8px;margin-top:6px"><span class="mono b" style="font-size:20px">$31,904.20</span><span class="mono sm gain">+$196.62 today</span></div></div>
+        <div>
+          <div data-chart="area" data-seed="914" data-ret="0.0062" data-vol="0.0011" data-h="110" data-mark></div>
+          <div class="n2-plane"><span class="lab">TLT</span><i class="bar on" style="left:30px;right:0"></i><i class="n2-m risk fill" style="left:86%">!</i></div>
+          <div class="n2-plane"><span class="lab">GLD</span><i class="bar on" style="left:30px;right:0"></i><i class="n2-m fill" style="left:86%">1</i></div>
+        </div>
+      </div>
+      <nav data-tabs="sessions" data-items="home,strategies,sessions,portfolio,account"></nav>
+      <div class="scrim"></div>
+      <div class="sheet" style="display:flex;flex-direction:column;gap:12px">
+        <div class="row"><span class="n2-tag risk">BUY</span><span class="h3">124 TLT rejected</span><span class="sp"></span><span class="mono xs dim">10:31</span></div>
+        <div class="sm muted" style="line-height:1.5">$11,210.84 is over this session's $10,000 limit per order. Nothing was sent to Alpaca, and the other checks found nothing.</div>
+        <div class="callout" style="font-size:13px"><span data-icon="info"></span><div>GLD sold, so the sleeve holds <b>$2,230.74</b> more cash until 15:50.</div></div>
+        <div class="m-btn">Place 110 TLT</div>
+        <div class="m-btn sec">Raise the limit</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ C -->
+  <div class="ax-opt" data-opt="C" data-name="An alert, read as a thread"
+    data-note="The rejection reads like a thread: the alert, then each step the system took with its time, then the choices as replies. It matches how the notification service already delivers incidents (an in-app row and an email) and suits someone arriving from that email. It's the slowest to scan on a morning with several things going on, and it implies a history of steps that isn't stored as events today. Only the violation text is stored, so the middle of the thread would be rebuilt from the order's timestamps.">
+    <div data-frame="desktop" data-path="alerts/rej_3c9t07">
+      <div class="app n2-o n2-o-c">
+        <div data-tb="Sessions" data-bell="2"></div>
+        <div class="main"><div class="split">
+          <div class="inbox">
+            <div class="row" style="padding:0 6px 10px"><span class="h3">Alerts</span><span class="sp"></span><div class="seg"><span class="on">Open</span><span>All</span></div></div>
+            <div class="it on"><i class="dot risk"></i><div><div class="t">Buy 124 TLT rejected</div><div class="d">Recession Radar · over the order limit</div></div><span class="mono xs dim">10:31</span></div>
+            <div class="it"><i class="dot risk"></i><div><div class="t">Momentum Sectors is frozen</div><div class="d">12 SMH shares don't match Alpaca</div></div><span class="mono xs dim">09:31</span></div>
+            <div class="it"><i class="dot"></i><div><div class="t">Rebalance filled</div><div class="d">All-Weather Portfolio · 1 order</div></div><span class="mono xs dim">09:45</span></div>
+            <div class="it"><i class="dot"></i><div><div class="t">Tech Momentum Rotation stopped</div><div class="d">By you · holdings moved out of the sleeve</div></div><span class="mono xs dim">Nov 12</span></div>
+            <div class="it"><i class="dot"></i><div><div class="t">Backtest finished</div><div class="d">Dual Momentum · 2016 to 2026</div></div><span class="mono xs dim">Nov 11</span></div>
+          </div>
+          <div class="thread">
+            <div>
+              <div class="row"><span class="pill paper">Paper</span><span class="st warn">Open</span><span class="sp"></span><span class="xs dim">Also sent by email at 10:31</span></div>
+              <div class="h1" style="margin-top:10px">Buy 124 TLT was rejected</div>
+              <div class="sub" style="color:var(--fg-3);margin-top:4px">Recession Radar · Tuesday, November 17</div>
+            </div>
+            <div class="hr"></div>
+            <div class="n2-o-ev"><span class="tm">10:30:00</span><span class="av"><span data-icon="refresh"></span></span><div class="bd">The rebalance read prices and worked out two orders to bring the sleeve back to <b>60% TLT and 40% GLD</b>: sell 9 GLD and buy 124 TLT.</div></div>
+            <div class="n2-o-ev"><span class="tm">10:31:02</span><span class="av risk"><span data-icon="alert"></span></span><div class="bd"><b>Buy 124 TLT was rejected before it reached Alpaca.</b> At $90.41 it comes to $11,210.84, and this session's limit is $10,000 per order. The other checks found nothing.<div class="n2-o-lim sm" style="max-width:520px;margin-top:4px"><span class="lt" style="left:83.33%">$10,000 limit</span><div class="trk"><i class="ok" style="width:83.33%"></i><i class="over" style="left:83.33%;width:10.09%"></i></div><i class="ln" style="left:83.33%"></i></div></div></div>
+            <div class="n2-o-ev"><span class="tm">10:31:07</span><span class="av"><span data-icon="check"></span></span><div class="bd">Sell 9 GLD filled at $247.86. The sleeve now holds $4,118.36 in cash, $2,230.74 more than the rebalance planned.</div></div>
+            <div class="n2-o-ev"><span class="tm">15:50</span><span class="av" style="background:transparent;box-shadow:inset 0 0 0 1px var(--line-2)"><span data-icon="clock"></span></span><div class="bd">Next rebalance. With the same limit, a buy of more than 110 TLT would be rejected again.</div></div>
+            <div class="panel" style="padding:16px 18px;margin-top:6px">
+              <div class="b">What would you like to do?</div>
+              <div class="sm muted" style="margin:4px 0 12px">Each choice opens a short confirmation before anything changes.</div>
+              <div class="n2-o-reply"><span class="btn pri">Place 110 TLT now ($9,945.10)</span><span class="btn">Raise the limit to $12,000</span><span class="btn">Leave it for 15:50</span><span class="btn ghost">Mark as read</span></div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Alerts</span><span></span><span></span></div>
+      <div class="m-body n2-o">
+        <div><div class="row gap-6"><span class="pill paper">Paper</span><span class="sm dim">Recession Radar</span></div><div class="h2" style="margin-top:8px;font-size:22px">Buy 124 TLT was rejected</div></div>
+        <div class="n2-o-ev" style="grid-template-columns:26px minmax(0,1fr)"><span class="av"><span data-icon="refresh"></span></span><div class="bd" style="font-size:13.5px"><span class="mono xs dim">10:30</span><br>The rebalance worked out sell 9 GLD and buy 124 TLT.</div></div>
+        <div class="n2-o-ev" style="grid-template-columns:26px minmax(0,1fr)"><span class="av risk"><span data-icon="alert"></span></span><div class="bd" style="font-size:13.5px"><span class="mono xs dim">10:31</span><br><b>Rejected.</b> $11,210.84 is over the $10,000 limit per order. Nothing reached Alpaca.</div></div>
+        <div class="n2-o-ev" style="grid-template-columns:26px minmax(0,1fr)"><span class="av"><span data-icon="check"></span></span><div class="bd" style="font-size:13.5px"><span class="mono xs dim">10:31</span><br>Sell 9 GLD filled at $247.86.</div></div>
+        <div class="m-btn">Place 110 TLT now</div>
+        <div class="m-btn sec">Raise the limit</div>
+      </div>
+      <nav data-tabs="sessions" data-items="home,strategies,sessions,portfolio,account"></nav>
+    </div>
+  </div>
+
+  <!-- ============================================================ D -->
+  <div class="ax-opt" data-opt="D" data-name="Opened in the orders log"
+    data-note="The account-wide orders log, filtered to today and the last few days, with the rejected row opened in place. It's the fastest view for someone who reviews orders in bulk and wants the next and previous ones within reach, and the Rejected filter makes problems easy to find across sessions. The opened row has room for the recorded reason, a small limit bar and the three choices, but not for the explanation the other options give.">
+    <div data-frame="desktop" data-path="sessions/orders?status=all">
+      <div class="app n2-o n2-o-d">
+        <div data-tb="Sessions"></div>
+        <div class="main"><div class="page">
+          <div class="page-head">
+            <div><div class="h1">Orders</div><div class="sub">Every order from every session, newest first</div></div>
+            <div class="act"><div class="input search" style="width:220px"><span data-icon="search" class="dim"></span><span class="ph">Symbol or session</span></div><span class="btn"><span data-icon="download"></span>Export CSV</span></div>
+          </div>
+          <div class="row" style="gap:8px;margin-bottom:12px"><span class="chip on">All sessions</span><span class="chip">Live</span><span class="chip">Paper</span><span class="chip">Filled</span><span class="chip" style="border-color:var(--risk-line);color:var(--risk)">Rejected · 1</span><span class="sp"></span><span class="xs dim">Last 5 trading days</span></div>
+          <div class="panel">
+            <table class="tbl">
+              <tr><th style="width:130px">Time</th><th>Session</th><th style="width:70px">Side</th><th style="width:70px">Symbol</th><th class="num" style="width:70px">Qty</th><th class="num" style="width:100px">Price</th><th class="num" style="width:120px">Value</th><th style="width:220px">Status</th><th style="width:30px"></th></tr>
+              <tr><td class="mono dim">Today 10:31</td><td>Recession Radar <span class="pill paper n2-mini-pill">Paper</span></td><td>Sell</td><td class="sym">GLD</td><td class="num">9</td><td class="num">247.86</td><td class="num">$2,230.74</td><td><span class="st ok">Filled 10:31:07</span></td><td><span class="n2-chev" data-icon="chevron-right"></span></td></tr>
+              <tr class="rej"><td class="mono dim">Today 10:31</td><td>Recession Radar <span class="pill paper n2-mini-pill">Paper</span></td><td>Buy</td><td class="sym">TLT</td><td class="num">124</td><td class="num dim">90.41</td><td class="num">$11,210.84</td><td><span class="st warn">Rejected, order value</span></td><td><span class="n2-chev" data-icon="chevron-down"></span></td></tr>
+              <tr class="exp"><td colspan="9"><div class="xp">
+                <div>
+                  <div class="lbl">Recorded reason</div>
+                  <div class="n2-o-quote" style="margin-top:6px">Order value $11210.84 exceeds limit $10000.00</div>
+                  <div class="sm muted" style="margin-top:10px;line-height:1.5">Rejected before it reached Alpaca. Market hours, the sleeve's cash, the allowed symbols, position size, daily loss and order rate found nothing.</div>
+                </div>
+                <div>
+                  <div class="lbl">Against the limit</div>
+                  <div class="n2-o-lim sm"><span class="lt" style="left:83.33%">$10,000</span><span class="lt r" style="left:93.42%;top:40px">+$1,210.84</span><div class="trk"><i class="ok" style="width:83.33%"></i><i class="over" style="left:83.33%;width:10.09%"></i></div><i class="ln" style="left:83.33%"></i></div>
+                  <div class="xs dim" style="margin-top:22px">Largest that fits: 110 TLT, $9,945.10</div>
+                </div>
+                <div class="col" style="gap:6px"><span class="btn pri sm block">Place 110 TLT now</span><span class="btn sm block">Raise this session's limit</span><span class="btn ghost sm block">Leave it for the 15:50 rebalance</span></div>
+              </div></td></tr>
+              <tr><td class="mono dim">Today 09:45</td><td>All-Weather Portfolio <span class="pill live n2-mini-pill">Live</span></td><td>Buy</td><td class="sym">VGLT</td><td class="num">31</td><td class="num">58.12</td><td class="num">$1,801.72</td><td><span class="st ok">Filled 09:45:12</span></td><td><span class="n2-chev" data-icon="chevron-right"></span></td></tr>
+              <tr><td class="mono dim">Nov 16 15:50</td><td>Recession Radar <span class="pill paper n2-mini-pill">Paper</span></td><td>Buy</td><td class="sym">TLT</td><td class="num">18</td><td class="num">90.02</td><td class="num">$1,620.36</td><td><span class="st ok">Filled 15:50:41</span></td><td><span class="n2-chev" data-icon="chevron-right"></span></td></tr>
+              <tr><td class="mono dim">Nov 16 15:50</td><td>Recession Radar <span class="pill paper n2-mini-pill">Paper</span></td><td>Sell</td><td class="sym">GLD</td><td class="num">5</td><td class="num">246.10</td><td class="num">$1,230.50</td><td><span class="st ok">Filled 15:50:39</span></td><td><span class="n2-chev" data-icon="chevron-right"></span></td></tr>
+              <tr><td class="mono dim">Nov 16 10:30</td><td>Momentum Sectors <span class="pill paper n2-mini-pill">Paper</span></td><td>Sell</td><td class="sym">XLK</td><td class="num">4</td><td class="num">231.10</td><td class="num">$924.40</td><td><span class="st ok">Filled 10:30:18</span></td><td><span class="n2-chev" data-icon="chevron-right"></span></td></tr>
+              <tr><td class="mono dim">Nov 16 10:30</td><td>Momentum Sectors <span class="pill paper n2-mini-pill">Paper</span></td><td>Buy</td><td class="sym">IWM</td><td class="num">6</td><td class="num">141.20</td><td class="num">$847.20</td><td><span class="st ok">Filled 10:30:21</span></td><td><span class="n2-chev" data-icon="chevron-right"></span></td></tr>
+            </table>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-head"><div class="t">Orders</div><div class="s">All sessions · last 5 trading days</div></div>
+      <div class="m-body n2-o">
+        <div class="row" style="gap:6px"><span class="chip on">All</span><span class="chip">Filled</span><span class="chip" style="border-color:var(--risk-line);color:var(--risk)">Rejected · 1</span></div>
+        <div class="m-card rows">
+          <div class="n2-prow"><span class="n2-tag">SELL</span><div class="grow"><div>9 GLD</div><div class="d">Recession Radar · 10:31 · filled</div></div><span class="mono sm">$2,230.74</span></div>
+        </div>
+        <div class="m-card" style="border-color:var(--risk-line);display:flex;flex-direction:column;gap:10px">
+          <div class="row"><span class="n2-tag risk">BUY</span><div style="flex:1;min-width:0"><div>124 TLT</div><div class="xs risk">Rejected 10:31 · order value</div></div><span class="mono sm">$11,210.84</span></div>
+          <div class="n2-o-lim sm" style="padding-top:16px"><span class="lt" style="left:83.33%">$10,000 limit</span><div class="trk"><i class="ok" style="width:83.33%"></i><i class="over" style="left:83.33%;width:10.09%"></i></div><i class="ln" style="left:83.33%;top:10px"></i></div>
+          <div class="row" style="gap:6px"><span class="btn sm pri" style="flex:1">Place 110 TLT</span><span class="btn sm" style="flex:1">Raise the limit</span></div>
+        </div>
+        <div class="m-card rows">
+          <div class="n2-prow"><span class="n2-tag">BUY</span><div class="grow"><div>31 VGLT</div><div class="d">All-Weather · live · 09:45 · filled</div></div><span class="mono sm">$1,801.72</span></div>
+          <div class="n2-prow"><span class="n2-tag">BUY</span><div class="grow"><div>18 TLT</div><div class="d">Recession Radar · Nov 16 · filled</div></div><span class="mono sm">$1,620.36</span></div>
+        </div>
+      </div>
+      <nav data-tabs="sessions" data-items="home,strategies,sessions,portfolio,account"></nav>
+    </div>
+  </div>
+</section>

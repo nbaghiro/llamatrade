@@ -49,3 +49,23 @@ def test_missing_fields_degrade_readably() -> None:
     )
     assert "  " not in rendered.message
     assert rendered.message.endswith(".")
+
+
+def test_invite_carries_code_expiry_and_signup_link() -> None:
+    event = events_pb2.NotificationEvent(
+        category=_E.NOTIFICATION_CATEGORY_INVITE,
+        extra={
+            "to": "person@example.com",
+            "code": "ABCD-EFGH",
+            "link": "http://localhost:8800/register?email=person%40example.com&code=ABCD-EFGH",
+            "expires": "2026-12-16",
+        },
+    )
+    rendered = render(event)
+    assert rendered.subject == "LlamaTrade: You're invited"
+    assert "ABCD-EFGH" in rendered.message
+    assert "2026-12-16" in rendered.message
+    assert rendered.cta_label == "Create your account"
+    assert rendered.text_body.endswith(
+        "Create your account: http://localhost:8800/register?email=person%40example.com&code=ABCD-EFGH"
+    )

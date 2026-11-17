@@ -7,21 +7,36 @@ interface FieldProps extends InputHTMLAttributes<HTMLInputElement> {
   /** Shown at the right of the label, e.g. "Forgot password?"; it follows the input in tab order. */
   aside?: ReactNode;
   help?: ReactNode;
+  /** Shown under the input in place of `help`, with the input outlined in amber. */
+  error?: ReactNode;
 }
 
-export function Field({ id, label, aside, help, className = '', ...input }: FieldProps) {
-  const helpId = help ? `${id}-help` : undefined;
+export function Field({ id, label, aside, help, error, className = '', ...input }: FieldProps) {
+  const noteId = error || help ? `${id}-note` : undefined;
   return (
     <div className="relative grid gap-1.5">
       <label htmlFor={id} className="text-[12px] font-medium text-fg-2">
         {label}
       </label>
-      <input id={id} aria-describedby={helpId} className={`input ${className}`} {...input} />
+      <input
+        id={id}
+        aria-describedby={noteId}
+        aria-invalid={error ? true : undefined}
+        className={`input ${error ? '!border-risk-line' : ''} ${className}`}
+        {...input}
+      />
       {aside && <div className="absolute right-0 top-0 text-[12px] font-medium">{aside}</div>}
-      {help && (
-        <span id={helpId} className="text-[11.5px] text-fg-3">
-          {help}
+      {error ? (
+        <span id={noteId} role="alert" className="flex items-start gap-1.5 text-[12px] text-fg-2">
+          <AlertTriangle aria-hidden="true" className="mt-px h-3.5 w-3.5 flex-none text-risk" />
+          <span>{error}</span>
         </span>
+      ) : (
+        help && (
+          <span id={noteId} className="text-[11.5px] text-fg-3">
+            {help}
+          </span>
+        )
       )}
     </div>
   );

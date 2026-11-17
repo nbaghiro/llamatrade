@@ -1,0 +1,1036 @@
+<style>
+  /* ---- strategies list and empty, round two (sl-) ---- */
+  .sl-pg { padding: 24px 32px; }
+  .sl-pg .page-head { margin-bottom: 16px; }
+  .sl-nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sl-meta { font-size: 11.5px; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sl-pp { height: 17px; font-size: 9.5px; padding: 0 6px; }
+  .sl-leg { display: flex; gap: 16px; align-items: center; font-size: 12px; color: var(--fg-2); flex-wrap: wrap; }
+  .sl-leg > span { display: inline-flex; align-items: center; gap: 7px; }
+  .sl-leg .l { width: 14px; border-top: 2px solid var(--acc); }
+  .sl-leg .g { width: 14px; border-top: 2px solid var(--fg-3); }
+  .sl-leg .d { width: 14px; border-top: 1.5px dashed var(--fg-3); }
+  .sl-foot { font-size: 11.5px; color: var(--fg-3); margin-top: 12px; }
+  .sl-mrow { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 14.5px; }
+  .sl-mrow:last-child { border-bottom: 0; }
+  .sl-mrow .grow { flex: 1; min-width: 0; }
+  .sl-mrow .d { font-size: 12.5px; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sl-hscroll { display: flex; gap: 6px; flex-wrap: nowrap; overflow: hidden; flex: none; }
+
+  /* lane markers, as on Home's annotated curve */
+  .sl-m { position: absolute; width: 10px; height: 10px; border-radius: 50%; background: var(--panel); border: 1.5px solid var(--acc); box-sizing: border-box; }
+  .sl-m.cur { background: var(--acc); box-shadow: 0 0 0 4px var(--acc-soft); }
+  .sl-m.live { background: var(--ink); border-color: var(--ink); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ink) 14%, transparent); }
+  .sl-m.stop { border-radius: 2px; background: var(--fg-3); border-color: var(--fg-3); }
+  .sl-m.todo { border-style: dashed; border-color: var(--fg-3); }
+  .sl-m.none { width: 6px; height: 6px; border: 0; background: var(--line-2); margin: 2px; }
+
+  /* A: stage track */
+  .sl-tk .tk { padding: 0; overflow: hidden; }
+  .sl-tk .gr { display: grid; grid-template-columns: 250px repeat(4, minmax(0, 1fr)) 156px; }
+  .sl-tk .hd { background: var(--sunk); border-bottom: 1px solid var(--line); }
+  .sl-tk .hd > div { padding: 11px 12px 10px 0; display: flex; flex-direction: column; gap: 3px; }
+  .sl-tk .hd > div:first-child { padding-left: 20px; }
+  .sl-tk .hd .xs { color: var(--fg-3); }
+  .sl-tk .rw { border-top: 1px solid var(--line); }
+  .sl-tk .rw:first-of-type { border-top: 0; }
+  .sl-tk .nm { padding: 14px 16px 12px 20px; display: flex; flex-direction: column; gap: 4px; min-width: 0; justify-content: center; }
+  .sl-tk .c { position: relative; padding: 32px 14px 12px 0; min-width: 0; }
+  .sl-tk .c::before { content: ""; position: absolute; top: 18px; left: 5px; right: 0; height: 0; }
+  .sl-tk .c.thru::before { border-top: 1.5px solid color-mix(in srgb, var(--acc) 60%, var(--line-2)); }
+  .sl-tk .c.next::before { right: 45%; border-top: 1.5px dashed var(--line-2); }
+  .sl-tk .c.was::before { border-top: 1.5px solid var(--line-2); }
+  .sl-tk .c .sl-m { left: 0; top: 13px; z-index: 1; }
+  .sl-tk .c .sl-m.none { top: 15px; left: 0; }
+  .sl-tk .c .v { font: 500 13.5px var(--mono); letter-spacing: -0.01em; white-space: nowrap; }
+  .sl-tk .c .v.big2 { font-size: 15px; font-weight: 600; }
+  .sl-tk .c .s { font-size: 11.5px; color: var(--fg-3); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sl-tk .nx { padding: 0 20px 0 0; display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 4px; text-align: right; }
+  .sl-tk .col-live { background: color-mix(in srgb, var(--sunk) 55%, transparent); }
+  .sl-tk-m .stp { display: flex; align-items: center; gap: 0; margin: 8px 0 6px; }
+  .sl-tk-m .stp i { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--acc); background: var(--panel); flex: none; box-sizing: border-box; }
+  .sl-tk-m .stp i.cur { background: var(--acc); box-shadow: 0 0 0 3px var(--acc-soft); }
+  .sl-tk-m .stp i.live { background: var(--ink); border-color: var(--ink); }
+  .sl-tk-m .stp i.stop { border-radius: 2px; background: var(--fg-3); border-color: var(--fg-3); }
+  .sl-tk-m .stp i.off { border: 0; background: var(--line-2); width: 6px; height: 6px; }
+  .sl-tk-m .stp b { flex: 1; height: 0; border-top: 1.5px solid color-mix(in srgb, var(--acc) 60%, var(--line-2)); }
+  .sl-tk-m .stp b.off { border-top: 1.5px dashed var(--line-2); }
+  .sl-tk-m .stl { display: grid; grid-template-columns: repeat(4, 1fr); font-size: 10.5px; color: var(--fg-4); }
+  .sl-tk-m .stl span:nth-child(2) { text-align: center; transform: translateX(-18%); }
+  .sl-tk-m .stl span:nth-child(3) { text-align: center; transform: translateX(18%); }
+  .sl-tk-m .stl span:last-child { text-align: right; }
+  .sl-tk-m .stl .on { color: var(--fg); font-weight: 600; }
+  .sl-tk-m .m-card { padding: 12px 16px; }
+
+  /* B: stage board */
+  .sl-bd .cols { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: start; }
+  .sl-bd .cl { background: var(--sunk); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; min-height: 620px; }
+  .sl-bd .cl.live { background: color-mix(in srgb, var(--ink) 5%, var(--sunk)); box-shadow: inset 0 0 0 1px var(--line-2); }
+  .sl-bd .ch { padding: 2px 4px 4px; }
+  .sl-bd .ch .row { gap: 8px; }
+  .sl-bd .ch .xs { margin-top: 3px; color: var(--fg-3); line-height: 1.4; }
+  .sl-bd .cd { padding: 13px 14px; display: flex; flex-direction: column; gap: 7px; }
+  .sl-bd .cd .mv { display: flex; align-items: center; gap: 6px; padding-top: 9px; margin-top: 2px; border-top: 1px solid var(--line); font-size: 12px; color: var(--fg-2); }
+  .sl-bd .cd .mv .ic { width: 13px; height: 13px; }
+  .sl-bd .cd.stopped { background: transparent; border-style: dashed; }
+  .sl-bd .hint { border: 1px dashed var(--line-2); border-radius: 10px; padding: 12px 14px; font-size: 12px; color: var(--fg-3); line-height: 1.45; }
+  .sl-bd-m .seg { align-self: stretch; }
+  .sl-bd-m .seg > * { flex: 1; justify-content: center; padding: 0 6px; font-size: 12px; }
+
+  /* C: gallery against the backtest */
+  .sl-gl .sec { display: flex; align-items: baseline; gap: 10px; margin: 0 0 10px; }
+  .sl-gl .g3 { gap: 14px; }
+  .sl-gl .g4 { gap: 14px; margin-top: 4px; }
+  .sl-gl .cd { padding: 15px 18px 13px; display: flex; flex-direction: column; gap: 6px; }
+  .sl-gl .cd .pair { display: grid; grid-template-columns: 1fr 1fr 0.8fr; gap: 10px; padding-top: 9px; margin-top: 2px; border-top: 1px solid var(--line); }
+  .sl-gl .cd .pair > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .sl-gl .cd .pair b { font: 600 14px var(--mono); letter-spacing: -0.02em; white-space: nowrap; }
+  .sl-gl .cd .pair span { font-size: 10.5px; color: var(--fg-3); white-space: nowrap; }
+  .sl-gl .sm2 { padding: 13px 15px 11px; display: flex; flex-direction: column; gap: 5px; }
+  .sl-gl .sm2 .row.mono { font-size: 11.5px; gap: 8px; }
+
+  /* D: search first */
+  .sl-sr .bar { display: flex; align-items: center; gap: 10px; height: 52px; padding: 0 10px 0 20px; border-radius: 999px; background: var(--panel); border: 1px solid var(--acc); box-shadow: 0 0 0 4px var(--acc-soft), var(--shadow-lg); font-size: 16px; }
+  .sl-sr .bar .q { flex: 1; }
+  .sl-sr .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
+  .sl-sr .chips .lbl { margin-right: 2px; }
+  .sl-sr .chips .div { width: 1px; height: 18px; background: var(--line-2); margin: 0 4px; }
+  .sl-sr .res { margin-top: 22px; }
+  .sl-sr .hit { display: grid; grid-template-columns: minmax(0, 1fr) 210px 150px; gap: 20px; align-items: start; padding: 16px 20px; border-top: 1px solid var(--line); }
+  .sl-sr .hit:first-child { border-top: 0; }
+  .sl-sr .why { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; font-size: 12.5px; color: var(--fg-2); }
+  .sl-sr .why > div { display: flex; align-items: center; gap: 8px; }
+  .sl-sr .why .k { font: 500 10.5px var(--mono); color: var(--fg-3); width: 66px; flex: none; text-transform: uppercase; letter-spacing: 0.05em; }
+  .sl-hit { background: color-mix(in srgb, var(--acc) 24%, transparent); color: var(--fg); border-radius: 3px; padding: 0 2px; font-weight: 600; }
+  .sl-sr .rest { display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-top: 1px solid var(--line); color: var(--fg-3); font-size: 12.5px; }
+  .sl-sr-m .bar { height: 44px; font-size: 15px; padding: 0 8px 0 16px; }
+
+  /* E: measured against SPY */
+  .sl-vs .vt { padding: 0; overflow: hidden; }
+  .sl-vs .gr { display: grid; grid-template-columns: 236px minmax(0, 1fr) minmax(0, 1fr) 84px 176px; align-items: center; }
+  .sl-vs .hd { background: var(--sunk); border-bottom: 1px solid var(--line); }
+  .sl-vs .hd > div { padding: 10px 18px 9px 0; display: flex; flex-direction: column; gap: 3px; }
+  .sl-vs .hd > div:first-child, .sl-vs .rw > div:first-child { padding-left: 20px; }
+  .sl-vs .rw { border-top: 1px solid var(--line); min-height: 64px; }
+  .sl-vs .hd + .rw { border-top: 0; }
+  .sl-vs .rw > div { padding: 10px 26px 10px 0; min-width: 0; }
+  .sl-vs .rw > div:last-child { padding-right: 20px; }
+  .sl-dp { position: relative; height: 26px; }
+  .sl-dp::before { content: ""; position: absolute; left: 0; right: 0; top: 12px; height: 1px; background: var(--line); }
+  .sl-dp .spy { position: absolute; top: 2px; bottom: 2px; border-left: 1.5px dashed var(--fg-3); }
+  .sl-dp .gap { position: absolute; top: 10px; height: 5px; border-radius: 2px; }
+  .sl-dp .gap.g { background: color-mix(in srgb, var(--gain) 45%, transparent); }
+  .sl-dp .gap.l { background: color-mix(in srgb, var(--loss) 40%, transparent); }
+  .sl-dp .dot2 { position: absolute; top: 7px; width: 11px; height: 11px; margin-left: -5.5px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 0 3px var(--panel); }
+  .sl-dp .val { position: absolute; top: -1px; font: 600 11.5px var(--mono); white-space: nowrap; }
+  .sl-dp.ax { height: 14px; }
+  .sl-dp.ax::before { display: none; }
+  .sl-dp.ax span { position: absolute; top: 0; transform: translateX(-50%); font: 400 10px var(--mono); color: var(--fg-4); text-transform: none; letter-spacing: 0; }
+  .sl-dp.ax span.spyl { color: var(--fg-2); font-weight: 600; }
+  .sl-vs .run { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; text-align: right; }
+  .sl-vs .bench { display: flex; gap: 28px; padding: 14px 20px; border-radius: var(--r-lg); background: var(--sunk); margin-bottom: 14px; align-items: center; }
+  .sl-vs .bench .v { font: 600 16px var(--mono); margin-top: 3px; }
+
+  /* F: workbench */
+  .sl-wb .wrap2 { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 22px; align-items: start; }
+  .sl-wb .cont { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+  .sl-wb .cc { padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; min-height: 206px; }
+  .sl-wb .cc p { margin: 0; font-size: 12.5px; color: var(--fg-2); line-height: 1.5; }
+  .sl-wb .cc .sp { min-height: 4px; }
+  .sl-wb .feed { position: relative; padding: 4px 0; }
+  .sl-wb .ev { display: grid; grid-template-columns: 64px 22px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 9px 18px; font-size: 13px; }
+  .sl-wb .ev .t { font: 400 11.5px var(--mono); color: var(--fg-3); padding-top: 1px; }
+  .sl-wb .ev .ic { width: 15px; height: 15px; color: var(--fg-3); margin-top: 1px; }
+  .sl-wb .ev .ic.acc { color: var(--acc); }
+  .sl-wb .ev .d { font-size: 12px; color: var(--fg-3); margin-top: 2px; }
+  .sl-wb .side2 .li { padding: 10px 0; }
+  .sl-wb .grp { padding: 10px 18px 2px; }
+
+  /* empty state, round two */
+  .sl-e .hero { padding: 40px 0 26px; }
+  .sl-e .hero p { margin: 10px 0 0; font-size: 15.5px; color: var(--fg-2); max-width: 680px; line-height: 1.55; }
+  .sl-e .ways { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .sl-e .way { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+  .sl-e .way .ill { position: relative; height: 150px; background: var(--sunk); border-bottom: 1px solid var(--line); padding: 16px 18px; overflow: hidden; }
+  .sl-e .way .bd { padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 8px; flex: 1; }
+  .sl-e .way .bd p { margin: 0; color: var(--fg-2); font-size: 13px; line-height: 1.5; }
+  .sl-e .mini { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; box-shadow: var(--shadow); }
+  .sl-e .bub { max-width: 86%; padding: 8px 11px; border-radius: 12px; font-size: 12px; line-height: 1.45; margin-bottom: 8px; }
+  .sl-e .bub.me { margin-left: auto; background: var(--ink); color: var(--ink-text); border-bottom-right-radius: 4px; }
+  .sl-e .bub.bot { background: var(--panel); border: 1px solid var(--line); color: var(--fg-2); border-bottom-left-radius: 4px; }
+  .sl-e .blk { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px; margin-bottom: 6px; border-radius: 7px; background: var(--panel); border: 1px solid var(--line-2); font: 500 11.5px var(--mono); color: var(--fg-2); width: fit-content; }
+  .sl-e .blk .k { color: var(--acc); font-weight: 600; }
+  .sl-e .blk.i1 { margin-left: 22px; }
+  /* ghost stage track */
+  .sl-ghost { margin-top: 22px; padding: 0; overflow: hidden; }
+  .sl-ghost .gr { display: grid; grid-template-columns: 250px repeat(4, minmax(0, 1fr)) 156px; }
+  .sl-ghost .hd { background: var(--sunk); border-bottom: 1px solid var(--line); }
+  .sl-ghost .hd > div { padding: 11px 12px 10px 0; display: flex; flex-direction: column; gap: 3px; }
+  .sl-ghost .hd > div:first-child { padding-left: 20px; }
+  .sl-ghost .rw > div { position: relative; height: 52px; }
+  .sl-ghost .rw > div:first-child { padding: 18px 16px 0 20px; }
+  .sl-ghost .rw .sk { display: block; height: 9px; border-radius: 4px; background: var(--sunk); }
+  .sl-ghost .rw .tr { border-top: 1.5px dashed var(--line-2); position: absolute; top: 25px; left: 0; right: 0; }
+  .sl-ghost .rw .sl-m { top: 20px; left: 0; }
+  .sl-ghost .rw + .rw { border-top: 1px solid var(--line); }
+  .sl-ghost .msg2 { position: absolute; inset: 52px 0 0; display: grid; place-items: center; }
+  /* B: one open */
+  .sl-e2 .tabs3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .sl-e2 .tb3 { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); }
+  .sl-e2 .tb3 .wi { width: 34px; height: 34px; padding: 8px; border-radius: 9px; background: var(--sunk); color: var(--fg-2); flex: none; }
+  .sl-e2 .tb3.on { border-color: var(--acc); box-shadow: 0 0 0 3px var(--acc-soft); }
+  .sl-e2 .tb3.on .wi { background: var(--acc-soft); color: var(--acc); }
+  .sl-e2 .open { display: grid; grid-template-columns: 300px minmax(0, 1fr); margin-top: 16px; padding: 0; overflow: hidden; }
+  .sl-e2 .tl2 { border-right: 1px solid var(--line); padding: 8px 0; }
+  .sl-e2 .tl2 .r { display: flex; align-items: center; gap: 10px; padding: 11px 18px; }
+  .sl-e2 .tl2 .r.on { background: var(--acc-soft); box-shadow: inset 2px 0 0 var(--acc); }
+  .sl-e2 .pv { padding: 20px 24px; min-width: 0; }
+  /* C: rows waiting */
+  .sl-e3 .wt { padding: 0; overflow: hidden; }
+  .sl-e3 .wr { display: grid; grid-template-columns: 300px minmax(0, 1fr) 220px; gap: 24px; align-items: center; padding: 20px 22px; border-top: 1px dashed var(--line-2); }
+  .sl-e3 .wr:first-child { border-top: 0; }
+  .sl-e3 .wr .wi { width: 36px; height: 36px; padding: 8px; border-radius: 10px; background: var(--acc-soft); color: var(--acc); flex: none; }
+  .sl-e3 .ask2 { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 6px 0 16px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--panel); font-size: 14px; }
+  /* D: path */
+  .sl-e4 .path { display: grid; grid-template-columns: 300px 44px repeat(4, minmax(0, 1fr)); gap: 0; align-items: start; margin-top: 8px; }
+  .sl-e4 .ins { display: flex; flex-direction: column; gap: 10px; }
+  .sl-e4 .in { padding: 14px 16px; display: flex; align-items: center; gap: 12px; }
+  .sl-e4 .in .wi { width: 34px; height: 34px; padding: 8px; border-radius: 9px; background: var(--acc-soft); color: var(--acc); flex: none; }
+  .sl-e4 .join { position: relative; }
+  .sl-e4 .join::before { content: ""; position: absolute; left: 0; width: 22px; top: 16.6%; bottom: 16.6%; border: 1.5px solid var(--acc-line); border-left: 0; border-radius: 0 10px 10px 0; }
+  .sl-e4 .join::after { content: ""; position: absolute; left: 22px; right: 0; top: 50%; border-top: 1.5px solid var(--acc-line); }
+  .sl-e4 .stg { position: relative; padding: 76px 16px 0 0; display: flex; flex-direction: column; }
+  .sl-e4 .join { align-self: stretch; }
+  .sl-e4 .stg .top { position: relative; height: 22px; margin-bottom: 14px; }
+  .sl-e4 .stg .top::before { content: ""; position: absolute; left: 0; right: -16px; top: 10px; border-top: 1.5px dashed var(--line-2); }
+  .sl-e4 .stg:last-child .top::before { right: 40%; }
+  .sl-e4 .stg .top .sl-m { left: 0; top: 5px; z-index: 1; }
+  .sl-e4 .stg b { font-size: 15px; }
+  .sl-e4 .stg p { margin: 6px 0 0; font-size: 12.5px; color: var(--fg-2); line-height: 1.5; }
+  .sl-e4 .stg .ft { margin-top: 10px; font-size: 11.5px; color: var(--fg-3); }
+</style>
+<!-- ============================================================ Strategies list, round two -->
+<section class="ax-surface" id="strategies-list2"
+  data-surface="strategies/list2"
+  data-area="Strategies"
+  data-title="Strategies list, round two"
+  data-why="Seven strategies on an ordinary day: All-Weather Portfolio live, Recession Radar and Momentum Sectors in paper, Tech Momentum Rotation stopped, Risk Parity backtested but never run, Dual Momentum edited since its backtest and Pullback Buyer not backtested yet.">
+
+  <!-- ============================================================ A: stage track -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="Stage track"
+    data-note="Recommended. Each strategy is a row on a track from draft to backtested to paper to live, drawn like the lanes on Home's annotated curve. The stage columns double as data columns, so a backtest return can only appear under Backtested and money only under Paper or Live; they can't be mistaken for each other. The dashed segment shows the next step, with its button at the end of the row. It costs width, so on a phone the track shrinks to four dots, and a strategy that went back from live to paper needs its history read from the dimmed cells.">
+    <div data-frame="desktop" data-path="strategies">
+      <div class="app sl-tk">
+        <div data-tb="Strategies"></div>
+        <div class="main">
+          <div class="art" data-art="candles" data-seed="5233" style="height:200px"></div>
+          <div class="page sl-pg over">
+            <div class="page-head">
+              <div><div class="h1">Strategies</div><div class="sub">7 strategies · 1 live, 2 in paper, 1 stopped, 3 not run yet</div></div>
+              <div class="act"><div class="input search" style="width:230px"><span data-icon="search" class="dim"></span><span class="ph">Search names and symbols</span></div><span class="btn">Templates</span><span class="btn pri"><span data-icon="plus"></span>New strategy</span></div>
+            </div>
+            <div class="panel rim tk">
+              <div class="gr hd">
+                <div><span class="lbl">Strategy</span><span class="xs">Rebalance · symbols</span></div>
+                <div><span class="lbl">Draft</span><span class="xs">Rules you can edit</span></div>
+                <div><span class="lbl">Backtested</span><span class="xs">Latest run, against SPY</span></div>
+                <div><span class="lbl">Paper</span><span class="xs">Simulated money on Alpaca</span></div>
+                <div class="col-live"><span class="lbl">Live</span><span class="xs">Real money on Alpaca</span></div>
+                <div style="align-items:flex-end;padding-right:20px"><span class="lbl">Next</span><span class="xs">&nbsp;</span></div>
+              </div>
+
+              <div class="gr rw">
+                <div class="nm"><span class="sl-nm">All-Weather Portfolio</span><span class="sl-meta">Quarterly · VTI VGLT IEF GLD DBC</span></div>
+                <div class="c thru"><i class="sl-m"></i><div class="v">v2</div><div class="s">Edited Jul 28</div></div>
+                <div class="c thru"><i class="sl-m"></i><div class="v gain">+14.8%</div><div class="s">SPY +22.6% · Sharpe 0.92</div></div>
+                <div class="c thru"><i class="sl-m"></i><div class="v dim">Jun 2 to Aug 3</div><div class="s">+1.9% in paper</div></div>
+                <div class="c col-live"><i class="sl-m live"></i><div class="v big2">$48,210.55</div><div class="s"><span class="gain">+6.8%</span> since Aug 4 · <span class="gain">+$149.12</span> today</div></div>
+                <div class="nx"><span class="mono sm">Dec 1</span><span class="xs dim">Next rebalance</span></div>
+              </div>
+
+              <div class="gr rw">
+                <div class="nm"><span class="sl-nm">Recession Radar</span><span class="sl-meta">Monthly · TLT GLD VTI QQQ IWM</span></div>
+                <div class="c thru"><i class="sl-m"></i><div class="v">v3</div><div class="s">Edited Nov 3</div></div>
+                <div class="c thru"><i class="sl-m"></i><div class="v gain">+21.4%</div><div class="s">SPY +22.6% · Sharpe 1.12</div></div>
+                <div class="c next"><i class="sl-m cur"></i><div class="v big2">$31,904.20</div><div class="s"><span class="gain">+12.4%</span> since Jun 2 · <span class="gain">+$196.62</span> today</div></div>
+                <div class="c col-live"><i class="sl-m none"></i><div class="s" style="margin-top:0">Not live</div></div>
+                <div class="nx"><span class="mono sm">Today 15:50</span><span class="xs dim">Next rebalance</span></div>
+              </div>
+
+              <div class="gr rw">
+                <div class="nm"><span class="sl-nm">Momentum Sectors</span><span class="sl-meta">Weekly · top 3 of 11 sector ETFs</span></div>
+                <div class="c thru"><i class="sl-m"></i><div class="v">v5</div><div class="s">Edited Oct 21</div></div>
+                <div class="c thru"><i class="sl-m"></i><div class="v gain">+28.9%</div><div class="s">SPY +22.6% · Sharpe 0.88</div></div>
+                <div class="c next"><i class="sl-m cur"></i><div class="v big2">$22,118.07</div><div class="s"><span class="gain">+3.1%</span> since Oct 6 · <span class="gain">+$266.66</span> today</div></div>
+                <div class="c col-live"><i class="sl-m none"></i><div class="s" style="margin-top:0">Not live</div></div>
+                <div class="nx"><span class="mono sm">Nov 23</span><span class="xs dim">Next rebalance</span></div>
+              </div>
+
+              <div class="gr rw">
+                <div class="nm"><span class="sl-nm" style="color:var(--fg-2)">Tech Momentum Rotation</span><span class="sl-meta">Weekly · QQQ SMH XLK</span></div>
+                <div class="c thru"><i class="sl-m"></i><div class="v">v4</div><div class="s">Edited Sep 4</div></div>
+                <div class="c was"><i class="sl-m"></i><div class="v gain">+34.2%</div><div class="s">SPY +22.6% · Sharpe 0.79</div></div>
+                <div class="c"><i class="sl-m stop"></i><div class="v">Stopped Nov 12</div><div class="s"><span class="loss">−2.4%</span> from Sep 9 · $26,173.30 in cash</div></div>
+                <div class="c col-live"><i class="sl-m none"></i><div class="s" style="margin-top:0">Not live</div></div>
+                <div class="nx"><span class="btn sm">Restart in paper</span></div>
+              </div>
+
+              <div class="gr rw">
+                <div class="nm"><span class="sl-nm">Risk Parity</span><span class="sl-meta">Monthly · SPY TLT GLD DBC</span></div>
+                <div class="c thru"><i class="sl-m"></i><div class="v">v1</div><div class="s">Edited Sep 30</div></div>
+                <div class="c next"><i class="sl-m cur"></i><div class="v gain">+11.6%</div><div class="s">SPY +22.6% · Sharpe 0.81</div></div>
+                <div class="c"><i class="sl-m todo"></i><div class="s" style="margin-top:0">Never run</div></div>
+                <div class="c col-live"><i class="sl-m none"></i></div>
+                <div class="nx"><span class="btn sm">Start in paper</span></div>
+              </div>
+
+              <div class="gr rw">
+                <div class="nm"><span class="sl-nm">Dual Momentum</span><span class="sl-meta">Monthly · SPY EFA BND</span></div>
+                <div class="c next"><i class="sl-m cur"></i><div class="v">v2</div><div class="s">Edited Nov 14, from a template</div></div>
+                <div class="c"><i class="sl-m todo"></i><div class="v dim">+18.3%</div><div class="s">From v1. Rules changed since.</div></div>
+                <div class="c"><i class="sl-m none"></i></div>
+                <div class="c col-live"><i class="sl-m none"></i></div>
+                <div class="nx"><span class="btn sm">Backtest v2</span></div>
+              </div>
+
+              <div class="gr rw">
+                <div class="nm"><span class="sl-nm">Pullback Buyer</span><span class="sl-meta">Daily · SPY</span></div>
+                <div class="c next"><i class="sl-m cur"></i><div class="v">v1</div><div class="s">Drafted with Copilot, Nov 15</div></div>
+                <div class="c"><i class="sl-m todo"></i><div class="s" style="margin-top:0">Not backtested yet</div></div>
+                <div class="c"><i class="sl-m none"></i></div>
+                <div class="c col-live"><i class="sl-m none"></i></div>
+                <div class="nx"><span class="btn sm pri">Run a backtest</span></div>
+              </div>
+            </div>
+            <div class="row sl-foot"><span>Backtested shows each latest backtest, Nov 2024 to Oct 2026 with $25,000, and SPY over the same dates. Paper and Live show the sleeve's money on Alpaca as of 10:42 ET.</span><span class="sp"></span><span class="sl-leg"><span><i class="sl-m cur" style="position:static"></i>Current stage</span><span><i class="sl-m todo" style="position:static"></i>Next step</span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-head"><div class="row"><div class="t">Strategies</div><span class="sp"></span><span class="m-plus" data-icon="plus"></span></div><div class="s">1 live, 2 in paper, 1 stopped, 3 not run yet</div></div>
+      <div class="m-body sl-tk-m" style="gap:10px">
+        <div class="m-card">
+          <div class="row"><b>All-Weather Portfolio</b><span class="sp"></span><span class="pill live sl-pp">Live</span></div>
+          <div class="stp"><i></i><b></b><i></i><b></b><i></i><b></b><i class="live"></i></div>
+          <div class="stl"><span>Draft</span><span>Backtested</span><span>Paper</span><span class="on">Live</span></div>
+          <div class="row" style="margin-top:8px"><span class="mono">$48,210.55</span><span class="sp"></span><span class="mono sm gain">+6.8% since Aug 4</span></div>
+        </div>
+        <div class="m-card">
+          <div class="row"><b>Recession Radar</b><span class="sp"></span><span class="pill paper sl-pp">Paper</span></div>
+          <div class="stp"><i></i><b></b><i></i><b></b><i class="cur"></i><b class="off"></b><i class="off"></i></div>
+          <div class="stl"><span>Draft</span><span>Backtested</span><span class="on">Paper</span><span>Live</span></div>
+          <div class="row" style="margin-top:8px"><span class="mono">$31,904.20</span><span class="sp"></span><span class="mono sm gain">+12.4% since Jun 2</span></div>
+        </div>
+        <div class="m-card">
+          <div class="row"><b>Momentum Sectors</b><span class="sp"></span><span class="pill paper sl-pp">Paper</span></div>
+          <div class="stp"><i></i><b></b><i></i><b></b><i class="cur"></i><b class="off"></b><i class="off"></i></div>
+          <div class="row" style="margin-top:4px"><span class="mono">$22,118.07</span><span class="sp"></span><span class="mono sm gain">+3.1% since Oct 6</span></div>
+        </div>
+        <div class="m-card">
+          <div class="row"><b style="color:var(--fg-2)">Tech Momentum Rotation</b><span class="sp"></span><span class="st stop">Stopped</span></div>
+          <div class="stp"><i></i><b></b><i></i><b></b><i class="stop"></i><b class="off"></b><i class="off"></i></div>
+          <div class="row" style="margin-top:4px"><span class="sm dim">Backtest <span class="mono gain">+34.2%</span></span><span class="sp"></span><span class="m-btn sec" style="height:32px;font-size:13px;padding:0 12px">Restart</span></div>
+        </div>
+        <div class="m-card">
+          <div class="row"><b>Risk Parity</b><span class="sp"></span><span class="xs dim">Backtested</span></div>
+          <div class="stp"><i></i><b></b><i class="cur"></i><b class="off"></b><i class="off"></i><b class="off"></b><i class="off"></i></div>
+          <div class="row" style="margin-top:4px"><span class="sm dim">Backtest <span class="mono gain">+11.6%</span> · SPY <span class="mono">+22.6%</span></span></div>
+        </div>
+        <div class="m-card">
+          <div class="row"><b>Dual Momentum</b><span class="sp"></span><span class="xs dim">Draft</span></div>
+          <div class="stp"><i class="cur"></i><b class="off"></b><i class="off"></i><b class="off"></b><i class="off"></i><b class="off"></b><i class="off"></i></div>
+        </div>
+      </div>
+      <nav data-tabs="strategies"></nav>
+    </div>
+  </div>
+
+  <!-- ============================================================ B: stage board -->
+  <div class="ax-opt" data-opt="B" data-name="Stage board"
+    data-note="A board with one column per stage, so the shape of your work reads at a glance: two drafts, two backtested, two in paper and one live. Each card shows the figures that belong to its column and ends with the step that moves it right. Moves go through buttons and the usual confirmation, not dragging, since dragging a card into Live would be too easy. It suits a handful of strategies; with twenty, the Backtested column gets long while Live stays short, and the empty space doesn't carry much.">
+    <div data-frame="desktop" data-path="strategies?view=board">
+      <div class="app sl-bd">
+        <div data-tb="Strategies"></div>
+        <div class="main"><div class="page sl-pg">
+          <div class="page-head">
+            <div><div class="h1">Strategies</div><div class="sub">Strategies move left to right as you test them. Nothing moves on its own.</div></div>
+            <div class="act"><div class="seg"><span>List</span><span class="on">Board</span></div><span class="btn">Templates</span><span class="btn pri"><span data-icon="plus"></span>New strategy</span></div>
+          </div>
+          <div class="cols">
+            <div class="cl">
+              <div class="ch"><div class="row"><b>Draft</b><span class="mono xs dim">2</span></div><div class="xs">Rules that haven't been backtested in their current form.</div></div>
+              <div class="panel cd">
+                <div class="row"><b class="sl-nm">Pullback Buyer</b></div>
+                <div class="sl-meta">Daily · SPY · drafted with Copilot, Nov 15</div>
+                <div class="sm muted" style="line-height:1.45">Buys SPY after it closes 5% under its 20-day high, and sells after 10 trading days.</div>
+                <div class="mv"><span class="btn sm pri">Run a backtest</span></div>
+              </div>
+              <div class="panel cd">
+                <div class="row"><b class="sl-nm">Dual Momentum</b><span class="sp"></span><span class="xs dim">v2</span></div>
+                <div class="sl-meta">Monthly · SPY EFA BND · edited Nov 14</div>
+                <div class="sm muted" style="line-height:1.45">v1 returned <span class="mono gain">+18.3%</span> in its backtest. The lookback changed from 12 to 6 months since.</div>
+                <div class="mv"><span class="btn sm">Backtest v2</span></div>
+              </div>
+            </div>
+            <div class="cl">
+              <div class="ch"><div class="row"><b>Backtested</b><span class="mono xs dim">2</span></div><div class="xs">Latest run, Nov 2024 to Oct 2026, with SPY over the same dates.</div></div>
+              <div class="panel cd">
+                <div class="row"><b class="sl-nm">Risk Parity</b></div>
+                <div class="sl-meta">Monthly · SPY TLT GLD DBC · never run</div>
+                <div class="row base"><span class="mono gain" style="font-size:20px;font-weight:600">+11.6%</span><span class="xs dim">SPY +22.6%</span></div>
+                <div data-chart="area" data-seed="15" data-ret="0.116" data-bench="0.226" data-vol="0.006" data-color="muted" data-h="50"></div>
+                <div class="row mono xs dim"><span>Max DD −7.9%</span><span class="sp"></span><span>Sharpe 0.81</span></div>
+                <div class="mv"><span data-icon="arrow-right"></span>Start in paper</div>
+              </div>
+              <div class="panel cd stopped">
+                <div class="row"><b class="sl-nm" style="color:var(--fg-2)">Tech Momentum Rotation</b></div>
+                <div class="sl-meta">Weekly · QQQ SMH XLK</div>
+                <div class="row base"><span class="mono gain" style="font-size:20px;font-weight:600">+34.2%</span><span class="xs dim">SPY +22.6%</span></div>
+                <div class="row mono xs dim"><span>Max DD −22.1%</span><span class="sp"></span><span>Sharpe 0.79</span></div>
+                <div class="xs dim" style="line-height:1.45">Was in paper Sep 9 to Nov 12 and returned <span class="mono loss">−2.4%</span>. Stopped and closed to cash.</div>
+                <div class="mv"><span data-icon="arrow-right"></span>Restart in paper</div>
+              </div>
+            </div>
+            <div class="cl">
+              <div class="ch"><div class="row"><b>Paper</b><span class="mono xs dim">2</span><span class="sp"></span><span class="mono xs">$54,022.27</span></div><div class="xs">Simulated orders on your Alpaca paper account.</div></div>
+              <div class="panel cd">
+                <div class="row"><b class="sl-nm">Recession Radar</b><span class="sp"></span><span class="st run">Running</span></div>
+                <div class="row base"><span class="mono" style="font-size:20px;font-weight:600">$31,904.20</span></div>
+                <div class="row mono xs"><span class="gain">+12.4% since Jun 2</span><span class="sp"></span><span class="gain">+$196.62 today</span></div>
+                <div data-chart="area" data-seed="23" data-ret="0.124" data-vol="0.008" data-h="50"></div>
+                <div class="xs dim">Next rebalance today at 15:50</div>
+                <div class="mv"><span data-icon="arrow-right"></span>Go live</div>
+              </div>
+              <div class="panel cd">
+                <div class="row"><b class="sl-nm">Momentum Sectors</b><span class="sp"></span><span class="st run">Running</span></div>
+                <div class="row base"><span class="mono" style="font-size:20px;font-weight:600">$22,118.07</span></div>
+                <div class="row mono xs"><span class="gain">+3.1% since Oct 6</span><span class="sp"></span><span class="gain">+$266.66 today</span></div>
+                <div data-chart="area" data-seed="33" data-ret="0.031" data-vol="0.009" data-h="50"></div>
+                <div class="xs dim">Next rebalance Nov 23</div>
+                <div class="mv"><span data-icon="arrow-right"></span>Go live</div>
+              </div>
+            </div>
+            <div class="cl live">
+              <div class="ch"><div class="row"><b>Live</b><span class="mono xs dim">1</span><span class="sp"></span><span class="mono xs">$48,210.55</span></div><div class="xs">Real orders with real money on Alpaca.</div></div>
+              <div class="panel cd rim">
+                <div class="row"><b class="sl-nm">All-Weather Portfolio</b><span class="sp"></span><span class="pill live sl-pp">Live</span></div>
+                <div class="row base"><span class="mono" style="font-size:20px;font-weight:600">$48,210.55</span></div>
+                <div class="row mono xs"><span class="gain">+6.8% since Aug 4</span><span class="sp"></span><span class="gain">+$149.12 today</span></div>
+                <div data-chart="area" data-seed="22" data-ret="0.068" data-vol="0.006" data-color="fg" data-h="50"></div>
+                <div class="xs dim">Next rebalance Dec 1 · in paper Jun 2 to Aug 3 first</div>
+                <div class="mv"><span data-icon="pause"></span>Pause or stop</div>
+              </div>
+              <div class="hint">A strategy comes here when you choose Go live on a paper card. You'll see the orders it would place and confirm the amount first.</div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-head"><div class="row"><div class="t">Strategies</div><span class="sp"></span><span class="m-plus" data-icon="plus"></span></div><div class="s">Swipe between stages</div></div>
+      <div class="m-body sl-bd-m">
+        <div class="seg round"><span>Draft 2</span><span>Tested 2</span><span class="on">Paper 2</span><span>Live 1</span></div>
+        <div class="xs dim" style="margin-top:-4px">Simulated orders on your Alpaca paper account. $54,022.27 in 2 sleeves.</div>
+        <div class="m-card col gap-6">
+          <div class="row"><b>Recession Radar</b><span class="sp"></span><span class="st run">Running</span></div>
+          <div class="row base"><span class="mono lg b">$31,904.20</span><span class="sp"></span><span class="mono sm gain">+12.4%</span></div>
+          <div data-chart="area" data-seed="23" data-ret="0.124" data-vol="0.008" data-h="60"></div>
+          <div class="row xs dim"><span>Since Jun 2 · next today 15:50</span></div>
+          <div class="m-btn sec" style="height:40px;font-size:14px">Go live</div>
+        </div>
+        <div class="m-card col gap-6">
+          <div class="row"><b>Momentum Sectors</b><span class="sp"></span><span class="st run">Running</span></div>
+          <div class="row base"><span class="mono lg b">$22,118.07</span><span class="sp"></span><span class="mono sm gain">+3.1%</span></div>
+          <div data-chart="area" data-seed="33" data-ret="0.031" data-vol="0.009" data-h="60"></div>
+          <div class="row xs dim"><span>Since Oct 6 · next Nov 23</span></div>
+          <div class="m-btn sec" style="height:40px;font-size:14px">Go live</div>
+        </div>
+      </div>
+      <nav data-tabs="strategies"></nav>
+    </div>
+  </div>
+
+  <!-- ============================================================ C: gallery, money against the backtest -->
+  <div class="ax-opt" data-opt="C" data-name="Running against its backtest"
+    data-note="A gallery led by the three running strategies, each drawn as its real curve since it started over its own backtest for the same dates. The gap between the two lines is the cost of real fills, timing and cash, which is the question most worth asking of a running strategy. The other four sit below as smaller cards with grey backtest curves against SPY, so colour alone says real money or backtest. It needs each backtest re-run over each session's dates and kept current as days pass, and on a short session like Momentum Sectors the gap means little yet.">
+    <div data-frame="desktop" data-path="strategies">
+      <div class="app sl-gl">
+        <div data-tb="Strategies"></div>
+        <div class="main">
+          <div class="glow" style="height:320px"></div>
+          <div class="page sl-pg over">
+            <div class="page-head">
+              <div><div class="h1">Strategies</div><div class="sub">3 running · 4 not running</div></div>
+              <div class="act"><div class="input search" style="width:230px"><span data-icon="search" class="dim"></span><span class="ph">Search names and symbols</span></div><span class="btn">Templates</span><span class="btn pri"><span data-icon="plus"></span>New strategy</span></div>
+            </div>
+            <div class="sec"><span class="h3">Running</span><span class="sl-leg" style="margin-left:8px"><span><i class="l"></i>Money in the session</span><span><i class="d"></i>Its backtest over the same dates</span></span></div>
+            <div class="g3">
+              <div class="panel cd rim">
+                <div class="row"><b class="h3">All-Weather Portfolio</b><span class="sp"></span><span class="pill live">Live</span></div>
+                <div class="row base"><span class="big" style="font-size:26px">$48,210.55</span><span class="sp"></span><span class="mono sm gain">+$149.12 today</span></div>
+                <div data-chart="area" data-seed="22" data-ret="0.068" data-bench="0.073" data-vol="0.003" data-axis="x" data-x="Aug 4,Sep 15,Oct 26,Nov 17" data-h="150" data-mark></div>
+                <div class="pair"><div><span>Session</span><b class="gain">+6.8%</b></div><div><span>Backtest, same dates</span><b>+7.3%</b></div><div><span>Gap</span><b class="loss">−0.5 pts</b></div></div>
+              </div>
+              <div class="panel cd">
+                <div class="row"><b class="h3">Recession Radar</b><span class="sp"></span><span class="pill paper">Paper</span></div>
+                <div class="row base"><span class="big" style="font-size:26px">$31,904.20</span><span class="sp"></span><span class="mono sm gain">+$196.62 today</span></div>
+                <div data-chart="area" data-seed="23" data-ret="0.124" data-bench="0.110" data-vol="0.003" data-axis="x" data-x="Jun 2,Aug 5,Oct 8,Nov 17" data-h="150" data-mark></div>
+                <div class="pair"><div><span>Session</span><b class="gain">+12.4%</b></div><div><span>Backtest, same dates</span><b>+11.0%</b></div><div><span>Gap</span><b class="gain">+1.4 pts</b></div></div>
+              </div>
+              <div class="panel cd">
+                <div class="row"><b class="h3">Momentum Sectors</b><span class="sp"></span><span class="pill paper">Paper</span></div>
+                <div class="row base"><span class="big" style="font-size:26px">$22,118.07</span><span class="sp"></span><span class="mono sm gain">+$266.66 today</span></div>
+                <div data-chart="area" data-seed="33" data-ret="0.031" data-bench="0.036" data-vol="0.004" data-axis="x" data-x="Oct 6,Oct 27,Nov 17" data-h="150" data-mark></div>
+                <div class="pair"><div><span>Session</span><b class="gain">+3.1%</b></div><div><span>Backtest, same dates</span><b>+3.6%</b></div><div><span>Gap</span><b class="loss">−0.5 pts</b></div></div>
+              </div>
+            </div>
+            <div class="sec" style="margin-top:22px"><span class="h3">Not running</span><span class="sl-leg" style="margin-left:8px"><span><i class="g"></i>Latest backtest, Nov 2024 to Oct 2026</span><span><i class="d"></i>SPY, +22.6%</span></span></div>
+            <div class="g4">
+              <div class="panel sm2">
+                <div class="row"><b class="sl-nm" style="color:var(--fg-2)">Tech Momentum Rotation</b><span class="sp"></span><span class="st stop">Stopped</span></div>
+                <div data-chart="area" data-seed="14" data-ret="0.342" data-bench="0.226" data-vol="0.011" data-dip="0.6:0.16" data-color="muted" data-h="58"></div>
+                <div class="row mono"><span class="gain">+34.2%</span><span class="dim">DD −22.1%</span><span class="sp"></span><span class="dim">Paper −2.4%</span></div>
+              </div>
+              <div class="panel sm2">
+                <div class="row"><b class="sl-nm">Risk Parity</b><span class="sp"></span><span class="xs dim">Never run</span></div>
+                <div data-chart="area" data-seed="15" data-ret="0.116" data-bench="0.226" data-vol="0.006" data-color="muted" data-h="58"></div>
+                <div class="row mono"><span class="gain">+11.6%</span><span class="dim">DD −7.9%</span><span class="sp"></span><span class="dim">Sharpe 0.81</span></div>
+              </div>
+              <div class="panel sm2">
+                <div class="row"><b class="sl-nm">Dual Momentum</b><span class="sp"></span><span class="xs dim">Draft v2</span></div>
+                <div data-chart="area" data-seed="16" data-ret="0.183" data-bench="0.226" data-vol="0.008" data-color="muted" data-h="58" style="opacity:.55"></div>
+                <div class="row mono"><span class="dim">+18.3% for v1</span><span class="sp"></span><span class="acc" style="font-family:var(--sans)">Backtest v2</span></div>
+              </div>
+              <div class="panel sm2">
+                <div class="row"><b class="sl-nm">Pullback Buyer</b><span class="sp"></span><span class="xs dim">Draft v1</span></div>
+                <div style="height:58px;display:grid;place-items:center;border:1px dashed var(--line-2);border-radius:8px" class="xs dim">Not backtested yet</div>
+                <div class="row mono"><span class="dim">Daily · SPY</span><span class="sp"></span><span class="acc" style="font-family:var(--sans)">Run a backtest</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-head"><div class="row"><div class="t">Strategies</div><span class="sp"></span><span class="m-plus" data-icon="plus"></span></div><div class="s">3 running · 4 not running</div></div>
+      <div class="m-body">
+        <div class="sl-leg" style="font-size:11.5px"><span><i class="l"></i>Session</span><span><i class="d"></i>Backtest, same dates</span></div>
+        <div class="m-card col gap-6 rim">
+          <div class="row"><b>All-Weather Portfolio</b><span class="sp"></span><span class="pill live sl-pp">Live</span></div>
+          <div class="row base"><span class="mono lg b">$48,210.55</span><span class="sp"></span><span class="mono sm gain">+$149.12</span></div>
+          <div data-chart="area" data-seed="22" data-ret="0.068" data-bench="0.073" data-vol="0.003" data-h="70" data-mark></div>
+          <div class="row mono xs"><span class="gain">+6.8%</span><span class="dim">vs +7.3% backtest</span><span class="sp"></span><span class="loss">−0.5 pts</span></div>
+        </div>
+        <div class="m-card col gap-6">
+          <div class="row"><b>Recession Radar</b><span class="sp"></span><span class="pill paper sl-pp">Paper</span></div>
+          <div class="row base"><span class="mono lg b">$31,904.20</span><span class="sp"></span><span class="mono sm gain">+$196.62</span></div>
+          <div data-chart="area" data-seed="23" data-ret="0.124" data-bench="0.110" data-vol="0.003" data-h="70" data-mark></div>
+          <div class="row mono xs"><span class="gain">+12.4%</span><span class="dim">vs +11.0% backtest</span><span class="sp"></span><span class="gain">+1.4 pts</span></div>
+        </div>
+        <div class="m-sec">Not running<span class="a" style="color:var(--fg-3);font-size:12.5px">Backtest</span></div>
+        <div class="m-card rows">
+          <div class="sl-mrow"><div class="grow"><div>Tech Momentum Rotation</div><div class="d">Stopped Nov 12</div></div><span class="mono sm gain">+34.2%</span></div>
+          <div class="sl-mrow"><div class="grow"><div>Risk Parity</div><div class="d">Never run</div></div><span class="mono sm gain">+11.6%</span></div>
+        </div>
+      </div>
+      <nav data-tabs="strategies"></nav>
+    </div>
+  </div>
+
+  <!-- ============================================================ D: search first -->
+  <div class="ax-opt" data-opt="D" data-name="Search with chips"
+    data-note="A large search field leads, and the filters sit under it as chips you can combine. Each result says why it matched: a name, a symbol it holds now, or a symbol in its rules, with the match highlighted. Good once there are more strategies than fit on a screen, and for questions like which of my strategies touch TLT. With seven strategies the search is more than the list needs, and every result row needs a sentence of reasons to be useful.">
+    <div data-frame="desktop" data-path="strategies?q=TLT">
+      <div class="app sl-sr">
+        <div data-tb="Strategies"></div>
+        <div class="main">
+          <div class="art" data-art="candles" data-seed="8181" style="height:240px"></div>
+          <div class="page over" style="max-width:1080px;margin:0 auto;padding-top:34px">
+            <div class="row" style="margin-bottom:16px"><div class="h1">Strategies</div><span class="sp"></span><span class="btn">Templates</span><span class="btn pri"><span data-icon="plus"></span>New strategy</span></div>
+            <div class="bar"><span data-icon="search" class="dim" style="width:18px;height:18px"></span><span class="q">TLT<span class="caret"></span></span><span class="xs dim">3 of 7 match</span><span class="btn sm ghost">Clear</span></div>
+            <div class="chips">
+              <span class="lbl">State</span><span class="chip">All</span><span class="chip on">Running · 2</span><span class="chip">Stopped</span><span class="chip on">Never run · 1</span><span class="chip">Drafts</span>
+              <span class="div"></span>
+              <span class="lbl">Money</span><span class="chip">Paper</span><span class="chip">Live</span>
+              <span class="div"></span>
+              <span class="lbl">Rebalance</span><span class="chip">Daily</span><span class="chip">Weekly</span><span class="chip">Monthly</span><span class="chip">Quarterly</span>
+            </div>
+            <div class="panel res">
+              <div class="hit">
+                <div>
+                  <div class="row"><span class="h3">Recession Radar</span><span class="pill paper sl-pp">Paper</span><span class="st run">Running</span></div>
+                  <div class="why">
+                    <div><span class="k">Holds</span><span><span class="sl-hit mono">TLT</span> 58.9% of the sleeve right now, GLD 39.6%</span></div>
+                    <div><span class="k">Rule 1</span><span class="mono">If SPY RSI(14) &gt; 70, hold <span class="sl-hit">TLT</span> 60% and GLD 40%</span></div>
+                  </div>
+                </div>
+                <div style="text-align:right"><div class="lbl">Paper sleeve</div><div class="mono lg b" style="margin-top:4px">$31,904.20</div><div class="mono xs gain">+12.4% since Jun 2</div></div>
+                <div style="text-align:right"><div class="lbl">Backtest</div><div class="mono lg b gain" style="margin-top:4px">+21.4%</div><div class="mono xs dim">SPY +22.6%</div></div>
+              </div>
+              <div class="hit">
+                <div>
+                  <div class="row"><span class="h3">Risk Parity</span><span class="xs dim">Backtested, never run</span></div>
+                  <div class="why">
+                    <div><span class="k">Rule 1</span><span class="mono">Hold SPY, <span class="sl-hit">TLT</span>, GLD, DBC weighted by inverse volatility</span></div>
+                    <div><span class="k">Backtest</span><span><span class="sl-hit mono">TLT</span> averaged 41% of the portfolio</span></div>
+                  </div>
+                </div>
+                <div style="text-align:right"><div class="lbl">Money</div><div class="sm dim" style="margin-top:6px">Not running</div><span class="btn sm" style="margin-top:6px">Start in paper</span></div>
+                <div style="text-align:right"><div class="lbl">Backtest</div><div class="mono lg b gain" style="margin-top:4px">+11.6%</div><div class="mono xs dim">SPY +22.6%</div></div>
+              </div>
+              <div class="hit">
+                <div>
+                  <div class="row"><span class="h3">All-Weather Portfolio</span><span class="pill live sl-pp">Live</span><span class="st run">Running</span></div>
+                  <div class="why">
+                    <div><span class="k">Note</span><span>“Long treasuries through VGLT instead of <span class="sl-hit">TLT</span> for the lower fee.” Added Jul 28</span></div>
+                  </div>
+                </div>
+                <div style="text-align:right"><div class="lbl">Live sleeve</div><div class="mono lg b" style="margin-top:4px">$48,210.55</div><div class="mono xs gain">+6.8% since Aug 4</div></div>
+                <div style="text-align:right"><div class="lbl">Backtest</div><div class="mono lg b gain" style="margin-top:4px">+14.8%</div><div class="mono xs dim">SPY +22.6%</div></div>
+              </div>
+              <div class="rest"><span data-icon="chevron-down"></span>4 strategies don't mention TLT: Momentum Sectors, Tech Momentum Rotation, Dual Momentum, Pullback Buyer</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-head"><div class="row"><div class="t">Strategies</div><span class="sp"></span><span class="m-plus" data-icon="plus"></span></div></div>
+      <div class="m-body sl-sr-m sl-sr">
+        <div class="bar"><span data-icon="search" class="dim"></span><span class="q">TLT<span class="caret"></span></span><span class="xs dim">3</span></div>
+        <div class="sl-hscroll"><span class="chip on">Running</span><span class="chip">Paper</span><span class="chip">Live</span><span class="chip">Monthly</span><span class="chip">Drafts</span></div>
+        <div class="m-card rows">
+          <div class="sl-mrow" style="align-items:flex-start"><div class="grow"><div class="row gap-6"><b>Recession Radar</b><span class="pill paper sl-pp">Paper</span></div><div class="sm muted" style="margin-top:4px">Holds <span class="sl-hit mono">TLT</span> 58.9% now</div><div class="d mono" style="margin-top:2px">$31,904.20 · +12.4%</div></div></div>
+          <div class="sl-mrow" style="align-items:flex-start"><div class="grow"><div class="row gap-6"><b>Risk Parity</b></div><div class="sm muted" style="margin-top:4px">Rule 1 holds <span class="sl-hit mono">TLT</span></div><div class="d">Never run · backtest +11.6%</div></div></div>
+          <div class="sl-mrow" style="align-items:flex-start"><div class="grow"><div class="row gap-6"><b>All-Weather Portfolio</b><span class="pill live sl-pp">Live</span></div><div class="sm muted" style="margin-top:4px">A note mentions <span class="sl-hit mono">TLT</span></div><div class="d mono">$48,210.55 · +6.8%</div></div></div>
+        </div>
+        <div class="xs dim" style="text-align:center">4 strategies don't mention TLT</div>
+      </div>
+      <nav data-tabs="strategies"></nav>
+    </div>
+  </div>
+
+  <!-- ============================================================ E: measured against SPY -->
+  <div class="ax-opt" data-opt="E" data-name="Measured against SPY"
+    data-note="Every backtest is placed on the same two scales as SPY over the same dates: return on one, worst drop on the other, with the gap shaded green where the strategy did better and red where it did worse. It answers which strategies are worth running before you look at any curve, and makes a high return with a deep drop, like Tech Momentum Rotation, plain. Running money stays in its own column on the right. It treats SPY as the yardstick for everything, which suits the momentum strategies better than Risk Parity or Recession Radar, and it says nothing about how a running session is doing day to day.">
+    <div data-frame="desktop" data-path="strategies?sort=vs-spy">
+      <div class="app sl-vs">
+        <div data-tb="Strategies"></div>
+        <div class="main"><div class="page sl-pg">
+          <div class="page-head">
+            <div><div class="h1">Strategies</div><div class="sub">Sorted by return over SPY. Pullback Buyer has no backtest yet.</div></div>
+            <div class="act"><div class="seg"><span class="on">Return over SPY</span><span>Shallower drop</span><span>Sharpe</span></div><span class="btn">Templates</span><span class="btn pri"><span data-icon="plus"></span>New strategy</span></div>
+          </div>
+          <div class="bench">
+            <div><div class="lbl">Backtest range</div><div class="v" style="font-family:var(--sans);font-size:14px;font-weight:500">Nov 2024 to Oct 2026 · $25,000</div></div>
+            <div><div class="lbl">SPY return</div><div class="v">+22.6%</div></div>
+            <div><div class="lbl">SPY worst drop</div><div class="v">−18.8%</div></div>
+            <div><div class="lbl">SPY Sharpe</div><div class="v">0.94</div></div>
+            <span class="sp"></span>
+            <div class="sl-leg"><span><i class="dot acc"></i>Strategy</span><span><i class="d"></i>SPY</span><span><i style="width:14px;height:5px;border-radius:2px;background:color-mix(in srgb,var(--gain) 45%,transparent)"></i>Better</span><span><i style="width:14px;height:5px;border-radius:2px;background:color-mix(in srgb,var(--loss) 40%,transparent)"></i>Worse</span></div>
+          </div>
+          <div class="panel vt">
+            <div class="gr hd">
+              <div><span class="lbl">Strategy</span></div>
+              <div><span class="lbl">Return</span><div class="sl-dp ax"><span style="left:0;transform:none">−5%</span><span style="left:33.3%">10%</span><span class="spyl" style="left:61.3%">SPY</span><span style="left:100%;transform:translateX(-100%)">40%</span></div></div>
+              <div><span class="lbl">Worst drop</span><div class="sl-dp ax"><span style="left:0;transform:none">0%</span><span style="left:40%">−10%</span><span class="spyl" style="left:75.2%">SPY</span><span style="left:100%;transform:translateX(-100%)">−25%</span></div></div>
+              <div style="align-items:flex-end"><span class="lbl">Sharpe</span></div>
+              <div style="align-items:flex-end;padding-right:20px"><span class="lbl">Running now</span></div>
+            </div>
+            <div class="gr rw">
+              <div><div class="sl-nm" style="color:var(--fg-2)">Tech Momentum Rotation</div><div class="sl-meta">Weekly · stopped Nov 12</div></div>
+              <div><div class="sl-dp"><i class="spy" style="left:61.3%"></i><i class="gap g" style="left:61.3%;width:25.8%"></i><i class="dot2" style="left:87.1%"></i><span class="val gain" style="left:calc(61.3% - 58px)">+34.2%</span></div></div>
+              <div><div class="sl-dp"><i class="spy" style="left:75.2%"></i><i class="gap l" style="left:75.2%;width:13.2%"></i><i class="dot2" style="left:88.4%"></i><span class="val loss" style="left:calc(75.2% - 60px)">−22.1%</span></div></div>
+              <div class="mono" style="text-align:right">0.79</div>
+              <div class="run"><span class="xs dim">Stopped, in cash</span><span class="btn sm">Restart in paper</span></div>
+            </div>
+            <div class="gr rw">
+              <div><div class="sl-nm">Momentum Sectors</div><div class="sl-meta">Weekly · top 3 of 11 sector ETFs</div></div>
+              <div><div class="sl-dp"><i class="spy" style="left:61.3%"></i><i class="gap g" style="left:61.3%;width:14%"></i><i class="dot2" style="left:75.3%"></i><span class="val gain" style="left:calc(75.3% + 12px)">+28.9%</span></div></div>
+              <div><div class="sl-dp"><i class="spy" style="left:75.2%"></i><i class="gap g" style="left:61.6%;width:13.6%"></i><i class="dot2" style="left:61.6%"></i><span class="val" style="left:calc(61.6% - 60px)">−15.4%</span></div></div>
+              <div class="mono" style="text-align:right">0.88</div>
+              <div class="run"><span class="row gap-6"><span class="pill paper sl-pp">Paper</span><span class="mono sm">$22,118.07</span></span><span class="mono xs gain">+3.1% since Oct 6</span></div>
+            </div>
+            <div class="gr rw">
+              <div><div class="sl-nm">Recession Radar</div><div class="sl-meta">Monthly · TLT GLD VTI QQQ IWM</div></div>
+              <div><div class="sl-dp"><i class="spy" style="left:61.3%"></i><i class="gap l" style="left:58.7%;width:2.6%"></i><i class="dot2" style="left:58.7%"></i><span class="val gain" style="left:calc(58.7% - 60px)">+21.4%</span></div></div>
+              <div><div class="sl-dp"><i class="spy" style="left:75.2%"></i><i class="gap g" style="left:34.4%;width:40.8%"></i><i class="dot2" style="left:34.4%"></i><span class="val" style="left:calc(34.4% - 54px)">−8.6%</span></div></div>
+              <div class="mono b" style="text-align:right">1.12</div>
+              <div class="run"><span class="row gap-6"><span class="pill paper sl-pp">Paper</span><span class="mono sm">$31,904.20</span></span><span class="mono xs gain">+12.4% since Jun 2</span></div>
+            </div>
+            <div class="gr rw">
+              <div><div class="sl-nm">Dual Momentum</div><div class="sl-meta">Monthly · draft v2, backtest is for v1</div></div>
+              <div><div class="sl-dp" style="opacity:.6"><i class="spy" style="left:61.3%"></i><i class="gap l" style="left:51.8%;width:9.5%"></i><i class="dot2" style="left:51.8%"></i><span class="val gain" style="left:calc(51.8% - 60px)">+18.3%</span></div></div>
+              <div><div class="sl-dp" style="opacity:.6"><i class="spy" style="left:75.2%"></i><i class="gap g" style="left:44.8%;width:30.4%"></i><i class="dot2" style="left:44.8%"></i><span class="val" style="left:calc(44.8% - 60px)">−11.2%</span></div></div>
+              <div class="mono dim" style="text-align:right">0.74</div>
+              <div class="run"><span class="btn sm">Backtest v2</span></div>
+            </div>
+            <div class="gr rw">
+              <div><div class="sl-nm">All-Weather Portfolio</div><div class="sl-meta">Quarterly · VTI VGLT IEF GLD DBC</div></div>
+              <div><div class="sl-dp"><i class="spy" style="left:61.3%"></i><i class="gap l" style="left:44%;width:17.3%"></i><i class="dot2" style="left:44%"></i><span class="val gain" style="left:calc(44% - 60px)">+14.8%</span></div></div>
+              <div><div class="sl-dp"><i class="spy" style="left:75.2%"></i><i class="gap g" style="left:24.8%;width:50.4%"></i><i class="dot2" style="left:24.8%"></i><span class="val" style="left:calc(24.8% - 54px)">−6.2%</span></div></div>
+              <div class="mono" style="text-align:right">0.92</div>
+              <div class="run"><span class="row gap-6"><span class="pill live sl-pp">Live</span><span class="mono sm">$48,210.55</span></span><span class="mono xs gain">+6.8% since Aug 4</span></div>
+            </div>
+            <div class="gr rw">
+              <div><div class="sl-nm">Risk Parity</div><div class="sl-meta">Monthly · SPY TLT GLD DBC</div></div>
+              <div><div class="sl-dp"><i class="spy" style="left:61.3%"></i><i class="gap l" style="left:36.9%;width:24.4%"></i><i class="dot2" style="left:36.9%"></i><span class="val gain" style="left:calc(36.9% - 60px)">+11.6%</span></div></div>
+              <div><div class="sl-dp"><i class="spy" style="left:75.2%"></i><i class="gap g" style="left:31.6%;width:43.6%"></i><i class="dot2" style="left:31.6%"></i><span class="val" style="left:calc(31.6% - 54px)">−7.9%</span></div></div>
+              <div class="mono" style="text-align:right">0.81</div>
+              <div class="run"><span class="btn sm">Start in paper</span></div>
+            </div>
+            <div class="gr rw" style="min-height:52px">
+              <div><div class="sl-nm">Pullback Buyer</div><div class="sl-meta">Daily · SPY · draft</div></div>
+              <div class="xs faint">Not backtested yet</div>
+              <div></div><div></div>
+              <div class="run"><span class="btn sm pri">Run a backtest</span></div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-head"><div class="row"><div class="t">Strategies</div><span class="sp"></span><span class="m-plus" data-icon="plus"></span></div><div class="s">Backtests against SPY, Nov 2024 to Oct 2026</div></div>
+      <div class="m-body sl-vs">
+        <div class="seg round" style="align-self:flex-start"><span class="on">Return</span><span>Worst drop</span><span>Sharpe</span></div>
+        <div class="m-card rows">
+          <div class="sl-mrow" style="display:block"><div class="row"><b style="color:var(--fg-2)">Tech Momentum Rotation</b><span class="sp"></span><span class="st stop">Stopped</span></div><div class="sl-dp" style="margin-top:8px"><i class="spy" style="left:61.3%"></i><i class="gap g" style="left:61.3%;width:25.8%"></i><i class="dot2" style="left:87.1%"></i></div><div class="row mono xs"><span class="gain">+34.2%</span><span class="dim">vs SPY +22.6%</span><span class="sp"></span><span class="loss">drop −22.1%</span></div></div>
+          <div class="sl-mrow" style="display:block"><div class="row"><b>Momentum Sectors</b><span class="sp"></span><span class="pill paper sl-pp">Paper</span></div><div class="sl-dp" style="margin-top:8px"><i class="spy" style="left:61.3%"></i><i class="gap g" style="left:61.3%;width:14%"></i><i class="dot2" style="left:75.3%"></i></div><div class="row mono xs"><span class="gain">+28.9%</span><span class="dim">vs SPY +22.6%</span><span class="sp"></span><span>$22,118.07</span></div></div>
+          <div class="sl-mrow" style="display:block"><div class="row"><b>Recession Radar</b><span class="sp"></span><span class="pill paper sl-pp">Paper</span></div><div class="sl-dp" style="margin-top:8px"><i class="spy" style="left:61.3%"></i><i class="gap l" style="left:58.7%;width:2.6%"></i><i class="dot2" style="left:58.7%"></i></div><div class="row mono xs"><span class="gain">+21.4%</span><span class="dim">vs SPY +22.6%</span><span class="sp"></span><span>$31,904.20</span></div></div>
+          <div class="sl-mrow" style="display:block"><div class="row"><b>All-Weather Portfolio</b><span class="sp"></span><span class="pill live sl-pp">Live</span></div><div class="sl-dp" style="margin-top:8px"><i class="spy" style="left:61.3%"></i><i class="gap l" style="left:44%;width:17.3%"></i><i class="dot2" style="left:44%"></i></div><div class="row mono xs"><span class="gain">+14.8%</span><span class="dim">vs SPY +22.6%</span><span class="sp"></span><span>$48,210.55</span></div></div>
+        </div>
+        <div class="xs dim" style="text-align:center">Dashed line is SPY. Money on the right is the sleeve now.</div>
+      </div>
+      <nav data-tabs="strategies"></nav>
+    </div>
+  </div>
+
+  <!-- ============================================================ F: workbench -->
+  <div class="ax-opt" data-opt="F" data-name="Workbench"
+    data-note="The page opens on unfinished work: the draft that needs its first backtest, the strategy edited since its last run, and a backtest still running, each with the one button that moves it on. A dated feed of edits, runs, starts and stops sits under them, and the full list stays in a narrow column on the right. Good for someone who comes here to build and test, since nothing has to be found. It pushes the running strategies to the side, which is fine while Home covers them, and on a quiet week the top row has little to show.">
+    <div data-frame="desktop" data-path="strategies">
+      <div class="app sl-wb">
+        <div data-tb="Strategies"></div>
+        <div class="main"><div class="page sl-pg">
+          <div class="page-head">
+            <div><div class="h1">Strategies</div><div class="sub">Three things are waiting on you, and one backtest is running.</div></div>
+            <div class="act"><span class="btn">Templates</span><span class="btn"><span data-icon="copilot"></span>Describe one</span><span class="btn pri"><span data-icon="plus"></span>New strategy</span></div>
+          </div>
+          <div class="wrap2">
+            <div>
+              <div class="lbl" style="margin-bottom:10px">Pick up where you left off</div>
+              <div class="cont">
+                <div class="panel cc rim">
+                  <div class="row"><span class="pill soft">Draft v1</span><span class="sp"></span><span class="xs dim">Nov 15</span></div>
+                  <b class="h3">Pullback Buyer</b>
+                  <p>Drafted with Copilot. Buys SPY after it closes 5% under its 20-day high and sells 10 trading days later. It hasn't been backtested.</p>
+                  <span class="sp"></span>
+                  <span class="btn pri sm" style="align-self:flex-start">Run a backtest</span>
+                </div>
+                <div class="panel cc">
+                  <div class="row"><span class="pill soft">Edited since backtest</span><span class="sp"></span><span class="xs dim">Nov 14</span></div>
+                  <b class="h3">Dual Momentum</b>
+                  <div class="row wrap" style="gap:6px;font-size:12.5px"><span class="dim">Lookback</span><span class="tok old">12 months</span><span class="tok new">6 months</span></div>
+                  <p>v1 returned <span class="mono gain">+18.3%</span>. That figure no longer describes the rules as written.</p>
+                  <span class="sp"></span>
+                  <span class="btn sm" style="align-self:flex-start">Backtest v2</span>
+                </div>
+                <div class="panel cc">
+                  <div class="row"><span class="st run">Backtest running</span><span class="sp"></span><span class="xs dim">10:38</span></div>
+                  <b class="h3">Risk Parity</b>
+                  <p>Ten years, Nov 2016 to Oct 2026, with $25,000. Daily bars, monthly rebalances.</p>
+                  <div class="meter"><i style="width:64%"></i></div>
+                  <div class="row mono xs dim"><span>2023-04 of 2026-10</span><span class="sp"></span><span>64%</span></div>
+                  <span class="sp"></span>
+                  <span class="btn sm ghost" style="align-self:flex-start;padding-left:0">Open the backtest</span>
+                </div>
+              </div>
+              <div class="panel" style="margin-top:18px">
+                <div class="panel-h">Recent work<span class="aside">Last 30 days</span></div>
+                <div class="feed">
+                  <div class="ev"><span class="t">Nov 15</span><span data-icon="copilot" class="acc"></span><div><b>Pullback Buyer</b> drafted with Copilot<div class="d">4 rules, daily · from “buy SPY after a sharp drop”</div></div><span class="xs acc">Open</span></div>
+                  <div class="ev"><span class="t">Nov 14</span><span data-icon="edit"></span><div><b>Dual Momentum</b> edited, v1 to v2<div class="d">Lookback changed from 12 to 6 months</div></div><span class="xs acc">Compare</span></div>
+                  <div class="ev"><span class="t">Nov 12</span><span data-icon="stop"></span><div><b>Tech Momentum Rotation</b> stopped in paper<div class="d">Positions closed to cash, $26,173.30 · −2.4% from Sep 9</div></div><span class="xs acc">Session</span></div>
+                  <div class="ev"><span class="t">Nov 10</span><span data-icon="backtests"></span><div><b>Dual Momentum</b> v1 backtest finished<div class="d mono">+18.3% · max DD −11.2% · Sharpe 0.74 · SPY +22.6%</div></div><span class="xs acc">Results</span></div>
+                  <div class="ev"><span class="t">Nov 3</span><span data-icon="edit"></span><div><b>Recession Radar</b> v3 saved and backtested<div class="d">RSI threshold changed from 75 to 70</div></div><span class="xs acc">Compare</span></div>
+                  <div class="ev"><span class="t">Oct 21</span><span data-icon="edit"></span><div><b>Momentum Sectors</b> v5 saved<div class="d">Running in paper since Oct 6, started with $21,453.00</div></div><span class="xs acc">Session</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="panel side2">
+              <div class="panel-h">All strategies<span class="aside">7</span></div>
+              <div class="grp lbl">Running</div>
+              <div class="panel-b tight list" style="padding-top:0">
+                <div class="li"><div style="flex:1;min-width:0"><div class="t">All-Weather Portfolio</div><div class="d row gap-6"><span class="pill live sl-pp">Live</span>next Dec 1</div></div><div style="text-align:right"><div class="mono sm">$48,210.55</div><div class="mono xs gain">+$149.12</div></div></div>
+                <div class="li"><div style="flex:1;min-width:0"><div class="t">Recession Radar</div><div class="d row gap-6"><span class="pill paper sl-pp">Paper</span>today 15:50</div></div><div style="text-align:right"><div class="mono sm">$31,904.20</div><div class="mono xs gain">+$196.62</div></div></div>
+                <div class="li"><div style="flex:1;min-width:0"><div class="t">Momentum Sectors</div><div class="d row gap-6"><span class="pill paper sl-pp">Paper</span>Nov 23</div></div><div style="text-align:right"><div class="mono sm">$22,118.07</div><div class="mono xs gain">+$266.66</div></div></div>
+              </div>
+              <div class="grp lbl" style="border-top:1px solid var(--line)">Not running · latest backtest</div>
+              <div class="panel-b tight list" style="padding-top:0">
+                <div class="li"><div style="flex:1;min-width:0"><div class="t" style="color:var(--fg-2)">Tech Momentum Rotation</div><div class="d">Stopped Nov 12</div></div><span class="mono sm gain">+34.2%</span></div>
+                <div class="li"><div style="flex:1;min-width:0"><div class="t">Risk Parity</div><div class="d">10-year run at 64%</div></div><span class="mono sm gain">+11.6%</span></div>
+                <div class="li"><div style="flex:1;min-width:0"><div class="t">Dual Momentum</div><div class="d">Draft v2 · figure is v1</div></div><span class="mono sm dim">+18.3%</span></div>
+                <div class="li"><div style="flex:1;min-width:0"><div class="t">Pullback Buyer</div><div class="d">Draft v1</div></div><span class="xs faint">No backtest</span></div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-head"><div class="row"><div class="t">Strategies</div><span class="sp"></span><span class="m-plus" data-icon="plus"></span></div><div class="s">3 waiting on you · 1 backtest running</div></div>
+      <div class="m-body">
+        <div class="m-card col gap-6 rim">
+          <div class="row"><span class="pill soft">Draft v1</span><span class="sp"></span><span class="xs dim">Nov 15</span></div>
+          <b>Pullback Buyer</b>
+          <div class="sm muted" style="line-height:1.45">Drafted with Copilot. It hasn't been backtested.</div>
+          <div class="m-btn" style="height:40px;font-size:14px;margin-top:4px">Run a backtest</div>
+        </div>
+        <div class="m-card rows">
+          <div class="sl-mrow"><div class="grow"><div>Dual Momentum</div><div class="d">Edited since its backtest</div></div><span class="btn sm">Backtest v2</span></div>
+          <div class="sl-mrow"><div class="grow"><div>Risk Parity</div><div class="meter" style="margin-top:7px"><i style="width:64%"></i></div></div><span class="mono xs dim">64%</span></div>
+        </div>
+        <div class="m-sec">All strategies<span class="a">7</span></div>
+        <div class="m-card rows">
+          <div class="sl-mrow"><div class="grow"><div>All-Weather Portfolio</div><div class="d">Live · next Dec 1</div></div><span class="mono sm">$48,210.55</span></div>
+          <div class="sl-mrow"><div class="grow"><div>Recession Radar</div><div class="d">Paper · today 15:50</div></div><span class="mono sm">$31,904.20</span></div>
+          <div class="sl-mrow"><div class="grow"><div>Momentum Sectors</div><div class="d">Paper · Nov 23</div></div><span class="mono sm">$22,118.07</span></div>
+        </div>
+      </div>
+      <nav data-tabs="strategies"></nav>
+    </div>
+  </div>
+</section>
+<!-- ============================================================ No strategies yet, round two -->
+<section class="ax-surface" id="strategies-empty2"
+  data-surface="strategies/empty2"
+  data-area="Strategies"
+  data-title="No strategies yet, round two"
+  data-why="The strategies page before anything exists. Home's first visit already offers three ways to start (template, Copilot, blocks), so this page should repeat that choice or build on it, not introduce a fourth way in.">
+
+  <!-- A: three ways over an empty track -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="Three ways over an empty track"
+    data-note="Recommended. The same three ways as Home's first visit, in smaller cards with the same pictures, so a new user meets one choice in two places. Under them the stage track from the list sits empty, with its four column headings, and says where the first strategy will appear and how it moves. It teaches the list's shape before there's anything in it, and it costs the cards some height compared with Home.">
+    <div data-frame="desktop" data-path="strategies">
+      <div class="app sl-e">
+        <div data-tb="Strategies"></div>
+        <div class="main">
+          <div class="art" data-art="candles" data-seed="7310" style="height:260px"></div>
+          <div class="page over" style="padding-top:12px">
+            <div class="hero">
+              <div class="h1" style="font-size:32px">Make your first strategy</div>
+              <p>A strategy is a short set of rules for what to hold and when to rebalance. Pick a way to start. Each one ends with a draft you can backtest.</p>
+            </div>
+            <div class="ways">
+              <div class="panel way rim">
+                <div class="ill"><div class="mini"><div class="row"><b class="sm">Classic 60/40</b><span class="sp"></span><span class="mono xs gain">CAGR +7.9%</span></div><div data-chart="area" data-seed="601" data-ret="0.98" data-dip="0.36:0.16" data-vol="0.008" data-h="76" style="margin-top:6px"></div></div></div>
+                <div class="bd"><div class="h3">Start from a template</div><p>82 strategies with ten-year backtests. Change any rule before it runs.</p><span class="btn pri round sm" style="align-self:flex-start;margin-top:4px">Browse templates</span></div>
+              </div>
+              <div class="panel way">
+                <div class="ill"><div class="bub me">Hold bonds and gold when SPY falls below its 200-day average</div><div class="bub bot">Here's a draft with three rules. It checks SPY daily and rebalances monthly.</div></div>
+                <div class="bd"><div class="h3">Describe it to Copilot</div><p>Write the idea in a sentence. Copilot drafts the rules and explains each one.</p><span class="btn round sm" style="align-self:flex-start;margin-top:4px">Describe a strategy</span></div>
+              </div>
+              <div class="panel way">
+                <div class="ill"><div class="blk"><span class="k">if</span>SPY above 200-day average</div><div class="blk i1"><span class="k">hold</span>VTI 60% · BND 40%</div><div class="blk"><span class="k">else</span></div><div class="blk i1"><span class="k">hold</span>TLT 50% · GLD 50%</div></div>
+                <div class="bd"><div class="h3">Build from blocks</div><p>Set conditions, weights and a rebalance schedule yourself.</p><span class="btn round sm" style="align-self:flex-start;margin-top:4px">Open the builder</span></div>
+              </div>
+            </div>
+            <div class="panel sl-ghost">
+              <div class="gr hd">
+                <div><span class="lbl">Strategy</span></div>
+                <div><span class="lbl">Draft</span><span class="xs dim">Rules you can edit</span></div>
+                <div><span class="lbl">Backtested</span><span class="xs dim">Tested on past prices</span></div>
+                <div><span class="lbl">Paper</span><span class="xs dim">Simulated money on Alpaca</span></div>
+                <div><span class="lbl">Live</span><span class="xs dim">Real money, when you choose</span></div>
+                <div></div>
+              </div>
+              <div style="position:relative">
+                <div class="gr rw"><div><i class="sk" style="width:70%"></i></div><div><i class="sl-m todo"></i><i class="tr" style="left:5px"></i></div><div><i class="sl-m none" style="top:22px"></i><i class="tr"></i></div><div><i class="sl-m none" style="top:22px"></i><i class="tr"></i></div><div><i class="sl-m none" style="top:22px"></i><i class="tr" style="right:50%"></i></div><div></div></div>
+                <div class="gr rw"><div><i class="sk" style="width:52%"></i></div><div></div><div></div><div></div><div></div><div></div></div>
+                <div class="msg2"><div class="sm muted" style="background:var(--panel);padding:6px 14px;border-radius:999px;border:1px solid var(--line)">Your first strategy appears here as a draft, then moves right as you test it.</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-head"><div class="t">Strategies</div><div class="s">Make your first strategy</div></div>
+      <div class="m-body sl-e">
+        <div class="m-card rim" style="padding:0;overflow:hidden">
+          <div style="padding:14px 16px 10px;background:var(--sunk);border-bottom:1px solid var(--line)"><div class="row"><b class="sm">Classic 60/40</b><span class="sp"></span><span class="mono xs gain">CAGR +7.9%</span></div><div data-chart="area" data-seed="601" data-ret="0.98" data-dip="0.36:0.16" data-vol="0.008" data-h="60" style="margin-top:6px"></div></div>
+          <div style="padding:14px 16px" class="col gap-6"><b>Start from a template</b><span class="sm muted">82 strategies with ten-year backtests.</span><span class="m-btn" style="height:42px;margin-top:6px">Browse templates</span></div>
+        </div>
+        <div class="m-card rows">
+          <div class="sl-mrow"><span data-icon="copilot" class="acc"></span><div class="grow"><div>Describe it to Copilot</div><div class="d">Write the idea in a sentence</div></div><span data-icon="chevron-right" class="dim"></span></div>
+          <div class="sl-mrow"><span data-icon="blocks" class="acc"></span><div class="grow"><div>Build from blocks</div><div class="d">Set the rules yourself</div></div><span data-icon="chevron-right" class="dim"></span></div>
+        </div>
+        <div class="m-card sl-tk-m" style="border-style:dashed;background:transparent">
+          <div class="stp"><i class="off"></i><b class="off"></b><i class="off"></i><b class="off"></b><i class="off"></i><b class="off"></b><i class="off"></i></div>
+          <div class="stl"><span>Draft</span><span>Backtested</span><span>Paper</span><span>Live</span></div>
+          <div class="xs dim" style="margin-top:8px;line-height:1.45">Your first strategy appears here as a draft, then moves right as you test it.</div>
+        </div>
+      </div>
+      <nav data-tabs="strategies"></nav>
+    </div>
+  </div>
+
+  <!-- B: three ways, one open -->
+  <div class="ax-opt" data-opt="B" data-name="Three ways, one already open"
+    data-note="The three ways become a row of tabs, and Start from a template is open by default with a short list and the selected template's backtest against SPY. It answers the one weakness of Home's three cards, that someone unsure has no default, while the other two ways stay one click away and look equal. The page is busier than Home's version, and opening on templates nudges people toward them rather than leaving the choice entirely open.">
+    <div data-frame="desktop" data-path="strategies?start=template">
+      <div class="app sl-e2">
+        <div data-tb="Strategies"></div>
+        <div class="main">
+          <div class="glow" style="height:300px"></div>
+          <div class="page over" style="max-width:1220px;margin:0 auto;padding-top:34px">
+            <div class="h1" style="font-size:30px">Make your first strategy</div>
+            <div class="sub muted" style="margin:8px 0 20px;font-size:14.5px">Choose how to start. Each way ends with a draft you can backtest, then run on Alpaca paper.</div>
+            <div class="tabs3">
+              <div class="tb3 on"><span class="wi" data-icon="blocks"></span><div><b>Start from a template</b><div class="xs dim">82 with ten-year backtests</div></div></div>
+              <div class="tb3"><span class="wi" data-icon="copilot"></span><div><b>Describe it to Copilot</b><div class="xs dim">Write the idea in a sentence</div></div></div>
+              <div class="tb3"><span class="wi" data-icon="code"></span><div><b>Build from blocks</b><div class="xs dim">Set the rules yourself</div></div></div>
+            </div>
+            <div class="panel open rim">
+              <div class="tl2">
+                <div class="row" style="padding:8px 18px 10px"><span class="lbl">Good first backtests</span><span class="sp"></span><span class="xs acc">All 82</span></div>
+                <div class="r on"><div style="flex:1"><b>Classic 60/40</b><div class="xs dim mono">VOO 60 · BND 40 · quarterly</div></div><span class="mono sm">+7.9%</span></div>
+                <div class="r"><div style="flex:1"><b>All-Weather Portfolio</b><div class="xs dim mono">5 symbols · quarterly</div></div><span class="mono sm">+4.4%</span></div>
+                <div class="r"><div style="flex:1"><b>Dual Momentum</b><div class="xs dim mono">SPY EFA BND · monthly</div></div><span class="mono sm">+9.1%</span></div>
+                <div class="r"><div style="flex:1"><b>Risk Parity</b><div class="xs dim mono">4 symbols · monthly</div></div><span class="mono sm">+5.2%</span></div>
+                <div class="r"><div style="flex:1"><b>Sector Momentum</b><div class="xs dim mono">11 sector ETFs · monthly</div></div><span class="mono sm">+10.4%</span></div>
+                <div class="xs dim" style="padding:10px 18px">Figures are yearly returns over ten years.</div>
+              </div>
+              <div class="pv">
+                <div class="row"><span class="h2">Classic 60/40</span><span class="pill soft">Beginner</span><span class="sp"></span><span class="btn pri round">Use this template</span></div>
+                <div class="sm muted" style="margin-top:6px">Stocks for growth and bonds to soften the falls. Rebalances back to 60/40 every quarter.</div>
+                <div class="row xs dim" style="margin:16px 0 4px;gap:16px"><span class="row gap-6"><i class="dot acc"></i>Classic 60/40</span><span class="row gap-6"><i class="dash"></i>SPY</span><span>Nov 2016 to Oct 2026 · $25,000</span></div>
+                <div data-chart="area" data-n="200" data-seed="601" data-ret="0.98" data-bench="1.92" data-dip="0.36:0.16" data-vol="0.008" data-axis="xy" data-start="25000" data-from="2016-11" data-to="2026-10" data-h="200" data-mark></div>
+                <div class="figs boxed" style="--n:4;margin-top:14px"><div class="fig"><div class="lbl">CAGR</div><div class="v">7.9%</div><div class="s">SPY 13.9%</div></div><div class="fig"><div class="lbl">Max drawdown</div><div class="v loss">−21.4%</div><div class="s">SPY −33.7%</div></div><div class="fig"><div class="lbl">Sharpe</div><div class="v">0.71</div><div class="s">SPY 0.82</div></div><div class="fig"><div class="lbl">Rules</div><div class="v" style="font-size:15px">2 lines</div><div class="s">Hold VOO and BND</div></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-head"><div class="t">Strategies</div><div class="s">Make your first strategy</div></div>
+      <div class="m-body sl-e2">
+        <div class="seg round" style="align-self:stretch"><span class="on" style="flex:1;justify-content:center">Template</span><span style="flex:1;justify-content:center">Copilot</span><span style="flex:1;justify-content:center">Blocks</span></div>
+        <div class="m-card col gap-6 rim">
+          <div class="row"><b style="font-size:17px">Classic 60/40</b><span class="sp"></span><span class="pill soft">Beginner</span></div>
+          <div class="sm muted" style="line-height:1.45">Stocks and bonds, back to 60/40 every quarter.</div>
+          <div data-chart="area" data-n="200" data-seed="601" data-ret="0.98" data-bench="1.92" data-dip="0.36:0.16" data-vol="0.008" data-h="96"></div>
+          <div class="row mono sm"><span>7.9%<span class="dim"> /yr</span></span><span class="sp"></span><span>−21.4%<span class="dim"> worst</span></span><span class="sp"></span><span>0.71<span class="dim"> Sharpe</span></span></div>
+          <div class="m-btn">Use this template</div>
+        </div>
+        <div class="m-card rows">
+          <div class="sl-mrow"><div class="grow"><div>Dual Momentum</div><div class="d mono">9.1%/yr · −16.8% worst</div></div><span data-icon="chevron-right" class="dim"></span></div>
+          <div class="sl-mrow"><div class="grow"><div>All-Weather Portfolio</div><div class="d mono">4.4%/yr · −19.7% worst</div></div><span data-icon="chevron-right" class="dim"></span></div>
+        </div>
+      </div>
+      <nav data-tabs="strategies"></nav>
+    </div>
+  </div>
+
+  <!-- C: rows waiting to fill -->
+  <div class="ax-opt" data-opt="C" data-name="Rows waiting to fill"
+    data-note="The list is already on the page, and its three empty rows are the three ways to start: a template with its result in place, a Copilot field you can type into, and a blank strategy in the builder. Whatever you make takes the place of the row you used, so the page keeps one shape from the first visit on. Quiet and quick to act on, but it doesn't explain what a strategy is, and it relies on Home having made that case first.">
+    <div data-frame="desktop" data-path="strategies">
+      <div class="app sl-e3">
+        <div data-tb="Strategies"></div>
+        <div class="main"><div class="page sl-pg" style="max-width:1240px;margin:0 auto;padding-top:30px">
+          <div class="page-head">
+            <div><div class="h1">Strategies</div><div class="sub">No strategies yet. Start one of these three ways and it will appear in this list.</div></div>
+            <div class="act"><div class="input search" style="width:230px;opacity:.5"><span data-icon="search" class="dim"></span><span class="ph">Search names and symbols</span></div></div>
+          </div>
+          <div class="panel wt">
+            <div class="wr">
+              <div class="row" style="gap:14px"><span class="wi" data-icon="blocks"></span><div><b class="h3">Start from a template</b><div class="xs dim" style="margin-top:3px">82 strategies with ten-year backtests</div></div></div>
+              <div class="row" style="gap:18px"><div style="flex:1;min-width:0"><div class="row"><b>Classic 60/40</b><span class="xs dim mono">VOO 60 · BND 40 · quarterly</span></div><div data-chart="area" data-n="200" data-seed="601" data-ret="0.98" data-bench="1.92" data-dip="0.36:0.16" data-vol="0.008" data-h="56" style="margin-top:6px"></div></div><div style="text-align:right"><div class="mono lg b">7.9%</div><div class="xs dim">a year, 10 years</div></div></div>
+              <div class="row" style="justify-content:flex-end"><span class="btn round sm">Other templates</span><span class="btn pri round sm">Use this one</span></div>
+            </div>
+            <div class="wr">
+              <div class="row" style="gap:14px"><span class="wi" data-icon="copilot"></span><div><b class="h3">Describe it to Copilot</b><div class="xs dim" style="margin-top:3px">Copilot drafts the rules, you review them</div></div></div>
+              <div class="ask2"><span class="dim" style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Hold bonds and gold when SPY is below its 200-day average</span><span class="btn pri round sm"><span data-icon="send"></span>Draft</span></div>
+              <div class="xs dim" style="text-align:right">Nothing is saved until you choose to.</div>
+            </div>
+            <div class="wr">
+              <div class="row" style="gap:14px"><span class="wi" data-icon="code"></span><div><b class="h3">Build from blocks</b><div class="xs dim" style="margin-top:3px">Conditions, weights and a schedule</div></div></div>
+              <div class="row" style="gap:8px;font:500 12px var(--mono);color:var(--fg-3)"><span class="tok ink">if</span><span>…</span><span class="tok ink">hold</span><span>…</span><span class="tok ink">rebalance</span><span>monthly</span><span class="sp"></span><span style="font-family:var(--sans)">Or write it as an S-expression</span></div>
+              <div class="row" style="justify-content:flex-end"><span class="btn round sm">New blank strategy</span></div>
+            </div>
+          </div>
+          <div class="xs dim" style="margin-top:14px">Strategies start as drafts. You can backtest them on past prices and run them on Alpaca paper before any real money moves.</div>
+        </div></div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-head"><div class="t">Strategies</div><div class="s">Start one of these three ways</div></div>
+      <div class="m-body sl-e3">
+        <div class="m-card col gap-6" style="border-style:dashed">
+          <div class="row"><span data-icon="blocks" class="acc"></span><b>Classic 60/40</b><span class="sp"></span><span class="mono sm">7.9%/yr</span></div>
+          <div data-chart="area" data-n="200" data-seed="601" data-ret="0.98" data-bench="1.92" data-dip="0.36:0.16" data-vol="0.008" data-h="56"></div>
+          <div class="row"><span class="xs dim">Template · 10-year backtest</span><span class="sp"></span><span class="btn pri round sm">Use</span></div>
+        </div>
+        <div class="m-card col gap-6" style="border-style:dashed">
+          <div class="row"><span data-icon="copilot" class="acc"></span><b>Describe it to Copilot</b></div>
+          <div class="input" style="height:42px;border-radius:999px"><span class="ph" style="flex:1;font-size:13px">Hold bonds when SPY falls…</span><span data-icon="send" class="dim"></span></div>
+        </div>
+        <div class="m-card col gap-6" style="border-style:dashed">
+          <div class="row"><span data-icon="code" class="acc"></span><b>Build from blocks</b><span class="sp"></span><span data-icon="chevron-right" class="dim"></span></div>
+          <div class="xs dim">Conditions, weights and a schedule</div>
+        </div>
+      </div>
+      <nav data-tabs="strategies"></nav>
+    </div>
+  </div>
+
+  <!-- D: the path, three ways in -->
+  <div class="ax-opt" data-opt="D" data-name="Three ways into one path"
+    data-note="The three ways sit on the left and join into a drawn path through draft, backtested, paper and live, with a sentence under each stage on what happens there and what it doesn't do. It complements Home rather than repeating it: Home asks how you'd like to start, and this page shows what follows. Good at setting expectations about paper and live money early. It's the most explanatory option and the least direct, since the actual buttons are smaller than in the others.">
+    <div data-frame="desktop" data-path="strategies">
+      <div class="app sl-e4">
+        <div data-tb="Strategies"></div>
+        <div class="main">
+          <div class="art" data-art="line" data-seed="913" style="height:280px"></div>
+          <div class="page over" style="padding-top:56px">
+            <div class="h1" style="font-size:32px">Make your first strategy</div>
+            <div class="muted" style="margin:10px 0 40px;font-size:15.5px;max-width:720px;line-height:1.55">Every strategy follows the same path, whichever way you start. Nothing trades until you start it in paper, and nothing uses real money until you choose to go live.</div>
+            <div class="path">
+              <div class="ins">
+                <div class="panel in rim"><span class="wi" data-icon="blocks"></span><div style="flex:1"><b>Start from a template</b><div class="xs dim">82 with ten-year backtests</div></div><span data-icon="arrow-right" class="acc"></span></div>
+                <div class="panel in"><span class="wi" data-icon="copilot"></span><div style="flex:1"><b>Describe it to Copilot</b><div class="xs dim">Write the idea in a sentence</div></div><span data-icon="arrow-right" class="acc"></span></div>
+                <div class="panel in"><span class="wi" data-icon="code"></span><div style="flex:1"><b>Build from blocks</b><div class="xs dim">Set the rules yourself</div></div><span data-icon="arrow-right" class="acc"></span></div>
+              </div>
+              <div class="join"></div>
+              <div class="stg"><div class="top"><i class="sl-m cur"></i></div><b>Draft</b><p>The rules: what to hold, under which conditions, and how often to rebalance. Edit them as often as you like.</p><div class="ft">Saved as versions</div></div>
+              <div class="stg"><div class="top"><i class="sl-m todo"></i></div><b>Backtested</b><p>The rules run on past prices with $25,000, next to SPY over the same dates. Past results don't predict future ones.</p><div class="ft">Up to ten years of daily bars</div></div>
+              <div class="stg"><div class="top"><i class="sl-m todo"></i></div><b>Paper</b><p>Orders go to your Alpaca paper account with simulated money, at real prices and on the real schedule.</p><div class="ft">Connect Alpaca at this step</div></div>
+              <div class="stg"><div class="top"><i class="sl-m todo"></i></div><b>Live</b><p>Real orders with real money on your Alpaca account. You choose the amount, and you can stop at any time.</p><div class="ft">Only when you choose</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-head"><div class="t">Strategies</div><div class="s">Make your first strategy</div></div>
+      <div class="m-body">
+        <div class="m-card rows">
+          <div class="sl-mrow"><span data-icon="blocks" class="acc"></span><div class="grow"><div>Start from a template</div><div class="d">82 with ten-year backtests</div></div><span data-icon="chevron-right" class="dim"></span></div>
+          <div class="sl-mrow"><span data-icon="copilot" class="acc"></span><div class="grow"><div>Describe it to Copilot</div><div class="d">Write the idea in a sentence</div></div><span data-icon="chevron-right" class="dim"></span></div>
+          <div class="sl-mrow"><span data-icon="code" class="acc"></span><div class="grow"><div>Build from blocks</div><div class="d">Set the rules yourself</div></div><span data-icon="chevron-right" class="dim"></span></div>
+        </div>
+        <div class="m-sec">Then every strategy goes</div>
+        <div class="m-card rows">
+          <div class="sl-mrow"><span class="mono xs acc">1</span><div class="grow"><div>Draft</div><div class="d">Rules you can edit</div></div></div>
+          <div class="sl-mrow"><span class="mono xs acc">2</span><div class="grow"><div>Backtested</div><div class="d">Run on past prices, next to SPY</div></div></div>
+          <div class="sl-mrow"><span class="mono xs acc">3</span><div class="grow"><div>Paper</div><div class="d">Simulated money on Alpaca</div></div></div>
+          <div class="sl-mrow"><span class="mono xs acc">4</span><div class="grow"><div>Live</div><div class="d">Real money, only when you choose</div></div></div>
+        </div>
+      </div>
+      <nav data-tabs="strategies"></nav>
+    </div>
+  </div>
+</section>

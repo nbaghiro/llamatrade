@@ -10,15 +10,6 @@ import { fromDSLString } from '@llamatrade/core/strategy/serializer';
 import { buildOutline, lineText, rebalanceWord } from '../../lib/outline';
 import type { RunState } from '../ui';
 
-export type ListFilter = 'all' | 'running' | 'draft' | 'stopped';
-
-export const LIST_FILTERS: ReadonlyArray<{ key: ListFilter; label: string }> = [
-  { key: 'all', label: 'All' },
-  { key: 'running', label: 'Running' },
-  { key: 'draft', label: 'Drafts' },
-  { key: 'stopped', label: 'Stopped' },
-];
-
 /** The state mark for a strategy: its paper session's state when deployed, else its own status. */
 export function runState(strategy: Strategy, deployment: StrategyDeployment | undefined): RunState {
   if (deployment) {
@@ -51,15 +42,6 @@ export function runState(strategy: Strategy, deployment: StrategyDeployment | un
 export function stateLabel(state: RunState, deployed: boolean): string | undefined {
   if (state === 'stopped' && !deployed) return 'Not running';
   return undefined;
-}
-
-export function matchesFilter(state: RunState, filter: ListFilter): boolean {
-  if (filter === 'all') return true;
-  if (filter === 'running') {
-    return state === 'running' || state === 'waiting' || state === 'paused' || state === 'error';
-  }
-  if (filter === 'draft') return state === 'draft';
-  return state === 'stopped';
 }
 
 export interface RunFigures {
@@ -170,4 +152,18 @@ export function latestRunPerVersion(runs: readonly BacktestRun[]): Map<number, B
     if (!out.has(r.strategyVersion)) out.set(r.strategyVersion, r);
   }
   return out;
+}
+
+const spanOf = (r: BacktestRun) => {
+  const s = toDate(r.config?.startDate);
+  const e = toDate(r.config?.endDate);
+  return s && e ? e.getTime() - s.getTime() : 0;
+};
+
+/** The longest completed run of the current version, or of any version when it has none. */
+export function longestRun(runs: readonly BacktestRun[], version: number): BacktestRun | null {
+  const done = runs.filter((r) => r.status === BacktestStatus.COMPLETED);
+  const own = done.filter((r) => r.strategyVersion === version);
+  const pool = own.length ? own : done;
+  return [...pool].sort((a, b) => spanOf(b) - spanOf(a))[0] ?? null;
 }

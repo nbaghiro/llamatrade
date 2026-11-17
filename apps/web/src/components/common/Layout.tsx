@@ -1,3 +1,5 @@
+import { useTradingStore } from '@llamatrade/core/stores/trading';
+import { useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 
 import NewStrategyDialog from '../../components/strategies/NewStrategyDialog';
@@ -12,11 +14,24 @@ import { TopBar } from '../shell/TopBar';
 import { useCommandPaletteShortcut } from '../shell/usePalette';
 import { OfflineBanner } from '../states/OfflineBanner';
 
+/** Sessions, orders and sleeves feed the bar's attention marks, the bell's lanes and the palette. */
+function useShellData() {
+  const loaded = useTradingStore((s) => s.loaded);
+  const loading = useTradingStore((s) => s.loading);
+  const loadBlotter = useTradingStore((s) => s.loadBlotter);
+  useEffect(() => {
+    if (!loaded && !loading) loadBlotter().catch(() => undefined);
+    // Once per app load; pages refresh the blotter themselves.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+}
+
 export default function Layout() {
   const newStrategyDialogOpen = useUIStore((s) => s.newStrategyDialogOpen);
   const closeNewStrategyDialog = useUIStore((s) => s.closeNewStrategyDialog);
   const { online } = useOnline();
   useCommandPaletteShortcut();
+  useShellData();
 
   return (
     <div className="min-h-screen bg-canvas text-fg">

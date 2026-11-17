@@ -1,9 +1,8 @@
 import { AgentMessage, MessageRole, type PendingArtifact } from '@llamatrade/core/stores/agent';
-import { useMemo, type ReactNode } from 'react';
-
-import { useAuthStore } from '../../store/auth';
+import { useMemo, useState, type ReactNode } from 'react';
 
 import { PendingArtifactCard } from './PendingArtifactCard';
+import { CitationMark } from './SourcesPane';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ToolCallIndicator } from './ToolCallIndicator';
 
@@ -11,6 +10,12 @@ interface ChatMessageProps {
   message: AgentMessage;
   /** Artifacts by id, for the strategy cards linked to this message. */
   artifacts?: Map<string, PendingArtifact>;
+  /** Citation number of this message's first tool call; numbering runs across the thread. */
+  firstSource?: number;
+  activeSource?: number | null;
+  onCite?: (n: number) => void;
+  /** Starts long replies folded to three lines, for the phone's half sheet. */
+  folded?: boolean;
 }
 
 const ET_TIME = new Intl.DateTimeFormat('en-US', {
@@ -30,9 +35,16 @@ function toolDetail(tc: AgentMessage['toolCalls'][number]): string {
 }
 
 /** One turn: the user's message on the right, Copilot's reply as plain reading text. */
-export function ChatMessage({ message, artifacts }: ChatMessageProps) {
+export function ChatMessage({
+  message,
+  artifacts,
+  firstSource,
+  activeSource = null,
+  onCite,
+  folded = false,
+}: ChatMessageProps) {
+  const [open, setOpen] = useState(!folded);
   const isUser = message.role === MessageRole.USER;
-  const firstName = useAuthStore((s) => s.user?.firstName);
 
   const linked = useMemo(() => {
     if (isUser || !message.inlineArtifactIds?.length || !artifacts) return [];
@@ -42,33 +54,73 @@ export function ChatMessage({ message, artifacts }: ChatMessageProps) {
   }, [isUser, message.inlineArtifactIds, artifacts]);
 
   if (isUser) {
-    const who = [firstName || 'You', etTime(message.createdAt?.seconds)]
-      .filter(Boolean)
-      .join(' · ');
     return (
-      <div className="grid justify-items-end gap-1">
-        <span className="font-mono text-[11px] font-medium text-fg-3">{who}</span>
-        <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-[12px_12px_3px_12px] bg-sunk px-[13px] py-[9px] text-[14px]">
+      <div className="grid justify-items-end">
+        <div className="max-w-[80%] whitespace-pre-wrap break-words rounded-[10px] bg-fg px-[14px] py-[10px] text-[14px] text-canvas">
           {message.content}
         </div>
       </div>
     );
   }
 
+  const calls = message.toolCalls ?? [];
+  const cited = firstSource !== undefined && calls.length > 0;
+  const when = etTime(message.createdAt?.seconds).replace(' ET', '');
   return (
     <div className="grid min-w-0 gap-2">
-      <span className="font-mono text-[11px] font-medium text-fg-3">Copilot</span>
+      <span className="flex flex-wrap items-baseline gap-x-2 font-mono text-[11px] font-medium text-fg-3">
+        <span>Copilot</span>
+        {when && <span>{when}</span>}
+        {cited && (
+          <button type="button" className="hover:text-accent" onClick={() => onCite?.(firstSource)}>
+            · {calls.length === 1 ? '1 source' : `${calls.length} sources`}
+          </button>
+        )}
+      </span>
       {message.thinking && <ThinkingBlock content={message.thinking} autoExpanded={false} />}
-      {message.toolCalls?.map((tc) => (
-        <ToolCallIndicator
-          key={tc.id || tc.name}
-          toolName={tc.name}
-          status={tc.success ? 'complete' : 'error'}
-          detail={toolDetail(tc)}
-          durationMs={tc.durationMs}
-        />
-      ))}
-      {message.content && <MessageContent content={message.content} />}
+      {calls.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {calls.map((tc, i) => (
+            <span
+              key={tc.id || `${tc.name}-${i}`}
+              className="inline-flex max-w-full items-center gap-1.5"
+            >
+              {cited && (
+                <CitationMark
+                  n={firstSource + i}
+                  active={activeSource === firstSource + i}
+                  onClick={() => onCite?.(firstSource + i)}
+                />
+              )}
+              <ToolCallIndicator
+                toolName={tc.name}
+                status={tc.success ? 'complete' : 'error'}
+                detail={cited ? undefined : toolDetail(tc)}
+                durationMs={tc.durationMs}
+              />
+            </span>
+          ))}
+        </div>
+      )}
+      {!message.content && !calls.length && !linked.length && !message.thinking && (
+        <p className="m-0 text-[13.5px] text-fg-3">
+          Copilot didn&apos;t return an answer. Please ask again.
+        </p>
+      )}
+      {message.content && (
+        <div className={open ? '' : 'line-clamp-3'}>
+          <MessageContent content={message.content} />
+        </div>
+      )}
+      {!open && message.content && (
+        <button
+          type="button"
+          className="justify-self-start text-[12.5px] font-medium text-accent"
+          onClick={() => setOpen(true)}
+        >
+          Read more
+        </button>
+      )}
       {linked.map((artifact) => (
         <PendingArtifactCard key={artifact.id} artifact={artifact} />
       ))}

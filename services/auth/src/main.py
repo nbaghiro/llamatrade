@@ -72,6 +72,7 @@ app.add_middleware(
         "/ResetPassword",
         "/VerifyEmail",
         "/ResendVerification",
+        "/JoinWaitlist",
         # Alpaca OAuth entry/return for users with no session yet; /oauth/alpaca/start
         # stays protected so the linking tenant/user is known.
         "/oauth/alpaca/authorize",

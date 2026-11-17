@@ -116,3 +116,32 @@ export function asOfCloseLabel(now: Date): string {
   const d = new Date(Date.UTC(p.year, p.month, p.day - back, 12));
   return `As of ${WEEKDAYS[d.getUTCDay()]}, ${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()} close`;
 }
+
+export interface BarClock {
+  open: boolean;
+  /** "10:42 ET" */
+  time: string;
+  /** "open", "closed", "pre-market" or "after hours" */
+  state: string;
+  /** The longer sentence for a tooltip, as the market chip words it. */
+  detail: string;
+}
+
+/** The bar's clock (frame2 A): the New York time and whether the market is open. */
+export function barClock(input: MarketClockInput): BarClock {
+  const chip = marketChip(input);
+  const time = `${clock(etParts(input.now).minutes)} ET`;
+  const state = chip.open
+    ? 'open'
+    : chip.text.startsWith('Pre-market')
+      ? 'pre-market'
+      : chip.text.startsWith('After hours')
+        ? 'after hours'
+        : 'closed';
+  return { open: chip.open, time, state, detail: chip.text };
+}
+
+/** "10:42" in New York time, for the Now marker and timestamps. */
+export function etClock(d: Date): string {
+  return clock(etParts(d).minutes);
+}

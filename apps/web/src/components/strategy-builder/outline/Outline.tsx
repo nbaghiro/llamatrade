@@ -11,21 +11,31 @@ import {
 import type { DiffLine, DiffPart } from '../../../lib/strategyDiff';
 
 import { HOLDING_FILLS } from './holdingFills';
-import { Token, TrackedWas, type TokenEditHandler } from './Token';
+import { Token, TrackedWas, type TokenEditHandler, type TokenOpenHandler } from './Token';
 
 export type AnyLine = OutlineLine | DiffLine;
 type AnyPart = OutlinePart | DiffPart;
 
 const INDENT = 26;
 
-export function Parts({ parts, onEdit }: { parts: readonly AnyPart[]; onEdit?: TokenEditHandler }) {
+export function Parts({
+  parts,
+  onEdit,
+  onOpen,
+  openKey,
+}: {
+  parts: readonly AnyPart[];
+  onEdit?: TokenEditHandler;
+  onOpen?: TokenOpenHandler;
+  openKey?: string | null;
+}) {
   return (
     <>
       {parts.map((p, i) =>
         p.kind === 'text' ? (
           <span key={i}>{p.text}</span>
         ) : (
-          <Token key={i} token={p} onEdit={onEdit} />
+          <Token key={i} token={p} onEdit={onEdit} onOpen={onOpen} openKey={openKey} />
         )
       )}
     </>
@@ -48,10 +58,12 @@ function ShareCell({
   line,
   fill,
   onEdit,
+  onOpen,
 }: {
   line: AnyLine;
   fill: string;
   onEdit?: TokenEditHandler;
+  onOpen?: TokenOpenHandler;
 }) {
   const share = line.share;
   const pct = share && (share.kind === 'fixed' || share.kind === 'equal') ? share.pct : null;
@@ -71,7 +83,7 @@ function ShareCell({
       </span>
       <span className="num whitespace-nowrap text-right text-[12.5px] text-fg">
         {editable ? (
-          <Parts parts={line.parts} onEdit={onEdit} />
+          <Parts parts={line.parts} onEdit={onEdit} onOpen={onOpen} />
         ) : (
           <span className={pct === null ? 'font-sans text-fg-3' : ''}>{shareLabel(share)}</span>
         )}
@@ -95,6 +107,12 @@ interface OutlineProps {
   aside?: (line: AnyLine) => ReactNode;
   dense?: boolean;
   label: string;
+  /** Claims a token click before its popover opens, e.g. to open a larger editor under the rule. */
+  onOpen?: TokenOpenHandler;
+  /** `${blockId}:${field}` of the token whose larger editor is open, drawn as open. */
+  openKey?: string | null;
+  /** Content under a line, such as that larger editor. */
+  below?: (line: AnyLine) => ReactNode;
 }
 
 /** The strategy as numbered sentences, with each holding's weight on its line. */
@@ -109,6 +127,9 @@ export function Outline({
   aside,
   dense = false,
   label,
+  onOpen,
+  openKey,
+  below,
 }: OutlineProps) {
   let assetRun = 0;
   return (
@@ -176,7 +197,12 @@ export function Outline({
                 <TrackedWas>{partsText(line.wasParts)}</TrackedWas>{' '}
               </>
             )}
-            <Parts parts={line.parts} onEdit={removed ? undefined : onEdit} />
+            <Parts
+              parts={line.parts}
+              onEdit={removed ? undefined : onEdit}
+              onOpen={removed ? undefined : onOpen}
+              openKey={openKey}
+            />
           </span>
         );
 
@@ -199,7 +225,12 @@ export function Outline({
               </span>
               {body}
               {isAsset ? (
-                <ShareCell line={line} fill={fill} onEdit={removed ? undefined : onEdit} />
+                <ShareCell
+                  line={line}
+                  fill={fill}
+                  onEdit={removed ? undefined : onEdit}
+                  onOpen={removed ? undefined : onOpen}
+                />
               ) : (
                 <span className="flex items-center justify-end gap-1 text-right text-[12px] text-fg-3">
                   {aside?.(line)}
@@ -216,6 +247,7 @@ export function Outline({
                 {note}
               </p>
             )}
+            {below?.(line)}
           </li>
         );
       })}

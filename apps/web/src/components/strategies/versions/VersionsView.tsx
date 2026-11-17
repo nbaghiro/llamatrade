@@ -14,7 +14,7 @@ import { EmptyState, PanelError, Pct, Segmented, SkeletonRows } from '../../ui';
 import { dayMonthYear, rangeLabel, runFigures } from '../strategyView';
 
 import { CodeDiff } from './CodeDiff';
-import { useRunPair, useVersions } from './useVersions';
+import { useRunPair, type useVersions } from './useVersions';
 
 const VIEWS = [
   { key: 'outline', label: 'Outline' },
@@ -74,11 +74,18 @@ interface VersionsViewProps {
   strategyName: string;
   /** The version a paper session runs, if any. */
   sessionVersion: number | null;
+  /** The loaded versions and runs, from `useVersions`. */
+  source: ReturnType<typeof useVersions>;
 }
 
 /** A timeline of saved versions beside the selected change, written as the outline with old wording struck. */
-export function VersionsView({ strategyId, strategyName, sessionVersion }: VersionsViewProps) {
-  const { state, runs, reload } = useVersions(strategyId);
+export function VersionsView({
+  strategyId,
+  strategyName,
+  sessionVersion,
+  source,
+}: VersionsViewProps) {
+  const { state, runs, reload } = source;
   const [params, setParams] = useSearchParams();
   const [view, setView] = useState<'outline' | 'code'>('outline');
   const [restoring, setRestoring] = useState(false);

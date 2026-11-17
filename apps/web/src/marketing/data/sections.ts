@@ -8,7 +8,7 @@ const NAMES = {
   copilot: 'copilot',
   live: 'sessions',
   own: 'your account',
-  join: 'closed beta · invite only',
+  join: 'invite only · paper and live',
 } as const;
 
 export type SectionKey = keyof typeof NAMES;

@@ -165,3 +165,35 @@ export const useFundingStore = create<FundingState>((set, get) => {
     clearError: () => set({ error: null }),
   };
 });
+
+export interface LiveAccount {
+  credentialsId: string;
+  /** The credential's name, e.g. "Live account". */
+  name: string;
+  apiKeyPrefix: string;
+  /** Free cash in the live account's Unallocated sleeve. */
+  unallocatedCash: number;
+}
+
+/**
+ * The active live Alpaca credential and the free cash its ledger account can fund a session
+ * with; null when no live account is connected. Throws when the ledger can't be read.
+ */
+export async function readLiveAccount(): Promise<LiveAccount | null> {
+  const creds = (await authClient.listAlpacaCredentials({})).credentials;
+  const live = creds.find((c) => !c.isPaper && c.isActive);
+  if (!live) return null;
+  const acct = await ledgerClient.getOrCreateAccount({
+    context: getTenantContext(),
+    credentialsId: live.id,
+  });
+  const unallocated = acct.baseSleeves.find(
+    (s) => s.type === SleeveType.UNALLOCATED,
+  );
+  return {
+    credentialsId: live.id,
+    name: live.name,
+    apiKeyPrefix: live.apiKeyPrefix,
+    unallocatedCash: freeCash(unallocated),
+  };
+}

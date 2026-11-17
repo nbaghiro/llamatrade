@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Copilot</title>
+<script>try{document.documentElement.dataset.mode=localStorage.getItem("ax-mode")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark")}catch(e){document.documentElement.dataset.mode="dark"}</script>
+<link rel="stylesheet" href="kit.css">
+<style>
+  .cp-fab { color: var(--acc); }
+  .cp-fab.ring { box-shadow: inset 0 0 0 1px var(--acc-line); background: var(--acc-soft); }
+  .cp-ctx { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 8px; border-radius: 999px; background: var(--acc-soft); color: var(--fg); font-size: 12.5px; font-weight: 500; white-space: nowrap; flex: none; }
+  .cp-ctx .ic { width: 14px; height: 14px; color: var(--acc); }
+  .cp-ctx .x { color: var(--fg-3); margin-left: 2px; }
+  .cp-ctx.off { background: transparent; box-shadow: inset 0 0 0 1px var(--line-2); color: var(--fg-3); }
+  .cp-row { display: flex; gap: 8px; align-items: center; flex-wrap: nowrap; overflow: hidden; }
+  .cp-chip { flex: none; display: inline-flex; align-items: center; height: 32px; padding: 0 13px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--line-2); background: var(--panel); color: var(--fg-2); font-size: 13px; white-space: nowrap; }
+  .cp-sug { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-radius: 14px; background: var(--sunk); font-size: 14.5px; color: var(--fg); }
+  .cp-sug .ic { width: 16px; height: 16px; color: var(--acc); }
+  .cp-q { align-self: flex-end; max-width: 84%; padding: 9px 14px; border-radius: 18px 18px 4px 18px; background: var(--ink); color: var(--ink-text); font-size: 14.5px; line-height: 1.4; }
+  .cp-a { font-size: 15px; line-height: 1.5; color: var(--fg); }
+  .cp-a b { font-weight: 600; }
+  .cp-a.clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .cp-a .mono { font-size: 14px; }
+  .cp-more { color: var(--acc); font-size: 14px; font-weight: 500; }
+  .cp-who { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--fg-3); }
+  .cp-who .ic { width: 15px; height: 15px; color: var(--acc); }
+  .cp-chart { border-radius: 14px; background: var(--sunk); padding: 10px 12px 8px; display: flex; flex-direction: column; gap: 6px; }
+  .cp-chart .hd { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; color: var(--fg-2); }
+  .cp-chart .hd b { color: var(--fg); font-weight: 600; }
+  .cp-chart .cp-lg { display: flex; gap: 14px; font-size: 11.5px; color: var(--fg-3); }
+  .cp-chart .cp-lg span { display: inline-flex; align-items: center; gap: 6px; }
+  .cp-chart .cp-lg i { display: inline-block; width: 14px; }
+  .cp-chart .cp-lg .s { border-top: 1.7px solid var(--acc); }
+  .cp-chart .cp-lg .b { border-top: 1.4px dashed var(--fg-3); }
+  .cp-chart .cp-lg .f { width: 8px; height: 8px; border-radius: 50%; border: 1.8px solid var(--acc); }
+  .cp-src { display: flex; flex-direction: column; gap: 0; border-radius: 14px; border: 1px solid var(--line); }
+  .cp-src > div { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-top: 1px solid var(--line); font-size: 13px; color: var(--fg-2); }
+  .cp-src > div:first-child { border-top: 0; }
+  .cp-src .ic { width: 15px; height: 15px; color: var(--fg-3); }
+  .cp-src .no .ic { color: var(--fg-4); }
+  .cp-src .no { color: var(--fg-3); }
+  .cp-act { border-radius: 16px; border: 1px solid var(--line-2); background: var(--panel); padding: 13px 14px; display: flex; flex-direction: column; gap: 9px; }
+  .cp-act .t { font-weight: 600; font-size: 15px; }
+  .cp-act .d { font-size: 13.5px; color: var(--fg-2); line-height: 1.45; }
+  .cp-act .bt { display: flex; gap: 8px; }
+  .cp-act .bt > span { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 42px; border-radius: 999px; font-weight: 600; font-size: 14px; box-shadow: inset 0 0 0 1px var(--line-2); color: var(--fg); }
+  .cp-act .bt > span.pri { background: var(--ink); color: var(--ink-text); box-shadow: none; }
+  .cp-act .bt .ic { width: 17px; height: 17px; }
+  .cp-send { display: flex; align-items: center; gap: 10px; }
+  .cp-send .m-field { flex: 1; min-width: 0; }
+  .cp-send .go { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--ink); color: var(--ink-text); }
+  .cp-send .go.off { background: var(--sunk); color: var(--fg-4); }
+  .cp-send .go .ic, .cp-send .mc .ic { width: 18px; height: 18px; }
+  .cp-send .mc { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; box-shadow: inset 0 0 0 1px var(--line-2); color: var(--fg-2); }
+  .cp-mic { display: grid; place-items: center; width: 76px; height: 76px; border-radius: 50%; background: var(--ink); color: var(--ink-text); align-self: center; }
+  .cp-mic .ic { width: 30px; height: 30px; }
+  .cp-mic.on { box-shadow: 0 0 0 8px var(--acc-soft), 0 0 0 16px color-mix(in srgb, var(--acc) 8%, transparent); background: var(--acc-fill); color: var(--acc-ink); }
+  .cp-live { font-size: 19px; line-height: 1.4; font-weight: 500; color: var(--fg); text-align: center; padding: 0 6px; }
+  .cp-live i { font-style: normal; color: var(--fg-3); }
+  .cp-hint { font-size: 12.5px; color: var(--fg-3); text-align: center; }
+  .cp-think { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg-3); }
+  .cp-think .dots { display: inline-flex; gap: 3px; }
+  .cp-think .dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--acc); opacity: 0.5; }
+  .cp-think .dots i:first-child { opacity: 1; }
+  .cp-orb { width: 168px; height: 168px; border-radius: 50%; align-self: center; margin-top: 36px; background: radial-gradient(circle at 40% 35%, color-mix(in srgb, var(--acc) 70%, #fff), var(--acc-fill) 55%, color-mix(in srgb, var(--acc-fill) 60%, var(--bg)) 100%); box-shadow: 0 0 0 14px var(--acc-soft), 0 30px 80px -20px color-mix(in srgb, var(--acc) 60%, transparent); }
+  .cp-pinned { border-radius: 14px; border: 1px solid var(--acc-line); background: var(--acc-soft); padding: 11px 13px; display: flex; flex-direction: column; gap: 6px; font-size: 13.5px; line-height: 1.45; color: var(--fg); }
+  .cp-pinned .h { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--fg-3); }
+  .cp-pinned .h .ic { width: 14px; height: 14px; color: var(--acc); }
+  .cp-a a, .cp-lk { color: var(--acc); font-weight: 500; text-decoration: underline; text-decoration-color: var(--acc-line); text-underline-offset: 3px; }
+  .cp-spot { position: absolute; inset: 0; z-index: 2; background: rgba(10, 14, 22, 0.45); -webkit-backdrop-filter: blur(26px); backdrop-filter: blur(26px); padding: 64px 14px 0; display: flex; flex-direction: column; gap: 12px; font-family: var(--ios); color: #fff; }
+  .cp-spot .fld { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.2); font-size: 17px; }
+  .cp-spot .fld .ic { width: 18px; height: 18px; opacity: 0.75; }
+  .cp-spot .grp { border-radius: 16px; background: rgba(255, 255, 255, 0.16); padding: 4px 0; }
+  .cp-spot .grp .r { display: flex; align-items: center; gap: 12px; padding: 9px 14px; font-size: 15.5px; }
+  .cp-spot .grp .r .d { font-size: 12.5px; opacity: 0.72; }
+  .cp-spot .lb { font: 600 13px var(--ios); opacity: 0.8; padding: 0 6px; }
+  .cp-sym-sug { position: absolute; left: 0; right: 0; bottom: 82px; z-index: 5; padding: 10px 16px; display: flex; gap: 8px; overflow: hidden; background: linear-gradient(to top, var(--bg) 60%, transparent); }
+  .cp-sym-sug .cp-chip { color: var(--fg); }
+  .cp-sym-sug .cp-chip .ic { width: 14px; height: 14px; color: var(--acc); margin-right: 6px; }
+  .cp-tg { display: flex; align-items: center; gap: 12px; font-size: 14px; }
+  .cp-tg .grow { flex: 1; min-width: 0; }
+  .cp-tg .d { font-size: 12.5px; color: var(--fg-3); }
+</style>
+</head>
+<body data-title="Copilot" data-desc="Asking Copilot from the phone, by typing or by voice, and how its answers, charts and proposed actions fit on a small screen when there's no Copilot tab.">
+
+<!-- ===================================================== 1. Asking from the phone -->
+<section class="ax-surface" id="cp-ask"
+  data-surface="copilot/ask"
+  data-area="Copilot"
+  data-title="Asking from the phone"
+  data-why="The phone tabs are Home, Sessions, Markets, Activity and Account, so Copilot has no tab of its own. These are the ways in, shown on a Tuesday at 10:42 with Recession Radar rebalancing at 15:50.">
+
+  <!-- A -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="A button in every header, a half sheet with context"
+    data-note="Recommended. Every screen has the Copilot button in the same place in its header. It raises a half sheet over the screen you're on, with that screen's subject already attached as a chip you can remove, and three questions that fit it. The figures stay visible above the sheet while you read. It matches the web pick (copilot/phone B) and reuses the streaming, Markdown and history code in the current Copilot tab. It costs one header slot on every screen, and the suggested questions need a fixed set per screen type.">
+    <div data-frame="phone" data-caption="Recession Radar, button in the header">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span>Recession Radar</span><span class="m-ic cp-fab ring"><span data-icon="copilot"></span></span></div>
+      <div class="m-body">
+        <div class="row"><span class="pill paper">Paper</span><span class="st run">Running since Jun 2</span></div>
+        <div><div class="big">$31,904.20</div><div class="mono gain sm" style="margin-top:4px">+12.4% since Jun 2 · +0.62% today</div></div>
+        <div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.008" data-h="130" data-mark></div>
+        <div class="m-card col" style="gap:8px">
+          <div class="row"><b>Rebalances at 15:50 ET</b><span class="sp"></span><span class="mono xs dim">in 5h 08m</span></div>
+          <div class="row gap-6 sm"><span class="sym" style="width:34px">TLT</span><div class="meter" style="flex:1"><i style="width:58.2%"></i></div><span class="mono xs dim">58.2 → 60%</span></div>
+          <div class="row gap-6 sm"><span class="sym" style="width:34px">GLD</span><div class="meter" style="flex:1"><i style="width:41.8%"></i></div><span class="mono xs dim">41.8 → 40%</span></div>
+        </div>
+        <div class="m-sec">Today</div>
+        <div class="m-card rows">
+          <div class="m-row"><span class="mono xs dim" style="width:40px">10:31</span><div style="flex:1;min-width:0">Bought 42 TLT at $90.41</div></div>
+          <div class="m-row"><span class="mono xs dim" style="width:40px">10:31</span><div style="flex:1;min-width:0">Sold 9 GLD at $247.86</div></div>
+        </div>
+      </div>
+      <nav data-tabs="sessions"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Sheet opens with the session attached">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span>Recession Radar</span><span class="m-ic cp-fab ring"><span data-icon="copilot"></span></span></div>
+      <div class="m-body">
+        <div><div class="big">$31,904.20</div><div class="mono gain sm" style="margin-top:4px">+12.4% since Jun 2 · +0.62% today</div></div>
+      </div>
+      <div class="scrim" style="background:color-mix(in srgb, var(--scrim) 50%, transparent)"></div>
+      <div class="io-sheet tall"><div data-page-art="copilot" data-top="0.04" data-band="0.5" style="--pa-h:170px;--pa-solid:35%"></div><div class="grab"></div><div class="sh">Ask Copilot<span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2">
+          <div class="cp-row"><span class="cp-ctx"><span data-icon="sessions"></span>Recession Radar<span class="x">×</span></span><span class="cp-ctx off">+ Add</span></div>
+          <div class="cp-send"><div class="m-field focus"><span>What will it do at 15:50?</span></div><span class="go"><span data-icon="arrow-right"></span></span></div>
+          <div class="cp-row"><span class="cp-chip">Against its backtest</span><span class="cp-chip">Why TLT 60%</span><span class="cp-chip">Today's fills</span></div>
+        </div>
+      </div>
+      <div data-kb="15:50|today|the"></div>
+    </div>
+    <div data-frame="phone" data-caption="Sent: the answer under the figures">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span>Recession Radar</span><span class="m-ic cp-fab ring"><span data-icon="copilot"></span></span></div>
+      <div class="m-body">
+        <div><div class="big">$31,904.20</div><div class="mono gain sm" style="margin-top:4px">+12.4% since Jun 2 · +0.62% today</div></div>
+        <div class="m-card col" style="gap:8px">
+          <div class="row"><b>Rebalances at 15:50 ET</b><span class="sp"></span><span class="mono xs dim">in 5h 08m</span></div>
+          <div class="row gap-6 sm"><span class="sym" style="width:34px">TLT</span><div class="meter" style="flex:1"><i style="width:58.2%"></i></div><span class="mono xs dim">58.2 → 60%</span></div>
+          <div class="row gap-6 sm"><span class="sym" style="width:34px">GLD</span><div class="meter" style="flex:1"><i style="width:41.8%"></i></div><span class="mono xs dim">41.8 → 40%</span></div>
+        </div>
+      </div>
+      <div class="io-sheet half"><div class="grab"></div><div class="sh"><span class="cp-ctx"><span data-icon="sessions"></span>Recession Radar</span><span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2">
+          <div class="cp-q">What will it do at 15:50?</div>
+          <div class="cp-who"><span data-icon="copilot"></span>Copilot</div>
+          <div class="cp-a clamp">At 15:50 it moves back to its targets, <b>TLT 60%</b> and <b>GLD 40%</b>. At today's prices that means buying about <span class="mono">6 TLT</span> and selling about <span class="mono">2 GLD</span>. The exact orders are worked out from prices at 15:50, so the counts can change by a share either way.</div>
+          <span class="cp-more">Read more</span>
+          <div class="cp-row"><span class="cp-chip">What if TLT falls first?</span><span class="cp-chip">Skip this one</span></div>
+          <div class="cp-send"><div class="m-field"><span class="ph">Ask a follow-up</span></div><span class="mc"><span data-icon="mic"></span></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="ax-opt" data-opt="B" data-name="A floating ask field on every screen"
+    data-note="A field floats above the tab bar on every screen, so asking is always one tap and the prompt says what it will be about. Tapping it opens a full-screen composer and the answer takes the whole screen. It's the most visible way in, and new users find it without being told. It covers about 70px of every screen, competes with the tab bar for the thumb, and the full-screen answer hides the figures the question was about.">
+    <div data-frame="phone" data-caption="Home with the field">
+      <div class="m-top"><span class="t">Home</span><span class="sp"></span><span class="m-ic"><span data-icon="search"></span></span></div>
+      <div class="m-body">
+        <div><div class="lbl">Total equity · 2 accounts</div><div class="big" style="margin-top:6px;font-size:32px">$128,406.12</div><div class="row gap-6" style="margin-top:8px"><span class="chg gain">+$612.40</span><span class="chg gain">+0.48%</span><span class="sm dim">today</span></div></div>
+        <div data-chart="area" data-seed="42" data-ret="0.058" data-vol="0.005" data-h="96" data-mark></div>
+        <div class="m-sec">Sessions</div>
+        <div class="m-card" style="padding:0 16px">
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">All-Weather Portfolio</div><div class="d">Live · running</div></div><span data-chart="spark" data-seed="7" data-ret="0.068" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$48,210.55</div><div class="mono xs gain">+0.31%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">Recession Radar</div><div class="d">Paper · rebalances 15:50</div></div><span data-chart="spark" data-seed="19" data-ret="0.124" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$31,904.20</div><div class="mono xs gain">+0.62%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm" style="color:var(--risk)">Momentum Sectors</div><div class="d">Paper · frozen</div></div><span data-chart="spark" data-seed="33" data-ret="-0.021" data-vol="0.025" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$22,118.07</div><div class="mono xs loss">−0.18%</div></div></div>
+        </div>
+      </div>
+      <div class="m-ask" style="bottom:96px"><span data-icon="copilot" class="cp"></span>Ask about your account<span class="go"><span data-icon="mic"></span></span></div>
+      <nav data-tabs="home" data-dot="activity"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Full-screen composer">
+      <div class="m-nav"><span class="back" style="color:var(--fg-2)">Cancel</span><span>Ask Copilot</span><span style="width:52px"></span></div>
+      <div class="m-body">
+        <div class="cp-row"><span class="cp-ctx"><span data-icon="home"></span>Your account</span></div>
+        <div class="cp-send"><div class="m-field focus"><span>Why is Momentum Sectors frozen</span></div><span class="go"><span data-icon="arrow-right"></span></span></div>
+        <div class="lbl" style="margin-top:4px">Recent</div>
+        <div class="cp-sug"><span data-icon="history"></span>How has Recession Radar done against its backtest?</div>
+        <div class="cp-sug"><span data-icon="history"></span>Which sessions hold GLD?</div>
+      </div>
+      <div data-kb="frozen|freeze|and"></div>
+    </div>
+    <div data-frame="phone" data-caption="The answer takes the screen">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Home</span><span>Copilot</span><span class="m-ic"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="cp-q">Why is Momentum Sectors frozen?</div>
+        <div class="cp-who"><span data-icon="copilot"></span>Copilot · looked at the 09:31 check</div>
+        <div class="cp-a">Alpaca's paper account holds <b class="mono">43 SMH</b> and the ledger records <b class="mono">31</b>. Since the 09:31 check found the difference, new orders for Momentum Sectors wait until it's resolved.</div>
+        <div class="cp-a">The usual causes are an order placed in Alpaca directly or a fill the ledger didn't record. The review screen shows both counts and lets you accept Alpaca's number or keep the ledger's.</div>
+        <span class="m-btn" style="margin-top:4px">Review the difference</span>
+      </div>
+      <div class="m-ask"><span data-icon="copilot" class="cp"></span>Ask a follow-up<span class="go"><span data-icon="arrow-right"></span></span></div>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="ax-opt" data-opt="C" data-name="Long-press a session or symbol"
+    data-note="Press and hold any session row or symbol and the menu offers Ask Copilot, with the question already written from what's on the row. For a frozen session it asks why and what to do; for a symbol it asks how it moved today and who holds it. It's fast once known and adds nothing to the screen. Nobody finds a long-press on their own, so it can only be a shortcut beside A or B, and prefilled questions need wording per kind of row.">
+    <div data-frame="phone" data-caption="Hold Momentum Sectors">
+      <div class="m-top"><span class="t">Sessions</span></div>
+      <div class="m-body">
+        <div class="m-card" style="padding:0 16px">
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">All-Weather Portfolio</div><div class="d">Live · next Dec 1</div></div><span data-chart="spark" data-seed="7" data-ret="0.068" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$48,210.55</div><div class="mono xs gain">+0.31%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">Recession Radar</div><div class="d">Paper · rebalances 15:50</div></div><span data-chart="spark" data-seed="19" data-ret="0.124" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$31,904.20</div><div class="mono xs gain">+0.62%</div></div></div>
+        </div>
+      </div>
+      <nav data-tabs="sessions" data-dot="sessions"></nav>
+      <div class="io-blur"></div>
+      <div class="io-front" style="top:250px">
+        <div class="m-card" style="padding:0 16px;border-color:var(--risk-line)">
+          <div class="m-lrow"><div style="min-width:0"><div class="nm" style="color:var(--risk)">Momentum Sectors</div><div class="d">Paper · frozen since 09:31</div></div><span data-chart="spark" data-seed="33" data-ret="-0.021" data-vol="0.025" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$22,118.07</div><div class="mono xs loss">−0.18%</div></div></div>
+        </div>
+      </div>
+      <div class="io-ctx" style="top:330px;left:20px;width:270px">
+        <div><span>Ask Copilot why it's frozen</span><span data-icon="copilot" style="color:var(--acc)"></span></div>
+        <div><span>Review the difference</span><span data-icon="frozen"></span></div>
+        <div><span>Pause</span><span data-icon="pause"></span></div>
+        <div class="gap"></div>
+        <div><span>Open on the web</span><span data-icon="laptop"></span></div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Sheet with the question written">
+      <div class="m-top"><span class="t">Sessions</span></div>
+      <div class="m-body">
+        <div class="m-card" style="padding:0 16px">
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">All-Weather Portfolio</div><div class="d">Live · next Dec 1</div></div><span data-chart="spark" data-seed="7" data-ret="0.068" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$48,210.55</div><div class="mono xs gain">+0.31%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm" style="color:var(--risk)">Momentum Sectors</div><div class="d">Paper · frozen</div></div><span data-chart="spark" data-seed="33" data-ret="-0.021" data-vol="0.025" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$22,118.07</div><div class="mono xs loss">−0.18%</div></div></div>
+        </div>
+      </div>
+      <div class="scrim" style="background:color-mix(in srgb, var(--scrim) 50%, transparent)"></div>
+      <div class="io-sheet half"><div class="grab"></div><div class="sh"><span class="cp-ctx"><span data-icon="sessions"></span>Momentum Sectors</span><span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2">
+          <div class="cp-q">Why is Momentum Sectors frozen, and what should I do?</div>
+          <div class="cp-think"><span class="dots"><i></i><i></i><i></i></span>Reading the 09:31 check and both SMH counts</div>
+          <div class="cp-a clamp">Alpaca's paper account holds <b class="mono">43 SMH</b> and the ledger <b class="mono">31</b>, so new orders for this session wait until the 12 shares are accounted for.</div>
+          <div class="cp-send" style="margin-top:auto"><div class="m-field"><span class="ph">Ask a follow-up</span></div><span class="mc"><span data-icon="mic"></span></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- D -->
+  <div class="ax-opt" data-opt="D" data-name="Siri, Spotlight and the Action button"
+    data-note="Copilot is offered to the system as an App Intent, so Ask LlamaTrade appears in Spotlight, Siri and the Shortcuts list, and can be put on the Action button. Each one opens the app straight into the sheet over Home, ready to type or already listening. It's quick when the app isn't open. It needs a native App Intents extension built through an Expo config plugin, which the app doesn't have, the Action button only exists on iPhone 15 Pro and later, and answers still open in the app because money figures shouldn't be spoken by Siri on the lock screen.">
+    <div data-frame="phone" data-statusbar="light" data-caption="Spotlight: Ask LlamaTrade">
+      <div class="io-homescr">
+        <div class="io-wall"></div>
+        <div class="io-grid">
+          <div class="io-app"><i data-icon="mail"></i>Mail</div><div class="io-app"><i data-icon="calendar"></i>Calendar</div><div class="io-app"><span data-appicon></span>LlamaTrade</div><div class="io-app"><i data-icon="clock"></i>Clock</div>
+        </div>
+      </div>
+      <div class="cp-spot">
+        <div class="fld"><span data-icon="search"></span>ask llamatrade</div>
+        <div class="lb">Shortcuts</div>
+        <div class="grp">
+          <div class="r"><span data-appicon class="sm"></span><div><div>Ask LlamaTrade</div><div class="d">Opens Copilot over Home</div></div></div>
+          <div class="r"><span data-appicon class="sm"></span><div><div>Ask LlamaTrade by voice</div><div class="d">Opens Copilot and starts listening</div></div></div>
+        </div>
+        <div class="lb">Apps</div>
+        <div class="grp"><div class="r"><span data-appicon class="sm"></span><div>LlamaTrade</div></div></div>
+      </div>
+      <div data-kb="llamatrade|LlamaTrade|ask"></div>
+    </div>
+    <div data-frame="phone" data-caption="Opens in the sheet, listening">
+      <div class="m-top"><span class="t">Home</span><span class="sp"></span><span class="m-ic cp-fab ring"><span data-icon="copilot"></span></span></div>
+      <div class="m-body">
+        <div><div class="lbl">Total equity · 2 accounts</div><div class="big" style="margin-top:6px;font-size:32px">$128,406.12</div><div class="row gap-6" style="margin-top:8px"><span class="chg gain">+$612.40</span><span class="chg gain">+0.48%</span><span class="sm dim">today</span></div></div>
+        <div data-chart="area" data-seed="42" data-ret="0.058" data-vol="0.005" data-h="96" data-mark></div>
+      </div>
+      <nav data-tabs="home"></nav>
+      <div class="scrim" style="background:color-mix(in srgb, var(--scrim) 50%, transparent)"></div>
+      <div class="io-sheet half"><div class="grab"></div><div class="sh">Listening<span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2" style="gap:18px">
+          <div class="cp-live">How is the account <i>doing today</i></div>
+          <div data-wave="12"></div>
+          <div class="cp-mic on"><span data-icon="mic"></span></div>
+          <div class="cp-hint">Opened from the Action button. Tap to stop.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- E -->
+  <div class="ax-opt" data-opt="E" data-name="Suggested questions on each screen"
+    data-note="Each screen shows two or three questions that fit what's on it, in a row just above the tabs; tapping one sends it and the answer opens in the half sheet with no typing. On TLT that's why it moved today and who holds it. It teaches what Copilot can answer and suits a quick check with one hand. The row takes height on every screen, the same suggestions become wallpaper after a week, and someone with a different question still needs A's button.">
+    <div data-frame="phone" data-caption="TLT with suggestions">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Markets</span><span class="mono">TLT</span><span class="m-ic"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div><div class="sm dim">iShares 20+ Year Treasury Bond ETF</div><div class="row base" style="margin-top:6px"><span class="big">90.41</span><span class="chg loss">−0.20 · −0.22%</span></div></div>
+        <div class="seg mono round" style="align-self:flex-start"><span class="on">1D</span><span>5D</span><span>1M</span><span>1Y</span></div>
+        <div data-chart="line" data-seed="61" data-ret="-0.0022" data-vol="0.0007" data-h="150" data-marks="0.42" data-color="loss"></div>
+        <div class="m-sec">In your sessions</div>
+        <div class="m-card rows">
+          <div class="m-row"><div style="flex:1;min-width:0"><div>Recession Radar</div><div class="d">Paper · 58.2% of the sleeve, target 60%</div></div><span data-icon="chevron-right" class="dim"></span></div>
+        </div>
+      </div>
+      <div class="cp-sym-sug"><span class="cp-chip"><span data-icon="copilot"></span>Why is TLT down today?</span><span class="cp-chip">Who holds it?</span></div>
+      <nav data-tabs="markets"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Tapped: answer in the sheet">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Markets</span><span class="mono">TLT</span><span class="m-ic"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div><div class="sm dim">iShares 20+ Year Treasury Bond ETF</div><div class="row base" style="margin-top:6px"><span class="big">90.41</span><span class="chg loss">−0.20 · −0.22%</span></div></div>
+        <div data-chart="line" data-seed="61" data-ret="-0.0022" data-vol="0.0007" data-h="150" data-marks="0.42" data-color="loss"></div>
+      </div>
+      <div class="io-sheet half"><div class="grab"></div><div class="sh"><span class="cp-ctx"><span data-icon="markets"></span>TLT</span><span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2">
+          <div class="cp-q">Why is TLT down today?</div>
+          <div class="cp-a">TLT is down <b class="mono">0.22%</b> at <span class="mono">$90.41</span>. I can see prices and your sessions but not news, so I can't tell you why the market moved. It opened at <span class="mono">$90.61</span> and Recession Radar bought 42 at <span class="mono">$90.41</span> at 10:31.</div>
+          <div class="cp-row"><span class="cp-chip">Does this change 15:50?</span><span class="cp-chip">TLT this month</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================== 2. Voice input -->
+<section class="ax-surface" id="cp-voice"
+  data-surface="copilot/voice"
+  data-area="Copilot"
+  data-title="Voice input"
+  data-why="Asking out loud while walking or with one hand busy. Each option goes from listening to the words you said to the answer, and decides whether the answer is ever spoken, given that it's about your money.">
+
+  <!-- A -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="Hold to talk, check the words, then send"
+    data-note="Recommended. Holding the mic in the sheet shows the words as they're heard; letting go puts them in the field, where you can fix a misheard symbol before sending. Answers arrive as text and are never read aloud, so no balance is spoken in a café. Checking the words matters because symbols are easy to mishear (TLT, GLD). It needs expo-speech-recognition or a small native module using Apple's on-device recognizer, plus microphone and speech recognition permissions the app doesn't ask for today.">
+    <div data-frame="phone" data-caption="Holding the mic">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span>Recession Radar</span><span class="m-ic cp-fab ring"><span data-icon="copilot"></span></span></div>
+      <div class="m-body">
+        <div><div class="big">$31,904.20</div><div class="mono gain sm" style="margin-top:4px">+12.4% since Jun 2 · +0.62% today</div></div>
+        <div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.008" data-h="120" data-mark></div>
+      </div>
+      <div class="io-sheet half"><div class="grab"></div><div class="sh"><span class="cp-ctx"><span data-icon="sessions"></span>Recession Radar</span><span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2" style="gap:16px">
+          <div class="cp-live">How has it done against <i>its back</i></div>
+          <div data-wave="21"></div>
+          <div class="cp-mic on"><span data-icon="mic"></span></div>
+          <div class="cp-hint">Release to check the words before sending</div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Released: fix the words, then send">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span>Recession Radar</span><span class="m-ic cp-fab ring"><span data-icon="copilot"></span></span></div>
+      <div class="m-body">
+        <div><div class="big">$31,904.20</div><div class="mono gain sm" style="margin-top:4px">+12.4% since Jun 2 · +0.62% today</div></div>
+        <div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.008" data-h="120" data-mark></div>
+      </div>
+      <div class="io-sheet half"><div class="grab"></div><div class="sh"><span class="cp-ctx"><span data-icon="sessions"></span>Recession Radar</span><span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2">
+          <div class="m-field focus" style="height:auto;min-height:74px;align-items:flex-start;padding:12px 16px;line-height:1.4">How has it done against its backtest since June?</div>
+          <div class="row"><span class="sm dim">Heard on this iPhone. Nothing is recorded.</span></div>
+          <div class="row gap-6"><span class="m-btn sec" style="flex:1;height:44px"><span data-icon="mic"></span>Again</span><span class="m-btn" style="flex:1;height:44px">Send<span data-icon="arrow-right"></span></span></div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="The answer arrives as text">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span>Recession Radar</span><span class="m-ic cp-fab ring"><span data-icon="copilot"></span></span></div>
+      <div class="m-body">
+        <div><div class="big">$31,904.20</div><div class="mono gain sm" style="margin-top:4px">+12.4% since Jun 2 · +0.62% today</div></div>
+      </div>
+      <div class="io-sheet tall"><div class="grab"></div><div class="sh"><span class="cp-ctx"><span data-icon="sessions"></span>Recession Radar</span><span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2">
+          <div class="cp-q">How has it done against its backtest since June?</div>
+          <div class="cp-a clamp">Since Jun 2 the paper session is up <b class="mono">12.4%</b>. A backtest of the same version over the same dates gained <b class="mono">13.1%</b> in the backtest. Most of the gap comes from fills landing a few minutes after the prices the backtest used, and from fees.</div>
+          <div class="cp-chart">
+            <div class="hd"><b>Since Jun 2</b><span class="sp"></span><span class="mono">+12.4% · +13.1%</span></div>
+            <div data-chart="line" data-seed="19" data-ret="0.124" data-vol="0.007" data-bench="0.131" data-h="74"></div>
+            <div class="cp-lg"><span><i class="s"></i>Paper session</span><span><i class="b"></i>Backtest, same dates</span></div>
+          </div>
+          <div class="cp-send"><div class="m-field"><span class="ph">Ask a follow-up</span></div><span class="mc"><span data-icon="mic"></span></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="ax-opt" data-opt="B" data-name="The keyboard's mic only"
+    data-note="No mic of our own: the field takes iOS dictation from the keyboard's mic key, which works today with no code and no new permission. The words appear in the field, so they can be checked before sending. It's the cheapest option and behaves like every other app. It's less obvious that you can speak, it needs the keyboard open first, and dictation stops on its own after a pause.">
+    <div data-frame="phone" data-caption="Keyboard open, tap its mic">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span>Recession Radar</span><span class="m-ic cp-fab ring"><span data-icon="copilot"></span></span></div>
+      <div class="m-body"><div><div class="big">$31,904.20</div><div class="mono gain sm" style="margin-top:4px">+0.62% today</div></div></div>
+      <div class="io-sheet tall"><div class="grab"></div><div class="sh"><span class="cp-ctx"><span data-icon="sessions"></span>Recession Radar</span><span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2">
+          <div class="cp-send"><div class="m-field focus"><span class="ph">Ask about Recession Radar</span></div><span class="go off"><span data-icon="arrow-right"></span></span></div>
+          <div class="sm dim">Tap the mic on the keyboard to speak instead.</div>
+        </div>
+      </div>
+      <div data-kb="I|The|What"></div>
+    </div>
+    <div data-frame="phone" data-caption="iOS dictation fills the field">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span>Recession Radar</span><span class="m-ic cp-fab ring"><span data-icon="copilot"></span></span></div>
+      <div class="m-body"><div><div class="big">$31,904.20</div><div class="mono gain sm" style="margin-top:4px">+0.62% today</div></div></div>
+      <div class="io-sheet tall"><div class="grab"></div><div class="sh"><span class="cp-ctx"><span data-icon="sessions"></span>Recession Radar</span><span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2">
+          <div class="cp-send"><div class="m-field focus"><span>What will it do at 3:50</span></div><span class="go"><span data-icon="arrow-right"></span></span></div>
+          <div class="sm dim">Dictation writes 3:50 rather than 15:50 ET. Copilot reads both.</div>
+        </div>
+      </div>
+      <div class="io-kb" style="height:320px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px">
+        <div data-wave="33" class="ink" style="width:180px"></div>
+        <span class="sm dim">Dictation</span>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Sent, answered in text">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span>Recession Radar</span><span class="m-ic cp-fab ring"><span data-icon="copilot"></span></span></div>
+      <div class="m-body">
+        <div><div class="big">$31,904.20</div><div class="mono gain sm" style="margin-top:4px">+0.62% today</div></div>
+        <div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.008" data-h="120" data-mark></div>
+      </div>
+      <div class="io-sheet half"><div class="grab"></div><div class="sh"><span class="cp-ctx"><span data-icon="sessions"></span>Recession Radar</span><span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2">
+          <div class="cp-q">What will it do at 3:50</div>
+          <div class="cp-a clamp">At 15:50 ET it moves back to <b>TLT 60%</b> and <b>GLD 40%</b>: about <span class="mono">6 TLT</span> bought and <span class="mono">2 GLD</span> sold at today's prices. The exact orders use prices at 15:50.</div>
+          <span class="cp-more">Read more</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="ax-opt" data-opt="C" data-name="Listening in the Dynamic Island"
+    data-note="Tapping the mic closes the sheet and the island shows that Copilot is listening, so the chart stays fully in view while you speak; the answer comes back as the half sheet. It's the least in the way. iOS hides an app's own Live Activity in the island while that app is open, so the island here would have to be drawn by the app as an imitation, which Apple's guidelines discourage; the real version only works after leaving the app, and needs ActivityKit, a widget extension and push tokens for updates.">
+    <div data-frame="phone" data-caption="Listening, chart in view">
+      <div class="io-di cmp"><span class="l"><span data-appicon class="xs"></span><span style="font-family:var(--sans);font-weight:500">Listening</span></span><span class="r"><span data-wave="5" data-n="7" style="width:38px;height:18px"></span></span></div>
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Markets</span><span class="mono">TLT</span><span class="m-ic cp-fab"><span data-icon="mic"></span></span></div>
+      <div class="m-body">
+        <div><div class="sm dim">iShares 20+ Year Treasury Bond ETF</div><div class="row base" style="margin-top:6px"><span class="big">90.41</span><span class="chg loss">−0.20 · −0.22%</span></div></div>
+        <div class="seg mono round" style="align-self:flex-start"><span class="on">1D</span><span>5D</span><span>1M</span><span>1Y</span></div>
+        <div data-chart="line" data-seed="61" data-ret="-0.0022" data-vol="0.0007" data-h="200" data-marks="0.42" data-color="loss"></div>
+        <div class="m-sec">In your sessions</div>
+        <div class="m-card rows"><div class="m-row"><div style="flex:1;min-width:0"><div>Recession Radar</div><div class="d">Paper · 58.2% of the sleeve, target 60%</div></div></div></div>
+      </div>
+      <nav data-tabs="markets"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Island grows with the words">
+      <div class="io-di exp" style="min-height:0">
+        <div class="row" style="gap:8px"><span data-appicon class="xs"></span><span class="sm" style="color:var(--fg-3)">Copilot is listening</span><span class="sp"></span><span class="sm" style="color:var(--fg-3)">Tap to stop</span></div>
+        <div style="font-size:17px;line-height:1.4;margin-top:10px;font-weight:500">Why is TLT down today, and does that change the rebalance?</div>
+        <div data-wave="9" style="height:26px;margin-top:10px"></div>
+      </div>
+      <div class="m-body" style="padding-top:150px">
+        <div data-chart="line" data-seed="61" data-ret="-0.0022" data-vol="0.0007" data-h="200" data-marks="0.42" data-color="loss"></div>
+        <div class="m-card rows"><div class="m-row"><div style="flex:1;min-width:0"><div>Recession Radar</div><div class="d">Paper · 58.2% of the sleeve, target 60%</div></div></div></div>
+      </div>
+      <nav data-tabs="markets"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Answer in the half sheet">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Markets</span><span class="mono">TLT</span><span class="m-ic cp-fab"><span data-icon="mic"></span></span></div>
+      <div class="m-body">
+        <div><div class="row base"><span class="big">90.41</span><span class="chg loss">−0.20 · −0.22%</span></div></div>
+        <div data-chart="line" data-seed="61" data-ret="-0.0022" data-vol="0.0007" data-h="150" data-marks="0.42" data-color="loss"></div>
+      </div>
+      <div class="io-sheet half"><div class="grab"></div><div class="sh"><span class="cp-ctx"><span data-icon="markets"></span>TLT</span><span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2">
+          <div class="cp-q">Why is TLT down today, and does that change the rebalance?</div>
+          <div class="cp-a clamp">I don't have news, so I can't say why it moved. It doesn't change what Recession Radar does: at 15:50 it still returns to TLT 60% and GLD 40%. A lower price only means it buys a few more shares for the same amount.</div>
+          <span class="cp-more">Read more</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- D -->
+  <div class="ax-opt" data-opt="D" data-name="Hands-free, answers read aloud"
+    data-note="A conversation mode for when you can't look: you speak, Copilot answers out loud, and it listens again. Figures are only spoken with headphones connected; through the speaker it says that the numbers are on screen. It's the only option that works without looking, for example while driving. Reading balances aloud is a privacy risk, which is why the headphone rule is on by default, and it adds a text-to-speech module (expo-speech, not installed) plus speech recognition and an audio session that can run with the screen locked.">
+    <div data-frame="phone" data-caption="Conversation mode, listening">
+      <div class="m-nav"><span class="back" style="color:var(--fg-2)">Done</span><span>Talk to Copilot</span><span class="m-ic"><span data-icon="settings"></span></span></div>
+      <div class="m-body" style="align-items:stretch">
+        <div class="cp-orb"></div>
+        <div class="cp-live" style="margin-top:38px">What happens at <i>15:50</i></div>
+        <div class="cp-hint">Listening. Pause to send.</div>
+        <div class="callout" style="margin-top:auto;font-size:13.5px"><span data-icon="info"></span><div>Figures are read aloud only with headphones connected. AirPods are connected.</div></div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Speaking, with the words on screen">
+      <div class="m-nav"><span class="back" style="color:var(--fg-2)">Done</span><span>Talk to Copilot</span><span class="m-ic"><span data-icon="settings"></span></span></div>
+      <div class="m-body">
+        <div class="cp-q">What happens at 15:50?</div>
+        <div class="cp-who"><span data-icon="waveform"></span>Speaking</div>
+        <div class="cp-a">Recession Radar moves back to <b>60% TLT</b> and <b>40% GLD</b>. At today's prices that's about <span class="mono">6 TLT</span> bought and <span class="mono">2 GLD</span> sold.</div>
+        <div data-wave="44" style="margin-top:auto"></div>
+        <div class="row" style="justify-content:center;gap:12px"><span class="m-btn sec" style="height:44px;padding:0 18px"><span data-icon="pause"></span>Stop</span><span class="m-btn sec" style="height:44px;padding:0 18px"><span data-icon="keyboard"></span>Type</span></div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Voice settings">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Account</span><span>Copilot voice</span><span style="width:60px"></span></div>
+      <div class="m-body">
+        <div class="io-list">
+          <div><span class="grow">Read answers aloud</span><span class="io-tg on"></span></div>
+          <div><div class="grow"><div>Speak figures</div><div class="d">Balances, prices and share counts</div></div><span class="v">With headphones</span><span data-icon="chevron-right" class="chev"></span></div>
+          <div><span class="grow">Keep listening after an answer</span><span class="io-tg on"></span></div>
+        </div>
+        <div class="io-foot">Through the speaker, Copilot reads the words and says the figures are on screen. Speech is recognised on this iPhone and nothing is recorded.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================== 3. Answers with charts -->
+<section class="ax-surface" id="cp-answers"
+  data-surface="copilot/answers"
+  data-area="Copilot"
+  data-title="Answers with charts"
+  data-why="What an answer looks like on a small screen: a few lines, a chart where a number needs one, what Copilot looked at, and any action it proposes, which never runs without your confirmation.">
+
+  <!-- A -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="Three lines and a chart, more on drag"
+    data-note="Recommended. In the half sheet an answer is three lines, one small chart where it helps (TLT today with the 10:31 fill marked) and follow-up chips. Dragging up shows the rest and what Copilot looked at, including what it couldn't see. A proposed action is a card with what it changes and two buttons; Pause asks for Face ID before anything is sent. It follows the web pick (copilot/phone B) and keeps the subject visible. It needs a chart artifact the phone can draw, a sources list from the agent and expo-local-authentication for Face ID, none of which the app has today.">
+    <div data-frame="phone" data-caption="Half sheet: three lines and a chart">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Markets</span><span class="mono">TLT</span><span class="m-ic cp-fab ring"><span data-icon="copilot"></span></span></div>
+      <div class="m-body">
+        <div><div class="sm dim">iShares 20+ Year Treasury Bond ETF</div><div class="row base" style="margin-top:6px"><span class="big">90.41</span><span class="chg loss">−0.20 · −0.22%</span></div></div>
+        <div data-chart="line" data-seed="61" data-ret="-0.0022" data-vol="0.0007" data-h="130" data-color="loss"></div>
+      </div>
+      <div class="io-sheet half" style="top:40%"><div class="grab"></div><div class="sh"><span class="cp-ctx"><span data-icon="markets"></span>TLT</span><span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2">
+          <div class="cp-a clamp">TLT is down <b class="mono">0.22%</b> at <span class="mono">$90.41</span>. I don't have news, so I can't say why. Recession Radar bought 42 at <span class="mono">$90.41</span> at 10:31, close to where it is now, and it rebalances to 60% at 15:50.</div>
+          <span class="cp-more">Read more</span>
+          <div class="cp-chart">
+            <div class="hd"><b>TLT today</b><span class="sp"></span><span class="mono">90.61 → 90.41</span></div>
+            <div data-chart="line" data-seed="61" data-ret="-0.0022" data-vol="0.0007" data-h="66" data-marks="0.42"></div>
+            <div class="cp-lg"><span><i class="f"></i>Bought 42 at 10:31</span></div>
+          </div>
+          <div class="cp-row"><span class="cp-chip">Does this change 15:50?</span><span class="cp-chip">TLT this month</span></div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Dragged up: the rest and its sources">
+      <div class="io-under">
+        <div style="height:100%;background:var(--bg)"></div>
+      </div>
+      <div class="io-sheet large"><div class="grab"></div><div class="sh"><span class="cp-ctx"><span data-icon="markets"></span>TLT</span><span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2">
+          <div class="cp-q">Why is TLT down today?</div>
+          <div class="cp-a">TLT is down <b class="mono">0.22%</b> at <span class="mono">$90.41</span>. I don't have news, so I can't say why. Recession Radar bought 42 at <span class="mono">$90.41</span> at 10:31, close to where it is now, and it rebalances to 60% at 15:50.</div>
+          <div class="cp-a">It opened at <span class="mono">$90.61</span> and has traded between <span class="mono">$90.18</span> and <span class="mono">$90.74</span>. A lower price at 15:50 means the rebalance buys a few more shares for the same amount, not a different mix.</div>
+          <div class="lbl">What I looked at</div>
+          <div class="cp-src">
+            <div><span data-icon="markets"></span>TLT prices today, Alpaca IEX feed</div>
+            <div><span data-icon="ledger"></span>Recession Radar fills and targets</div>
+            <div class="no"><span data-icon="x"></span>News and bond yields: not available to Copilot</div>
+          </div>
+          <div class="cp-send" style="margin-top:auto"><div class="m-field"><span class="ph">Ask a follow-up</span></div><span class="mc"><span data-icon="mic"></span></span></div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="A proposed action asks for Face ID">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span>Momentum Sectors</span><span class="m-ic cp-fab ring"><span data-icon="copilot"></span></span></div>
+      <div class="m-body"><div class="row"><span class="pill paper">Paper</span><span class="st frozen">Frozen since 09:31</span></div><div class="big">$22,118.07</div></div>
+      <div class="io-sheet tall"><div class="grab"></div><div class="sh"><span class="cp-ctx"><span data-icon="sessions"></span>Momentum Sectors</span><span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2">
+          <div class="cp-a">It's frozen already, so no new orders go out. If you'd like it to stay put while you look into the 12 SMH shares, pausing also skips its Nov 23 rebalance until you resume.</div>
+          <div class="cp-act">
+            <div class="row"><span class="pill acc">Proposed</span><span class="sp"></span><span class="xs dim">Nothing runs until you confirm</span></div>
+            <div class="t">Pause Momentum Sectors</div>
+            <div class="d">Keeps its holdings. Skips the Nov 23 rebalance. Resume any time from the session.</div>
+            <div class="bt"><span>Not now</span><span class="pri"><span data-icon="faceid"></span>Pause</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="scrim" style="z-index:39"></div>
+      <div class="io-faceid"><span data-icon="faceid"></span>Face ID</div>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="ax-opt" data-opt="B" data-name="Chart first"
+    data-note="When an answer is about a number over time, the chart leads and the words explain it underneath. Here the paper session against a backtest of the same version over the same dates, and tapping the chart opens it full screen with press-and-hold scrubbing. Comparisons read faster than in words. Answers without a natural chart look thin beside the ones with, the chart pushes the text below the fold of a half sheet, and every chart needs a chart artifact plus a backtest re-run over the session's dates.">
+    <div data-frame="phone" data-caption="The chart leads">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span>Recession Radar</span><span class="m-ic cp-fab ring"><span data-icon="copilot"></span></span></div>
+      <div class="m-body"><div><div class="big">$31,904.20</div><div class="mono gain sm" style="margin-top:4px">+12.4% since Jun 2</div></div></div>
+      <div class="io-sheet tall"><div class="grab"></div><div class="sh"><span class="cp-ctx"><span data-icon="sessions"></span>Recession Radar</span><span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2">
+          <div class="cp-q">How has it done against its backtest?</div>
+          <div class="cp-chart" style="padding:12px 12px 10px">
+            <div class="hd"><b>Since Jun 2</b><span class="sp"></span><span data-icon="expand" style="width:15px;height:15px;color:var(--fg-3)"></span></div>
+            <div class="row base" style="gap:14px"><span class="mono lg b gain">+12.4%</span><span class="mono sm dim">+13.1% in the backtest</span></div>
+            <div data-chart="line" data-seed="19" data-ret="0.124" data-vol="0.007" data-bench="0.131" data-h="120"></div>
+            <div class="cp-lg"><span><i class="s"></i>Paper session</span><span><i class="b"></i>Backtest, same dates</span></div>
+          </div>
+          <div class="cp-a clamp">The session trails its backtest by 0.7 points. Most of that is fills landing a few minutes after the prices the backtest used, plus fees.</div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Tapped: full screen, scrub to compare">
+      <div class="m-nav"><span class="back" style="color:var(--fg-2)">Close</span><span>Recession Radar</span><span class="m-ic"><span data-icon="share"></span></span></div>
+      <div class="m-body">
+        <div class="lbl">Sep 18</div>
+        <div class="row base" style="gap:16px"><div><div class="mono lg b">+6.9%</div><div class="xs dim">Paper session</div></div><div><div class="mono lg b dim">+7.4%</div><div class="xs dim">Backtest, same dates</div></div></div>
+        <div data-chart="line" data-seed="19" data-ret="0.124" data-vol="0.007" data-bench="0.131" data-h="300" data-scrub="0.64" data-axis="x" data-x="Jun 2,Jul,Aug,Sep,Oct,Nov 17"></div>
+        <div class="seg mono round" style="align-self:center"><span>1M</span><span>3M</span><span class="on">Since start</span></div>
+        <div class="callout" style="font-size:13.5px"><span data-icon="info"></span><div>Backtest figures come from a backtest of version 2 over Jun 2 to Nov 17. They are simulated, not traded.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="ax-opt" data-opt="C" data-name="Pin the answer to the screen"
+    data-note="An answer about the screen you're on can be pinned to it: close the sheet and a short card stays on Recession Radar until the event it describes has passed, here the 15:50 rebalance. It turns a one-off answer into a note where you'll look again. It's useful for questions about what will happen, and pointless for most others. Pinned answers can go stale when prices move, so each needs an expiry and a 'worked out at' time, and storing them per screen is new state to sync with the web.">
+    <div data-frame="phone" data-caption="Answer with Pin">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span>Recession Radar</span><span class="m-ic cp-fab ring"><span data-icon="copilot"></span></span></div>
+      <div class="m-body"><div><div class="big">$31,904.20</div><div class="mono gain sm" style="margin-top:4px">+0.62% today</div></div>
+        <div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.008" data-h="110" data-mark></div></div>
+      <div class="io-sheet half"><div class="grab"></div><div class="sh"><span class="cp-ctx"><span data-icon="sessions"></span>Recession Radar</span><span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2">
+          <div class="cp-q">What will it do at 15:50?</div>
+          <div class="cp-a clamp">It returns to <b>TLT 60%</b> and <b>GLD 40%</b>: about <span class="mono">6 TLT</span> bought and <span class="mono">2 GLD</span> sold at today's prices.</div>
+          <div class="cp-chart">
+            <div class="row gap-6 sm"><span class="sym" style="width:34px">TLT</span><div class="meter" style="flex:1"><i style="width:58.2%"></i></div><span class="mono xs dim">58.2 → 60%</span></div>
+            <div class="row gap-6 sm"><span class="sym" style="width:34px">GLD</span><div class="meter" style="flex:1"><i style="width:41.8%"></i></div><span class="mono xs dim">41.8 → 40%</span></div>
+          </div>
+          <div class="row gap-6"><span class="m-btn sec" style="flex:1;height:42px"><span data-icon="flag"></span>Pin to this session</span></div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Pinned until 15:50">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span>Recession Radar</span><span class="m-ic cp-fab ring"><span data-icon="copilot"></span></span></div>
+      <div class="m-body">
+        <div class="row"><span class="pill paper">Paper</span><span class="st run">Running since Jun 2</span></div>
+        <div><div class="big">$31,904.20</div><div class="mono gain sm" style="margin-top:4px">+12.4% since Jun 2 · +0.62% today</div></div>
+        <div class="cp-pinned">
+          <div class="h"><span data-icon="copilot"></span>Pinned answer · worked out at 10:42<span class="sp"></span><span data-icon="x"></span></div>
+          <div>At 15:50 it returns to TLT 60% and GLD 40%: about 6 TLT bought and 2 GLD sold at 10:42 prices.</div>
+        </div>
+        <div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.008" data-h="120" data-mark></div>
+        <div class="m-sec">Today</div>
+        <div class="m-card rows">
+          <div class="m-row"><span class="mono xs dim" style="width:40px">10:31</span><div style="flex:1;min-width:0">Bought 42 TLT at $90.41</div></div>
+          <div class="m-row"><span class="mono xs dim" style="width:40px">10:31</span><div style="flex:1;min-width:0">Sold 9 GLD at $247.86</div></div>
+        </div>
+      </div>
+      <nav data-tabs="sessions"></nav>
+    </div>
+  </div>
+
+  <!-- D -->
+  <div class="ax-opt" data-opt="D" data-name="Plain text, charts as links"
+    data-note="Answers stay text, as the Copilot tab draws them today, and anything worth a chart is a link to the screen that already has it: TLT opens Markets with the 10:31 fill highlighted. It needs no chart artifact and no new drawing code, and the linked screens always show live data. Every chart costs a trip away from the answer and back, and comparisons like paper against backtest have no screen to link to yet.">
+    <div data-frame="phone" data-caption="Text with links">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Home</span><span>Copilot</span><span class="m-ic"><span data-icon="history"></span></span></div>
+      <div class="m-body">
+        <div class="cp-q">Why is TLT down today?</div>
+        <div class="cp-who"><span data-icon="copilot"></span>Copilot</div>
+        <div class="cp-a"><a>TLT</a> is down <b class="mono">0.22%</b> at <span class="mono">$90.41</span>. I don't have news, so I can't say why it moved.</div>
+        <div class="cp-a"><a>Recession Radar</a> bought 42 at <span class="mono">$90.41</span> at 10:31 and rebalances to 60% at 15:50. A lower price then means it buys a few more shares for the same amount.</div>
+        <div class="cp-row" style="margin-top:4px"><span class="cp-chip">Does this change 15:50?</span><span class="cp-chip">Who holds TLT?</span></div>
+      </div>
+      <div class="m-ask"><span data-icon="copilot" class="cp"></span>Ask a follow-up<span class="go"><span data-icon="arrow-right"></span></span></div>
+    </div>
+    <div data-frame="phone" data-caption="TLT link: Markets, fill highlighted">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Copilot</span><span class="mono">TLT</span><span class="m-ic"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div><div class="sm dim">iShares 20+ Year Treasury Bond ETF</div><div class="row base" style="margin-top:6px"><span class="big">90.41</span><span class="chg loss">−0.20 · −0.22%</span></div></div>
+        <div class="seg mono round" style="align-self:flex-start"><span class="on">1D</span><span>5D</span><span>1M</span><span>1Y</span></div>
+        <div data-chart="line" data-seed="61" data-ret="-0.0022" data-vol="0.0007" data-h="190" data-marks="0.42" data-color="loss"></div>
+        <div class="callout acc" style="font-size:13.5px"><span data-icon="check2"></span><div><b>10:31</b> Recession Radar bought 42 at $90.41.</div></div>
+        <div class="m-sec">In your sessions</div>
+        <div class="m-card rows"><div class="m-row"><div style="flex:1;min-width:0"><div>Recession Radar</div><div class="d">Paper · 58.2% of the sleeve, target 60%</div></div><span data-icon="chevron-right" class="dim"></span></div></div>
+      </div>
+      <nav data-tabs="markets"></nav>
+    </div>
+  </div>
+</section>
+
+<script src="kit.js"></script>
+</body>
+</html>

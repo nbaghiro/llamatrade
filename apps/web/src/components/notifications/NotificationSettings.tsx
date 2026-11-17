@@ -246,7 +246,7 @@ function MatrixBox({
   );
 }
 
-function WebhookManager() {
+export function WebhookManager() {
   const webhooks = useNotificationsStore((s) => s.webhooks);
   const fetchWebhooks = useNotificationsStore((s) => s.fetchWebhooks);
   const createWebhook = useNotificationsStore((s) => s.createWebhook);
@@ -412,7 +412,7 @@ function WebhookManager() {
   );
 }
 
-function AlertManager() {
+export function AlertManager() {
   const alerts = useNotificationsStore((s) => s.alerts);
   const fetchAlerts = useNotificationsStore((s) => s.fetchAlerts);
   const createAlert = useNotificationsStore((s) => s.createAlert);

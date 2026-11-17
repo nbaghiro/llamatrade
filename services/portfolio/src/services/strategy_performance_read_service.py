@@ -15,7 +15,7 @@ sleeve.
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -368,10 +368,11 @@ class StrategyPerformanceReadService(LedgerReadBase):
     ) -> list[tuple[datetime, Decimal]]:
         """The sleeve's equity time series from its snapshots (oldest-first).
 
-        One point per ledger sequence, keeping the latest row written at that
-        sequence — the same last-write-wins collapse the account curve applies
-        per day. Repeats at one sequence are not curve movement, and counting
-        them inflates period returns, volatility and Sharpe.
+        One point per (ledger sequence, UTC day), keeping the latest row, which is
+        the snapshot table's own uniqueness key. Repeats at one sequence within a
+        day are re-marks, not curve movement, and counting them inflates period
+        returns, volatility and Sharpe; a new day re-marks open positions at new
+        prices, so it is a new point even when no event landed.
         """
         if sleeve_id is None:
             return []
@@ -387,13 +388,14 @@ class StrategyPerformanceReadService(LedgerReadBase):
         if end_time is not None:
             stmt = stmt.where(SleeveSnapshot.created_at <= end_time)
         rows = (await self.db.scalars(stmt)).all()
-        by_sequence: dict[int, tuple[datetime, Decimal]] = {}
+        by_key: dict[tuple[int, date], tuple[datetime, Decimal]] = {}
         for snap in rows:
             ts: datetime = snap.created_at
-            previous = by_sequence.get(snap.as_of_sequence)
+            key = (snap.as_of_sequence, ts.astimezone(UTC).date())
+            previous = by_key.get(key)
             if previous is None or ts >= previous[0]:
-                by_sequence[snap.as_of_sequence] = (ts, snap.equity)
-        return [by_sequence[seq] for seq in sorted(by_sequence)]
+                by_key[key] = (ts, snap.equity)
+        return sorted(by_key.values(), key=lambda point: point[0])
 
     def _period_returns(
         self, series: list[tuple[datetime, Decimal]]

@@ -1,6 +1,13 @@
-/** Ranking for the command palette: strategies, pages and actions, with Ask Copilot last. */
+/** Ranking for the command palette: today, sessions, recent, strategies, pages and actions, with Ask Copilot last. */
 
-export type PaletteKind = 'strategy' | 'page' | 'action' | 'copilot';
+export type PaletteKind =
+  | 'today'
+  | 'session'
+  | 'recent'
+  | 'strategy'
+  | 'page'
+  | 'action'
+  | 'copilot';
 
 export interface PaletteItem {
   id: string;
@@ -28,13 +35,24 @@ export interface PaletteGroup {
 }
 
 export const GROUP_TITLES: Record<PaletteKind, string> = {
+  today: 'Today',
+  session: 'Sessions',
+  recent: 'Recent',
   strategy: 'Strategies',
   page: 'Pages',
   action: 'Actions',
   copilot: 'Copilot',
 };
 
-const GROUP_ORDER: readonly PaletteKind[] = ['strategy', 'page', 'action', 'copilot'];
+const GROUP_ORDER: readonly PaletteKind[] = [
+  'today',
+  'session',
+  'recent',
+  'strategy',
+  'page',
+  'action',
+  'copilot',
+];
 
 export const COPILOT_RESULT_ID = 'copilot:ask';
 
@@ -200,4 +218,27 @@ export function highlightRuns(
 export function copilotUrl(query: string): string {
   const q = query.trim();
   return q ? `/copilot?q=${encodeURIComponent(q)}` : '/copilot';
+}
+
+/** A leading ">" narrows the palette to actions. */
+export function parseQuery(raw: string): { actionsOnly: boolean; query: string } {
+  const trimmed = raw.trimStart();
+  if (trimmed.startsWith('>')) return { actionsOnly: true, query: trimmed.slice(1) };
+  return { actionsOnly: false, query: raw };
+}
+
+export interface RecentEntry {
+  id: string;
+  label: string;
+  to: string;
+  at: number;
+}
+
+/** Puts `entry` first, drops its older copy and keeps at most `max`. */
+export function pushRecent(
+  list: readonly RecentEntry[],
+  entry: RecentEntry,
+  max = 4
+): RecentEntry[] {
+  return [entry, ...list.filter((e) => e.id !== entry.id)].slice(0, max);
 }

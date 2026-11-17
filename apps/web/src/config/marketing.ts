@@ -35,5 +35,13 @@ export const TAPE_ITEMS: readonly TapeItem[] = [
   { symbol: 'VGLT', name: 'Long government bonds', rule: '(momentum VGLT 60)' },
 ];
 
-/** Loops form id for the invite form; unset or the placeholder means invites are closed here. */
-export const LOOPS_FORM_ID: string | undefined = import.meta.env.VITE_LOOPS_FORM_ID;
+/**
+ * Auth service base URL for the invite form's waitlist call. Inside the app it matches the app's
+ * own auth client (src/services/grpc-client.ts); the standalone build has no default, so the form
+ * stays closed there until VITE_AUTH_URL is set (and that origin is in the auth CORS_ORIGINS).
+ */
+export const WAITLIST_AUTH_URL: string | undefined =
+  import.meta.env.VITE_AUTH_URL || (MARKETING_STANDALONE ? undefined : 'http://localhost:8810');
+
+/** Where invite requests go by email when the standalone build has no waitlist endpoint. */
+export const INVITE_EMAIL: string | undefined = import.meta.env.VITE_INVITE_EMAIL || undefined;

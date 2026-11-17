@@ -28,9 +28,6 @@ export function AuthShell({
             <Text variant="small" tone="fg2">{subtitle}</Text>
           </View>
           {children}
-          <Text variant="caption" tone="fg3" style={s.footer}>
-            Closed beta · paper trading only
-          </Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -47,5 +44,4 @@ const useStyles = makeStyles((t) => ({
   body: { flexGrow: 1, paddingHorizontal: space.gutter, paddingTop: 24, paddingBottom: 24, gap: 14 },
   brand: { marginBottom: 18 },
   heading: { gap: 6, marginBottom: 4 },
-  footer: { textAlign: 'center', marginTop: 28 },
 }));

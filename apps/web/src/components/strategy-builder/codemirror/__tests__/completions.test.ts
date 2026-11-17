@@ -17,7 +17,7 @@ import {
 } from '@llamatrade/core/strategy/vocabulary';
 import { describe, expect, it } from 'vitest';
 
-import { completionSets } from '../completions';
+import { completionSets, formHeadAt, keywordsForForm } from '../completions';
 
 const labels = (set: readonly { label: string }[]): string[] => set.map((c) => c.label);
 
@@ -96,5 +96,49 @@ describe('DSL completions stay inside the backend vocabulary', () => {
     for (const label of retired) {
       expect(offered.has(label), `${label} is still offered`).toBe(false);
     }
+  });
+});
+
+describe('keyword completions follow the form at the cursor', () => {
+  const code = '(strategy "S" :rebalance monthly\n  (weight :method momentum :';
+  const at = (text: string) => formHeadAt(text, text.length);
+
+  it('finds the innermost open form', () => {
+    expect(at(code)).toBe('weight');
+    expect(at('(strategy "S" :')).toBe('strategy');
+    expect(at('(strategy "S" (if (> (rsi SPY 14) 70) (asset TLT :')).toBe('asset');
+    expect(at('')).toBeNull();
+  });
+
+  it('skips forms that are already closed', () => {
+    expect(at('(strategy "S" (asset TLT) :')).toBe('strategy');
+  });
+
+  it('ignores parentheses inside strings', () => {
+    expect(at('(strategy "a (weight" :')).toBe('strategy');
+  });
+
+  it('offers only the keywords a weight accepts', () => {
+    expect(labels(keywordsForForm('weight')).sort()).toEqual([':lookback', ':method', ':top']);
+  });
+
+  it('offers the strategy keywords at the top form', () => {
+    expect(labels(keywordsForForm('strategy')).sort()).toEqual([
+      ':benchmark',
+      ':description',
+      ':rebalance',
+    ]);
+  });
+
+  it('offers nothing where no keyword is accepted', () => {
+    expect(keywordsForForm('if')).toEqual([]);
+    expect(keywordsForForm(null)).toEqual([]);
+  });
+
+  it('lists market-cap as unavailable and last', () => {
+    const cap = completionSets.weightMethods.find((m) => m.label === 'market-cap');
+    expect(cap?.detail).toBe('not supported');
+    expect(cap?.boost).toBeLessThan(0);
+    expect(labels(completionSets.weightMethods).sort()).toEqual([...DSL_WEIGHT_METHODS]);
   });
 });

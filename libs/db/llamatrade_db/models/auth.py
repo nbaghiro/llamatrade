@@ -4,7 +4,16 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -171,3 +180,48 @@ class APIKey(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     # Relationships
     tenant: Mapped[Tenant] = relationship("Tenant", back_populates="api_keys")
+
+
+WAITLIST_STATUS_WAITING = "waiting"
+WAITLIST_STATUS_INVITED = "invited"
+
+
+class WaitlistEntry(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """Marketing-site waitlist signup (pre-account, so not tenant-scoped).
+
+    ``email`` is stored trimmed and lowercased; ``ip_hash`` is the SHA-256 of
+    the trusted client IP when one was known.
+    """
+
+    __tablename__ = "waitlist_entries"
+    __table_args__ = (
+        Index("ix_waitlist_entries_email", "email", unique=True),
+        CheckConstraint("status IN ('waiting', 'invited')", name="ck_waitlist_entries_status"),
+    )
+
+    email: Mapped[str] = mapped_column(String(320), nullable=False)
+    source: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(20), default=WAITLIST_STATUS_WAITING, server_default="waiting", nullable=False
+    )
+    invited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class InviteCode(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """Single-use sign-up code (pre-account, so not tenant-scoped).
+
+    ``code`` is stored uppercase without separators. When ``email`` is set
+    (lowercased), only that address can redeem it.
+    """
+
+    __tablename__ = "invite_codes"
+    __table_args__ = (Index("ix_invite_codes_code", "code", unique=True),)
+
+    code: Mapped[str] = mapped_column(String(16), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    used_by: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )

@@ -130,6 +130,8 @@ class _NotificationCategoryEnumTypeWrapper(
     NOTIFICATION_CATEGORY_ACCOUNT_LOCKED: _NotificationCategory.ValueType  # 72
     NOTIFICATION_CATEGORY_EMAIL_VERIFICATION: _NotificationCategory.ValueType  # 73
     NOTIFICATION_CATEGORY_PASSWORD_RESET: _NotificationCategory.ValueType  # 74
+    NOTIFICATION_CATEGORY_INVITE: _NotificationCategory.ValueType  # 75
+    """Pre-account: sent to extra["to"] with no tenant (see notification pipeline)."""
     NOTIFICATION_CATEGORY_CONFIRMATION_PENDING: _NotificationCategory.ValueType  # 80
     """Agent"""
     NOTIFICATION_CATEGORY_PRICE_ALERT_TRIGGERED: _NotificationCategory.ValueType  # 90
@@ -189,6 +191,8 @@ NOTIFICATION_CATEGORY_PASSWORD_CHANGED: NotificationCategory.ValueType  # 71
 NOTIFICATION_CATEGORY_ACCOUNT_LOCKED: NotificationCategory.ValueType  # 72
 NOTIFICATION_CATEGORY_EMAIL_VERIFICATION: NotificationCategory.ValueType  # 73
 NOTIFICATION_CATEGORY_PASSWORD_RESET: NotificationCategory.ValueType  # 74
+NOTIFICATION_CATEGORY_INVITE: NotificationCategory.ValueType  # 75
+"""Pre-account: sent to extra["to"] with no tenant (see notification pipeline)."""
 NOTIFICATION_CATEGORY_CONFIRMATION_PENDING: NotificationCategory.ValueType  # 80
 """Agent"""
 NOTIFICATION_CATEGORY_PRICE_ALERT_TRIGGERED: NotificationCategory.ValueType  # 90

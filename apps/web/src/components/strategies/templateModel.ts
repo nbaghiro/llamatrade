@@ -1,4 +1,8 @@
-import { TemplateCategory, type StrategyTemplate } from '@llamatrade/core/proto/strategy_pb';
+import {
+  TemplateCategory,
+  TemplateDifficulty,
+  type StrategyTemplate,
+} from '@llamatrade/core/proto/strategy_pb';
 import { fromDSLString } from '@llamatrade/core/strategy/serializer';
 
 import { ALL_CATEGORIES } from '../../data/strategy-templates';
@@ -81,4 +85,126 @@ export function matchesTemplate(t: StrategyTemplate, query: string): boolean {
     .join(' ')
     .toLowerCase();
   return q.split(/\s+/).every((w) => hay.includes(w));
+}
+
+export type GoalKey = 'downturns' | 'trends' | 'income' | 'growth' | 'fixed';
+
+export interface Goal {
+  key: GoalKey;
+  title: string;
+  body: string;
+}
+
+/** The five goals the gallery opens on (templates2 A). */
+export const GOALS: readonly Goal[] = [
+  {
+    key: 'downturns',
+    title: 'Hold up in downturns',
+    body: 'Gives up some growth to fall less when markets drop.',
+  },
+  {
+    key: 'trends',
+    title: 'Follow trends',
+    body: 'Holds what has been rising and steps aside when it stops.',
+  },
+  { key: 'income', title: 'Steady income', body: 'Dividends and interest paid along the way.' },
+  {
+    key: 'growth',
+    title: 'Grow over the long run',
+    body: 'Mostly stocks, held for years, with few trades.',
+  },
+  {
+    key: 'fixed',
+    title: 'A mix that rarely changes',
+    body: 'Fixed weights, rebalanced on a schedule.',
+  },
+];
+
+const DOWNTURN_TAGS = new Set([
+  'defensive',
+  'all-weather',
+  'crash-protection',
+  'tail-risk',
+  'hedged',
+  'protective',
+  'risk-management',
+  'risk-parity',
+  'defensive-momentum',
+  'canary',
+]);
+const TREND_TAGS = new Set(['trend', 'momentum', 'dual-momentum', 'breakout']);
+const INCOME_TAGS = new Set(['dividends', 'dividend', 'income', 'premium-income']);
+const GROWTH_TAGS = new Set(['bogleheads', 'core-satellite', 'growth']);
+
+/** Fixed weights in a single branch: nothing in the rules decides what to hold. */
+export function isFixedMix(t: Pick<StrategyTemplate, 'configSexpr'>): boolean {
+  const parsed = fromDSLString(t.configSexpr);
+  if (!parsed) return false;
+  const scenarios = writtenScenarios(parsed.tree);
+  return (
+    scenarios.length === 1 &&
+    scenarios[0].holdings.length > 0 &&
+    scenarios[0].holdings.every((h) => h.pct !== null)
+  );
+}
+
+/** The goals a template serves, from its category, tags and rules. */
+export function templateGoals(
+  t: Pick<StrategyTemplate, 'category' | 'tags' | 'configSexpr'>
+): GoalKey[] {
+  const tags = t.tags.map((x) => x.toLowerCase());
+  const has = (set: ReadonlySet<string>) => tags.some((x) => set.has(x));
+  const out: GoalKey[] = [];
+  if (has(DOWNTURN_TAGS)) out.push('downturns');
+  if (t.category === TemplateCategory.TREND || has(TREND_TAGS)) out.push('trends');
+  if (t.category === TemplateCategory.INCOME || has(INCOME_TAGS)) out.push('income');
+  if (t.category === TemplateCategory.FACTOR || has(GROWTH_TAGS)) out.push('growth');
+  if (isFixedMix(t)) out.push('fixed');
+  return out;
+}
+
+const DIFFICULTY_ORDER: Record<TemplateDifficulty, number> = {
+  [TemplateDifficulty.BEGINNER]: 0,
+  [TemplateDifficulty.INTERMEDIATE]: 1,
+  [TemplateDifficulty.ADVANCED]: 2,
+  [TemplateDifficulty.UNSPECIFIED]: 3,
+};
+
+/** Every template for a goal, simplest first, catalog order within a difficulty. */
+export function goalTemplates(
+  templates: readonly StrategyTemplate[],
+  goal: GoalKey
+): StrategyTemplate[] {
+  return templates
+    .map((t, i) => ({ t, i }))
+    .filter(({ t }) => templateGoals(t).includes(goal))
+    .sort(
+      (a, b) => DIFFICULTY_ORDER[a.t.difficulty] - DIFFICULTY_ORDER[b.t.difficulty] || a.i - b.i
+    )
+    .map(({ t }) => t);
+}
+
+/** Up to three, one from each approach (category) first, in the order given. */
+export function pickThree(templates: readonly StrategyTemplate[]): StrategyTemplate[] {
+  const out: StrategyTemplate[] = [];
+  const cats = new Set<TemplateCategory>();
+  for (const t of templates) {
+    if (out.length >= 3) break;
+    if (cats.has(t.category)) continue;
+    cats.add(t.category);
+    out.push(t);
+  }
+  for (const t of templates) {
+    if (out.length >= 3) break;
+    if (!out.includes(t)) out.push(t);
+  }
+  return out;
+}
+
+/** Bar shares for written holdings: ranked ones split what the fixed ones leave, evenly. */
+export function barShares(holdings: readonly WrittenHolding[]): { symbol: string; pct: number }[] {
+  const fixedTotal = holdings.reduce((s, h) => s + (h.pct ?? 0), 0);
+  const ranked = holdings.filter((h) => h.pct === null).length;
+  const each = ranked ? Math.max(0, 100 - fixedTotal) / ranked : 0;
+  return holdings.map((h) => ({ symbol: h.symbol, pct: h.pct ?? each }));
 }

@@ -1,73 +1,45 @@
-import { Link } from 'react-router-dom';
+import { STAGES, TRACK_COLS } from './stageModel';
+import { StageTrackHead } from './StageTrackTable';
+import { ThreeWays } from './ThreeWays';
 
-import { PanelError, Skeleton } from '../ui';
-
-import { DescribeBox } from './DescribeBox';
-import { TemplateCard } from './TemplateCard';
-import { pickStarters } from './templateModel';
-import { useStartDraft } from './useStartDraft';
-import { useTemplates } from './useTemplates';
-
-/** A new account's list: three starter templates with their holdings, and a line to describe one. */
+/** No strategies yet (empty2 A): the three ways in, over the stage track with nothing on it. */
 export function StrategiesEmpty() {
-  const templates = useTemplates();
-  const { fromTemplate, describe } = useStartDraft();
-  const total = templates.status === 'ready' ? templates.templates.length : null;
-
   return (
-    <section className="panel grid justify-items-center px-4 pb-10 pt-9 text-center sm:px-8 sm:pb-12 sm:pt-11">
-      <div className="grid w-full max-w-[860px] justify-items-center gap-6">
-        <div className="grid justify-items-center gap-2">
-          <h2 className="m-0 text-[22px] font-semibold tracking-[-0.015em] sm:text-[24px]">
-            Start with a strategy
-          </h2>
-          <p className="m-0 max-w-[540px] text-[14px] text-fg-2">
-            A strategy is a set of target weights and the rules that change them. Pick a template to
-            see it as an outline and as code, then backtest it before anything runs.
-          </p>
-        </div>
-
-        {templates.status === 'error' ? (
-          <PanelError
-            title="Templates couldn’t be loaded"
-            cause="The strategy service didn’t answer."
-            unaffected="You can still describe a strategy below."
-            onRetry={templates.retry}
-          />
-        ) : (
-          <div className="grid w-full gap-3.5 sm:grid-cols-3">
-            {templates.status === 'loading'
-              ? [0, 1, 2].map((i) => (
-                  <div
-                    key={i}
-                    className="grid gap-3 rounded-panel border border-line bg-canvas p-4"
-                    aria-hidden="true"
-                  >
-                    <Skeleton className="h-3 w-32" />
-                    <Skeleton className="h-2.5 w-full" />
-                    <Skeleton className="h-2 w-full" />
-                  </div>
-                ))
-              : pickStarters(templates.templates).map((t) => (
-                  <TemplateCard key={t.id} template={t} onUse={fromTemplate} />
-                ))}
+    <div className="grid gap-5">
+      <ThreeWays />
+      <section
+        aria-label="Where your strategies will appear"
+        className="panel overflow-hidden max-lg:hidden"
+      >
+        <div role="table" aria-label="Strategy stages">
+          <StageTrackHead next={false} />
+          <div role="row" className={`grid ${TRACK_COLS} items-center border-b border-line`}>
+            <div role="cell" className="px-5 py-4">
+              <span className="block h-2 w-36 rounded-full bg-sunk" />
+            </div>
+            {STAGES.map((s, i) => (
+              <div role="cell" key={s} className="relative px-3 py-4">
+                {i < STAGES.length - 1 && (
+                  <i className="absolute left-[18px] right-[-12px] top-1/2 border-t border-dashed border-fg-3/40" />
+                )}
+                <i
+                  className={`relative block rounded-full ${
+                    i === 0
+                      ? 'h-[11px] w-[11px] border-[1.5px] border-dashed border-fg-3 bg-panel'
+                      : 'ml-[3px] h-[5px] w-[5px] bg-fg-3/40'
+                  }`}
+                />
+              </div>
+            ))}
+            <div role="cell" />
           </div>
-        )}
-
-        <div className="grid w-full gap-2.5 text-left">
-          <DescribeBox
-            onSubmit={describe}
-            placeholder="Or describe one, for example “momentum across the 11 sector ETFs, monthly”"
-          />
-          <p className="m-0 text-center text-[12px] text-fg-3">
-            Copilot writes a draft in the strategy language. Nothing is saved or run until you
-            choose to.{' '}
-            <Link to="/strategies/templates" className="text-accent hover:underline">
-              {total ? `Browse all ${total} templates` : 'Browse all templates'}
-            </Link>
-          </p>
+          <div className="flex items-center justify-center px-5 py-3.5">
+            <span className="rounded-full border border-line-strong bg-panel px-3.5 py-1.5 text-[12.5px] text-fg-2">
+              Your first strategy appears here as a draft, then moves right as you test it.
+            </span>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
+    </div>
   );
 }

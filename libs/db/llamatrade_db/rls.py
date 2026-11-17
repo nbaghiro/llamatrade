@@ -116,6 +116,8 @@ RLS_EXEMPT_TABLES: frozenset[str] = frozenset(
         "tenants",  # the tenant root itself; RLS would be self-referential
         "plans",  # global subscription-plan catalog, shared across tenants
         "oauth_pending_signups",  # pre-tenant signup staging; no tenant exists yet
+        "waitlist_entries",  # marketing waitlist; people with no account or tenant
+        "invite_codes",  # sign-up codes, redeemed before a tenant exists
     }
 )
 

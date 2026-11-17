@@ -1,0 +1,924 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Check-in</title>
+<script>try{document.documentElement.dataset.mode=localStorage.getItem("ax-mode")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark")}catch(e){document.documentElement.dataset.mode="dark"}</script>
+<link rel="stylesheet" href="kit.css">
+<style>
+  .ck-split { display: flex; gap: 16px; margin-top: 10px; font-size: 12.5px; color: var(--fg-3); }
+  .ck-split b { font: 600 13px var(--mono); color: var(--fg-2); margin-left: 4px; }
+  .ck-name-risk .nm { color: var(--risk); }
+  .ck-mini { display: flex; align-items: baseline; gap: 8px; }
+  .ck-mini .mono { font-weight: 600; font-size: 20px; letter-spacing: -0.02em; }
+
+  /* today strip */
+  .ck-day { position: relative; flex: none; height: 64px; border-radius: 14px; background: var(--sunk); }
+  .ck-day .ax { position: absolute; left: 14px; right: 14px; top: 30px; height: 2px; border-radius: 2px; background: var(--line-2); }
+  .ck-day .ax .rk { position: absolute; top: -1px; height: 4px; border-radius: 2px; background: var(--risk); }
+  .ck-day .ev { position: absolute; top: -4px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 0 2.5px var(--sunk); }
+  .ck-day .ev.plan { background: var(--sunk); border: 1.5px dashed var(--fg-3); }
+  .ck-day .ev.risk { background: var(--risk); }
+  .ck-day .nw { position: absolute; top: -12px; height: 26px; width: 1.5px; background: var(--fg); }
+  .ck-day .lb { position: absolute; top: 8px; font: 500 10.5px var(--mono); color: var(--fg-3); white-space: nowrap; }
+  .ck-day .lb.b { top: auto; bottom: 8px; }
+
+  /* annotated curve, scaled to a phone */
+  .ck-cv { position: relative; display: grid; grid-template-columns: 84% 16%; }
+  .ck-cv .fut { position: relative; border-left: 1.5px dashed var(--fg-3); }
+  .ck-cv .fut span { position: absolute; left: 6px; top: 0; font: 500 10px var(--mono); color: var(--fg-3); }
+  .ck-lanes { display: flex; flex-direction: column; gap: 5px; }
+  .ck-ln { position: relative; height: 18px; border-radius: 9px; background: var(--sunk); }
+  .ck-ln .nm { position: absolute; left: 8px; top: 3px; font: 600 10px var(--mono); color: var(--fg-3); }
+  .ck-ln i { position: absolute; top: 5px; width: 8px; height: 8px; margin-left: -4px; border-radius: 50%; background: var(--acc); }
+  .ck-ln i.sell { background: var(--panel); box-shadow: inset 0 0 0 1.5px var(--acc); }
+  .ck-ln i.plan { background: transparent; box-shadow: inset 0 0 0 1.5px var(--fg-3); }
+  .ck-ln .now { position: absolute; left: 84%; top: -3px; bottom: -3px; width: 1.5px; background: var(--fg); }
+  .ck-axis { display: flex; justify-content: space-between; font: 400 10px var(--mono); color: var(--fg-3); margin-top: -2px; }
+  .ck-scrub { display: flex; align-items: baseline; gap: 8px; }
+
+  .ck-bars { display: flex; flex-direction: column; gap: 9px; }
+  .ck-bar { display: grid; grid-template-columns: 38px 1fr auto; gap: 10px; align-items: center; font-size: 13px; }
+  .ck-bar .meter { position: relative; overflow: visible; }
+  .ck-bar .meter b { position: absolute; top: -3px; bottom: -3px; width: 1.5px; background: var(--fg); }
+
+  /* actions */
+  .ck-act { display: flex; gap: 12px; align-items: flex-start; padding: 14px 0; border-bottom: 1px solid var(--line); }
+  .ck-act:last-child { border-bottom: 0; }
+  .ck-act .ib { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center; background: var(--sunk); flex: none; }
+  .ck-act .ib .ic { width: 19px; height: 19px; }
+  .ck-act .ib.risk { background: var(--loss-soft); color: var(--loss); }
+  .ck-act .t { font-weight: 600; font-size: 15.5px; }
+  .ck-act .d { font-size: 13px; color: var(--fg-3); margin-top: 2px; line-height: 1.45; }
+  .ck-where { display: flex; flex-direction: column; gap: 0; }
+  .ck-where > div { display: grid; grid-template-columns: 22px 1fr; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; line-height: 1.45; }
+  .ck-where > div:last-child { border-bottom: 0; }
+  .ck-where .ic { width: 18px; height: 18px; color: var(--fg-3); margin-top: 1px; }
+  .ck-where b { font-weight: 600; }
+
+  /* swipe row */
+  .ck-sw { position: relative; overflow: hidden; border-bottom: 1px solid var(--line); }
+  .ck-sw .ct { position: relative; z-index: 1; background: var(--panel); transform: translateX(-152px); padding: 0 14px; }
+  .ck-sw .ct .m-lrow { border-bottom: 0; }
+  .ck-sw .ac { position: absolute; right: 0; top: 0; bottom: 0; display: flex; }
+  .ck-sw .ac span { width: 76px; display: grid; place-items: center; align-content: center; gap: 3px; font-size: 12px; font-weight: 600; color: #fff; }
+  .ck-sw .ac span .ic { width: 18px; height: 18px; }
+  .ck-sw .ac .p { background: #6b717a; }
+  .ck-sw .ac .s { background: var(--loss); }
+
+  .ck-prev { border-radius: 16px; background: var(--panel); padding: 14px 16px; box-shadow: var(--shadow-xl); color: var(--fg); font-family: var(--sans); }
+  .ck-qr { width: 132px; height: 132px; border-radius: 12px; background: #fff; padding: 10px; display: grid; grid-template-columns: repeat(11, 1fr); gap: 1px; }
+  .ck-qr i { background: #111418; border-radius: 1px; }
+  .ck-qr i.o { background: transparent; }
+  .ck-steps { display: flex; flex-direction: column; gap: 8px; font-size: 13.5px; color: var(--fg-2); }
+  .ck-steps > div { display: flex; gap: 10px; }
+  .ck-steps .n { flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font: 600 11px var(--mono); background: var(--sunk); color: var(--fg-2); }
+  .ck-steps .n.on { background: var(--ink); color: var(--ink-text); }
+  .ck-sent { font-size: 19px; line-height: 1.45; letter-spacing: -0.01em; color: var(--fg-2); }
+  .ck-sent b { color: var(--fg); font-weight: 600; }
+  .ck-sent .r { color: var(--risk); font-weight: 600; }
+</style>
+</head>
+<body data-title="Check-in" data-desc="The daily check-in on the phone: Home and its tabs, a session up close, pausing or stopping one with Face ID, and what happens when someone tries to go live from the phone.">
+
+<!-- ===================================================== 1. Tabs and Home -->
+<section class="ax-surface" id="ck-home" data-surface="checkin/home" data-area="Check-in" data-title="Tabs and Home"
+  data-why="The first screen of the day on the phone, under the five check-in tabs (Home, Sessions, Markets, Activity, Account). Each option shows an ordinary Tuesday at 10:42, one more tab, and the same Home when Momentum Sectors is frozen.">
+
+  <!-- A -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="List first, made native"
+    data-note="Recommended. The web pick for the phone, finished for iOS: the total, today's change and the live and paper split on top, then one row per session with its sparkline, value and today's move, so all four fit on the first screen. When something needs you, an amber card sits under the total with the one number that matters, the session's row turns amber and the Sessions tab gets an amber dot. It matches home/phone B and sessions/phone2 B, so web and phone read the same. It shows no timing beyond each row's next step, which lives in the Activity tab. Today's app has Portfolio, Strategies and Copilot tabs, so this needs the tab set changed to phone-nav2 D.">
+    <div data-frame="phone" data-caption="Home, an ordinary day"><div data-page-art="checkin" class="quiet" data-top="0.3" style="--pa-h:230px"></div>
+      <div class="m-head"><div class="row"><span data-logo="mark" data-size="30"></span><span class="sp"></span><span class="m-ic"><span data-icon="search"></span></span></div></div>
+      <div class="m-body">
+        <div>
+          <div class="lbl">Total equity · 2 accounts</div>
+          <div class="big" style="margin-top:6px;font-size:32px">$128,406.12</div>
+          <div class="row gap-6" style="margin-top:8px"><span class="chg gain">+$612.40</span><span class="chg gain">+0.48%</span><span class="sm dim">today</span></div>
+          <div class="ck-split"><span>Live<b>$48,210.55</b></span><span>Paper<b>$80,195.57</b></span></div>
+        </div>
+        <div data-chart="area" data-seed="42" data-ret="0.058" data-vol="0.005" data-bench="0.036" data-h="88" data-mark></div>
+        <div class="m-sec">Sessions<span class="a">See all</span></div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">All-Weather Portfolio</div><div class="d">Live · next Dec 1</div></div><span data-chart="spark" data-seed="7" data-ret="0.068" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$48,210.55</div><div class="mono xs gain">+0.31%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">Recession Radar</div><div class="d">Paper · rebalances 15:50</div></div><span data-chart="spark" data-seed="19" data-ret="0.124" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$31,904.20</div><div class="mono xs gain">+0.62%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">Momentum Sectors</div><div class="d">Paper · next Nov 23</div></div><span data-chart="spark" data-seed="33" data-ret="0.031" data-vol="0.025" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$22,118.07</div><div class="mono xs gain">+1.22%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm" style="color:var(--fg-2)">Tech Momentum Rotation</div><div class="d">Paper · stopped Nov 12</div></div><span data-chart="spark" data-seed="51" data-ret="-0.024" data-vol="0.025" data-color="muted" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$26,173.30</div><div class="mono xs dim">cash</div></div></div>
+        </div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Activity tab"><div data-page-art="checkin" class="quiet" data-top="0.3" style="--pa-h:150px"></div>
+      <div class="m-top"><span class="t">Activity</span><span class="sp"></span><span class="m-ic"><span data-icon="search"></span></span></div>
+      <div class="m-body">
+        <div class="callout" style="font-size:13.5px"><span data-icon="check2"></span><div><b>Nothing needs you.</b> Every check passed today.</div></div>
+        <div class="m-sec">Next</div>
+        <div class="m-card rows">
+          <div class="m-row"><span class="mono xs dim" style="width:44px">15:50</span><div style="flex:1;min-width:0"><div>Recession Radar rebalances</div><div class="d">TLT 58.2% → 60% · GLD 41.8% → 40%</div></div></div>
+          <div class="m-row"><span class="mono xs dim" style="width:44px">16:00</span><div style="flex:1;min-width:0"><div>The market closes</div></div></div>
+        </div>
+        <div class="m-sec">Today</div>
+        <div class="m-card rows">
+          <div class="m-row"><span class="mono xs dim" style="width:44px">10:31</span><div style="flex:1;min-width:0"><div>Bought 42 TLT at $90.41</div><div class="d">Recession Radar · paper</div></div></div>
+          <div class="m-row"><span class="mono xs dim" style="width:44px">10:31</span><div style="flex:1;min-width:0"><div>Sold 9 GLD at $247.86</div><div class="d">Recession Radar · paper</div></div></div>
+          <div class="m-row"><span class="mono xs dim" style="width:44px">09:45</span><div style="flex:1;min-width:0"><div>Bought 31 VGLT at $58.12</div><div class="d">All-Weather Portfolio · live</div></div></div>
+        </div>
+      </div>
+      <nav data-tabs="activity"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Home, when something needs you"><div data-page-art="checkin" class="quiet" data-top="0.3" style="--pa-h:230px"></div>
+      <div class="m-head"><div class="row"><span data-logo="mark" data-size="30"></span><span class="sp"></span><span class="m-ic"><span data-icon="search"></span></span></div></div>
+      <div class="m-body">
+        <div>
+          <div class="lbl">Total equity · 2 accounts</div>
+          <div class="big" style="margin-top:6px;font-size:32px">$128,406.12</div>
+          <div class="row gap-6" style="margin-top:8px"><span class="chg gain">+$612.40</span><span class="chg gain">+0.48%</span><span class="sm dim">today</span></div>
+        </div>
+        <div class="callout risk" style="font-size:13.5px;align-items:center"><span data-icon="frozen"></span><div><b>Momentum Sectors is frozen.</b> Alpaca shows 43 SMH, the ledger 31. Orders wait until you review it.</div><span data-icon="chevron-right" style="color:var(--risk)"></span></div>
+        <div class="m-sec">Sessions<span class="a">See all</span></div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow ck-name-risk"><div style="min-width:0"><div class="nm">Momentum Sectors</div><div class="d">Paper · frozen since 09:31</div></div><span data-chart="spark" data-seed="33" data-ret="0.031" data-vol="0.025" data-color="muted" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$22,118.07</div><div class="mono xs gain">+1.22%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">All-Weather Portfolio</div><div class="d">Live · next Dec 1</div></div><span data-chart="spark" data-seed="7" data-ret="0.068" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$48,210.55</div><div class="mono xs gain">+0.31%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">Recession Radar</div><div class="d">Paper · rebalances 15:50</div></div><span data-chart="spark" data-seed="19" data-ret="0.124" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$31,904.20</div><div class="mono xs gain">+0.62%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm" style="color:var(--fg-2)">Tech Momentum Rotation</div><div class="d">Paper · stopped Nov 12</div></div><span data-chart="spark" data-seed="51" data-ret="-0.024" data-vol="0.025" data-color="muted" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$26,173.30</div><div class="mono xs dim">cash</div></div></div>
+        </div>
+      </div>
+      <nav data-tabs="home" data-dot="sessions"></nav>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="ax-opt" data-opt="B" data-name="Today as a strip"
+    data-note="Under the total, today runs as one strip from the 09:30 open to the 16:00 close: fills where they happened, a Now line, and the 15:50 rebalance still ahead as a dashed dot. It is Home's annotated curve shrunk to one day, so the phone keeps the desktop's sense of time. When a sleeve freezes, the strip turns amber from 09:31 on. It reads well on busy days only up to a point: more than about eight events in the morning merge into counts, and it says nothing about yesterday.">
+    <div data-frame="phone" data-caption="Home, an ordinary day">
+      <div class="m-head"><div class="row"><span data-logo="mark" data-size="30"></span><span class="sp"></span><span class="m-ic"><span data-icon="search"></span></span></div></div>
+      <div class="m-body">
+        <div>
+          <div class="lbl">Total equity · 2 accounts</div>
+          <div class="ck-mini" style="margin-top:6px"><span class="big" style="font-size:30px">$128,406.12</span></div>
+          <div class="row gap-6" style="margin-top:6px"><span class="chg gain">+$612.40 · +0.48%</span><span class="sm dim">today</span></div>
+        </div>
+        <div class="ck-day">
+          <span class="lb" style="left:14px">09:30</span><span class="lb" style="left:calc(14px + 18.5% - 14px)">Now</span><span class="lb" style="right:14px">16:00</span>
+          <div class="ax"><i class="ev" style="left:3.8%"></i><i class="ev" style="left:15.6%"></i><i class="nw" style="left:18.5%"></i><i class="ev plan" style="left:97.4%"></i></div>
+          <span class="lb b" style="left:14px">3 fills</span><span class="lb b" style="right:14px">15:50 rebalance</span>
+        </div>
+        <div class="m-sec">Sessions</div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">All-Weather Portfolio</div><div class="d">Live · bought 31 VGLT 09:45</div></div><span data-chart="spark" data-seed="7" data-ret="0.068" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$48,210.55</div><div class="mono xs gain">+0.31%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">Recession Radar</div><div class="d">Paper · 2 fills 10:31</div></div><span data-chart="spark" data-seed="19" data-ret="0.124" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$31,904.20</div><div class="mono xs gain">+0.62%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">Momentum Sectors</div><div class="d">Paper · no orders today</div></div><span data-chart="spark" data-seed="33" data-ret="0.031" data-vol="0.025" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$22,118.07</div><div class="mono xs gain">+1.22%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm" style="color:var(--fg-2)">Tech Momentum Rotation</div><div class="d">Paper · stopped Nov 12</div></div><span data-chart="spark" data-seed="51" data-ret="-0.024" data-vol="0.025" data-color="muted" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$26,173.30</div><div class="mono xs dim">cash</div></div></div>
+        </div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Sessions tab">
+      <div class="m-top"><span class="t">Sessions</span></div>
+      <div class="m-body">
+        <div class="sm dim" style="margin-top:-8px">4 sessions · 3 running · 1 live</div>
+        <div class="seg round" style="align-self:flex-start"><span class="on">All</span><span>Live</span><span>Paper</span></div>
+        <div class="m-sec">Running</div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow nosp"><div style="min-width:0"><div class="nm">All-Weather Portfolio</div><div class="d">Live ••4821 · next Dec 1</div></div><div class="end"><div class="mono sm">$48,210.55</div><div class="mono xs gain">+0.31%</div></div></div>
+          <div class="m-lrow nosp"><div style="min-width:0"><div class="nm">Recession Radar</div><div class="d">Paper ••PA92 · today 15:50</div></div><div class="end"><div class="mono sm">$31,904.20</div><div class="mono xs gain">+0.62%</div></div></div>
+          <div class="m-lrow nosp"><div style="min-width:0"><div class="nm">Momentum Sectors</div><div class="d">Paper ••PA92 · next Nov 23</div></div><div class="end"><div class="mono sm">$22,118.07</div><div class="mono xs gain">+1.22%</div></div></div>
+        </div>
+        <div class="m-sec">Stopped</div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow nosp"><div style="min-width:0"><div class="nm" style="color:var(--fg-2)">Tech Momentum Rotation</div><div class="d">Stopped Nov 12 · in cash</div></div><div class="end"><div class="mono sm">$26,173.30</div></div></div>
+        </div>
+        <div class="sm dim">New sessions are started on the web.</div>
+      </div>
+      <nav data-tabs="sessions"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Home, when something needs you">
+      <div class="m-head"><div class="row"><span data-logo="mark" data-size="30"></span><span class="sp"></span><span class="m-ic"><span data-icon="search"></span></span></div></div>
+      <div class="m-body">
+        <div>
+          <div class="lbl">Total equity · 2 accounts</div>
+          <div class="ck-mini" style="margin-top:6px"><span class="big" style="font-size:30px">$128,406.12</span></div>
+          <div class="row gap-6" style="margin-top:6px"><span class="chg gain">+$612.40 · +0.48%</span><span class="sm dim">today</span></div>
+        </div>
+        <div class="ck-day">
+          <span class="lb" style="left:14px">09:30</span><span class="lb risk" style="left:30%">Frozen since 09:31</span><span class="lb" style="right:14px">16:00</span>
+          <div class="ax"><span class="rk" style="left:0.3%;width:18.2%"></span><i class="ev risk" style="left:0.3%"></i><i class="ev" style="left:3.8%"></i><i class="ev" style="left:15.6%"></i><i class="nw" style="left:18.5%"></i><i class="ev plan" style="left:97.4%"></i></div>
+          <span class="lb b" style="left:14px">3 fills</span><span class="lb b" style="right:14px">15:50 rebalance</span>
+        </div>
+        <div class="callout risk" style="font-size:13.5px"><span data-icon="frozen"></span><div><b>Momentum Sectors is frozen.</b> Alpaca shows 43 SMH, the ledger 31.</div></div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow ck-name-risk"><div style="min-width:0"><div class="nm">Momentum Sectors</div><div class="d">Paper · orders on hold</div></div><span data-chart="spark" data-seed="33" data-ret="0.031" data-vol="0.025" data-color="muted" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$22,118.07</div><div class="mono xs gain">+1.22%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">All-Weather Portfolio</div><div class="d">Live · bought 31 VGLT 09:45</div></div><span data-chart="spark" data-seed="7" data-ret="0.068" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$48,210.55</div><div class="mono xs gain">+0.31%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">Recession Radar</div><div class="d">Paper · 2 fills 10:31</div></div><span data-chart="spark" data-seed="19" data-ret="0.124" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$31,904.20</div><div class="mono xs gain">+0.62%</div></div></div>
+        </div>
+      </div>
+      <nav data-tabs="home" data-dot="sessions"></nav>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="ax-opt" data-opt="C" data-name="Needs you first"
+    data-note="Home opens on three short blocks in a fixed order: what needs you, what's next and today's fills, with the total as a single line above them. On a quiet day the first block is one green-free line saying nothing needs you; on a bad day it becomes a full card with the counts and a plain path to resolve. Tapping it opens the frozen session, which says resolving is on the web for now, since there is no endpoint to record a resolution or resume a sleeve. It is the most direct answer to 'is anything wrong?', but the money moves down the screen and the sessions list moves to its own tab.">
+    <div data-frame="phone" data-caption="Home, an ordinary day">
+      <div class="m-top"><span class="t">Today</span><span class="sp"></span><span class="m-ic"><span data-icon="search"></span></span></div>
+      <div class="m-body">
+        <div class="row base"><span class="mono b" style="font-size:20px">$128,406.12</span><span class="mono sm gain">+$612.40 today</span></div>
+        <div class="m-card row" style="gap:10px"><span data-icon="check2" class="dim" style="width:20px;height:20px"></span><div style="flex:1"><b>Nothing needs you</b><div class="sm dim">Both accounts connected. Every check passed.</div></div></div>
+        <div class="m-sec">Next</div>
+        <div class="m-card col" style="gap:8px">
+          <div class="row"><b>Recession Radar rebalances</b><span class="sp"></span><span class="mono sm">15:50</span></div>
+          <div class="ck-bars">
+            <div class="ck-bar"><span class="sym">TLT</span><div class="meter"><i style="width:58.2%"></i><b style="left:60%"></b></div><span class="mono xs dim">58.2 → 60%</span></div>
+            <div class="ck-bar"><span class="sym">GLD</span><div class="meter"><i style="width:41.8%"></i><b style="left:40%"></b></div><span class="mono xs dim">41.8 → 40%</span></div>
+          </div>
+        </div>
+        <div class="m-sec">Today<span class="a">All activity</span></div>
+        <div class="m-card rows">
+          <div class="m-row"><span class="mono xs dim" style="width:40px">10:31</span><div style="flex:1;min-width:0"><div>Bought 42 TLT, sold 9 GLD</div><div class="d">Recession Radar · paper</div></div></div>
+          <div class="m-row"><span class="mono xs dim" style="width:40px">09:45</span><div style="flex:1;min-width:0"><div>Bought 31 VGLT</div><div class="d">All-Weather Portfolio · live</div></div></div>
+        </div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Home, when something needs you">
+      <div class="m-top"><span class="t">Today</span><span class="sp"></span><span class="m-ic"><span data-icon="search"></span></span></div>
+      <div class="m-body">
+        <div class="row base"><span class="mono b" style="font-size:20px">$128,406.12</span><span class="mono sm gain">+$612.40 today</span></div>
+        <div class="m-card col" style="border-color:var(--risk-line);background:var(--risk-soft);gap:10px">
+          <div class="row"><span data-icon="frozen" class="risk"></span><b>Momentum Sectors is frozen</b><span class="sp"></span><span class="mono xs risk">09:31</span></div>
+          <div class="g2" style="gap:10px">
+            <div class="m-card" style="padding:10px 12px"><div class="lbl">Alpaca</div><div class="mono b" style="font-size:20px;margin-top:2px">43 SMH</div></div>
+            <div class="m-card" style="padding:10px 12px"><div class="lbl">Ledger</div><div class="mono b" style="font-size:20px;margin-top:2px">31 SMH</div></div>
+          </div>
+          <div class="sm muted">New orders for this session wait until the two agree. The other sessions keep trading.</div>
+          <span class="m-btn risk" style="height:42px;font-size:14.5px">Review the difference</span>
+        </div>
+        <div class="m-sec">Next</div>
+        <div class="m-card rows">
+          <div class="m-row"><span class="mono xs dim" style="width:40px">15:50</span><div style="flex:1;min-width:0">Recession Radar rebalances</div></div>
+        </div>
+        <div class="m-sec">Today</div>
+        <div class="m-card rows">
+          <div class="m-row"><span class="mono xs dim" style="width:40px">10:31</span><div style="flex:1;min-width:0">Bought 42 TLT, sold 9 GLD</div></div>
+        </div>
+      </div>
+      <nav data-tabs="home" data-dot="sessions"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Pushed: the frozen session">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Today</span><span style="font-size:15px">Momentum Sectors</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="row"><span class="pill paper">Paper</span><span class="st frozen">Frozen since 09:31</span></div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow nosp"><div><div class="nm mono">SMH in Alpaca</div><div class="d">Paper ••PA92, checked 10:40</div></div><div class="end mono b">43</div></div>
+          <div class="m-lrow nosp"><div><div class="nm mono">SMH in the ledger</div><div class="d">What this session bought</div></div><div class="end mono b">31</div></div>
+          <div class="m-lrow nosp"><div><div class="nm">Difference</div><div class="d">Checked every 5 minutes</div></div><div class="end mono b risk">12</div></div>
+        </div>
+        <div class="ck-steps">
+          <div><span class="n on">1</span><span>Check Alpaca for an SMH order you placed yourself.</span></div>
+          <div><span class="n">2</span><span>Decide which count is right.</span></div>
+          <div><span class="n">3</span><span>Resume the session.</span></div>
+        </div>
+        <div class="callout" style="font-size:13.5px"><span data-icon="info"></span><div>Steps 2 and 3 are done on the web for now, at llamatrade.com/sessions.</div></div>
+        <span class="m-btn sec"><span data-icon="share"></span>Send the link to my email</span>
+      </div>
+      <nav data-tabs="sessions" data-dot="sessions"></nav>
+    </div>
+  </div>
+
+  <!-- D -->
+  <div class="ax-opt" data-opt="D" data-name="Large title that collapses"
+    data-note="The standard iOS shape: a large Home title with the total under it, which collapses into a small centred title carrying the total as you scroll, so the number never leaves the screen. A needs-you strip pins under the title in amber and stays while you scroll. It costs nothing to learn for an iPhone user and maps straight onto React Navigation's large-title header, but it spends about 50 points on the word Home on every visit.">
+    <div data-frame="phone" data-caption="Home, at the top"><div data-page-art="checkin" class="quiet" data-top="0.3" style="--pa-h:230px"></div>
+      <div class="m-top" style="padding-bottom:4px"><span class="t" style="font-size:34px">Home</span><span class="sp"></span><span class="m-ic ring"><span data-icon="search"></span></span></div>
+      <div class="m-body">
+        <div>
+          <div class="big" style="font-size:30px">$128,406.12</div>
+          <div class="mono gain sm" style="margin-top:6px">+$612.40 · +0.48% today</div>
+        </div>
+        <div data-chart="area" data-seed="42" data-ret="0.058" data-vol="0.005" data-h="110" data-mark></div>
+        <div class="seg mono round" style="align-self:center"><span class="on">1D</span><span>1W</span><span>1M</span><span>1Y</span><span>All</span></div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">All-Weather Portfolio</div><div class="d">Live · next Dec 1</div></div><span data-chart="spark" data-seed="7" data-ret="0.068" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$48,210.55</div><div class="mono xs gain">+0.31%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">Recession Radar</div><div class="d">Paper · rebalances 15:50</div></div><span data-chart="spark" data-seed="19" data-ret="0.124" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$31,904.20</div><div class="mono xs gain">+0.62%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">Momentum Sectors</div><div class="d">Paper · next Nov 23</div></div><span data-chart="spark" data-seed="33" data-ret="0.031" data-vol="0.025" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$22,118.07</div><div class="mono xs gain">+1.22%</div></div></div>
+        </div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Scrolled: the title collapses">
+      <div class="m-nav" style="border-bottom:1px solid var(--line)"><span style="width:28px"></span><span class="col" style="gap:0;align-items:center"><span style="font-size:15px">Home</span><span class="mono xs gain" style="font-weight:500">$128,406.12 · +0.48%</span></span><span class="m-ic" style="width:28px"><span data-icon="search"></span></span></div>
+      <div class="m-body" data-scrolls style="padding-top:12px">
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">Momentum Sectors</div><div class="d">Paper · next Nov 23</div></div><span data-chart="spark" data-seed="33" data-ret="0.031" data-vol="0.025" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$22,118.07</div><div class="mono xs gain">+1.22%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm" style="color:var(--fg-2)">Tech Momentum Rotation</div><div class="d">Paper · stopped Nov 12</div></div><span data-chart="spark" data-seed="51" data-ret="-0.024" data-vol="0.025" data-color="muted" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$26,173.30</div><div class="mono xs dim">cash</div></div></div>
+        </div>
+        <div class="m-sec">Next</div>
+        <div class="m-card rows">
+          <div class="m-row"><span class="mono xs dim" style="width:48px">15:50</span><span style="flex:1">Recession Radar rebalances</span></div>
+          <div class="m-row"><span class="mono xs dim" style="width:48px">16:00</span><span style="flex:1">The market closes</span></div>
+          <div class="m-row"><span class="mono xs dim" style="width:48px">Nov 23</span><span style="flex:1">Momentum Sectors rebalances</span></div>
+          <div class="m-row"><span class="mono xs dim" style="width:48px">Nov 26</span><span style="flex:1">Closed for Thanksgiving</span></div>
+          <div class="m-row"><span class="mono xs dim" style="width:48px">Dec 1</span><span style="flex:1">All-Weather Portfolio rebalances</span></div>
+        </div>
+        <div class="m-sec">Today</div>
+        <div class="m-card rows">
+          <div class="m-row"><span class="mono xs dim" style="width:48px">10:31</span><span style="flex:1">Bought 42 TLT at $90.41</span></div>
+          <div class="m-row"><span class="mono xs dim" style="width:48px">10:31</span><span style="flex:1">Sold 9 GLD at $247.86</span></div>
+          <div class="m-row"><span class="mono xs dim" style="width:48px">09:45</span><span style="flex:1">Bought 31 VGLT at $58.12</span></div>
+        </div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Home, when something needs you">
+      <div class="m-top" style="padding-bottom:4px"><span class="t" style="font-size:34px">Home</span><span class="sp"></span><span class="m-ic ring"><span data-icon="search"></span></span></div>
+      <div class="m-strip risk"><span data-icon="frozen"></span><span><b style="color:var(--risk)">Momentum Sectors is frozen.</b> 43 SMH in Alpaca, 31 in the ledger.</span><span class="sp"></span><span data-icon="chevron-right"></span></div>
+      <div class="m-body" style="padding-top:14px">
+        <div>
+          <div class="big" style="font-size:30px">$128,406.12</div>
+          <div class="mono gain sm" style="margin-top:6px">+$612.40 · +0.48% today</div>
+        </div>
+        <div data-chart="area" data-seed="42" data-ret="0.058" data-vol="0.005" data-h="110" data-mark></div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow ck-name-risk"><div style="min-width:0"><div class="nm">Momentum Sectors</div><div class="d">Paper · frozen since 09:31</div></div><span data-chart="spark" data-seed="33" data-ret="0.031" data-vol="0.025" data-color="muted" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$22,118.07</div><div class="mono xs gain">+1.22%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">All-Weather Portfolio</div><div class="d">Live · next Dec 1</div></div><span data-chart="spark" data-seed="7" data-ret="0.068" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$48,210.55</div><div class="mono xs gain">+0.31%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">Recession Radar</div><div class="d">Paper · rebalances 15:50</div></div><span data-chart="spark" data-seed="19" data-ret="0.124" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$31,904.20</div><div class="mono xs gain">+0.62%</div></div></div>
+        </div>
+      </div>
+      <nav data-tabs="home" data-dot="sessions"></nav>
+    </div>
+  </div>
+
+  <!-- E -->
+  <div class="ax-opt" data-opt="E" data-name="Said in a sentence"
+    data-note="Home opens with two sentences built from the day's facts: how much the account moved, what has run and what runs next, then the sessions list. When something needs you, the first sentence is about that. It is the calmest check-in and reads well with VoiceOver. The sentences come from fixed templates per situation, so unusual days (several issues at once, a holiday) need their own templates, and people who scan for numbers have to read to find them.">
+    <div data-frame="phone" data-caption="Home, an ordinary day">
+      <div class="m-head"><div class="row"><span data-logo="mark" data-size="30"></span><span class="sp"></span><span class="m-ic"><span data-icon="search"></span></span></div></div>
+      <div class="m-body">
+        <div class="lbl">Tuesday, November 17 · 10:42 ET</div>
+        <p class="ck-sent">Your accounts are up <b class="gain">$612.40</b> today, at <b>$128,406.12</b>. Recession Radar filled two orders at 10:31 and <b>rebalances again at 15:50</b>. Nothing needs you.</p>
+        <div data-chart="area" data-seed="42" data-ret="0.058" data-vol="0.005" data-h="80" data-mark></div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">All-Weather Portfolio</div><div class="d">Live · next Dec 1</div></div><span data-chart="spark" data-seed="7" data-ret="0.068" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$48,210.55</div><div class="mono xs gain">+0.31%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">Recession Radar</div><div class="d">Paper · rebalances 15:50</div></div><span data-chart="spark" data-seed="19" data-ret="0.124" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$31,904.20</div><div class="mono xs gain">+0.62%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">Momentum Sectors</div><div class="d">Paper · next Nov 23</div></div><span data-chart="spark" data-seed="33" data-ret="0.031" data-vol="0.025" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$22,118.07</div><div class="mono xs gain">+1.22%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm" style="color:var(--fg-2)">Tech Momentum Rotation</div><div class="d">Paper · stopped Nov 12</div></div><span data-chart="spark" data-seed="51" data-ret="-0.024" data-vol="0.025" data-color="muted" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$26,173.30</div><div class="mono xs dim">cash</div></div></div>
+        </div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Home, when something needs you">
+      <div class="m-head"><div class="row"><span data-logo="mark" data-size="30"></span><span class="sp"></span><span class="m-ic"><span data-icon="search"></span></span></div></div>
+      <div class="m-body">
+        <div class="lbl">Tuesday, November 17 · 10:42 ET</div>
+        <p class="ck-sent"><span class="r">Momentum Sectors is frozen.</span> Alpaca shows 43 SMH shares and the ledger 31, so its orders wait until you review it. Everything else is running, and the accounts are up <b class="gain">$612.40</b> today.</p>
+        <span class="m-btn">Review the difference</span>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow ck-name-risk"><div style="min-width:0"><div class="nm">Momentum Sectors</div><div class="d">Paper · frozen since 09:31</div></div><span data-chart="spark" data-seed="33" data-ret="0.031" data-vol="0.025" data-color="muted" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$22,118.07</div><div class="mono xs gain">+1.22%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">All-Weather Portfolio</div><div class="d">Live · next Dec 1</div></div><span data-chart="spark" data-seed="7" data-ret="0.068" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$48,210.55</div><div class="mono xs gain">+0.31%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">Recession Radar</div><div class="d">Paper · rebalances 15:50</div></div><span data-chart="spark" data-seed="19" data-ret="0.124" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$31,904.20</div><div class="mono xs gain">+0.62%</div></div></div>
+        </div>
+      </div>
+      <nav data-tabs="home" data-dot="sessions"></nav>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================== 2. Session detail -->
+<section class="ax-surface" id="ck-session" data-surface="checkin/session" data-area="Check-in" data-title="Session detail"
+  data-why="Recession Radar, opened from Home or Sessions: what it's worth, how it got there, what it holds against its targets, what happens at 15:50 and today's fills. Editing the strategy stays on the web.">
+
+  <!-- A -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="The annotated curve, on a phone"
+    data-note="Recommended. The web pick (sessions/detail2 A) narrowed to a phone: the curve since Jun 2 with a short dashed column for what's ahead, and one thin lane per symbol with each buy and sell on its date and 15:50 as an open dot. Press and hold on the curve scrubs it, and the figure above shows the value on that day. Scrolling down gives holdings against target, today's fills and a read-only line on the rules. Pause, orders and Copilot sit in a bottom toolbar, as iOS does on pushed screens. Lanes for more than about four symbols fold into one row of dots. Scrubbing needs a haptic tick per day, which is available in Expo through expo-haptics but not installed.">
+    <div data-frame="phone" data-caption="Top">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Home</span><span style="font-size:15px">Recession Radar</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="row"><span class="pill paper">Paper</span><span class="st run">Running since Jun 2</span></div>
+        <div><div class="big">$31,904.20</div><div class="mono gain sm" style="margin-top:4px">+12.4% since Jun 2 · +0.62% today</div></div>
+        <div>
+          <div class="ck-cv"><div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.008" data-h="140" data-mark></div><div class="fut"><span>Next</span></div></div>
+          <div class="ck-axis" style="margin-top:6px"><span>Jun 2</span><span>Aug</span><span>Oct</span><span style="margin-right:12%">Now</span></div>
+        </div>
+        <div class="ck-lanes">
+          <div class="ck-ln"><span class="nm">TLT</span><i style="left:20%"></i><i style="left:44%"></i><i class="sell" style="left:63%"></i><i style="left:83%"></i><i class="plan" style="left:86%"></i><span class="now"></span></div>
+          <div class="ck-ln"><span class="nm">GLD</span><i style="left:20%"></i><i class="sell" style="left:44%"></i><i style="left:63%"></i><i class="sell" style="left:83%"></i><i class="plan" style="left:86%"></i><span class="now"></span></div>
+        </div>
+        <div class="m-card col" style="gap:8px">
+          <div class="row"><b>Rebalances at 15:50 ET</b><span class="sp"></span><span class="mono xs dim">in 5h 08m</span></div>
+          <div class="ck-bars">
+            <div class="ck-bar"><span class="sym">TLT</span><div class="meter"><i style="width:58.2%"></i><b style="left:60%"></b></div><span class="mono xs dim">58.2 → 60%</span></div>
+            <div class="ck-bar"><span class="sym">GLD</span><div class="meter"><i style="width:41.8%"></i><b style="left:40%"></b></div><span class="mono xs dim">41.8 → 40%</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="m-tool"><span><span data-icon="pause"></span>Pause</span><span><span data-icon="ledger"></span>Orders</span><span class="pri"><span data-icon="copilot"></span>Ask</span></div>
+    </div>
+    <div data-frame="phone" data-caption="Press and hold to scrub">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Home</span><span style="font-size:15px">Recession Radar</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="row"><span class="pill paper">Paper</span><span class="st run">Running since Jun 2</span></div>
+        <div><div class="big">$30,486.15</div><div class="ck-scrub" style="margin-top:4px"><span class="mono sm">Sep 18 close</span><span class="mono sm gain">+7.4% since Jun 2</span></div></div>
+        <div>
+          <div class="ck-cv"><div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.008" data-h="140" data-scrub="0.6"></div><div class="fut"><span>Next</span></div></div>
+          <div class="ck-axis" style="margin-top:6px"><span>Jun 2</span><span>Aug</span><span>Oct</span><span style="margin-right:12%">Now</span></div>
+        </div>
+        <div class="ck-lanes">
+          <div class="ck-ln"><span class="nm">TLT</span><i style="left:20%"></i><i style="left:44%"></i><i class="sell" style="left:63%"></i><i style="left:83%"></i><i class="plan" style="left:86%"></i><span class="now"></span></div>
+          <div class="ck-ln"><span class="nm">GLD</span><i style="left:20%"></i><i class="sell" style="left:44%"></i><i style="left:63%"></i><i class="sell" style="left:83%"></i><i class="plan" style="left:86%"></i><span class="now"></span></div>
+        </div>
+        <div class="m-card col" style="gap:6px">
+          <div class="lbl">Sep 18 rebalance</div>
+          <div class="sm">Sold 14 TLT at $88.20 and bought 6 GLD at $236.10 to return to 60/40.</div>
+        </div>
+      </div>
+      <div class="m-tool"><span><span data-icon="pause"></span>Pause</span><span><span data-icon="ledger"></span>Orders</span><span class="pri"><span data-icon="copilot"></span>Ask</span></div>
+    </div>
+    <div data-frame="phone" data-caption="Scrolled down">
+      <div class="m-nav" style="border-bottom:1px solid var(--line)"><span class="back"><span data-icon="chevron-left"></span>Home</span><span class="col" style="gap:0;align-items:center"><span style="font-size:15px">Recession Radar</span><span class="mono xs gain" style="font-weight:500">$31,904.20 · +0.62%</span></span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body" style="padding-top:12px">
+        <div class="m-sec">Holdings</div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow nosp"><div><div class="nm mono">TLT</div><div class="d">204 shares · target 60%</div></div><div class="end"><div class="mono sm">$18,568.32</div><div class="mono xs dim">58.2%</div></div></div>
+          <div class="m-lrow nosp"><div><div class="nm mono">GLD</div><div class="d">54 shares · target 40%</div></div><div class="end"><div class="mono sm">$13,335.88</div><div class="mono xs dim">41.8%</div></div></div>
+        </div>
+        <div class="m-sec">Today</div>
+        <div class="m-card rows">
+          <div class="m-row"><span class="mono xs dim" style="width:40px">10:31</span><div style="flex:1">Bought 42 TLT at $90.41</div><span class="mono sm">$3,797.22</span></div>
+          <div class="m-row"><span class="mono xs dim" style="width:40px">10:31</span><div style="flex:1">Sold 9 GLD at $247.86</div><span class="mono sm">$2,230.74</span></div>
+        </div>
+        <div class="m-sec">Strategy</div>
+        <div class="m-card col" style="gap:6px">
+          <div style="font-size:14.5px">Hold <b>TLT 60%</b> and <b>GLD 40%</b>, rebalanced from 15:50 ET prices.</div>
+          <div class="sm dim">Editing is on the web, at llamatrade.com/strategies.</div>
+        </div>
+      </div>
+      <div class="m-tool"><span><span data-icon="pause"></span>Pause</span><span><span data-icon="ledger"></span>Orders</span><span class="pri"><span data-icon="copilot"></span>Ask</span></div>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="ax-opt" data-opt="B" data-name="Three segments"
+    data-note="The session splits into Overview, Holdings and Activity behind a segmented control, each short enough to fit without scrolling. It's easy to build with what the app has and each answer is one tap away. It hides the connection between the curve and the trades that the web's lanes make visible, and segments inside a pushed screen are a second layer of navigation under the tabs.">
+    <div data-frame="phone" data-caption="Overview">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span style="font-size:15px">Recession Radar</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="seg round" style="align-self:stretch;justify-content:space-between"><span class="on" style="flex:1;justify-content:center">Overview</span><span style="flex:1;justify-content:center">Holdings</span><span style="flex:1;justify-content:center">Activity</span></div>
+        <div><div class="big">$31,904.20</div><div class="mono gain sm" style="margin-top:4px">+12.4% since Jun 2 · +0.62% today</div></div>
+        <div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.008" data-bench="0.09" data-h="160" data-mark></div>
+        <div class="row xs dim" style="gap:14px;margin-top:-6px"><span class="row gap-6"><i class="dot acc"></i>Session</span><span class="row gap-6"><i style="width:14px;border-top:1.5px dashed var(--fg-3)"></i>SPY</span></div>
+        <div class="figs boxed" style="--n:2">
+          <div class="fig"><div class="lbl">Next rebalance</div><div class="v" style="font-size:18px">15:50</div><div class="s">today</div></div>
+          <div class="fig"><div class="lbl">Account</div><div class="v" style="font-size:18px">••PA92</div><div class="s">paper</div></div>
+        </div>
+      </div>
+      <nav data-tabs="sessions"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Holdings">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span style="font-size:15px">Recession Radar</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="seg round" style="align-self:stretch"><span style="flex:1;justify-content:center">Overview</span><span class="on" style="flex:1;justify-content:center">Holdings</span><span style="flex:1;justify-content:center">Activity</span></div>
+        <div data-chart="alloc" data-items="TLT:58.2,GLD:41.8"></div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow nosp"><div><div class="nm mono">TLT</div><div class="d">204 shares · avg $89.62</div></div><div class="end"><div class="mono sm">$18,568.32</div><div class="mono xs dim">target 60%</div></div></div>
+          <div class="m-lrow nosp"><div><div class="nm mono">GLD</div><div class="d">54 shares · avg $231.40</div></div><div class="end"><div class="mono sm">$13,335.88</div><div class="mono xs dim">target 40%</div></div></div>
+        </div>
+        <div class="callout" style="font-size:13.5px"><span data-icon="clock"></span><div>At <b>15:50</b> the session works out orders to bring TLT back to 60% and GLD to 40% from that minute's prices.</div></div>
+      </div>
+      <nav data-tabs="sessions"></nav>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="ax-opt" data-opt="C" data-name="Next rebalance first"
+    data-note="The screen opens on what happens next: a large 15:50 with the countdown and the estimated orders at current prices, then the value and curve below. It answers the most common mid-day question for a session with a rebalance today. The estimate moves with prices until 15:50 and has to be labelled as an estimate, and there is no endpoint that previews a rebalance's orders today, so it needs one. On days without a rebalance the top block shrinks to one line.">
+    <div data-frame="phone" data-caption="Top">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Home</span><span style="font-size:15px">Recession Radar</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="m-card rim col" style="gap:10px;padding:18px">
+          <div class="lbl">Next rebalance</div>
+          <div class="row base"><span class="mono b" style="font-size:40px;letter-spacing:-0.04em">15:50</span><span class="sm dim">ET today · in 5h 08m</span></div>
+          <div class="lbl" style="margin-top:4px">Estimated at 10:42 prices</div>
+          <div class="m-row" style="padding:8px 0"><span class="sym" style="width:40px">TLT</span><span style="flex:1">Buy about 7</span><span class="mono sm">≈ $633</span></div>
+          <div class="m-row" style="padding:8px 0"><span class="sym" style="width:40px">GLD</span><span style="flex:1">Sell about 2</span><span class="mono sm">≈ $496</span></div>
+          <div class="xs dim">The real orders use prices at 15:50 and can differ.</div>
+        </div>
+        <div class="row base"><span class="mono b" style="font-size:22px">$31,904.20</span><span class="mono sm gain">+0.62% today</span></div>
+        <div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.008" data-h="110" data-mark></div>
+      </div>
+      <nav data-tabs="sessions"></nav>
+    </div>
+    <div data-frame="phone" data-caption="After 15:50">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Home</span><span style="font-size:15px">Recession Radar</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="m-card col" style="gap:8px">
+          <div class="row"><span data-icon="check2" class="acc"></span><b>Rebalanced at 15:50</b></div>
+          <div class="m-row" style="padding:8px 0"><span class="sym" style="width:40px">TLT</span><span style="flex:1">Bought 7 at $90.52</span><span class="mono sm">$633.64</span></div>
+          <div class="m-row" style="padding:8px 0"><span class="sym" style="width:40px">GLD</span><span style="flex:1">Sold 2 at $248.04</span><span class="mono sm">$496.08</span></div>
+          <div class="xs dim">Now TLT 60.0% and GLD 40.0%. Next check Dec 1.</div>
+        </div>
+        <div class="row base"><span class="mono b" style="font-size:22px">$31,951.06</span><span class="mono sm gain">+0.77% today</span></div>
+        <div data-chart="area" data-seed="19" data-ret="0.126" data-vol="0.008" data-h="110" data-mark></div>
+      </div>
+      <nav data-tabs="sessions"></nav>
+    </div>
+  </div>
+
+  <!-- D -->
+  <div class="ax-opt" data-opt="D" data-name="A paragraph, then figures"
+    data-note="A short paragraph says what the session did and why, in the voice of strategies/holdings2: what it holds, how far each is from target and what 15:50 will do. Figures and the chart follow. It helps someone who checks in rarely to catch up, and the paragraph is built from fixed templates per rule shape. People who check several times a day will read the same sentence again and again, so it would need to shrink after the first read.">
+    <div data-frame="phone" data-caption="Top">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Home</span><span style="font-size:15px">Recession Radar</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="row"><span class="pill paper">Paper</span><span class="st run">Running since Jun 2</span></div>
+        <p class="ck-sent" style="font-size:17px">This session holds <b>TLT at 58.2%</b> and <b>GLD at 41.8%</b>, against targets of 60 and 40. At <b>15:50</b> it will buy a little TLT and sell a little GLD to close the gap. It's up <b class="gain">12.4%</b> since Jun 2.</p>
+        <div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.008" data-h="130" data-mark data-marks="0.2,0.44,0.63,0.83"></div>
+        <div class="figs boxed" style="--n:2">
+          <div class="fig"><div class="lbl">Value</div><div class="v" style="font-size:17px">$31,904.20</div><div class="s gain">+0.62% today</div></div>
+          <div class="fig"><div class="lbl">Rebalances</div><div class="v" style="font-size:17px">5</div><div class="s">since Jun 2</div></div>
+        </div>
+      </div>
+      <nav data-tabs="sessions"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Press and hold to scrub">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Home</span><span style="font-size:15px">Recession Radar</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="row"><span class="pill paper">Paper</span><span class="st run">Running since Jun 2</span></div>
+        <p class="ck-sent" style="font-size:17px">On <b>Sep 18</b> the session was worth <b>$30,486.15</b>, up 7.4% since Jun 2. That day it sold 14 TLT and bought 6 GLD to return to 60/40.</p>
+        <div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.008" data-h="130" data-scrub="0.6"></div>
+        <div class="figs boxed" style="--n:2">
+          <div class="fig"><div class="lbl">Value</div><div class="v" style="font-size:17px">$31,904.20</div><div class="s gain">+0.62% today</div></div>
+          <div class="fig"><div class="lbl">Rebalances</div><div class="v" style="font-size:17px">5</div><div class="s">since Jun 2</div></div>
+        </div>
+      </div>
+      <nav data-tabs="sessions"></nav>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================== 3. Pausing or stopping -->
+<section class="ax-surface" id="ck-pause" data-surface="checkin/pause" data-area="Check-in" data-title="Pausing or stopping a session"
+  data-why="The two things the phone can change about a session. Pause holds everything as it is and can be undone; stop ends the session and can't. Each option shows where the action starts, how it's confirmed and what the screen looks like after.">
+
+  <!-- A -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="One sheet, Face ID to stop"
+    data-note="Recommended. Pause in the session's toolbar opens a sheet with both choices, pause first as the gentler one. Pause takes one tap and no Face ID because it's undone with Resume. Stop shows where everything goes (sessions/stop2 A) and asks for Face ID, and any change to a live session asks for it too. If Face ID fails twice, iOS falls back to the device passcode, so nobody gets locked out. Afterwards the session shows a plain banner with what happened. It needs expo-local-authentication, which the app doesn't include yet, and Face ID is a check on the phone only: the server still decides, so the stop request carries the user's normal session token.">
+    <div data-frame="phone" data-caption="Pause opens both choices">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Home</span><span style="font-size:15px">Recession Radar</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="row"><span class="pill paper">Paper</span><span class="st run">Running since Jun 2</span></div>
+        <div><div class="big">$31,904.20</div><div class="mono gain sm" style="margin-top:4px">+0.62% today</div></div>
+        <div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.008" data-h="140" data-mark></div>
+      </div>
+      <div class="scrim"></div>
+      <div class="io-sheet fit"><div class="grab"></div>
+        <div class="sh">Recession Radar<span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2">
+          <div>
+            <div class="ck-act"><span class="ib"><span data-icon="pause"></span></span><div><div class="t">Pause</div><div class="d">Keeps TLT and GLD as they are. No orders go out, including 15:50, until you resume.</div></div></div>
+            <div class="ck-act"><span class="ib risk"><span data-icon="stop"></span></span><div><div class="t">Stop the session</div><div class="d">Ends it for good. You'll see where the holdings and cash go before you confirm.</div></div></div>
+          </div>
+          <span class="m-btn sec">Cancel</span>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Stop asks for Face ID">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Home</span><span style="font-size:15px">Recession Radar</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body"><div class="big">$31,904.20</div></div>
+      <div class="scrim"></div>
+      <div class="io-sheet tall"><div class="grab"></div>
+        <div class="sh">Stop Recession Radar?<span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2">
+          <div class="ck-where">
+            <div><span data-icon="ledger"></span><span><b>TLT and GLD move to Unmanaged</b> in Paper ••PA92. They stay in the account; LlamaTrade stops trading them.</span></div>
+            <div><span data-icon="wallet"></span><span><b>Its cash moves to Unallocated</b>, ready for another session.</span></div>
+            <div><span data-icon="calendar"></span><span><b>Today's 15:50 rebalance is cancelled.</b></span></div>
+          </div>
+          <div class="sm dim">Stopping can't be undone. Pause keeps everything and can be resumed.</div>
+          <span class="m-btn risk"><span data-icon="faceid"></span>Stop with Face ID</span>
+        </div>
+      </div>
+      <div class="io-faceid"><span data-icon="faceid"></span>Face ID</div>
+    </div>
+    <div data-frame="phone" data-time="10:44" data-caption="After pausing">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Home</span><span style="font-size:15px">Recession Radar</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-strip"><span data-icon="pause"></span><span><b>Paused at 10:44.</b> No orders until you resume.</span><span class="sp"></span><span class="m-link">Resume</span></div>
+      <div class="m-body" style="padding-top:14px">
+        <div class="row"><span class="pill paper">Paper</span><span class="st pause">Paused</span></div>
+        <div><div class="big">$31,904.20</div><div class="mono gain sm" style="margin-top:4px">+0.62% today</div></div>
+        <div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.008" data-h="140" data-color="muted" data-mark></div>
+        <div class="m-card col" style="gap:6px">
+          <div class="row"><b style="color:var(--fg-2);text-decoration:line-through">Rebalances at 15:50 ET</b><span class="sp"></span><span class="mono xs dim">skipped</span></div>
+          <div class="sm dim">If you resume before 15:50, today's rebalance runs as planned.</div>
+        </div>
+      </div>
+      <div class="m-tool"><span class="pri"><span data-icon="play"></span>Resume</span><span><span data-icon="ledger"></span>Orders</span><span><span data-icon="copilot"></span>Ask</span></div>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="ax-opt" data-opt="B" data-name="Swipe on the row"
+    data-note="Pause and Stop sit behind a left swipe on the session's row in Sessions, like Mail's actions. It's the quickest path for someone who knows it's there, and a short alert confirms either one. Swipe actions are hard to discover, so the same two must also live on the session screen, and a one-line alert has no room to say where the holdings go when a session stops.">
+    <div data-frame="phone" data-caption="Swipe left on a row">
+      <div class="m-top"><span class="t">Sessions</span></div>
+      <div class="m-body">
+        <div class="m-sec">Running</div>
+        <div class="m-card" style="padding:0">
+          <div style="padding:0 14px"><div class="m-lrow nosp"><div style="min-width:0"><div class="nm">All-Weather Portfolio</div><div class="d">Live ••4821 · next Dec 1</div></div><div class="end"><div class="mono sm">$48,210.55</div><div class="mono xs gain">+0.31%</div></div></div></div>
+          <div class="ck-sw ch-skip"><div class="ct"><div class="m-lrow nosp"><div style="min-width:0"><div class="nm">Recession Radar</div><div class="d">Paper ••PA92 · today 15:50</div></div><div class="end"><div class="mono sm">$31,904.20</div><div class="mono xs gain">+0.62%</div></div></div></div><div class="ac"><span class="p"><span data-icon="pause"></span>Pause</span><span class="s"><span data-icon="stop"></span>Stop</span></div></div>
+          <div style="padding:0 14px"><div class="m-lrow nosp"><div style="min-width:0"><div class="nm">Momentum Sectors</div><div class="d">Paper ••PA92 · next Nov 23</div></div><div class="end"><div class="mono sm">$22,118.07</div><div class="mono xs gain">+1.22%</div></div></div></div>
+        </div>
+      </div>
+      <nav data-tabs="sessions"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Alert to confirm">
+      <div class="m-top"><span class="t">Sessions</span></div>
+      <div class="m-body">
+        <div class="m-sec">Running</div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow nosp"><div style="min-width:0"><div class="nm">All-Weather Portfolio</div><div class="d">Live ••4821 · next Dec 1</div></div><div class="end"><div class="mono sm">$48,210.55</div></div></div>
+          <div class="m-lrow nosp"><div style="min-width:0"><div class="nm">Recession Radar</div><div class="d">Paper ••PA92 · today 15:50</div></div><div class="end"><div class="mono sm">$31,904.20</div></div></div>
+        </div>
+      </div>
+      <nav data-tabs="sessions"></nav>
+      <div class="scrim"></div>
+      <div class="io-alert"><div class="ab"><div class="at">Pause Recession Radar?</div>No orders go out, including today's 15:50 rebalance, until you resume.</div><div class="bts inapp"><span>Cancel</span><span class="b">Pause</span></div></div>
+    </div>
+    <div data-frame="phone" data-time="10:44" data-caption="The row after pausing">
+      <div class="m-top"><span class="t">Sessions</span></div>
+      <div class="m-body">
+        <div class="m-sec">Running</div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow nosp"><div style="min-width:0"><div class="nm">All-Weather Portfolio</div><div class="d">Live ••4821 · next Dec 1</div></div><div class="end"><div class="mono sm">$48,210.55</div><div class="mono xs gain">+0.31%</div></div></div>
+          <div class="m-lrow nosp"><div style="min-width:0"><div class="nm">Momentum Sectors</div><div class="d">Paper ••PA92 · next Nov 23</div></div><div class="end"><div class="mono sm">$22,118.07</div><div class="mono xs gain">+1.22%</div></div></div>
+        </div>
+        <div class="m-sec">Paused</div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow nosp"><div style="min-width:0"><div class="nm">Recession Radar</div><div class="d">Paused 10:44 · swipe to resume</div></div><div class="end"><div class="mono sm">$31,904.20</div><div class="mono xs gain">+0.62%</div></div></div>
+        </div>
+      </div>
+      <nav data-tabs="sessions"></nav>
+      <div class="m-hud"><span data-icon="pause"></span>Paused</div>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="ax-opt" data-opt="C" data-name="Long press for a menu"
+    data-note="Pressing and holding a session anywhere it appears (Home, Sessions, a widget) lifts a preview with a menu: Pause, Open orders, Ask Copilot and Stop at the bottom in red. Choosing Stop asks for Face ID straight from the menu, and a HUD confirms. It works the same everywhere and keeps the screens clean. Long press is the least discoverable gesture on iOS, and confirming a stop from a menu skips the explanation of where the holdings go, which the web decided people should see.">
+    <div data-frame="phone" data-caption="Press and hold a session">
+      <div class="m-top"><span class="t">Sessions</span></div>
+      <div class="m-body">
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow nosp"><div><div class="nm">All-Weather Portfolio</div><div class="d">Live · next Dec 1</div></div><div class="end mono sm">$48,210.55</div></div>
+          <div class="m-lrow nosp"><div><div class="nm">Recession Radar</div><div class="d">Paper · today 15:50</div></div><div class="end mono sm">$31,904.20</div></div>
+          <div class="m-lrow nosp"><div><div class="nm">Momentum Sectors</div><div class="d">Paper · next Nov 23</div></div><div class="end mono sm">$22,118.07</div></div>
+        </div>
+      </div>
+      <nav data-tabs="sessions"></nav>
+      <div class="io-blur"></div>
+      <div class="io-front" style="top:150px">
+        <div class="ck-prev"><div class="row"><b>Recession Radar</b><span class="sp"></span><span class="pill paper">Paper</span></div><div class="row base" style="margin-top:6px"><span class="mono b" style="font-size:22px">$31,904.20</span><span class="mono sm gain">+0.62%</span></div><div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.008" data-h="70" style="margin-top:8px"></div></div>
+      </div>
+      <div class="io-ctx" style="top:350px;left:10px">
+        <div>Pause<span data-icon="pause"></span></div>
+        <div>Open orders<span data-icon="ledger"></span></div>
+        <div>Ask Copilot<span data-icon="copilot"></span></div>
+        <div class="gap"></div>
+        <div class="d">Stop session<span data-icon="stop"></span></div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Stop asks for Face ID">
+      <div class="m-top"><span class="t">Sessions</span></div>
+      <div class="m-body">
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow nosp"><div><div class="nm">All-Weather Portfolio</div><div class="d">Live · next Dec 1</div></div><div class="end mono sm">$48,210.55</div></div>
+          <div class="m-lrow nosp"><div><div class="nm">Recession Radar</div><div class="d">Paper · today 15:50</div></div><div class="end mono sm">$31,904.20</div></div>
+        </div>
+      </div>
+      <nav data-tabs="sessions"></nav>
+      <div class="scrim"></div>
+      <div class="io-faceid"><span data-icon="faceid"></span>Face ID</div>
+      <div class="io-alert" style="top:72%"><div class="ab" style="padding:14px 16px"><div class="at" style="font-size:15px">Stop Recession Radar</div>Holdings move to Unmanaged. This can't be undone.</div></div>
+    </div>
+    <div data-frame="phone" data-time="10:44" data-caption="Stopped">
+      <div class="m-top"><span class="t">Sessions</span></div>
+      <div class="m-body">
+        <div class="m-sec">Running</div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow nosp"><div><div class="nm">All-Weather Portfolio</div><div class="d">Live · next Dec 1</div></div><div class="end mono sm">$48,210.55</div></div>
+          <div class="m-lrow nosp"><div><div class="nm">Momentum Sectors</div><div class="d">Paper · next Nov 23</div></div><div class="end mono sm">$22,118.07</div></div>
+        </div>
+        <div class="m-sec">Stopped</div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow nosp"><div><div class="nm" style="color:var(--fg-2)">Recession Radar</div><div class="d">Stopped today 10:44</div></div><div class="end mono sm">$31,904.20</div></div>
+          <div class="m-lrow nosp"><div><div class="nm" style="color:var(--fg-2)">Tech Momentum Rotation</div><div class="d">Stopped Nov 12</div></div><div class="end mono sm">$26,173.30</div></div>
+        </div>
+      </div>
+      <nav data-tabs="sessions"></nav>
+      <div class="m-hud"><span data-icon="check2"></span>Stopped</div>
+    </div>
+  </div>
+
+  <!-- D -->
+  <div class="ax-opt" data-opt="D" data-name="Face ID for every change"
+    data-note="Every change to a session, pause included, asks for Face ID, and a failed scan offers the device passcode. It is the most consistent rule and the easiest to explain: nothing changes without you. It adds a scan to an action that can be undone in one tap, which trains people to approve scans without reading, and it makes the passcode fallback a common path on phones without Face ID enrolled.">
+    <div data-frame="phone" data-caption="Pause asks for Face ID">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Home</span><span style="font-size:15px">Recession Radar</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div><div class="big">$31,904.20</div><div class="mono gain sm" style="margin-top:4px">+0.62% today</div></div>
+        <div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.008" data-h="140" data-mark></div>
+      </div>
+      <div class="m-tool"><span class="pri"><span data-icon="pause"></span>Pause</span><span><span data-icon="ledger"></span>Orders</span><span><span data-icon="copilot"></span>Ask</span></div>
+      <div class="scrim"></div>
+      <div class="io-faceid"><span data-icon="faceid"></span>Face ID</div>
+    </div>
+    <div data-frame="phone" data-caption="Face ID didn't match">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Home</span><span style="font-size:15px">Recession Radar</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body"><div class="big">$31,904.20</div></div>
+      <div class="scrim"></div>
+      <div class="io-alert"><div class="ab"><div class="at">Face ID Not Recognized</div>Try again, or enter your iPhone passcode to pause Recession Radar.</div><div class="bts v"><span class="b">Try Face ID Again</span><span>Enter Passcode</span><span>Cancel</span></div></div>
+    </div>
+    <div data-frame="phone" data-time="10:44" data-caption="Paused">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Home</span><span style="font-size:15px">Recession Radar</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-strip"><span data-icon="pause"></span><span><b>Paused at 10:44.</b> No orders until you resume.</span></div>
+      <div class="m-body" style="padding-top:14px">
+        <div><div class="big">$31,904.20</div><div class="mono gain sm" style="margin-top:4px">+0.62% today</div></div>
+        <div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.008" data-h="140" data-color="muted" data-mark></div>
+      </div>
+      <div class="m-tool"><span class="pri"><span data-icon="faceid"></span>Resume</span><span><span data-icon="ledger"></span>Orders</span><span><span data-icon="copilot"></span>Ask</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================== 4. Going live -->
+<section class="ax-surface" id="ck-go-live" data-surface="checkin/go-live" data-area="Check-in" data-title="Going live"
+  data-why="Recession Radar has run on paper since Jun 2. Moving it to real money is the biggest decision in the product. Each option shows the entry on the phone, the decision and where it ends. Live needs an Alpaca live account connected and a plan with live sessions.">
+
+  <!-- A -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="Started on the web, handed over"
+    data-note="Recommended. The phone shows Go live but doesn't do it: the sheet says live is started on the web, where the comparison with the backtest and the full review fit, and offers three ways over: open it on a Mac nearby through Handoff, email yourself the link, or scan a code. Once started on the web, the phone shows the live session with its own banner. It keeps the one irreversible money decision on the screen built for it, at the cost of a second device. When the account has no live Alpaca connection yet, the sheet says what's missing instead. Handoff needs an NSUserActivity native module and an associated domain; emailing the link needs a small endpoint.">
+    <div data-frame="phone" data-caption="Go live on a paper session">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span style="font-size:15px">Recession Radar</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="row"><span class="pill paper">Paper</span><span class="st run">Running since Jun 2</span></div>
+        <div><div class="big">$31,904.20</div><div class="mono gain sm" style="margin-top:4px">+12.4% since Jun 2</div></div>
+        <div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.008" data-bench="0.11" data-h="130" data-mark></div>
+        <div class="row xs dim" style="gap:14px;margin-top:-6px"><span class="row gap-6"><i class="dot acc"></i>Paper</span><span class="row gap-6"><i style="width:14px;border-top:1.5px dashed var(--fg-3)"></i>Backtest, same dates</span></div>
+        <div class="m-card row" style="gap:12px"><span data-icon="bolt" class="acc" style="width:20px;height:20px"></span><div style="flex:1"><b>Go live</b><div class="sm dim">Run this strategy with real money</div></div><span data-icon="chevron-right" class="dim"></span></div>
+      </div>
+      <nav data-tabs="sessions"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Continue on the web">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span style="font-size:15px">Recession Radar</span><span></span></div>
+      <div class="m-body"><div class="big">$31,904.20</div></div>
+      <div class="scrim"></div>
+      <div class="io-sheet tall"><div class="grab"></div>
+        <div class="sh">Go live on the web<span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2">
+          <div class="sm muted" style="font-size:14.5px;line-height:1.5">Live sessions use real money in Live ••4821. You start one on the web, where you can compare paper with the backtest and review the first orders.</div>
+          <div class="io-list">
+            <div><span data-icon="laptop"></span><span class="grow">Open on your Mac<div class="d">Through Handoff, on a Mac signed in to your Apple ID</div></span></div>
+            <div><span data-icon="mail"></span><span class="grow">Email me the link<div class="d">To s•••@example.com</div></span></div>
+            <div><span data-icon="copy"></span><span class="grow">Copy the link</span></div>
+          </div>
+          <div class="row" style="gap:14px"><div class="ck-qr"><i></i><i></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i></i><i></i><i></i><i class="o"></i><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i class="o"></i><i class="o"></i><i></i><i></i><i></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i></i><i class="o"></i><i></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i></i><i></i><i class="o"></i><i></i><i></i><i class="o"></i><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i class="o"></i><i></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i></i><i></i><i></i><i class="o"></i><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i class="o"></i></div><div class="sm dim">Or scan this with a computer's camera to open the same page.</div></div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone" data-time="11:06" data-caption="After it's started on the web">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span style="font-size:15px">Recession Radar</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-strip"><span data-icon="bolt"></span><span><b>Live since 11:05,</b> started on the web. Real money in ••4821.</span></div>
+      <div class="m-body" style="padding-top:14px">
+        <div class="row"><span class="pill live">Live</span><span class="st run">Running</span></div>
+        <div><div class="big">$10,000.00</div><div class="mono sm dim" style="margin-top:4px">Allocated from Live ••4821</div></div>
+        <div class="m-card col" style="gap:8px">
+          <div class="row"><b>First orders at 15:50 ET</b><span class="sp"></span><span class="mono xs dim">in 4h 45m</span></div>
+          <div class="ck-bars">
+            <div class="ck-bar"><span class="sym">TLT</span><div class="meter"><i style="width:0%"></i><b style="left:60%"></b></div><span class="mono xs dim">0 → 60%</span></div>
+            <div class="ck-bar"><span class="sym">GLD</span><div class="meter"><i style="width:0%"></i><b style="left:40%"></b></div><span class="mono xs dim">0 → 40%</span></div>
+          </div>
+        </div>
+        <div class="sm dim">The paper session keeps running beside it, so you can keep comparing them.</div>
+      </div>
+      <nav data-tabs="sessions"></nav>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="ax-opt" data-opt="B" data-name="Review and Face ID on the phone"
+    data-note="The whole step happens on the phone: a review sheet with the amount, the account, the first orders and what live means, then Face ID, then the live session. It is the shortest path and treats the phone as a full client. It's also the easiest way to start real trading by accident or in a hurry, the amount has to be typed on a small keyboard, and it breaks the decision that building and starting stay on the web. It needs expo-local-authentication and the live gate (a connected live account, plan maxLiveSessions) enforced on the server, not only hidden in the app.">
+    <div data-frame="phone" data-caption="Review">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Recession Radar</span><span style="font-size:15px">Go live</span><span></span></div>
+      <div class="m-body">
+        <div class="io-list">
+          <div><span class="grow">Account</span><span class="v">Live ••4821</span></div>
+          <div><span class="grow">Amount</span><span class="v mono" style="color:var(--fg)">$10,000.00</span></div>
+          <div><span class="grow">Strategy version</span><span class="v">v2, same as paper</span></div>
+          <div><span class="grow">First orders</span><span class="v">Today 15:50 ET</span></div>
+        </div>
+        <div class="m-card col" style="gap:6px">
+          <div class="lbl">First orders, estimated at 10:42</div>
+          <div class="m-row" style="padding:7px 0"><span class="sym" style="width:40px">TLT</span><span style="flex:1">Buy about 66</span><span class="mono sm">≈ $5,967</span></div>
+          <div class="m-row" style="padding:7px 0"><span class="sym" style="width:40px">GLD</span><span style="flex:1">Buy about 16</span><span class="mono sm">≈ $3,966</span></div>
+        </div>
+        <div class="callout risk" style="font-size:13.5px"><span data-icon="alert"></span><div><b>This uses real money.</b> Orders go to your Alpaca live account, and losses are real.</div></div>
+        <span class="m-btn"><span data-icon="faceid"></span>Start live with Face ID</span>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Face ID">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Recession Radar</span><span style="font-size:15px">Go live</span><span></span></div>
+      <div class="m-body">
+        <div class="io-list">
+          <div><span class="grow">Account</span><span class="v">Live ••4821</span></div>
+          <div><span class="grow">Amount</span><span class="v mono" style="color:var(--fg)">$10,000.00</span></div>
+        </div>
+      </div>
+      <div class="scrim"></div>
+      <div class="io-faceid"><span data-icon="faceid"></span>Face ID</div>
+    </div>
+    <div data-frame="phone" data-time="10:44" data-caption="Live">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span style="font-size:15px">Recession Radar</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="row"><span class="pill live">Live</span><span class="st run">Running since 10:44</span></div>
+        <div><div class="big">$10,000.00</div><div class="mono sm dim" style="margin-top:4px">Allocated from Live ••4821</div></div>
+        <div class="callout" style="font-size:13.5px"><span data-icon="clock"></span><div>First orders go out at <b>15:50 ET</b>. You can pause before then and nothing will be bought.</div></div>
+      </div>
+      <nav data-tabs="sessions"></nav>
+      <div class="m-hud"><span data-icon="check2"></span>Live</div>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="ax-opt" data-opt="C" data-name="What live needs, said plainly"
+    data-note="Go live first checks what the account has. When something is missing, it opens a short explanation of what live needs (a funded Alpaca live account, connected, and a plan with live sessions) and a way to set that up on the web, instead of starting a flow that would fail. It's the right copy for that case whatever flow is chosen, and on its own it leaves the question of the eventual flow open. The link needs the same small email endpoint as A.">
+    <div data-frame="phone" data-caption="Go live on a paper session">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span style="font-size:15px">Recession Radar</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="row"><span class="pill paper">Paper</span><span class="st run">Running since Jun 2</span></div>
+        <div><div class="big">$31,904.20</div><div class="mono gain sm" style="margin-top:4px">+12.4% since Jun 2</div></div>
+        <div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.008" data-h="130" data-mark></div>
+        <div class="m-card row" style="gap:12px"><span data-icon="lock" class="dim" style="width:20px;height:20px"></span><div style="flex:1"><b>Go live</b><div class="sm dim">Needs an Alpaca live account</div></div><span data-icon="chevron-right" class="dim"></span></div>
+      </div>
+      <nav data-tabs="sessions"></nav>
+    </div>
+    <div data-frame="phone" data-caption="What live needs">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Recession Radar</span><span style="font-size:15px">Live trading</span><span></span></div>
+      <div class="m-body">
+        <div class="h2">Live needs two things first</div>
+        <div class="muted" style="font-size:15px;line-height:1.55">Recession Radar runs on your Alpaca paper account. To trade it with real money, connect an Alpaca live account and use a plan with live sessions. You then move it to live on the web, after a review of its first orders.</div>
+        <div class="m-sec">What live needs</div>
+        <div class="io-list">
+          <div><span data-icon="link"></span><span class="grow">An Alpaca live account, connected</span><span class="v">Not yet</span></div>
+          <div><span data-icon="card"></span><span class="grow">A plan with live sessions</span><span class="v">Not on your plan</span></div>
+        </div>
+        <div class="m-btn sec">Email me a link to set it up</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- D -->
+  <div class="ax-opt" data-opt="D" data-name="Ask on the phone, confirm on the web"
+    data-note="The phone prepares the request (amount and account) and sends it to the web, where a banner waits for a confirmation with the full review. The phone shows the request as waiting until it's confirmed or it expires after an hour. It lets the idea start where it occurs and still puts the decision on the big screen. It's two steps on two devices with a pending state in between, which needs a new 'live request' record on the server, and a request left waiting is one more thing to explain.">
+    <div data-frame="phone" data-caption="Prepare the request">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Recession Radar</span><span style="font-size:15px">Go live</span><span></span></div>
+      <div class="m-body">
+        <div class="io-list">
+          <div><span class="grow">Account</span><span class="v">Live ••4821</span></div>
+          <div><span class="grow">Amount</span><span class="v mono" style="color:var(--fg)">$10,000.00</span></div>
+        </div>
+        <div class="sm muted" style="line-height:1.5">You'll confirm this on the web, where you can review the first orders and compare paper with the backtest. The request expires in an hour.</div>
+        <span class="m-btn">Send to the web</span>
+      </div>
+      <div data-kb="10,000|10,500|12,000"></div>
+    </div>
+    <div data-frame="phone" data-time="10:44" data-caption="Waiting for the web">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span style="font-size:15px">Recession Radar</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-strip"><span data-icon="clock"></span><span><b>Live request waiting.</b> Confirm it on the web by 11:44.</span><span class="sp"></span><span class="m-link">Cancel</span></div>
+      <div class="m-body" style="padding-top:14px">
+        <div class="row"><span class="pill paper">Paper</span><span class="st run">Running since Jun 2</span></div>
+        <div><div class="big">$31,904.20</div><div class="mono gain sm" style="margin-top:4px">+12.4% since Jun 2</div></div>
+        <div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.008" data-h="130" data-mark></div>
+        <div class="m-card col" style="gap:6px">
+          <div class="lbl">Requested 10:44</div>
+          <div class="row"><span>$10,000.00 from Live ••4821</span></div>
+          <div class="sm dim">Open llamatrade.com on any computer. The request is at the top of Home.</div>
+        </div>
+      </div>
+      <nav data-tabs="sessions"></nav>
+    </div>
+    <div data-frame="phone" data-time="11:05" data-caption="Confirmed on the web">
+      <div class="io-banner io-nt"><span data-appicon></span><div class="bd"><div class="hd"><b>Recession Radar is live</b><span>now</span></div><div class="tx">Confirmed on the web. First orders at 15:50 ET in Live ••4821.</div></div></div>
+      <div class="m-nav" style="margin-top:0"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span style="font-size:15px">Recession Radar</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="row"><span class="pill live">Live</span><span class="st run">Running since 11:05</span></div>
+        <div><div class="big">$10,000.00</div><div class="mono sm dim" style="margin-top:4px">Allocated from Live ••4821</div></div>
+        <div class="sm dim">The paper session keeps running beside it.</div>
+      </div>
+      <nav data-tabs="sessions"></nav>
+    </div>
+  </div>
+</section>
+
+<script src="kit.js"></script>
+</body>
+</html>

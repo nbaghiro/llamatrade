@@ -9,7 +9,6 @@ import { describe, expect, it } from 'vitest';
 import { sessionHoldings } from '../../strategy-builder/rail/sessionHoldings';
 import {
   latestRunPerVersion,
-  matchesFilter,
   metaLine,
   rangeLabel,
   runFigures,
@@ -106,16 +105,6 @@ describe('runState', () => {
   it('says "Not running" for a strategy that never ran', () => {
     expect(stateLabel('stopped', false)).toBe('Not running');
     expect(stateLabel('stopped', true)).toBeUndefined();
-  });
-});
-
-describe('matchesFilter', () => {
-  it('groups session states under Running', () => {
-    expect(matchesFilter('error', 'running')).toBe(true);
-    expect(matchesFilter('draft', 'running')).toBe(false);
-    expect(matchesFilter('draft', 'draft')).toBe(true);
-    expect(matchesFilter('stopped', 'stopped')).toBe(true);
-    expect(matchesFilter('running', 'all')).toBe(true);
   });
 });
 

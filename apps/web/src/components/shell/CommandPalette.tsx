@@ -1,38 +1,61 @@
+import { num, toDate } from '@llamatrade/core/format';
+import { ExecutionMode } from '@llamatrade/core/proto/common_pb';
 import { StrategyStatus } from '@llamatrade/core/proto/strategy_pb';
+import { OrderStatus } from '@llamatrade/core/proto/trading_pb';
 import { useStrategiesStore } from '@llamatrade/core/stores/strategies';
+import { useTradingStore } from '@llamatrade/core/stores/trading';
 import {
+  AlertTriangle,
   ArrowRight,
+  Clock3,
   CornerDownLeft,
   FileText,
   FlaskConical,
+  History,
   LineChart,
   Plus,
+  Receipt,
   Search,
   Sparkles,
   type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 
+import { formatMoney, formatPct, pnlTone } from '../../lib/format';
+import { etParts } from '../../lib/marketClock';
 import {
   COPILOT_RESULT_ID,
   copilotUrl,
   flattenGroups,
   highlightRuns,
   moveActive,
+  parseQuery,
+  pushRecent,
   rankPalette,
   type PaletteItem,
   type PaletteKind,
+  type RecentEntry,
 } from '../../lib/palette';
 import { useUIStore } from '../../store/ui';
+import { useAttentionEntries } from '../home/useAttentionEntries';
 import { Kbd } from '../ui/Kbd';
+import { ModeBadge } from '../ui/ModeBadge';
 import { useModal } from '../ui/useModal';
 
 import { usePalette } from './usePalette';
+import { useSessionRows } from './useSessionRows';
 
 const PAGES: ReadonlyArray<PaletteItem & { to: string }> = [
   { id: 'page:home', kind: 'page', label: 'Home', to: '/dashboard', keywords: ['dashboard'] },
+  {
+    id: 'page:markets',
+    kind: 'page',
+    label: 'Markets',
+    to: '/markets',
+    keywords: ['prices', 'quotes', 'watchlist'],
+  },
   {
     id: 'page:portfolio',
     kind: 'page',
@@ -107,13 +130,10 @@ const ACTIONS: ReadonlyArray<PaletteItem & { id: ActionId }> = [
   },
 ];
 
-const EMPTY_IDS = [
-  'action:new',
-  'action:backtest',
-  'page:portfolio',
-  'page:strategies',
-  'page:copilot',
-];
+const FALLBACK_EMPTY_IDS = ['action:new', 'action:backtest', 'page:markets', 'page:copilot'];
+const RECENT_KEY = 'llamatrade-palette-recent';
+const TONE_CLASS = { gain: 'text-gain', loss: 'text-loss', flat: '' } as const;
+const PALETTE_SESSIONS = 6;
 
 const STATUS_HINT: Partial<Record<StrategyStatus, string>> = {
   [StrategyStatus.DRAFT]: 'Draft',
@@ -123,6 +143,9 @@ const STATUS_HINT: Partial<Record<StrategyStatus, string>> = {
 };
 
 const KIND_ICON: Record<PaletteKind, LucideIcon> = {
+  today: Clock3,
+  session: LineChart,
+  recent: History,
   strategy: LineChart,
   page: FileText,
   action: Plus,
@@ -136,43 +159,177 @@ const ACTION_ICON: Record<ActionId, LucideIcon> = {
   'action:deploy': ArrowRight,
 };
 
+function readRecent(): RecentEntry[] {
+  try {
+    const raw = window.localStorage.getItem(RECENT_KEY);
+    const parsed: unknown = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed)
+      ? parsed.filter(
+          (e): e is RecentEntry =>
+            typeof e === 'object' &&
+            e !== null &&
+            typeof (e as RecentEntry).id === 'string' &&
+            typeof (e as RecentEntry).label === 'string' &&
+            typeof (e as RecentEntry).to === 'string'
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeRecent(list: readonly RecentEntry[]) {
+  try {
+    window.localStorage.setItem(RECENT_KEY, JSON.stringify(list));
+  } catch {
+    // Recent is a convenience; without storage the palette still works.
+  }
+}
+
+/** What a row shows beyond its label, and where it goes. */
+interface RowExtra {
+  to?: string;
+  icon?: LucideIcon;
+  mode?: 'live' | 'paper';
+  dot?: 'accent' | 'muted' | 'risk';
+  right?: ReactNode;
+}
+
+const sameEtDay = (a: Date, b: Date) => {
+  const x = etParts(a);
+  const y = etParts(b);
+  return x.year === y.year && x.month === y.month && x.day === y.day;
+};
+
+const shortDate = (d: Date) =>
+  d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' });
+
 export function CommandPalette() {
   const open = usePalette((s) => s.open);
   return open ? <PaletteDialog /> : null;
 }
 
+/** Useful before you type: today, your sessions and what you opened recently (palette2 A). */
 function PaletteDialog() {
   const navigate = useNavigate();
   const hide = usePalette((s) => s.hide);
   const openNewStrategyDialog = useUIStore((s) => s.openNewStrategyDialog);
   const strategies = useStrategiesStore((s) => s.strategies);
   const fetchStrategies = useStrategiesStore((s) => s.fetchStrategies);
+  const sessionRows = useSessionRows();
+  const orders = useTradingStore((s) => s.orders);
+  const loadBlotter = useTradingStore((s) => s.loadBlotter);
+  const attention = useAttentionEntries();
   const panel = useModal(true, hide);
   const input = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
+  const [recent] = useState(readRecent);
 
   useEffect(() => {
     input.current?.focus();
     if (strategies.length === 0) fetchStrategies().catch(() => undefined);
-  }, [strategies.length, fetchStrategies]);
+    loadBlotter().catch(() => undefined);
+    // Loads once when the palette opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  const items = useMemo<PaletteItem[]>(
-    () => [
-      ...strategies.map((s) => ({
-        id: `strategy:${s.id}`,
+  const { items, extras, emptyIds } = useMemo(() => {
+    const now = new Date();
+    const extras = new Map<string, RowExtra>();
+    const today: PaletteItem[] = attention.map((a) => {
+      const id = `today:${a.id}`;
+      extras.set(id, { to: a.href, icon: AlertTriangle, dot: 'risk' });
+      return { id, kind: 'today' as const, label: a.title.replace(/\.$/, '') };
+    });
+    const fills = orders.filter((o) => {
+      const at = toDate(o.filledAt);
+      return o.status === OrderStatus.FILLED && at !== null && sameEtDay(at, now);
+    });
+    if (fills.length) {
+      const traded = fills.reduce(
+        (sum, o) => sum + num(o.filledQuantity) * num(o.averageFillPrice),
+        0
+      );
+      extras.set('today:fills', {
+        to: '/trading',
+        icon: Receipt,
+        right: `${formatMoney(traded)} traded`,
+      });
+      today.push({
+        id: 'today:fills',
+        kind: 'today',
+        label: `${fills.length} fill${fills.length === 1 ? '' : 's'} today`,
+        keywords: ['orders', 'trades'],
+      });
+    }
+
+    const sessionItems: PaletteItem[] = [...sessionRows]
+      .sort((a, b) => Number(b.view.open) - Number(a.view.open))
+      .slice(0, PALETTE_SESSIONS)
+      .map((r) => {
+        const id = `session:${r.session.id}`;
+        const move = r.figures.todayPct;
+        const ended = toDate(r.session.endedAt);
+        const right = r.view.open ? (
+          <>
+            {move !== null && (
+              <span className={`num ${TONE_CLASS[pnlTone(move * 100)]}`}>
+                {formatPct(move, { signed: true })}
+              </span>
+            )}
+            {r.figures.equity !== null && (
+              <span className="num text-fg-2">{formatMoney(r.figures.equity)}</span>
+            )}
+          </>
+        ) : (
+          <span>{ended ? `Stopped ${shortDate(ended)}` : r.view.label}</span>
+        );
+        extras.set(id, {
+          to: `/trading/${r.session.id}`,
+          mode: r.session.mode === ExecutionMode.LIVE ? 'live' : 'paper',
+          dot: r.state === 'frozen' ? 'risk' : r.view.open ? 'accent' : 'muted',
+          right,
+        });
+        return { id, kind: 'session' as const, label: r.name, keywords: ['session'] };
+      });
+
+    const recentItems: PaletteItem[] = recent.map((r) => {
+      const id = `recent:${r.id}`;
+      extras.set(id, { to: r.to, right: shortDate(new Date(r.at)) });
+      return { id, kind: 'recent' as const, label: r.label };
+    });
+
+    const strategyItems: PaletteItem[] = strategies.map((s) => {
+      const id = `strategy:${s.id}`;
+      extras.set(id, { to: `/strategies/${s.id}` });
+      return {
+        id,
         kind: 'strategy' as const,
         label: s.name,
         hint: STATUS_HINT[s.status],
         keywords: s.symbols,
-      })),
-      ...PAGES,
-      ...ACTIONS,
-    ],
-    [strategies]
-  );
+      };
+    });
+    for (const p of PAGES) extras.set(p.id, { to: p.to });
 
-  const groups = useMemo(() => rankPalette(query, items, { emptyIds: EMPTY_IDS }), [query, items]);
+    const emptyIds = [...today, ...sessionItems, ...recentItems].map((i) => i.id);
+    return {
+      items: [...today, ...sessionItems, ...recentItems, ...strategyItems, ...PAGES, ...ACTIONS],
+      extras,
+      emptyIds: emptyIds.length ? emptyIds : FALLBACK_EMPTY_IDS,
+    };
+  }, [attention, orders, sessionRows, recent, strategies]);
+
+  const { actionsOnly, query: text } = parseQuery(query);
+  const groups = useMemo(() => {
+    const pool = actionsOnly
+      ? items.filter((i) => i.kind === 'action')
+      : text.trim()
+        ? items.filter((i) => i.kind !== 'recent')
+        : items;
+    return rankPalette(text, pool, { emptyIds: actionsOnly ? ACTIONS.map((a) => a.id) : emptyIds });
+  }, [actionsOnly, text, items, emptyIds]);
   const flat = useMemo(() => flattenGroups(groups), [groups]);
   const current = flat[Math.min(active, flat.length - 1)];
 
@@ -180,12 +337,20 @@ function PaletteDialog() {
     setActive(0);
   }, [query]);
 
+  const remember = (id: string, label: string, to: string) => {
+    if (id.startsWith('recent:') || id.startsWith('today:')) return;
+    writeRecent(pushRecent(readRecent(), { id, label, to, at: Date.now() }));
+  };
+
   const run = (id: string) => {
     hide();
-    if (id === COPILOT_RESULT_ID) return navigate(copilotUrl(query));
-    if (id.startsWith('strategy:')) return navigate(`/strategies/${id.slice('strategy:'.length)}`);
-    const page = PAGES.find((p) => p.id === id);
-    if (page) return navigate(page.to);
+    if (id === COPILOT_RESULT_ID) return navigate(copilotUrl(text));
+    const row = flat.find((r) => r.id === id);
+    const to = extras.get(id)?.to;
+    if (to) {
+      if (row) remember(id, row.label, to);
+      return navigate(to);
+    }
     switch (id as ActionId) {
       case 'action:new':
         return openNewStrategyDialog();
@@ -202,9 +367,12 @@ function PaletteDialog() {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       setActive((i) => moveActive(i, e.key === 'ArrowDown' ? 1 : -1, flat.length));
+    } else if (e.key === 'Tab' && !e.shiftKey && text.trim()) {
+      e.preventDefault();
+      run(COPILOT_RESULT_ID);
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      if ((e.metaKey || e.ctrlKey) && query.trim()) run(COPILOT_RESULT_ID);
+      if ((e.metaKey || e.ctrlKey) && text.trim()) run(COPILOT_RESULT_ID);
       else if (current) run(current.id);
     }
   };
@@ -222,20 +390,20 @@ function PaletteDialog() {
         aria-modal="true"
         aria-label="Search or jump to"
         tabIndex={-1}
-        className="flex h-full w-full flex-col overflow-hidden bg-canvas outline-none sm:h-auto sm:max-w-[640px] sm:rounded-[12px] sm:border sm:border-line-strong sm:bg-panel sm:shadow-xl"
+        className="flex h-full w-full flex-col overflow-hidden bg-canvas outline-none sm:h-auto sm:max-w-[680px] sm:rounded-[14px] sm:border sm:border-line-strong sm:bg-panel sm:shadow-xl"
       >
-        <div className="flex h-[52px] items-center gap-2.5 border-b border-line px-[18px]">
+        <div className="flex h-[58px] items-center gap-3 border-b border-line px-5">
           <Search className="h-[18px] w-[18px] flex-none text-fg-3" />
           <input
             ref={input}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Search strategies, pages and actions"
+            placeholder="Search, or type an action"
             aria-label="Search"
             aria-controls="palette-results"
             aria-activedescendant={current ? `palette-${current.id}` : undefined}
-            className="min-w-0 flex-1 bg-transparent text-base text-fg outline-none placeholder:text-fg-3"
+            className="min-w-0 flex-1 bg-transparent text-[16px] text-fg outline-none placeholder:text-fg-3"
           />
           <Kbd className="hidden sm:inline">esc</Kbd>
           <button
@@ -250,19 +418,19 @@ function PaletteDialog() {
         <div
           id="palette-results"
           role="listbox"
-          className="min-h-0 flex-1 overflow-y-auto py-1 sm:max-h-[min(60vh,440px)] sm:flex-none"
+          className="min-h-0 flex-1 overflow-y-auto px-2 py-1.5 sm:max-h-[min(62vh,480px)] sm:flex-none"
         >
           {groups.map((g) => (
             <div key={g.kind} role="group" aria-label={g.title}>
-              <div className="px-[18px] pb-1 pt-2.5 font-mono text-[11px] font-medium text-fg-3">
-                {g.title}
-              </div>
+              <div className="kicker px-3 pb-1.5 pt-3 uppercase tracking-[0.06em]">{g.title}</div>
               {g.results.map((r) => {
                 row += 1;
                 const index = row;
                 const on = current?.id === r.id;
+                const extra = extras.get(r.id);
                 const Icon =
-                  r.kind === 'action' ? ACTION_ICON[r.id as ActionId] : KIND_ICON[r.kind];
+                  extra?.icon ??
+                  (r.kind === 'action' ? ACTION_ICON[r.id as ActionId] : KIND_ICON[r.kind]);
                 return (
                   <div
                     key={r.id}
@@ -271,10 +439,17 @@ function PaletteDialog() {
                     aria-selected={on}
                     onMouseMove={() => setActive(index)}
                     onClick={() => run(r.id)}
-                    className={`flex cursor-pointer items-center gap-3 px-[18px] py-2 ${on ? 'bg-sunk text-fg' : 'text-fg-2'}`}
+                    className={`flex cursor-pointer items-center gap-3 rounded-[9px] px-3 py-2.5 ${on ? 'bg-sunk text-fg' : 'text-fg-2'}`}
                   >
-                    <Icon className={`h-4 w-4 flex-none ${on ? 'text-accent' : 'text-fg-3'}`} />
-                    <b className="min-w-0 truncate font-medium text-fg">
+                    {extra?.dot ? (
+                      <i
+                        aria-hidden="true"
+                        className={`mx-[5px] h-1.5 w-1.5 flex-none ${extra.dot === 'muted' ? 'bg-fg-3' : extra.dot === 'risk' ? 'rounded-full bg-risk' : 'rounded-full bg-accent'}`}
+                      />
+                    ) : (
+                      <Icon className={`h-4 w-4 flex-none ${on ? 'text-fg' : 'text-fg-3'}`} />
+                    )}
+                    <b className="min-w-0 truncate text-[14px] font-medium text-fg">
                       {highlightRuns(r.label, r.matches).map((run, i) =>
                         run.hit ? (
                           <mark key={i} className="rounded-sm bg-accent-soft text-fg">
@@ -285,8 +460,9 @@ function PaletteDialog() {
                         )
                       )}
                     </b>
-                    <span className="ml-auto flex flex-none items-center gap-2 text-xs text-fg-3">
-                      {r.hint}
+                    {extra?.mode && <ModeBadge mode={extra.mode} size="sm" />}
+                    <span className="ml-auto flex flex-none items-center gap-2.5 text-[12.5px] text-fg-3">
+                      {extra?.right ?? r.hint}
                       {on && <CornerDownLeft className="h-3.5 w-3.5" />}
                     </span>
                   </div>
@@ -296,16 +472,17 @@ function PaletteDialog() {
           ))}
         </div>
 
-        <div className="hidden gap-4 border-t border-line bg-sunk px-[18px] py-2.5 text-xs text-fg-3 sm:flex">
+        <div className="hidden items-center gap-4 border-t border-line bg-sunk px-5 py-2.5 text-xs text-fg-3 sm:flex">
           <span>
-            <Kbd>↑↓</Kbd> move
+            <Kbd>↑</Kbd> <Kbd>↓</Kbd> move
           </span>
           <span>
             <Kbd>↵</Kbd> open
           </span>
           <span>
-            <Kbd>⌘↵</Kbd> ask Copilot
+            <Kbd>tab</Kbd> ask Copilot
           </span>
+          <span className="ml-auto">Type &gt; for actions</span>
         </div>
       </div>
     </div>,

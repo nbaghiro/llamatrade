@@ -5,14 +5,17 @@ import { Link, useSearchParams } from 'react-router-dom';
 
 import { CompareChart } from '../../components/backtest/CompareChart';
 import { compareColor } from '../../components/backtest/compareColors';
+import { CompareHeld } from '../../components/backtest/CompareHeld';
 import { csvRow, downloadText } from '../../components/backtest/files';
-import { PageHead, Panel } from '../../components/backtest/parts';
+import { Panel } from '../../components/backtest/parts';
 import { runMeta, toCurve } from '../../components/backtest/runData';
 import { strategyNameOf } from '../../components/backtest/runLabels';
 import { T } from '../../components/backtest/tableStyles';
+import { useRunTrades } from '../../components/backtest/useRunTrades';
 import { DrawdownBand } from '../../components/charts';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Pct } from '../../components/ui/Num';
+import { PageHead } from '../../components/ui/PageHead';
 import { PanelError } from '../../components/ui/PanelError';
 import { SkeletonChart, SkeletonRows } from '../../components/ui/Skeleton';
 import {
@@ -95,6 +98,9 @@ export default function BacktestComparePage() {
     };
   }, [comparison.runs, comparison.metrics, strategies]);
 
+  const pairIds = useMemo(() => model?.runs.slice(0, 2).map((r) => r.id) ?? [], [model]);
+  const pairTrades = useRunTrades(pairIds);
+
   const missing = ids.length - comparison.runs.length;
   const title = `Compare ${ids.length} runs`;
 
@@ -159,7 +165,7 @@ export default function BacktestComparePage() {
     <div className="page grid gap-3.5">
       <PageHead
         title={title}
-        meta={meta}
+        sub={meta}
         actions={
           <>
             <Link to={`/backtests?select=${ids.join(',')}`} className="btn btn-secondary">
@@ -261,6 +267,24 @@ export default function BacktestComparePage() {
               />
             </div>
           </Panel>
+          {model.runs.length >= 2 && model.runs[0].strategyId === model.runs[1].strategyId && (
+            <Panel
+              title={`${model.rows[0].label} against ${model.rows[1].label}`}
+              aside={model.runs.length > 2 ? 'the first two runs' : 'what each held'}
+            >
+              <div className="px-3.5 py-3">
+                <CompareHeld
+                  dates={model.range.dates}
+                  a={model.range.series[0]}
+                  b={model.range.series[1]}
+                  aLabel={model.rows[0].label}
+                  bLabel={model.rows[1].label}
+                  aTrades={pairTrades ? (pairTrades[model.rows[0].id] ?? []) : null}
+                  bTrades={pairTrades ? (pairTrades[model.rows[1].id] ?? []) : null}
+                />
+              </div>
+            </Panel>
+          )}
           <Panel
             footer={
               <>

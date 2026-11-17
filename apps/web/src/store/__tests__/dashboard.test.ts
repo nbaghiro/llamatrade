@@ -219,6 +219,29 @@ describe('curves', () => {
     expect(values[2]).toBeCloseTo(-10);
   });
 
+  it('keeps each strategy’s absolute equity, mode, value now and start', async () => {
+    rpc.listStrategyPerformance.mockResolvedValue({
+      strategies: [perf({ mode: 2, currentValue: dec(1234.5), startedAt: ts(500) })],
+    });
+    rpc.getStrategyEquityCurve.mockResolvedValue(curve([100, 110]));
+
+    await useDashboardStore.getState().fetchDashboard();
+
+    const s = useDashboardStore.getState().strategies[0];
+    expect(s.equity.map((p) => p.value)).toEqual([100, 110]);
+    expect(s.equity[1].timestamp).toBe(new Date(1060 * 1000).toISOString());
+    expect(s.mode).toBe(2);
+    expect(s.currentValue).toBe(1234.5);
+    expect(s.startedAt?.getTime()).toBe(500_000);
+  });
+
+  it('leaves the value now unknown when the summary has none', async () => {
+    rpc.listStrategyPerformance.mockResolvedValue({ strategies: [perf()] });
+    await useDashboardStore.getState().fetchDashboard();
+    expect(useDashboardStore.getState().strategies[0].currentValue).toBeNull();
+    expect(useDashboardStore.getState().strategies[0].startedAt).toBeNull();
+  });
+
   it('right-anchors a shorter leg with its allocated capital', async () => {
     rpc.listStrategyPerformance.mockResolvedValue({
       strategies: [

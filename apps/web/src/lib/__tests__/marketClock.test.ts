@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest';
 
 import {
   asOfCloseLabel,
+  barClock,
   derivedNextOpen,
   describeOpen,
+  etClock,
   etParts,
   etToDate,
   isSessionOpen,
@@ -133,5 +135,28 @@ describe('asOfCloseLabel', () => {
 
   it('crosses a month boundary', () => {
     expect(asOfCloseLabel(etToDate(2026, 11, 1, 600))).toBe('As of Mon, Nov 30 close');
+  });
+});
+
+describe('barClock', () => {
+  it('gives the New York time and the state', () => {
+    expect(
+      barClock({ status: MarketStatus.OPEN, source: 'rpc', nextOpen: null, now: et(13, 10, 42) })
+    ).toMatchObject({ open: true, time: '10:42 ET', state: 'open' });
+    expect(
+      barClock({
+        status: MarketStatus.AFTER_HOURS,
+        source: 'rpc',
+        nextOpen: et(16, 9, 30),
+        now: et(13, 17, 5),
+      })
+    ).toMatchObject({ open: false, time: '17:05 ET', state: 'after hours' });
+    expect(
+      barClock({ status: null, source: 'derived', nextOpen: null, now: et(14, 12) })
+    ).toMatchObject({ open: false, state: 'closed', detail: 'Market closed · opens Mon 9:30 ET' });
+  });
+
+  it('formats a bare ET clock', () => {
+    expect(etClock(et(13, 9, 5))).toBe('9:05');
   });
 });

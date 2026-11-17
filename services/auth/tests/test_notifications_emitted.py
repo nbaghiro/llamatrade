@@ -185,6 +185,7 @@ async def test_lockout_db_failure_is_swallowed(servicer: AuthServicer) -> None:
     assert published_notifications() == []
 
 
+@pytest.mark.usefixtures("accept_any_invite")
 async def test_register_emits_welcome_then_verification_link(
     servicer: AuthServicer, mock_db: MockAsyncSession
 ) -> None:

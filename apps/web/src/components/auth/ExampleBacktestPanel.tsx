@@ -12,6 +12,8 @@ const day = (d: Date) => `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getU
 const thousands = (v: number) => `${Math.round(v / 1000)}k`;
 
 const TITLE = 'Recession Radar, version 3';
+const SHORT_FOOTNOTE =
+  "Illustrative figures, not anyone's account. Past results don't predict future returns.";
 const FOOTNOTE =
   "Illustrative figures, not anyone's account. A backtest replays history with the same engine that runs paper and live sessions, and past results don't predict future returns.";
 
@@ -52,7 +54,7 @@ function Figure({
 }
 
 /** The fixed Recession Radar example against SPY, shown beside the sign-in forms. */
-export function ExampleBacktestPanel() {
+export function ExampleBacktestPanel({ compact = false }: { compact?: boolean }) {
   const ex = exampleBacktest();
   const s = ex.strategyStats;
   const b = ex.benchmarkStats;
@@ -109,11 +111,13 @@ export function ExampleBacktestPanel() {
             { values: ex.strategy, kind: 'main', area: true },
             { values: ex.benchmarkValues, kind: 'bench' },
           ]}
-          height={270}
+          height={compact ? 200 : 270}
           yFormat={thousands}
         />
       </div>
-      <p className="m-0 max-w-[520px] text-[11.5px] text-fg-3">{FOOTNOTE}</p>
+      <p className="m-0 max-w-[520px] text-[11.5px] text-fg-3">
+        {compact ? SHORT_FOOTNOTE : FOOTNOTE}
+      </p>
     </section>
   );
 }

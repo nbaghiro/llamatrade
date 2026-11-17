@@ -7,6 +7,8 @@ import {
   highlightRuns,
   matchText,
   moveActive,
+  parseQuery,
+  pushRecent,
   rankPalette,
   type PaletteItem,
 } from '../palette';
@@ -148,5 +150,30 @@ describe('copilotUrl', () => {
   it('encodes the query', () => {
     expect(copilotUrl(' why is radar frozen? ')).toBe('/copilot?q=why%20is%20radar%20frozen%3F');
     expect(copilotUrl('')).toBe('/copilot');
+  });
+});
+
+describe('palette before typing', () => {
+  it('groups today, sessions and recent ahead of everything else', () => {
+    const items: PaletteItem[] = [
+      ...ITEMS,
+      { id: 't:fills', kind: 'today', label: '3 fills this morning' },
+      { id: 'x:rr', kind: 'session', label: 'Recession Radar' },
+      { id: 'r:bt', kind: 'recent', label: 'Risk Parity, backtest' },
+    ];
+    const groups = rankPalette('', items, { emptyIds: ['r:bt', 'x:rr', 't:fills', 'a:new'] });
+    expect(groups.map((g) => g.title)).toEqual(['Today', 'Sessions', 'Recent', 'Actions']);
+  });
+
+  it('reads a leading > as actions only', () => {
+    expect(parseQuery('> new')).toEqual({ actionsOnly: true, query: ' new' });
+    expect(parseQuery('radar')).toEqual({ actionsOnly: false, query: 'radar' });
+  });
+
+  it('keeps recent entries unique, newest first, up to the limit', () => {
+    const e = (id: string, at: number) => ({ id, label: id, to: `/${id}`, at });
+    const list = pushRecent([e('a', 1), e('b', 2)], e('a', 3), 2);
+    expect(list.map((x) => x.id)).toEqual(['a', 'b']);
+    expect(pushRecent(list, e('c', 4), 2).map((x) => x.id)).toEqual(['c', 'a']);
   });
 });

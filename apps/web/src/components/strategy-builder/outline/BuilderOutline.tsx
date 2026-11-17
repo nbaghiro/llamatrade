@@ -1,16 +1,14 @@
 import type { BlockId, ConditionExpression, WeightMethod } from '@llamatrade/core/strategy/types';
 import { Plus, X } from 'lucide-react';
-import { useCallback, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import {
   allocationProblem,
-  applyTokenEdit,
   buildOutline,
   isValidSymbol,
   metaParts,
   normaliseSymbol,
   OUTLINE_MAX_DEPTH,
-  type OutlineToken,
 } from '../../../lib/outline';
 import type { StrategyDiff } from '../../../lib/strategyDiff';
 import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
@@ -18,6 +16,8 @@ import { Popover } from '../../ui';
 import { useDismiss } from '../../ui/useDismiss';
 
 import { Outline, Parts, type AnyLine } from './Outline';
+import type { TokenOpenHandler } from './Token';
+import { useTokenEdit } from './useTokenEdit';
 
 const DEFAULT_CONDITION: ConditionExpression = {
   left: { type: 'indicator', indicator: 'rsi', period: 14, symbol: 'SPY' },
@@ -30,10 +30,28 @@ const CONTAINERS = new Set(['weight', 'if', 'else', 'group', 'filter']);
 interface BuilderOutlineProps {
   /** A tracked change to show in place of the editable outline, e.g. a Copilot proposal. */
   tracked?: StrategyDiff | null;
+  /** The draft against the saved version: changed values stay editable with the old one struck. */
+  compare?: StrategyDiff | null;
   readOnly?: boolean;
+  /** False hides adding and removing rules, leaving values editable (the phone). */
+  structural?: boolean;
+  /** Leave the rebalance sentence to the caller, e.g. a panel header. */
+  hideMeta?: boolean;
+  onOpen?: TokenOpenHandler;
+  openKey?: string | null;
+  below?: (line: AnyLine) => ReactNode;
 }
 
-export function BuilderOutline({ tracked, readOnly = false }: BuilderOutlineProps) {
+export function BuilderOutline({
+  tracked,
+  compare = null,
+  readOnly = false,
+  structural = true,
+  hideMeta = false,
+  onOpen,
+  openKey,
+  below,
+}: BuilderOutlineProps) {
   const store = useStrategyBuilderStoreWithContext();
   const { tree, timeframe, benchmark, ui } = store;
   const [expanded, setExpanded] = useState<ReadonlySet<BlockId>>(new Set());
@@ -54,34 +72,7 @@ export function BuilderOutline({ tracked, readOnly = false }: BuilderOutlineProp
     return out;
   }, [tree]);
 
-  const onEdit = useCallback(
-    (token: OutlineToken, raw: string): string | null => {
-      const edit = applyTokenEdit(tree, token, raw);
-      switch (edit.kind) {
-        case 'invalid':
-          return edit.reason;
-        case 'condition':
-          store.updateCondition(edit.blockId, edit.condition);
-          return null;
-        case 'block':
-          store.updateBlock(edit.blockId, edit.updates);
-          return null;
-        case 'filter':
-          store.updateFilter(edit.blockId, edit.config);
-          return null;
-        case 'allocation':
-          store.setWeightAllocation(edit.weightId, edit.childId, edit.percent);
-          return null;
-        case 'timeframe':
-          store.setTimeframe(edit.value);
-          return null;
-        case 'benchmark':
-          store.setBenchmark(edit.value);
-          return null;
-      }
-    },
-    [tree, store]
-  );
+  const onEdit = useTokenEdit();
 
   const remove = useCallback(
     (blockId: BlockId) => {
@@ -146,19 +137,25 @@ export function BuilderOutline({ tracked, readOnly = false }: BuilderOutlineProp
   };
 
   const editable = !readOnly && !tracked;
+  const showsChanges = editable && compare !== null && compare.changes.length > 0;
   return (
     <div>
-      <p className="m-0 flex flex-wrap items-center gap-y-1 text-[13.5px] text-fg-2">
-        <Parts parts={tracked ? tracked.meta : meta} onEdit={editable ? onEdit : undefined} />
-      </p>
-      <div className="mt-5">
+      {!hideMeta && (
+        <p className="m-0 mb-5 flex flex-wrap items-center gap-y-1 text-[13.5px] text-fg-2">
+          <Parts parts={tracked ? tracked.meta : meta} onEdit={editable ? onEdit : undefined} />
+        </p>
+      )}
+      <div>
         {tracked ? (
           <Outline lines={tracked.lines} label="Strategy outline with the proposed change" />
         ) : (
           <Outline
-            lines={lines}
+            lines={showsChanges && compare ? compare.lines : lines}
             label="Strategy outline"
             onEdit={editable ? onEdit : undefined}
+            onOpen={editable ? onOpen : undefined}
+            openKey={openKey}
+            below={below}
             onExpand={(id) => setExpanded((s) => new Set(s).add(id))}
             selectedId={editable ? ui.selectedBlockId : null}
             onSelect={
@@ -166,7 +163,7 @@ export function BuilderOutline({ tracked, readOnly = false }: BuilderOutlineProp
                 ? (id) => store.selectBlock(ui.selectedBlockId === id ? null : id)
                 : undefined
             }
-            lineActions={editable ? lineActions : undefined}
+            lineActions={editable && structural ? lineActions : undefined}
             notes={notes}
           />
         )}
@@ -176,7 +173,7 @@ export function BuilderOutline({ tracked, readOnly = false }: BuilderOutlineProp
           Nothing here yet. Add a rule to say what the strategy holds.
         </p>
       )}
-      {editable && (
+      {editable && structural && (
         <div className="pl-[32px] pt-3 sm:pl-[42px]">
           <Popover
             align="left"

@@ -1,4 +1,3 @@
-import { CLOSED_BETA } from '@llamatrade/core/billing/planTiers';
 import { InvoiceStatus, PlanTier, SubscriptionStatus, type Invoice, type Subscription } from '@llamatrade/core/proto/billing_pb';
 import type { Money, Timestamp } from '@llamatrade/core/proto/common_pb';
 import { useBrokerStore } from '@llamatrade/core/stores/broker';
@@ -145,13 +144,11 @@ export default function AccountScreen() {
           <Card onPress={() => router.push('/account/plans')} style={s.plan}>
             <View style={s.planHead}>
               <Text variant="label" tone="fg3">Current plan</Text>
-              <Pill label={CLOSED_BETA ? 'Beta · no charge' : subStatus(subscription)} tone="accent" />
+              <Pill label={subStatus(subscription)} tone="accent" />
             </View>
             <Text variant="heading">{tierName(subscription)}</Text>
             <Text variant="small" tone="fg3">
-              {CLOSED_BETA
-                ? "Live trading isn't available in the beta."
-                : [price > 0 ? `${fmtUsd(price)} a month` : '', renewalLine(subscription)].filter(Boolean).join(' · ')}
+              {[price > 0 ? `${fmtUsd(price)} a month` : '', renewalLine(subscription)].filter(Boolean).join(' · ')}
             </Text>
           </Card>
 

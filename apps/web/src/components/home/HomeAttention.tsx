@@ -22,5 +22,5 @@ export function HomeAttention({
       </Link>
     ),
   }));
-  return <AttentionLine items={items} className={className} />;
+  return <AttentionLine items={items} defaultOpen className={className} />;
 }

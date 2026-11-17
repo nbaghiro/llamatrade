@@ -2,29 +2,42 @@ import { describe, expect, it } from 'vitest';
 
 import {
   INVITE_COPY,
-  inviteBody,
-  inviteEndpoint,
+  inviteMailto,
   isValidEmail,
   readInviteResponse,
+  waitlistBody,
+  waitlistEndpoint,
 } from '../lib/invite';
 
-describe('inviteEndpoint', () => {
-  it('builds the Loops URL from a form id', () => {
-    expect(inviteEndpoint('clx12abc')).toBe('https://app.loops.so/api/newsletter-form/clx12abc');
-    expect(inviteEndpoint('  clx12abc ')).toBe('https://app.loops.so/api/newsletter-form/clx12abc');
+describe('waitlistEndpoint', () => {
+  it('appends the JoinWaitlist route to the auth base URL', () => {
+    expect(waitlistEndpoint('http://localhost:8810')).toBe(
+      'http://localhost:8810/llamatrade.AuthService/JoinWaitlist'
+    );
+    expect(waitlistEndpoint(' https://auth.example.com/ ')).toBe(
+      'https://auth.example.com/llamatrade.AuthService/JoinWaitlist'
+    );
   });
 
-  it('is closed when the id is unset, blank or the placeholder', () => {
-    expect(inviteEndpoint(undefined)).toBeNull();
-    expect(inviteEndpoint('')).toBeNull();
-    expect(inviteEndpoint('   ')).toBeNull();
-    expect(inviteEndpoint('REPLACE_WITH_LOOPS_FORM_ID')).toBeNull();
+  it('keeps a path prefix on the base URL', () => {
+    expect(waitlistEndpoint('https://example.com/api/auth//')).toBe(
+      'https://example.com/api/auth/llamatrade.AuthService/JoinWaitlist'
+    );
   });
 
-  it('rejects ids that would change the path', () => {
-    expect(inviteEndpoint('../x')).toBeNull();
-    expect(inviteEndpoint('a/b')).toBeNull();
-    expect(inviteEndpoint('a?b=c')).toBeNull();
+  it('is closed when the base URL is unset or blank', () => {
+    expect(waitlistEndpoint(undefined)).toBeNull();
+    expect(waitlistEndpoint('')).toBeNull();
+    expect(waitlistEndpoint('   ')).toBeNull();
+  });
+
+  it('rejects values that are not a plain http(s) base URL', () => {
+    expect(waitlistEndpoint('localhost:8810')).toBeNull();
+    expect(waitlistEndpoint('/auth')).toBeNull();
+    expect(waitlistEndpoint('javascript:alert(1)')).toBeNull();
+    expect(waitlistEndpoint('ftp://example.com')).toBeNull();
+    expect(waitlistEndpoint('https://example.com/?x=1')).toBeNull();
+    expect(waitlistEndpoint('https://example.com/#x')).toBeNull();
   });
 });
 
@@ -38,51 +51,74 @@ describe('isValidEmail', () => {
   );
 });
 
-describe('inviteBody', () => {
-  it('sends the trimmed email and the source', () => {
-    const body = inviteBody('  you@example.com ');
-    expect(body.get('email')).toBe('you@example.com');
-    expect(body.get('source')).toBe('landing');
+describe('waitlistBody', () => {
+  it('sends the trimmed email, the source and the honeypot as JSON', () => {
+    expect(JSON.parse(waitlistBody('  you@example.com ', 'join', ''))).toEqual({
+      email: 'you@example.com',
+      source: 'join',
+      company: '',
+    });
+  });
+
+  it('passes a filled honeypot through for the server to discard', () => {
+    expect(JSON.parse(waitlistBody('bot@example.com', 'landing', 'Acme')).company).toBe('Acme');
   });
 });
 
 describe('readInviteResponse', () => {
-  it('accepts success true', () => {
-    expect(readInviteResponse(200, { success: true })).toEqual({ ok: true });
-  });
-
-  it('accepts a 2xx without a success field', () => {
+  it('accepts a 2xx with success true or no body', () => {
+    expect(readInviteResponse(200, { success: true, message: 'ok' })).toEqual({ ok: true });
     expect(readInviteResponse(200, {})).toEqual({ ok: true });
     expect(readInviteResponse(204, null)).toEqual({ ok: true });
   });
 
-  it('passes on the Loops message when it refuses', () => {
-    expect(readInviteResponse(400, { success: false, message: 'Email is invalid' })).toEqual({
-      ok: false,
-      message: 'Email is invalid',
-    });
-  });
-
-  it('never reports success for an error status, whatever the body', () => {
-    expect(readInviteResponse(500, null)).toEqual({ ok: false, message: INVITE_COPY.failed });
-    expect(readInviteResponse(429, {})).toEqual({ ok: false, message: INVITE_COPY.failed });
-    expect(readInviteResponse(500, 'oops')).toEqual({ ok: false, message: INVITE_COPY.failed });
-  });
-
-  it('falls back to the generic message for an empty or odd message', () => {
-    expect(readInviteResponse(200, { success: false, message: '  ' })).toEqual({
-      ok: false,
-      message: INVITE_COPY.failed,
-    });
-    expect(readInviteResponse(200, { success: false, message: 42 })).toEqual({
+  it('treats an explicit success false as a failure', () => {
+    expect(readInviteResponse(200, { success: false })).toEqual({
       ok: false,
       message: INVITE_COPY.failed,
     });
   });
 
-  it('uses the design copy', () => {
+  it('shows the rate-limit copy for resource_exhausted or a 429', () => {
+    const limited = { ok: false, message: INVITE_COPY.rateLimited };
+    expect(readInviteResponse(429, { code: 'resource_exhausted', message: 'x' })).toEqual(limited);
+    expect(readInviteResponse(429, null)).toEqual(limited);
+    expect(readInviteResponse(400, { code: 'resource_exhausted' })).toEqual(limited);
+  });
+
+  it('shows the invalid copy when the server rejects the email', () => {
+    expect(readInviteResponse(400, { code: 'invalid_argument', message: 'bad' })).toEqual({
+      ok: false,
+      message: INVITE_COPY.invalid,
+    });
+  });
+
+  it('never reports success for any other error, whatever the body', () => {
+    const failed = { ok: false, message: INVITE_COPY.failed };
+    expect(readInviteResponse(500, null)).toEqual(failed);
+    expect(readInviteResponse(503, { code: 'unavailable' })).toEqual(failed);
+    expect(readInviteResponse(500, 'oops')).toEqual(failed);
+    expect(readInviteResponse(500, { success: true })).toEqual(failed);
+    expect(readInviteResponse(400, { code: 42 })).toEqual(failed);
+  });
+
+  it('uses the design copy, without em dashes', () => {
     expect(INVITE_COPY.done).toBe("You're on the list. We'll email you when a place opens.");
     expect(INVITE_COPY.invalid).toBe('Please enter a valid email address.');
     for (const text of Object.values(INVITE_COPY)) expect(text).not.toContain('—');
+  });
+});
+
+describe('inviteMailto', () => {
+  it('builds a mailto with a subject for a valid address', () => {
+    expect(inviteMailto(' invites@llamatrade.ai ')).toBe(
+      'mailto:invites@llamatrade.ai?subject=LlamaTrade%20invite'
+    );
+  });
+
+  it('gives null for a missing or malformed address', () => {
+    expect(inviteMailto(undefined)).toBeNull();
+    expect(inviteMailto('')).toBeNull();
+    expect(inviteMailto('not-an-address')).toBeNull();
   });
 });

@@ -5,10 +5,14 @@ import { Info, Sparkles } from 'lucide-react';
 import { lazy, Suspense, useMemo, useState } from 'react';
 
 import { CATEGORY_LABELS, DIFFICULTY_LABELS } from '../../data/strategy-templates';
-import { buildOutline, metaParts, rebalanceWord, strategySymbols } from '../../lib/outline';
+import { buildOutline, metaParts, rebalanceWord } from '../../lib/outline';
+import { HOLDING_FILLS } from '../strategy-builder/outline/holdingFills';
 import { Outline, Parts } from '../strategy-builder/outline/Outline';
+import { StackedBar } from '../strategy-builder/rail/StackedBar';
 import { Segmented, Skeleton } from '../ui';
 
+import { holdingWords, holdSentences } from './holdSentences';
+import { barShares } from './templateModel';
 import { useStartDraft } from './useStartDraft';
 
 const DslCodeBlock = lazy(() => import('./DslCodeBlock'));
@@ -18,76 +22,134 @@ const VIEWS = [
   { key: 'code', label: 'Code' },
 ] as const;
 
-/** A template as an outline, with its code one tab away. */
-export function TemplatePreview({ template }: { template: StrategyTemplate }) {
-  const [view, setView] = useState<'outline' | 'code'>('outline');
+const Chip = ({ children }: { children: string }) => (
+  <span className="inline-flex h-[22px] items-center rounded-full border border-line-strong px-2.5 text-[11.5px] text-fg-2">
+    {children}
+  </span>
+);
+
+/** Customise with Copilot, or use the template as is. */
+export function TemplateActions({ template }: { template: StrategyTemplate }) {
   const { fromTemplate } = useStartDraft();
   const openSeededChat = useAgentStore((s) => s.openSeededChat);
   const openPanel = useAgentStore((s) => s.openPanel);
-  const parsed = useMemo(() => fromDSLString(template.configSexpr), [template.configSexpr]);
-  const lines = useMemo(() => (parsed ? buildOutline(parsed.tree) : []), [parsed]);
-  const timeframe = parsed?.metadata.timeframe ?? '1D';
-  const symbols = parsed ? strategySymbols(parsed.tree).held.length : 0;
-
   const customise = () => {
     fromTemplate(template);
     openSeededChat(`Help me customise the “${template.name}” template.`);
     openPanel();
   };
+  return (
+    <>
+      <button type="button" onClick={customise} className="btn btn-secondary">
+        <Sparkles className="h-4 w-4" />
+        Customise
+      </button>
+      <button type="button" onClick={() => fromTemplate(template)} className="btn btn-primary">
+        Use this template
+      </button>
+    </>
+  );
+}
+
+/**
+ * A template in the side drawer (template-preview A): what it holds on each side of its rules,
+ * the rules as an outline, and the code one tab away.
+ */
+export function TemplatePreview({
+  template,
+  showActions = false,
+}: {
+  template: StrategyTemplate;
+  showActions?: boolean;
+}) {
+  const [view, setView] = useState<'outline' | 'code'>('outline');
+  const parsed = useMemo(() => fromDSLString(template.configSexpr), [template.configSexpr]);
+  const lines = useMemo(() => (parsed ? buildOutline(parsed.tree) : []), [parsed]);
+  const sentences = useMemo(() => (parsed ? holdSentences(parsed.tree) : []), [parsed]);
+  const timeframe = parsed?.metadata.timeframe ?? '1D';
+  const rebalance = rebalanceWord(timeframe);
 
   return (
-    <div className="grid gap-3.5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <b className="text-[17px] font-semibold">{template.name}</b>
-          <p className="m-0 mt-0.5 text-[12px] text-fg-3">
-            {[
-              CATEGORY_LABELS[template.category],
-              DIFFICULTY_LABELS[template.difficulty],
-              `${symbols} ${symbols === 1 ? 'symbol' : 'symbols'}`,
-              rebalanceWord(timeframe),
-            ].join(' · ')}
-          </p>
+    <div className="grid gap-5">
+      <div className="grid gap-2">
+        <div className="flex flex-wrap gap-1.5">
+          <Chip>{CATEGORY_LABELS[template.category]}</Chip>
+          <Chip>{DIFFICULTY_LABELS[template.difficulty]}</Chip>
+          <Chip>{`${rebalance[0].toUpperCase()}${rebalance.slice(1)}`}</Chip>
         </div>
-        <div className="flex gap-1.5">
-          <button type="button" onClick={customise} className="btn btn-secondary">
-            <Sparkles className="h-4 w-4" />
-            Customise
-          </button>
-          <button type="button" onClick={() => fromTemplate(template)} className="btn btn-primary">
-            Use this template
-          </button>
-        </div>
-      </div>
-      {template.description && <p className="m-0 text-[13px] text-fg-2">{template.description}</p>}
-      <Segmented
-        label="Template view"
-        options={VIEWS}
-        value={view}
-        onChange={setView}
-        className="justify-self-start"
-      />
-      {view === 'outline' ? (
-        parsed ? (
-          <div>
-            <p className="m-0 mb-3 text-[13px] text-fg-2">
-              <Parts parts={metaParts({ timeframe, benchmark: parsed.metadata.benchmark ?? '' })} />
-            </p>
-            <Outline lines={lines} dense label={`${template.name} outline`} />
+        <h2 className="m-0 text-[24px] font-semibold tracking-[-0.02em]">{template.name}</h2>
+        {template.description && (
+          <p className="m-0 text-[13.5px] text-fg-2">{template.description}</p>
+        )}
+        {showActions && (
+          <div className="mt-1 flex flex-wrap gap-2">
+            <TemplateActions template={template} />
           </div>
-        ) : (
-          <p className="m-0 text-[13px] text-fg-2">
-            This template can’t be shown as an outline. Its code is one tab away.
-          </p>
-        )
-      ) : (
-        <Suspense fallback={<Skeleton className="h-40 w-full" />}>
-          <DslCodeBlock code={template.configSexpr} className="rounded-panel border border-line" />
-        </Suspense>
+        )}
+      </div>
+
+      {sentences.length > 0 && (
+        <section className="grid gap-3 border-t border-line pt-4">
+          <span className="kicker">What it holds</span>
+          {sentences.slice(0, 4).map((s, i) => {
+            return (
+              <div key={i} className="grid gap-1.5">
+                {s.when && <span className="text-[12.5px] text-fg-2">{s.when}:</span>}
+                <StackedBar
+                  label={s.when ?? 'Holdings'}
+                  height={8}
+                  segments={barShares(s.scenario.holdings).map((h, j) => ({
+                    key: h.symbol,
+                    pct: h.pct,
+                    fill: HOLDING_FILLS[j % HOLDING_FILLS.length],
+                  }))}
+                />
+                <span className="font-mono text-[12px] text-fg-2">{holdingWords(s.scenario)}</span>
+              </div>
+            );
+          })}
+          {sentences.length > 4 && (
+            <span className="text-[12px] text-fg-3">
+              {sentences.length - 4} more branches in the rules below.
+            </span>
+          )}
+        </section>
       )}
-      <div className="grid grid-cols-[16px_minmax(0,1fr)] items-start gap-2.5 rounded-panel border border-line bg-panel px-3.5 py-2.5 text-[12.5px] text-fg-2">
+
+      <section className="grid gap-3 border-t border-line pt-4">
+        <div className="flex items-center justify-between gap-3">
+          <span className="kicker">Rules</span>
+          <Segmented label="Template view" options={VIEWS} value={view} onChange={setView} />
+        </div>
+        {view === 'outline' ? (
+          parsed ? (
+            <div>
+              <p className="m-0 mb-3 text-[13px] text-fg-2">
+                <Parts
+                  parts={metaParts({ timeframe, benchmark: parsed.metadata.benchmark ?? '' })}
+                />
+              </p>
+              <Outline lines={lines} dense label={`${template.name} outline`} />
+            </div>
+          ) : (
+            <p className="m-0 text-[13px] text-fg-2">
+              This template can’t be shown as an outline. Its code is one tab away.
+            </p>
+          )
+        ) : (
+          <Suspense fallback={<Skeleton className="h-40 w-full" />}>
+            <DslCodeBlock
+              code={template.configSexpr}
+              className="rounded-panel border border-line"
+            />
+          </Suspense>
+        )}
+      </section>
+
+      <div className="grid grid-cols-[16px_minmax(0,1fr)] items-start gap-2.5 rounded-panel border border-line bg-sunk/60 px-3.5 py-2.5 text-[12.5px] text-fg-2">
         <Info className="mt-0.5 h-4 w-4 text-fg-3" aria-hidden="true" />
-        No track record yet. Backtest it after creating to see how it would have done.
+        Templates don’t come with a backtest yet. Use this one, save it, then backtest it over your
+        own dates to see how it would have done.
       </div>
     </div>
   );

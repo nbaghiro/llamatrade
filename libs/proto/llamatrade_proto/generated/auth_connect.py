@@ -66,6 +66,11 @@ class AuthService(Protocol):
     ) -> auth__pb2.ResendVerificationResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
+    async def join_waitlist(
+        self, request: auth__pb2.JoinWaitlistRequest, ctx: RequestContext
+    ) -> auth__pb2.JoinWaitlistResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
     async def validate_token(
         self, request: auth__pb2.ValidateTokenRequest, ctx: RequestContext
     ) -> auth__pb2.ValidateTokenResponse:
@@ -227,6 +232,16 @@ class AuthServiceASGIApplication(ConnectASGIApplication[AuthService]):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=svc.resend_verification,
+                ),
+                "/llamatrade.AuthService/JoinWaitlist": Endpoint.unary(
+                    method=MethodInfo(
+                        name="JoinWaitlist",
+                        service_name="llamatrade.AuthService",
+                        input=auth__pb2.JoinWaitlistRequest,
+                        output=auth__pb2.JoinWaitlistResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=svc.join_waitlist,
                 ),
                 "/llamatrade.AuthService/ValidateToken": Endpoint.unary(
                     method=MethodInfo(
@@ -540,6 +555,26 @@ class AuthServiceClient(ConnectClient):
             timeout_ms=timeout_ms,
         )
 
+    async def join_waitlist(
+        self,
+        request: auth__pb2.JoinWaitlistRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> auth__pb2.JoinWaitlistResponse:
+        return await self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="JoinWaitlist",
+                service_name="llamatrade.AuthService",
+                input=auth__pb2.JoinWaitlistRequest,
+                output=auth__pb2.JoinWaitlistResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
     async def validate_token(
         self,
         request: auth__pb2.ValidateTokenRequest,
@@ -792,6 +827,11 @@ class AuthServiceSync(Protocol):
     ) -> auth__pb2.ResendVerificationResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
+    def join_waitlist(
+        self, request: auth__pb2.JoinWaitlistRequest, ctx: RequestContext
+    ) -> auth__pb2.JoinWaitlistResponse:
+        raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
+
     def validate_token(
         self, request: auth__pb2.ValidateTokenRequest, ctx: RequestContext
     ) -> auth__pb2.ValidateTokenResponse:
@@ -951,6 +991,16 @@ class AuthServiceWSGIApplication(ConnectWSGIApplication):
                         idempotency_level=IdempotencyLevel.UNKNOWN,
                     ),
                     function=service.resend_verification,
+                ),
+                "/llamatrade.AuthService/JoinWaitlist": EndpointSync.unary(
+                    method=MethodInfo(
+                        name="JoinWaitlist",
+                        service_name="llamatrade.AuthService",
+                        input=auth__pb2.JoinWaitlistRequest,
+                        output=auth__pb2.JoinWaitlistResponse,
+                        idempotency_level=IdempotencyLevel.UNKNOWN,
+                    ),
+                    function=service.join_waitlist,
                 ),
                 "/llamatrade.AuthService/ValidateToken": EndpointSync.unary(
                     method=MethodInfo(
@@ -1258,6 +1308,26 @@ class AuthServiceClientSync(ConnectClientSync):
                 service_name="llamatrade.AuthService",
                 input=auth__pb2.ResendVerificationRequest,
                 output=auth__pb2.ResendVerificationResponse,
+                idempotency_level=IdempotencyLevel.UNKNOWN,
+            ),
+            headers=headers,
+            timeout_ms=timeout_ms,
+        )
+
+    def join_waitlist(
+        self,
+        request: auth__pb2.JoinWaitlistRequest,
+        *,
+        headers: Headers | Mapping[str, str] | None = None,
+        timeout_ms: int | None = None,
+    ) -> auth__pb2.JoinWaitlistResponse:
+        return self.execute_unary(
+            request=request,
+            method=MethodInfo(
+                name="JoinWaitlist",
+                service_name="llamatrade.AuthService",
+                input=auth__pb2.JoinWaitlistRequest,
+                output=auth__pb2.JoinWaitlistResponse,
                 idempotency_level=IdempotencyLevel.UNKNOWN,
             ),
             headers=headers,

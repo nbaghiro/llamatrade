@@ -186,7 +186,7 @@ export default function CopilotScreen() {
               </View>
               <Text variant="heading" style={s.center}>Ask about a strategy</Text>
               <Text variant="small" tone="fg2" style={s.center}>
-                Describe, build, edit or explain a strategy. It runs on your paper account.
+                Describe, build, edit or explain a strategy.
               </Text>
               <View style={s.prompts}>
                 {prompts.map((p) => (

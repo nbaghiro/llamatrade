@@ -10,7 +10,7 @@ export function Join() {
       <SectionDivider label={DIVIDER.join} />
       <h2>Stop guessing. Start testing.</h2>
       <p>Paper and live trading on your own Alpaca account. Places open in small groups.</p>
-      <InviteForm id="join-invite" />
+      <InviteForm id="join-invite" source="join" />
       <p className="fine">Market data from Alpaca&apos;s IEX feed, about 3% of US volume.</p>
     </section>
   );

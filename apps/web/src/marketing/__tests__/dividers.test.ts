@@ -22,7 +22,7 @@ describe('dividerLabels', () => {
       '04 copilot',
       '05 sessions',
       '06 your account',
-      '07 closed beta · invite only',
+      '07 invite only · paper and live',
     ]);
   });
 });

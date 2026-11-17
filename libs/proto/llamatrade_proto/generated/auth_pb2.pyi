@@ -695,11 +695,14 @@ class RegisterRequest(message.Message):
     PASSWORD_FIELD_NUMBER: builtins.int
     FIRST_NAME_FIELD_NUMBER: builtins.int
     LAST_NAME_FIELD_NUMBER: builtins.int
+    INVITE_CODE_FIELD_NUMBER: builtins.int
     tenant_name: builtins.str
     email: builtins.str
     password: builtins.str
     first_name: builtins.str
     last_name: builtins.str
+    invite_code: builtins.str
+    """Required: sign-up is invite-only. Case and dashes are ignored."""
     def __init__(
         self,
         *,
@@ -708,12 +711,15 @@ class RegisterRequest(message.Message):
         password: builtins.str = ...,
         first_name: builtins.str = ...,
         last_name: builtins.str = ...,
+        invite_code: builtins.str = ...,
     ) -> None: ...
     _ClearFieldArgType: _TypeAlias = typing.Literal[
         "email",
         b"email",
         "first_name",
         b"first_name",
+        "invite_code",
+        b"invite_code",
         "last_name",
         b"last_name",
         "password",
@@ -965,6 +971,51 @@ class ResendVerificationRequest(message.Message):
 
 @typing.final
 class ResendVerificationResponse(message.Message):
+    DESCRIPTOR: descriptor.Descriptor
+
+    SUCCESS_FIELD_NUMBER: builtins.int
+    MESSAGE_FIELD_NUMBER: builtins.int
+    success: builtins.bool
+    message: builtins.str
+    def __init__(
+        self,
+        *,
+        success: builtins.bool = ...,
+        message: builtins.str = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal["message", b"message", "success", b"success"]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class JoinWaitlistRequest(message.Message):
+    """Marketing-site waitlist (unauthenticated). The response is uniform whether or
+    not the email was already on the list.
+    """
+
+    DESCRIPTOR: descriptor.Descriptor
+
+    EMAIL_FIELD_NUMBER: builtins.int
+    SOURCE_FIELD_NUMBER: builtins.int
+    COMPANY_FIELD_NUMBER: builtins.int
+    email: builtins.str
+    source: builtins.str
+    """"landing" or "join"; empty means "landing" """
+    company: builtins.str
+    """honeypot: hidden from people, so a value means a bot"""
+    def __init__(
+        self,
+        *,
+        email: builtins.str = ...,
+        source: builtins.str = ...,
+        company: builtins.str = ...,
+    ) -> None: ...
+    _ClearFieldArgType: _TypeAlias = typing.Literal[
+        "company", b"company", "email", b"email", "source", b"source"
+    ]  # noqa: Y015
+    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
+
+@typing.final
+class JoinWaitlistResponse(message.Message):
     DESCRIPTOR: descriptor.Descriptor
 
     SUCCESS_FIELD_NUMBER: builtins.int

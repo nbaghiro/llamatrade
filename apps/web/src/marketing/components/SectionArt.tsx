@@ -11,8 +11,11 @@ interface Size {
   headY: number;
 }
 
-/** A full-width chart behind its parent section, clear behind the heading, drawn in on first view. */
-export function SectionArt({ id }: { id: SectionArtId }) {
+/**
+ * A full-width chart behind its parent section, clear behind the heading, drawn in on first view.
+ * `anchor` replaces the h2 as the block the art clears; the art ends 40px below it.
+ */
+export function SectionArt({ id, anchor }: { id: SectionArtId; anchor?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<Size | null>(null);
   const [on, setOn] = useState(false);
@@ -24,13 +27,14 @@ export function SectionArt({ id }: { id: SectionArtId }) {
     const measure = () => {
       const width = document.documentElement.clientWidth;
       const top = sec.getBoundingClientRect().top;
-      const h2 = sec.querySelector('h2');
-      const head = sec.querySelector('.sec-h, .split > div') ?? h2;
+      const anchorEl = anchor ? sec.querySelector(anchor) : null;
+      const h2 = anchorEl ?? sec.querySelector('h2');
+      const head = anchorEl ?? sec.querySelector('.sec-h, .split > div') ?? h2;
       const hr = h2?.getBoundingClientRect();
       const box = head?.getBoundingClientRect();
       const next: Size = {
         width,
-        sectionHeight: sec.offsetHeight,
+        sectionHeight: anchorEl && hr ? Math.round(hr.bottom - top + 40) : sec.offsetHeight,
         headY: hr ? Math.round(hr.top - top + hr.height / 2 + 20) : 190,
         headX: box ? Math.round(((box.left + box.width / 2) / width) * 100) : 50,
       };
@@ -50,7 +54,7 @@ export function SectionArt({ id }: { id: SectionArtId }) {
     const ro = new ResizeObserver(measure);
     ro.observe(sec);
     return () => ro.disconnect();
-  }, []);
+  }, [anchor]);
 
   useLayoutEffect(() => {
     const el = ref.current;

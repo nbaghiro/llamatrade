@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Onboarding</title>
+<script>try{document.documentElement.dataset.mode=localStorage.getItem("ax-mode")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark")}catch(e){document.documentElement.dataset.mode="dark"}</script>
+<link rel="stylesheet" href="kit.css">
+<style>
+  .ob-wel { padding-top: 0; }
+  .ob-wel > .glow { height: 100%; }
+  .ob-wel > .art { height: 440px; }
+  .ob-hero { text-align: center; padding-top: 70px; }
+  .ob-hero .logo { justify-content: center; }
+  .ob-hero h1 { margin: 22px 0 0; font: 600 30px/1.12 var(--sans); letter-spacing: -0.03em; }
+  .ob-hero p { margin: 12px 8px 0; color: var(--fg-2); font-size: 15.5px; line-height: 1.5; }
+  .ob-h { font: 600 26px/1.15 var(--sans); letter-spacing: -0.025em; }
+  .ob-p { color: var(--fg-2); font-size: 15px; line-height: 1.5; margin: 0; }
+  .ob-fine { font-size: 12.5px; color: var(--fg-3); text-align: center; line-height: 1.5; }
+  .ob-or { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--fg-3); }
+  .ob-or::before, .ob-or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+  .ob-roles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .ob-roles .m-card { display: flex; flex-direction: column; gap: 6px; padding: 14px; font-size: 13.5px; color: var(--fg-2); line-height: 1.45; }
+  .ob-roles .m-card b { color: var(--fg); font-size: 14.5px; }
+  .ob-roles .ic { width: 22px; height: 22px; color: var(--acc); }
+  .ob-sys { font-family: var(--ios); }
+  .ob-sys .t { font: 600 17px var(--ios); text-align: center; }
+  .ob-sys .s { font-size: 13.5px; color: var(--fg-3); text-align: center; margin-top: -6px; }
+  .ob-acct { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: var(--sunk); }
+  .ob-acct .ic { width: 22px; height: 22px; color: var(--fg-2); }
+  .ob-sysbtn { display: flex; align-items: center; justify-content: center; gap: 8px; height: 50px; border-radius: 14px; background: var(--io-blue); color: #fff; font: 600 17px var(--ios); }
+  .ob-sysbtn .ic { width: 20px; height: 20px; }
+  .ob-mailic { display: inline-grid; place-items: center; width: 38px; height: 38px; border-radius: 9px; background: linear-gradient(#3aa0ff, #0a6cf0); color: #fff; flex: none; align-self: flex-start; margin-top: 1px; }
+  .ob-mailic .ic { width: 22px; height: 22px; }
+  .ob-cam { position: absolute; inset: 0; background: radial-gradient(70% 50% at 50% 45%, #2b3038, #0b0d10); }
+  .ob-vf { position: absolute; left: 50%; top: 40%; width: 230px; height: 230px; transform: translate(-50%, -50%); border-radius: 28px; box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.45); }
+  .ob-vf::before { content: ""; position: absolute; inset: -3px; border-radius: 30px; border: 3px solid #fff; -webkit-mask: linear-gradient(#000 0 0) top/100% 24% no-repeat, linear-gradient(#000 0 0) bottom/100% 24% no-repeat; mask: linear-gradient(#000 0 0) top/100% 24% no-repeat, linear-gradient(#000 0 0) bottom/100% 24% no-repeat; }
+  .ob-qr { position: absolute; inset: 34px; display: grid; grid-template-columns: repeat(9, 1fr); gap: 3px; opacity: 0.85; }
+  .ob-qr i { background: #e8ebef; border-radius: 1px; }
+  .ob-qr i.o { background: transparent; }
+  .ob-camcap { position: absolute; left: 24px; right: 24px; bottom: 120px; text-align: center; color: #fff; font: 400 15px/1.45 var(--sans); }
+  .ob-camcap b { display: block; font: 600 18px var(--sans); margin-bottom: 6px; }
+  .ob-code { display: grid; grid-template-columns: repeat(4, 1fr) 14px repeat(4, 1fr); gap: 6px; align-items: center; }
+  .ob-code span { display: grid; place-items: center; height: 50px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line-2); font: 600 20px var(--mono); }
+  .ob-code span.on { border-color: var(--acc); box-shadow: 0 0 0 3px var(--acc-soft); }
+  .ob-code em { text-align: center; color: var(--fg-3); font-style: normal; }
+  .ob-check { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 50%; background: var(--acc-soft); color: var(--acc); }
+  .ob-check .ic { width: 30px; height: 30px; }
+  .ob-check.big { width: 76px; height: 76px; }
+  .ob-steps { display: flex; flex-direction: column; }
+  .ob-steps > div { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); font-size: 14.5px; }
+  .ob-steps > div:last-child { border-bottom: 0; }
+  .ob-steps .n { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; flex: none; background: var(--sunk); font: 600 12px var(--mono); color: var(--fg-2); }
+  .ob-steps .n.on { background: var(--ink); color: var(--ink-text); }
+  .ob-steps .n.ok { background: var(--acc-soft); color: var(--acc); }
+  .ob-steps .n .ic { width: 14px; height: 14px; }
+  .ob-steps .d { font-size: 12.5px; color: var(--fg-3); margin-top: 2px; line-height: 1.4; }
+  .ob-steps .lk { color: var(--fg-3); }
+  .ob-web { display: flex; flex-direction: column; height: 100%; }
+  .ob-urlbar { flex: none; display: flex; align-items: center; gap: 10px; padding: 4px 16px 10px; font: 400 15px var(--ios); }
+  .ob-urlbar .done { color: var(--io-blue); font-weight: 600; }
+  .ob-urlbar .u { flex: 1; text-align: center; font-size: 13px; color: var(--fg-3); display: inline-flex; justify-content: center; align-items: center; gap: 5px; }
+  .ob-urlbar .u .ic { width: 11px; height: 11px; }
+  .ob-page { flex: 1; min-height: 0; padding: 20px 22px; display: flex; flex-direction: column; gap: 14px; background: var(--sunk); border-top: 1px solid var(--line); font-size: 14.5px; }
+  .ob-page .pm { font: 700 15px var(--sans); letter-spacing: 0.02em; }
+  .ob-page ul { margin: 0; padding-left: 18px; color: var(--fg-2); line-height: 1.6; }
+  .ob-page .row2 { display: flex; gap: 10px; margin-top: auto; }
+  .ob-page .row2 span { flex: 1; display: grid; place-items: center; height: 46px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--panel); font-weight: 600; }
+  .ob-page .row2 span.p { background: #f5d33b; border-color: #f5d33b; color: #111; }
+  .ob-paste { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--acc-soft); font-size: 13.5px; color: var(--fg-2); }
+  .ob-paste b { color: var(--fg); }
+  .ob-paste .ic { width: 18px; height: 18px; color: var(--acc); }
+  .ob-paste .go { margin-left: auto; color: var(--acc); font-weight: 600; }
+  .ob-key { font-family: var(--mono); font-size: 14px; }
+  .ob-ok { color: var(--gain); }
+  .ob-ex { display: grid; gap: 6px; padding: 10px 12px 9px; }
+  .ob-ex [data-chart] { height: 40px; }
+  .ob-auth { padding-top: 0; gap: 12px; }
+  .ob-auth > .ob-hero { padding-top: 64px; margin-bottom: 14px; }
+  .ob-auth > .ob-hero h1 { margin-top: 18px; font-size: 28px; }
+  .ob-auth > .ob-hero p { margin-top: 8px; font-size: 14.5px; }
+  .ob-auth .field { position: relative; z-index: 1; }
+  .ob-auth .m-btn { position: relative; z-index: 1; margin-top: 4px; }
+</style>
+</head>
+<body data-title="Onboarding" data-desc="The first minutes with the phone app: signing in, getting in while LlamaTrade is invite only and connecting Alpaca, or leaving that for the web.">
+
+<!-- ===================================================== 1. First launch and sign in -->
+<section class="ax-surface" id="ob-first-launch"
+  data-surface="onboarding/first-launch"
+  data-area="Onboarding"
+  data-title="First launch and sign in"
+  data-why="The first screens after installing the app, and how someone gets signed in on the phone. Today the app has email and password only, so every other way in needs work on the auth service as well as the app.">
+
+  <!-- A -->
+  <div class="ax-opt" data-opt="A" data-name="Passkey first"
+    data-note="The welcome offers one button, Sign in with a passkey, and iOS shows its own sheet with the saved passkey and a Face ID check. There is no password to type on a phone keyboard and nothing to phish. The auth service has no WebAuthn endpoints today, so this needs registration and sign-in ceremonies, an associated domain for llamatrade.com and a way to add a passkey on the web first. People without one still need the password path, which is the link under the button.">
+    <div data-frame="phone" data-caption="Welcome">
+      <div class="m-body ob-wel">
+        <div data-page-art="top" class="full" data-seed="0" data-top="0.1" data-band="0.6" style="--pa-hole:27%;--pa-hole-h:20%"></div>
+        <div class="over ob-hero"><span data-logo="mark" data-size="56"></span><h1>Your sessions,<br>on your phone</h1><p>Check how your paper and live sessions are doing, and pause one when you need to.</p></div>
+        <div class="sp"></div>
+        <div class="over col" style="gap:12px"><div class="m-btn"><span data-icon="key"></span>Sign in with a passkey</div><div class="m-btn sec">Use email and password</div><div class="ob-fine">LlamaTrade is invite only for now.</div></div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="iOS passkey sheet">
+      <div class="m-body ob-wel" style="opacity:.5">
+        <div class="over ob-hero"><span data-logo="mark" data-size="56"></span><h1>Your sessions,<br>on your phone</h1></div>
+      </div>
+      <div class="scrim"></div>
+      <div class="io-sheet fit ob-sys"><div class="grab"></div>
+        <div class="sb2" style="padding-top:8px;gap:14px">
+          <div class="row" style="justify-content:center"><span data-appicon class="sm"></span></div>
+          <div class="t">Sign in to llamatrade.com</div>
+          <div class="s">Use the passkey saved in your iCloud Keychain.</div>
+          <div class="ob-acct"><span data-icon="key"></span><div style="flex:1"><div>sam.reyes@example.com</div><div class="xs dim">Passkey</div></div></div>
+          <div class="ob-sysbtn"><span data-icon="faceid"></span>Continue</div>
+          <div class="ob-fine">Other options</div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Signed in: Home"><div data-page-art="checkin" class="quiet" data-top="0.3" style="--pa-h:230px"></div>
+      <div class="m-top"><span data-logo="mark" data-size="30"></span><span class="sp"></span><span class="m-ic"><span data-icon="search"></span></span></div>
+      <div class="m-body">
+        <div><div class="lbl">Total equity · 2 accounts</div><div class="big" style="margin-top:6px;font-size:32px">$128,406.12</div><div class="row gap-6" style="margin-top:8px"><span class="chg gain">+$612.40</span><span class="chg gain">+0.48%</span><span class="sm dim">today</span></div></div>
+        <div data-chart="area" data-seed="42" data-ret="0.058" data-vol="0.005" data-h="92" data-mark></div>
+        <div class="m-sec">Sessions</div>
+        <div class="m-card" style="padding:0 16px">
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">All-Weather Portfolio</div><div class="d">Live · running</div></div><span data-chart="spark" data-seed="7" data-ret="0.068" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$48,210.55</div><div class="mono xs gain">+0.31%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">Recession Radar</div><div class="d">Paper · rebalances 15:50</div></div><span data-chart="spark" data-seed="19" data-ret="0.124" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$31,904.20</div><div class="mono xs gain">+0.62%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">Momentum Sectors</div><div class="d">Paper · running</div></div><span data-chart="spark" data-seed="33" data-ret="-0.021" data-vol="0.025" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$22,118.07</div><div class="mono xs loss">−0.18%</div></div></div>
+        </div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="ax-opt" data-opt="B" data-name="Magic link by email"
+    data-note="You type your email once and tap the link LlamaTrade sends; it opens the app already signed in. No password to remember, and it works for anyone with an invite. It sends you out to Mail and back, which is slow if mail is delayed, and the link has to open the app, so it needs universal links on llamatrade.com, a one-time sign-in token in the auth service and a rate limit on sending. None of these exist today.">
+    <div data-frame="phone" data-caption="Enter your email">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Back</span><span></span><span style="width:40px"></span></div>
+      <div class="m-body" style="gap:18px">
+        <div class="ob-h">Sign in</div>
+        <p class="ob-p">We'll email you a link that signs you in on this iPhone. It works once and expires after 15 minutes.</p>
+        <div class="m-field focus">sam.reyes@example.com</div>
+        <div class="m-btn">Email me a link</div>
+        <div class="ob-fine">Use the email address your invite was sent to.</div>
+      </div>
+      <div data-kb="example.com|gmail.com|icloud.com"></div>
+    </div>
+    <div data-frame="phone" data-caption="Check your email">
+      <div class="io-banner io-nt"><span class="ob-mailic"><span data-icon="mail"></span></span><div class="bd"><div class="hd"><b>LlamaTrade</b><span>now</span></div><div class="tx"><b style="font-weight:600">Your sign-in link</b></div><div class="tx c2">Tap to sign in to LlamaTrade on your iPhone. The link expires at 10:57.</div></div></div>
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Back</span><span></span><span style="width:40px"></span></div>
+      <div class="m-body" style="gap:18px;padding-top:60px;text-align:center;align-items:center"><div data-page-art="top" class="full" data-seed="21" data-top="0.1" data-band="0.6" style="--pa-hole:42%;--pa-hole-h:16%"></div>
+        <div class="ob-check big"><span data-icon="mail"></span></div>
+        <div class="ob-h">Check your email</div>
+        <p class="ob-p">We sent a sign-in link to <b style="color:var(--fg)">sam.reyes@example.com</b>. Open it on this iPhone.</p>
+        <div class="m-btn sec" style="align-self:stretch">Open Mail</div>
+        <div class="ob-fine">No email after a minute? <span class="m-link">Send it again</span></div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Link opens the app"><div data-page-art="top" class="full" data-seed="11" data-top="0.1" data-band="0.6" style="--pa-hole:46%;--pa-hole-h:16%"></div>
+      <div class="m-body" style="justify-content:center;align-items:center;text-align:center;gap:14px">
+        <div class="ob-check big"><span data-icon="check"></span></div>
+        <div class="ob-h">You're signed in</div>
+        <p class="ob-p">Signed in as sam.reyes@example.com on this iPhone.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="ax-opt" data-opt="C" data-rec data-name="Password, then Face ID"
+    data-note="Recommended. The first sign-in uses the email and password the app already supports, and right after it the app offers Face ID for every sign-in after that. The refresh token stays in the Keychain behind Face ID, so the password is typed once per phone. It needs no auth-service work, only expo-local-authentication and a Face ID usage string in the app, so it can ship first and passkeys can follow as a second button. The cost is one password on a phone keyboard, which password managers fill for most people.">
+    <div data-frame="phone" data-caption="Sign in, as today">
+      <div class="m-body ob-wel ob-auth">
+        <div data-page-art="top" class="full" data-seed="4" data-top="0.1" data-band="0.6" style="--pa-hole:22%;--pa-hole-h:18%"></div>
+        <div class="over ob-hero"><span data-logo="mark" data-size="48"></span><h1>Welcome back</h1><p>Sign in to check on your sessions.</p></div>
+        <div class="field"><label class="lab">Email address</label><div class="m-field">sam.reyes@example.com</div></div>
+        <div class="field"><label class="lab">Password</label><div class="m-field focus"><span class="mono">••••••••••</span><span class="sp"></span><span data-icon="key"></span></div></div>
+        <div class="m-btn">Sign in</div>
+        <div class="over ob-fine">New to LlamaTrade? <span class="m-link">Create an account</span></div>
+      </div>
+      <div class="io-sheet fit ob-sys" style="padding-bottom:0"><div class="sb2" style="padding:14px 18px 34px;gap:10px"><div class="ob-acct"><span data-icon="key"></span><div style="flex:1"><div>sam.reyes@example.com</div><div class="xs dim">Password for llamatrade.com</div></div></div><div class="ob-fine" style="text-align:left">Passwords · use the saved password</div></div></div>
+    </div>
+    <div data-frame="phone" data-caption="Offer Face ID">
+      <div data-page-art="checkin" class="quiet" data-top="0.3" style="--pa-h:230px"></div>
+      <div class="m-head"><div class="row"><span data-logo="mark" data-size="30"></span><span class="sp"></span><span class="m-ic"><span data-icon="search"></span></span></div></div>
+      <div class="m-body">
+        <div>
+          <div class="lbl">Total equity · 2 accounts</div>
+          <div class="big" style="margin-top:6px;font-size:32px">$128,406.12</div>
+          <div class="row gap-6" style="margin-top:8px"><span class="chg gain">+$612.40</span><span class="chg gain">+0.48%</span><span class="sm dim">today</span></div>
+        </div>
+        <div data-chart="area" data-seed="42" data-ret="0.058" data-vol="0.005" data-bench="0.036" data-h="88" data-mark></div>
+        <div class="m-sec">Sessions<span class="a">See all</span></div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">All-Weather Portfolio</div><div class="d">Live · next Dec 1</div></div><span data-chart="spark" data-seed="7" data-ret="0.068" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$48,210.55</div><div class="mono xs gain">+0.31%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">Recession Radar</div><div class="d">Paper · rebalances 15:50</div></div><span data-chart="spark" data-seed="19" data-ret="0.124" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$31,904.20</div><div class="mono xs gain">+0.62%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">Momentum Sectors</div><div class="d">Paper · next Nov 23</div></div><span data-chart="spark" data-seed="33" data-ret="0.031" data-vol="0.025" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$22,118.07</div><div class="mono xs gain">+1.22%</div></div></div>
+        </div>
+      </div>
+      <nav data-tabs="home"></nav>
+      <div class="scrim"></div>
+      <div class="io-alert"><div class="ab"><div class="row" style="justify-content:center;margin-bottom:10px"><span data-icon="faceid" style="width:40px;height:40px"></span></div><div class="at">Use Face ID to sign in?</div>Next time, open LlamaTrade with Face ID instead of your password. You can turn this off in Account.</div><div class="bts inapp"><span>Not now</span><span class="b">Use Face ID</span></div></div>
+    </div>
+    <div data-frame="phone" data-caption="Next launch">
+      <div data-page-art="top" class="full" data-top="0.12" data-band="0.62" style="--pa-hole:33%;--pa-hole-w:60%;--pa-hole-h:12%"></div>
+      <div class="m-body ob-wel">
+        <div class="over ob-hero" style="padding-top:110px"><span data-logo="mark" data-size="56"></span><p style="margin-top:22px">Signed in as sam.reyes@example.com</p></div>
+        <div class="sp"></div>
+        <div class="over col" style="gap:12px"><div class="m-btn sec">Use password instead</div></div>
+      </div>
+      <div class="io-faceid rim-glass"><span data-icon="faceid"></span>Face ID</div>
+    </div>
+  </div>
+
+  <!-- D -->
+  <div class="ax-opt" data-opt="D" data-name="Scan from the web"
+    data-note="If you're already signed in on the web, Account shows a QR code and the phone scans it to sign in, the way messaging apps pair a desktop. It suits this product, where most people set up on the web first, and avoids typing anything. It fails for someone who installs the app before using the web, so it can't be the only path, and it needs a short-lived pairing token, a confirm step on the web and the camera permission in the app.">
+    <div data-frame="phone" data-caption="Welcome">
+      <div class="m-body ob-wel">
+        <div data-page-art="top" class="full" data-seed="3" data-top="0.1" data-band="0.6" style="--pa-hole:27%;--pa-hole-h:20%"></div>
+        <div class="over ob-hero"><span data-logo="mark" data-size="56"></span><h1>Sign in with<br>your computer</h1><p>On llamatrade.com, open Account, then Sign in on a phone, and scan the code it shows.</p></div>
+        <div class="sp"></div>
+        <div class="over col" style="gap:12px"><div class="m-btn"><span data-icon="eye"></span>Scan the code</div><div class="m-btn sec">Use email and password</div></div>
+      </div>
+    </div>
+    <div data-frame="phone" data-statusbar="light" data-caption="Scanning">
+      <div class="ob-cam"></div>
+      <div class="ob-vf"><div class="ob-qr"><i></i><i></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i></i><i></i><i></i><i class="o"></i><i></i><i></i><i class="o"></i><i></i><i class="o"></i><i class="o"></i><i></i><i></i><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i></i><i class="o"></i><i></i><i class="o"></i><i></i><i></i><i></i><i class="o"></i><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i class="o"></i><i></i><i></i><i></i><i></i><i class="o"></i><i></i></div></div>
+      <div class="ob-camcap"><b>Point at the code on your screen</b>The code changes every 60 seconds.</div>
+    </div>
+    <div data-frame="phone" data-caption="Confirm on the phone">
+      <div class="m-body" style="justify-content:center;gap:16px">
+        <div class="ob-check big" style="align-self:center"><span data-icon="laptop"></span></div>
+        <div class="ob-h" style="text-align:center">Sign in as Sam Reyes?</div>
+        <div class="io-list"><div><span class="grow">Account</span><span class="v">sam.reyes@example.com</span></div><div><span class="grow">Code from</span><span class="v">Chrome on macOS</span></div></div>
+        <p class="ob-p" style="text-align:center">Your computer stays signed in. You can sign this iPhone out from Account on either device.</p>
+        <div class="m-btn">Sign in</div><div class="m-btn ghost">Cancel</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- E -->
+  <div class="ax-opt" data-opt="E" data-name="Welcome that sets roles"
+    data-note="Before sign-in, one screen says what the phone is for: checking sessions, reading activity and pausing or stopping, while building strategies and running backtests stay on the web. It sets the expectation that phone-nav D depends on, so nobody looks for a builder that isn't there. It adds a screen to every first launch and uses today's email and password sign-in, so it pairs with any of the other options rather than replacing them.">
+    <div data-frame="phone" data-caption="What the phone does"><div data-page-art="top" data-top="0.08" style="--pa-h:300px"></div>
+      <div class="m-body" style="gap:16px;padding-top:20px">
+        <span data-logo data-size="34"></span>
+        <div class="ob-h" style="margin-top:12px">Check in from anywhere</div>
+        <p class="ob-p">The phone app is for keeping an eye on what's running. Building and testing happen on the web.</p>
+        <div class="ob-roles">
+          <div class="m-card"><span data-icon="phone"></span><b>On the phone</b>See each session, today's fills and anything that needs you. Pause or stop a session.</div>
+          <div class="m-card"><span data-icon="laptop"></span><b>On the web</b>Build strategies, run backtests, connect Alpaca and start sessions.</div>
+        </div>
+        <div class="sp"></div>
+        <div class="m-btn">Sign in</div>
+        <div class="ob-fine">LlamaTrade is invite only for now. <span class="m-link">I have an invite</span></div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Sign in">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Back</span><span></span><span style="width:40px"></span></div>
+      <div class="m-body" style="gap:16px">
+        <div class="ob-h">Sign in</div>
+        <div class="field"><label class="lab">Email address</label><div class="m-field">sam.reyes@example.com</div></div>
+        <div class="field"><label class="lab">Password</label><div class="m-field focus"><span class="mono">••••••••••</span></div></div>
+        <div class="m-btn">Sign in</div>
+        <div class="ob-fine"><span class="m-link">Forgot your password?</span></div>
+      </div>
+      <div data-kb></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================== 2. Invites and the waitlist -->
+<section class="ax-surface" id="ob-beta"
+  data-surface="onboarding/beta"
+  data-area="Onboarding"
+  data-title="Invites and the waitlist"
+  data-why="LlamaTrade is invite only for now, and today the app only says to use the email address the invite was sent to. Someone with an invite, someone without one and someone who typed a different email each need a clear next step.">
+
+  <!-- A -->
+  <div class="ax-opt" data-opt="A" data-name="Invite code"
+    data-note="Every invite carries an eight-character code, and Create account asks for it first. It works whichever email you sign up with and is easy to read out to a friend. Codes can be shared beyond the person invited, so each needs a single use and an expiry, and the auth service has no invite codes today: invites are matched by email.">
+    <div data-frame="phone" data-caption="Enter the code">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Back</span><span></span><span style="width:40px"></span></div>
+      <div class="m-body" style="gap:16px">
+        <div class="ob-h">Enter your invite code</div>
+        <p class="ob-p">It's in the invite email, eight letters and numbers.</p>
+        <div class="ob-code"><span>K</span><span>7</span><span>Q</span><span>M</span><em>–</em><span>4</span><span>X</span><span class="on"></span><span></span></div>
+        <div class="ob-fine" style="text-align:left">No invite yet? <span class="m-link">Join the waitlist</span></div>
+      </div>
+      <div data-kb="K7QM4X"></div>
+    </div>
+    <div data-frame="phone" data-caption="Code accepted">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Back</span><span></span><span style="width:40px"></span></div>
+      <div class="m-body" style="gap:16px">
+        <div class="callout acc"><span data-icon="check2"></span><div><b>Invite accepted.</b> Code K7QM-4XR2 is now yours and can't be used again.</div></div>
+        <div class="ob-h">Create your account</div>
+        <div class="field"><label class="lab">Email address</label><div class="m-field focus">sam.reyes@example.com</div></div>
+        <div class="field"><label class="lab">Password</label><div class="m-field"><span class="ph">At least 10 characters</span></div></div>
+        <div class="m-btn">Create account</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="ax-opt" data-opt="B" data-rec data-name="The invite link opens the app"
+    data-note="Recommended. The invite email has one button that opens the app, or the App Store first if it isn't installed, on a Create account screen with the invited email already filled in and locked. That removes the mismatch case at the source and keeps the rule the auth service already uses, matching by email. It needs universal links on llamatrade.com and a signed invite token in the link; a deferred link through the App Store install needs a little more care, so the fallback is that the email field still accepts the invited address by hand.">
+    <div data-frame="phone" data-statusbar="lock" data-caption="Invite arrives">
+      <div class="io-lock">
+        <div class="io-wall"></div>
+        <div class="io-clock"><div class="dt">Tuesday, November 17</div><div class="tm">10:42</div></div>
+        <div class="io-stack">
+          <div class="io-nt"><span class="ob-mailic"><span data-icon="mail"></span></span><div class="bd"><div class="hd"><b>LlamaTrade</b><span>now</span></div><div class="tx"><b style="font-weight:600">You're invited to LlamaTrade</b></div><div class="tx c4">Open the invite on this iPhone to create your account. It's for sam.reyes@example.com.</div></div></div>
+        </div>
+        <div class="io-lockfoot"><span data-icon="bolt"></span><span data-icon="eye"></span></div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Opens on Create account">
+      <div class="m-body ob-wel ob-auth">
+        <div data-page-art="top" class="full" data-seed="8" data-top="0.1" data-band="0.6" style="--pa-hole:22%;--pa-hole-h:18%"></div>
+        <div class="over ob-hero"><span data-logo="mark" data-size="48"></span><h1>Create your account</h1><p>Your invite is for this email address.</p></div>
+        <div class="field"><label class="lab">Email address</label><div class="m-field" style="background:var(--sunk)">sam.reyes@example.com<span class="sp"></span><span data-icon="lock"></span></div></div>
+        <div class="field"><label class="lab">Password</label><div class="m-field focus"><span class="ph">At least 10 characters</span></div></div>
+        <div class="m-btn">Create account</div>
+        <div class="over ob-fine">Not you? <span class="m-link">Ask for the invite to be resent</span></div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Account created"><div data-page-art="top" class="full" data-seed="13" data-top="0.1" data-band="0.6" style="--pa-hole:44%;--pa-hole-h:20%"></div>
+      <div class="m-body" style="justify-content:center;align-items:center;text-align:center;gap:14px">
+        <div class="ob-check big"><span data-icon="check"></span></div>
+        <div class="ob-h">Welcome to LlamaTrade</div>
+        <p class="ob-p">Next, connect your Alpaca account (paper or live) so your sessions have somewhere to trade.</p>
+        <div class="m-btn" style="align-self:stretch;margin-top:10px">Connect Alpaca</div>
+        <div class="m-btn ghost" style="align-self:stretch">Later</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="ax-opt" data-opt="C" data-name="No invite: the waitlist"
+    data-note="Without an invite, the welcome's second button joins a waitlist with just an email, and the confirmation says plainly what happens next and that there's no date yet. It turns a dead end into one step and gives LlamaTrade a list to invite from. It needs a waitlist table and endpoint, which don't exist, and the copy must not promise a time it can't keep.">
+    <div data-frame="phone" data-caption="Welcome">
+      <div class="m-body ob-wel">
+        <div data-page-art="top" class="full" data-seed="5" data-top="0.1" data-band="0.6" style="--pa-hole:27%;--pa-hole-h:20%"></div>
+        <div class="over ob-hero"><span data-logo="mark" data-size="56"></span><h1>LlamaTrade is<br>invite only for now</h1><p>Sign in if you have an account or an invite. Otherwise, join the waitlist and we'll email you when there's a place.</p></div>
+        <div class="sp"></div>
+        <div class="over col" style="gap:12px"><div class="m-btn">Sign in</div><div class="m-btn sec">Join the waitlist</div></div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Join">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Back</span><span></span><span style="width:40px"></span></div>
+      <div class="m-body" style="gap:16px">
+        <div class="ob-h">Join the waitlist</div>
+        <p class="ob-p">We invite people in the order they join. You'll get one email when it's your turn, and nothing else.</p>
+        <div class="m-field focus">sam.reyes@example.com</div>
+        <div class="m-btn">Join</div>
+      </div>
+      <div data-kb="example.com|gmail.com|icloud.com"></div>
+    </div>
+    <div data-frame="phone" data-caption="You're on the list"><div data-page-art="top" class="full" data-seed="17" data-top="0.1" data-band="0.6" style="--pa-hole:44%;--pa-hole-h:20%"></div>
+      <div class="m-body" style="justify-content:center;align-items:center;text-align:center;gap:14px">
+        <div class="ob-check big"><span data-icon="check"></span></div>
+        <div class="ob-h">You're on the list</div>
+        <p class="ob-p">We'll email sam.reyes@example.com when there's a place. There's no date yet; we invite a few people at a time.</p>
+        <div class="m-btn sec" style="align-self:stretch;margin-top:10px">Done</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- D -->
+  <div class="ax-opt" data-opt="D" data-name="Wrong email, explained"
+    data-note="Keeps today's rule and finishes the error: if the email isn't on the invite list, the form says so in place, shows the invited address with the middle hidden when one is linked to this device's invite, and offers to switch to it or join the waitlist. It's the smallest change from today's register screen. It still lets the mistake happen first, and showing even a masked address needs care so the form can't be used to look up who was invited.">
+    <div data-frame="phone" data-caption="Create account">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Back</span><span></span><span style="width:40px"></span></div>
+      <div class="m-body" style="gap:16px">
+        <div class="ob-h">Create your account</div>
+        <div class="callout"><span data-icon="info"></span><div>LlamaTrade is invite only for now. Use the email address your invite was sent to.</div></div>
+        <div class="field"><label class="lab">Email address</label><div class="m-field">sam@reyes.dev</div></div>
+        <div class="field"><label class="lab">Password</label><div class="m-field"><span class="mono">••••••••••••</span></div></div>
+        <div class="m-btn">Create account</div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Not on the list">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Back</span><span></span><span style="width:40px"></span></div>
+      <div class="m-body" style="gap:16px">
+        <div class="ob-h">Create your account</div>
+        <div class="field"><label class="lab">Email address</label><div class="m-field" style="border-color:var(--risk-line)">sam@reyes.dev</div></div>
+        <div class="callout risk"><span data-icon="alert"></span><div><b>There's no invite for sam@reyes.dev.</b> Invites are tied to one address. If yours went somewhere else, sign up with that one.</div></div>
+        <div class="m-btn sec">Use a different email</div>
+        <div class="m-btn ghost">Join the waitlist instead</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================== 3. Connecting Alpaca -->
+<section class="ax-surface" id="ob-alpaca"
+  data-surface="onboarding/alpaca"
+  data-area="Onboarding"
+  data-title="Connecting Alpaca on the phone"
+  data-why="A new account has nothing to show until an Alpaca account is connected, paper or live; which one depends on the account the person connects. Today the phone asks for an API key and secret. On the web, adding a live account is its own step with a review.">
+
+  <!-- A -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="Approve on Alpaca, in a sheet"
+    data-note="Recommended. Home before a connection is the four steps, with Connect Alpaca paper open, and the button opens Alpaca's own approval page in a system browser sheet. You sign in to Alpaca there and approve, and the sheet closes on a connected account. No keys pass through the phone's clipboard, and it is the same path the web offers, built on the OAuth module llamatrade_alpaca already has. It needs ASWebAuthenticationSession (expo-web-browser's auth session), a redirect URI registered with Alpaca for the app's scheme and an auth-service endpoint that exchanges the code; keys stay available as the second button.">
+    <div data-frame="phone" data-caption="Home, nothing connected"><div data-page-art="onboarding" class="quiet" data-top="0.2" style="--pa-h:240px"></div>
+      <div class="m-top"><span data-logo="mark" data-size="30"></span><span class="sp"></span></div>
+      <div class="m-body" style="gap:16px">
+        <div><div class="ob-h">Welcome, Sam</div><p class="ob-p" style="margin-top:6px">Connect your Alpaca account and your sessions will show here.</p></div>
+        <div class="m-card ob-steps" style="padding:4px 16px">
+          <div><span class="n ok"><span data-icon="check"></span></span><div>Create your account</div></div>
+          <div><span class="n on">2</span><div style="flex:1"><b>Connect Alpaca</b><div class="d">Paper or live, whichever account you approve. A paper account trades simulated money.</div><div class="col" style="gap:8px;margin-top:12px"><div class="m-btn">Approve on Alpaca</div><div class="m-btn sec">Paste a key pair</div></div></div></div>
+          <div><span class="n">3</span><div class="lk">Build a strategy and backtest it<div class="d">On the web</div></div></div>
+          <div><span class="n">4</span><div class="lk">Start a session</div></div>
+        </div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Alpaca's page in a sheet">
+      <div class="m-top" style="opacity:.4"><span data-logo="mark" data-size="30"></span></div>
+      <div class="scrim"></div>
+      <div class="io-sheet large" style="border-radius:14px 14px 0 0">
+        <div class="ob-web">
+          <div class="ob-urlbar"><span class="done">Cancel</span><span class="u"><span data-icon="lock"></span>app.alpaca.markets</span><span style="width:44px"></span></div>
+          <div class="ob-page">
+            <div class="pm">alpaca</div>
+            <div class="h3">Authorize LlamaTrade</div>
+            <div class="muted">LlamaTrade is asking to use your Alpaca account:</div>
+            <ul><li>Read account balances and positions</li><li>Place and cancel orders</li><li>Read order and fill history</li></ul>
+            <div class="sm dim">It can't move money in or out of your account. You can revoke access from Alpaca's dashboard at any time.</div>
+            <div class="row2"><span>Deny</span><span class="p">Allow</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Connected">
+      <div class="m-top"><span data-logo="mark" data-size="30"></span><span class="sp"></span></div>
+      <div class="m-body" style="gap:16px">
+        <div class="callout acc"><span data-icon="check2"></span><div><b>Paper account ••PA92 connected.</b> $100,000.00 in simulated cash.</div></div>
+        <div class="m-card ob-steps" style="padding:4px 16px">
+          <div><span class="n ok"><span data-icon="check"></span></span><div>Create your account</div></div>
+          <div><span class="n ok"><span data-icon="check"></span></span><div>Connect Alpaca<div class="d">Paper ••PA92</div></div></div>
+          <div><span class="n on">3</span><div style="flex:1"><b>Build a strategy and backtest it</b><div class="d">This happens on the web. We can email you a link to open on your computer.</div><div class="m-btn sec" style="margin-top:12px">Email me a link</div></div></div>
+          <div><span class="n">4</span><div class="lk">Start a session</div></div>
+        </div>
+        <div class="ob-fine">Live trading is a separate step, set up later from Account.</div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="ax-opt" data-opt="B" data-name="Paste keys, with help"
+    data-note="Today's key form, made easier on a phone: when the clipboard holds something shaped like an Alpaca key, a strip offers to paste the key and secret into the right fields, and the result is checked against Alpaca before saving. It needs no new backend, since keys and validation already exist. Copying a secret between apps is clumsy and leaves it on the clipboard, so the app should clear the clipboard after pasting, and iOS shows its paste permission prompt each time.">
+    <div data-frame="phone" data-caption="Keys on the clipboard">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Home</span><span>Connect Alpaca</span><span style="width:50px"></span></div>
+      <div class="m-body" style="gap:14px">
+        <div class="ob-paste"><span data-icon="copy"></span><div>A key pair is on your clipboard.</div><span class="go">Paste</span></div>
+        <div class="seg round" style="align-self:flex-start"><span class="on">Paper</span><span>Live</span></div>
+        <div class="field"><label class="lab">API key ID</label><div class="m-field"><span class="ph">PK…</span></div></div>
+        <div class="field"><label class="lab">Secret key</label><div class="m-field"><span class="ph">Shown once on Alpaca's dashboard</span></div></div>
+        <div class="ob-fine" style="text-align:left">Find these on your Alpaca dashboard under API keys, for a paper or a live account.</div>
+      </div>
+      <div class="scrim"></div>
+      <div class="io-alert"><div class="ab"><div class="at">“LlamaTrade” would like to paste from “Safari”</div>Do you want to allow this?</div><div class="bts"><span>Don't Allow Paste</span><span class="b">Allow Paste</span></div></div>
+    </div>
+    <div data-frame="phone" data-caption="Checked with Alpaca">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Home</span><span>Connect Alpaca</span><span style="width:50px"></span></div>
+      <div class="m-body" style="gap:14px">
+        <div class="seg round" style="align-self:flex-start"><span class="on">Paper</span><span>Live</span></div>
+        <div class="field"><label class="lab">API key ID</label><div class="m-field ob-key">PKX4••••••••••••7QA2<span class="sp"></span><span data-icon="check" class="ob-ok"></span></div></div>
+        <div class="field"><label class="lab">Secret key</label><div class="m-field ob-key">••••••••••••••••••••<span class="sp"></span><span data-icon="check" class="ob-ok"></span></div></div>
+        <div class="callout acc"><span data-icon="check2"></span><div><b>Alpaca accepted these keys.</b> Paper account ••PA92, $100,000.00 in simulated cash. We cleared your clipboard.</div></div>
+        <div class="m-btn">Save and connect</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="ax-opt" data-opt="C" data-name="Do it on the web"
+    data-note="The phone doesn't connect accounts at all. Home explains that setup happens on the web and offers to email a link, or to hand off to a Mac signed in to the same Apple ID. It keeps every credential flow in one place and matches phone-nav D, where the phone is for checking in. Someone who only has their phone is stuck until they reach a computer, and Handoff needs NSUserActivity support that the app doesn't have; the emailed link works with what exists today.">
+    <div data-frame="phone" data-caption="Home, nothing connected">
+      <div class="m-top"><span data-logo="mark" data-size="30"></span><span class="sp"></span></div>
+      <div class="m-body ob-wel" style="padding-top:10px">
+        <div data-page-art="top" class="full" data-seed="9" data-top="0.1" data-band="0.6" style="--pa-hole:30%;--pa-hole-h:20%"></div>
+        <div class="over" style="text-align:center;padding-top:60px"><div class="ob-check big" style="margin:0 auto"><span data-icon="laptop"></span></div><div class="ob-h" style="margin-top:18px">Set up on your computer</div><p class="ob-p" style="margin-top:10px">Connect Alpaca, build a strategy and start a paper session on llamatrade.com. Your sessions will show here as soon as one is running.</p></div>
+        <div class="sp"></div>
+        <div class="over col" style="gap:12px"><div class="m-btn">Email me a link</div><div class="ob-fine">Signed in as sam.reyes@example.com</div></div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Link sent">
+      <div class="m-top"><span data-logo="mark" data-size="30"></span><span class="sp"></span></div>
+      <div class="m-body" style="justify-content:center;align-items:center;text-align:center;gap:14px">
+        <div class="ob-check big"><span data-icon="mail"></span></div>
+        <div class="ob-h">Link sent</div>
+        <p class="ob-p">Open the email on your computer. It goes straight to Connect Alpaca, already signed in for 15 minutes.</p>
+        <div class="m-card col" style="align-self:stretch;text-align:left;gap:6px;margin-top:8px"><div class="lbl">On this phone, next</div><div class="sm muted">Home checks for a running session each time you open the app.</div></div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+  </div>
+
+  <!-- D -->
+  <div class="ax-opt" data-opt="D" data-name="Live from the phone, with Face ID"
+    data-note="Paper connects as in A; live is its own step in Account and can be done on the phone, but only after reading what changes and confirming with Face ID, the same check the app would use to go live. It treats the phone as a full client for people who manage everything from it. It is the riskiest place to add real money, and it needs expo-local-authentication plus a server-side check that the confirmation happened, since a client-only Face ID gate can be skipped.">
+    <div data-frame="phone" data-caption="Account: live is a step">
+      <div class="m-top"><span class="t">Account</span></div>
+      <div class="m-body" style="gap:12px">
+        <div class="io-sec">Alpaca</div>
+        <div class="io-list">
+          <div><span class="st run">Paper ••PA92</span><span class="v">Connected</span></div>
+          <div><span class="st">Live</span><span class="v">Not connected</span></div>
+        </div>
+        <div class="m-card col" style="gap:10px">
+          <b>Connect a live account</b>
+          <div class="sm muted" style="line-height:1.5">Live sessions place real orders with your money at Alpaca. Paper stays as it is, and each session chooses one account.</div>
+          <div class="m-btn">Continue</div>
+        </div>
+      </div>
+      <nav data-tabs="account"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Confirm with Face ID">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Account</span><span>Live account</span><span style="width:60px"></span></div>
+      <div class="m-body" style="gap:14px">
+        <div class="ob-h" style="font-size:22px">Before you connect live</div>
+        <div class="ob-steps">
+          <div><span class="n">1</span><div>Orders are real and fill at market prices.</div></div>
+          <div><span class="n">2</span><div>Nothing runs on live until you start a session on it.</div></div>
+          <div><span class="n">3</span><div>You can disconnect from Account at any time; open positions stay at Alpaca.</div></div>
+        </div>
+        <div class="m-btn">Approve on Alpaca</div>
+      </div>
+      <div class="scrim"></div>
+      <div class="io-faceid"><span data-icon="faceid"></span>Face ID</div>
+    </div>
+    <div data-frame="phone" data-caption="Live connected">
+      <div class="m-top"><span class="t">Account</span></div>
+      <div class="m-body" style="gap:12px">
+        <div class="callout acc"><span data-icon="check2"></span><div><b>Live account ••4821 connected.</b> No sessions run on it yet.</div></div>
+        <div class="io-sec">Alpaca</div>
+        <div class="io-list">
+          <div><span class="st run">Paper ••PA92</span><span class="v">Connected</span></div>
+          <div><span class="st run">Live ••4821</span><span class="v">Connected</span></div>
+        </div>
+        <div class="io-foot">Starting a session on live is done on the web.</div>
+      </div>
+      <nav data-tabs="account"></nav>
+    </div>
+  </div>
+
+  <!-- E -->
+  <div class="ax-opt" data-opt="E" data-name="Live stays on the web"
+    data-note="Paper can be connected on the phone, but live can't: Account shows live as a step with a short reason and a button that emails the link to do it on the web. It keeps the one step that touches real money on the bigger screen, where the web flow already explains it, and needs nothing new on the phone. People who'd rather do it from the phone have to wait for a computer, and the reason has to be said plainly so it doesn't read as a missing feature.">
+    <div data-frame="phone" data-caption="Account">
+      <div class="m-top"><span class="t">Account</span></div>
+      <div class="m-body" style="gap:12px">
+        <div class="io-sec">Alpaca</div>
+        <div class="io-list">
+          <div><span class="st run">Paper ••PA92</span><span class="v">Connected</span></div>
+          <div><span class="st">Live</span><span class="v">Set up on the web</span></div>
+        </div>
+        <div class="m-card col" style="gap:10px">
+          <div class="row"><span data-icon="laptop" style="color:var(--acc)"></span><b>Live is set up on the web</b></div>
+          <div class="sm muted" style="line-height:1.5">Connecting real money takes a few checks that are clearer on a bigger screen. Once it's done, live sessions show here like any other.</div>
+          <div class="m-btn sec">Email me the link</div>
+        </div>
+      </div>
+      <nav data-tabs="account"></nav>
+    </div>
+    <div data-frame="phone" data-caption="After it's done on the web">
+      <div class="m-top"><span data-logo="mark" data-size="30"></span><span class="sp"></span></div>
+      <div class="m-body" style="gap:14px">
+        <div class="callout acc"><span data-icon="check2"></span><div><b>Live account ••4821 is connected.</b> You did this on the web at 10:38.</div></div>
+        <div><div class="lbl">Total equity · 2 accounts</div><div class="big" style="margin-top:6px;font-size:32px">$128,406.12</div></div>
+        <div class="m-card" style="padding:0 16px">
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">All-Weather Portfolio</div><div class="d">Live · running</div></div><span data-chart="spark" data-seed="7" data-ret="0.068" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$48,210.55</div><div class="mono xs gain">+0.31%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm">Recession Radar</div><div class="d">Paper · rebalances 15:50</div></div><span data-chart="spark" data-seed="19" data-ret="0.124" data-vol="0.02" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">$31,904.20</div><div class="mono xs gain">+0.62%</div></div></div>
+        </div>
+      </div>
+      <nav data-tabs="home"></nav>
+    </div>
+  </div>
+</section>
+
+<script src="kit.js"></script>
+</body>
+</html>

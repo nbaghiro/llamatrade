@@ -43,6 +43,10 @@ export interface ActivityRow {
   group: ActivityGroup;
   label: string;
   sublabel: string;
+  /** Traded or paying symbol; empty for cash movements. */
+  symbol: string;
+  qty: number;
+  price: number;
   amount: number; // absolute magnitude
   signed: number; // effect on free cash: + in, − out, 0 neutral (inside a sleeve)
   at: Date;
@@ -65,7 +69,14 @@ function tradeSublabel(t: Transaction): string {
 
 function mapRow(t: Transaction): ActivityRow {
   const amount = toNumber(t.amount);
-  const base = { id: t.id, amount, at: toDate(t.timestamp) };
+  const base = {
+    id: t.id,
+    symbol: t.symbol,
+    qty: toNumber(t.quantity),
+    price: toNumber(t.price),
+    amount,
+    at: toDate(t.timestamp),
+  };
   switch (t.type) {
     case TransactionType.DEPOSIT:
       return {

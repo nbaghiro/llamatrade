@@ -20,11 +20,13 @@ from llamatrade_db import tenant_session
 from llamatrade_db.models.notification import NotificationDelivery, Webhook
 from llamatrade_events.idempotency import derive_event_id
 from llamatrade_proto.generated import events_pb2, notification_pb2
+from llamatrade_telemetry import mask_destination
 
 from src.channels.email import EmailChannel
 from src.channels.webhook import WebhookChannel, WebhookResult
 from src.email_render import build_html
 from src.pipeline import Dispatcher, PendingDelivery, persist_and_plan
+from src.templates import Rendered
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +73,20 @@ class DeliveryDispatcher(Dispatcher):
             html_body=build_html(item.rendered, item.severity),
         )
         await self._mark(item, ok=ok, error=None if ok else "smtp send failed")
+
+    async def send_direct_email(self, to: str, rendered: Rendered, severity: int) -> None:
+        try:
+            ok = await self._email.send(
+                to,
+                rendered.subject,
+                rendered.text_body,
+                html_body=build_html(rendered, severity),
+            )
+        except Exception:
+            logger.exception("direct email to %s failed unexpectedly", mask_destination(to))
+            return
+        if not ok:
+            logger.warning("direct email to %s was not sent", mask_destination(to))
 
     async def _dispatch_webhook(self, item: PendingDelivery) -> None:
         async with tenant_session(item.tenant_id, self._session_factory) as db:

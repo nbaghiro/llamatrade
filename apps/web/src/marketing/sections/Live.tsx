@@ -33,11 +33,10 @@ export function Live() {
         ))}
         <figure>
           <div className="phonecell">
-            <PhoneFrame phone="portfolio" />
+            <PhoneFrame phone="alerts" />
           </div>
           <figcaption>
-            <b>On your phone</b>
-            Equity, sleeves and the copilot.
+            <b>On your phone</b>A stopped order or a frozen session reaches your lock screen.
           </figcaption>
         </figure>
       </div>

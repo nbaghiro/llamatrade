@@ -12,7 +12,7 @@ const FACTS: readonly [string, string][] = [
   [String(INDICATORS.length), 'indicators in the language'],
   ['3', 'ways to build a strategy'],
   ['~80', 'templates to start from'],
-  ['$0', 'during the closed beta'],
+  ['$0', 'while sign-up is by invite'],
 ];
 
 function Stack() {
@@ -29,7 +29,7 @@ function Stack() {
       )}
       <ScreenFrame screen="backtest" className="k-main" />
       <PhoneFrame phone="home" className="k-phone l" style={{ top: layout.phoneTop }} />
-      <PhoneFrame phone="strategy" className="k-phone r" style={{ top: layout.phoneTop }} />
+      <PhoneFrame phone="session" className="k-phone r" style={{ top: layout.phoneTop }} />
     </div>
   );
 }
@@ -41,7 +41,7 @@ export function Hero() {
     <section ref={section} className="hero" id="top">
       <HeroArt section={section} facts={facts} />
       <div className="wrap hero-copy">
-        <span className="mk-kicker">Closed beta · invite only · paper and live trading</span>
+        <span className="mk-kicker">Invite only · paper and live trading</span>
         <h1>Algorithmic trading on your own account.</h1>
         <p className="lede">
           Build a strategy, backtest it, then run it on Alpaca, in paper or live.

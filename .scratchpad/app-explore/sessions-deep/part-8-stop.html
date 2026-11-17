@@ -1,0 +1,313 @@
+<style>
+  /* ---------- stop2 (prefix n2-s-) */
+  .n2-s-bg .page { padding: 22px 32px; }
+  .n2-s-bg .page-head { margin-bottom: 16px; }
+  .n2-s-flow { display: grid; grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr); grid-template-rows: auto auto auto; gap: 8px 0; align-items: stretch; }
+  .n2-s-flow .src { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); font-size: 12.5px; }
+  .n2-s-flow .src .mono { margin-left: auto; }
+  .n2-s-flow .arr { display: grid; place-items: center; color: var(--fg-3); }
+  .n2-s-flow .arr .ic { width: 16px; height: 16px; }
+  .n2-s-flow .dst { padding: 10px 12px; border-radius: 8px; border: 1px dashed var(--line-2); background: var(--sunk); font-size: 12.5px; display: flex; flex-direction: column; justify-content: center; gap: 3px; }
+  .n2-s-flow .dst .t { font-weight: 600; color: var(--fg); }
+  .n2-s-flow .dst .d { color: var(--fg-3); font-size: 11.5px; line-height: 1.4; }
+  .n2-s-flow .hd { font-size: var(--lbl-size); letter-spacing: var(--lbl-track); text-transform: var(--lbl-tf); color: var(--fg-3); font-weight: 500; }
+  .n2-s-x { position: relative; }
+  .n2-s-x::after { content: ""; position: absolute; left: -9px; top: 13px; width: 18px; height: 1.5px; background: var(--fg-2); transform: rotate(-45deg); z-index: 3; }
+  .n2-s-x::before { content: ""; position: absolute; left: -9px; top: 13px; width: 18px; height: 1.5px; background: var(--fg-2); transform: rotate(45deg); z-index: 3; }
+  .n2-s-strike { text-decoration: line-through; color: var(--fg-3); }
+
+  .n2-s-a .dialog { width: 700px; }
+  .n2-s-a .dialog .db { display: flex; flex-direction: column; gap: 16px; }
+  .n2-s-a .mini { padding: 4px 0 0; }
+  .n2-s-a .mini .n2-tl { --lab: 0px; --fut: 190px; }
+
+  .n2-s-b .wrap { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; }
+  .n2-s-b .n2-tl { --lab: 150px; --fut: 230px; }
+  .n2-s-b .gline { position: absolute; top: 0; bottom: 0; border-left: 2px dashed var(--fg); z-index: 2; }
+  .n2-s-b .gtag { position: absolute; top: 8px; transform: translateX(-50%); padding: 1px 6px; border-radius: 4px; background: var(--panel); border: 1px solid var(--fg); color: var(--fg); font: 600 10px var(--mono); white-space: nowrap; z-index: 3; }
+  .n2-s-b .after { position: absolute; top: 0; bottom: 0; right: 0; background: repeating-linear-gradient(135deg, transparent 0 6px, color-mix(in srgb, var(--fg-4) 22%, transparent) 6px 7px); }
+
+  .n2-s-c .wrap { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 28px; align-items: start; }
+  .n2-s-c .tbl td { padding-top: 9px; padding-bottom: 9px; }
+
+  .n2-s-d .wrap { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; }
+  .n2-s-d .closed { background: transparent; border-style: dashed; }
+  .n2-s-d .n2-tl { --lab: 0px; }
+</style>
+
+<!-- =============================================================== Stop, round two -->
+<section class="ax-surface" id="sessions-stop2"
+  data-surface="sessions/stop2"
+  data-area="Sessions"
+  data-title="Stopping a session, round two"
+  data-why="What stopping does today: the sleeve closes, its holdings move to Unmanaged and its cash to Unallocated, nothing is sold and the next rebalance doesn't run. These options try to make that clear before the click, and show the session once it's done.">
+
+  <!-- ============================================================ A: where everything goes -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="Where everything goes"
+    data-note="Recommended. The dialog draws what happens to each holding: TLT and GLD move to Unmanaged, the cash moves to Unallocated, and the 15:50 rebalance is crossed off on a short lane that ends in a stop marker. It describes exactly what the API does today, so nothing in it is a promise we'd have to build. Pause is offered once, with what it keeps. For the live All-Weather Portfolio the same dialog adds one line that the holdings stay in the live account as real positions. It's the tallest of the dialogs.">
+    <div data-frame="desktop" data-path="sessions/recession-radar">
+      <div class="app n2-s-a n2-s-bg">
+        <div data-tb="Sessions"></div>
+        <div class="main"><div class="page">
+          <div class="n2-crumb">Sessions<span data-icon="chevron-right"></span>Paper</div>
+          <div class="page-head">
+            <div><div class="row"><span class="h1">Recession Radar</span><span class="pill paper">Paper</span><span class="st run">Running</span></div><div class="sub">Version 4 · Alpaca paper · started Jun 2 · next rebalance today at 15:50 ET</div></div>
+            <div class="act"><span class="btn">Pause</span><span class="btn">Stop session</span></div>
+          </div>
+          <div class="figs boxed" style="--n:4"><div class="fig"><div class="lbl">Sleeve value</div><div class="v">$31,904.20</div><div class="s">10:42 ET</div></div><div class="fig"><div class="lbl">Today</div><div class="v gain">+$196.62</div><div class="s">+0.62%</div></div><div class="fig"><div class="lbl">Since Jun 2</div><div class="v gain">+$3,519.68</div><div class="s">+12.4%</div></div><div class="fig"><div class="lbl">Cash in sleeve</div><div class="v">$233.57</div><div class="s">0.7%</div></div></div>
+          <div class="panel" style="margin-top:16px"><div class="panel-b"><div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.006" data-bench="0.09" data-axis="xy" data-x="Jun 2,Jul 1,Aug 1,Sep 1,Oct 1,Nov 2" data-h="300" data-start="28384"></div></div></div>
+        </div></div>
+        <div class="scrim"></div>
+        <div class="dialog">
+          <div class="dh"><div class="row"><span class="h2">Stop Recession Radar?</span><span class="sp"></span><span class="pill paper">Paper</span></div><div class="sm dim" style="margin-top:4px">Stopping closes this session's sleeve. Nothing is sold.</div></div>
+          <div class="db">
+            <div class="n2-s-flow">
+              <div class="hd">In this sleeve now</div><div></div><div class="hd">After you stop</div>
+              <div class="src"><span class="sym">TLT</span><span class="dim">205 shares</span><span class="mono">$18,534.05</span></div>
+              <div class="arr"><span data-icon="arrow-right"></span></div>
+              <div class="dst" style="grid-row:span 2"><span class="t">Unmanaged</span><span class="d">Still held in your Alpaca paper account. No strategy trades them, and you can sell them there or assign them to a new session.</span></div>
+              <div class="src"><span class="sym">GLD</span><span class="dim">53 shares</span><span class="mono">$13,136.58</span></div>
+              <div class="arr"><span data-icon="arrow-right"></span></div>
+              <div class="src"><span class="dim" style="font-weight:500;color:var(--fg-2)">Cash</span><span class="mono">$233.57</span></div>
+              <div class="arr"><span data-icon="arrow-right"></span></div>
+              <div class="dst"><span class="t">Unallocated</span><span class="d">Free cash in Alpaca paper, ready for another session.</span></div>
+            </div>
+            <div class="mini">
+              <div class="n2-tl">
+                <div class="lab"></div>
+                <div class="past n2-lane" style="border-top:0"><i class="bar on" style="left:0;right:0"></i><i class="n2-m" style="left:22%"></i><i class="n2-m" style="left:48%"></i><i class="n2-m" style="left:74%"></i><i class="n2-m stop" style="left:100%"></i><span class="lt" style="left:0;top:-2px">Nov 3</span></div>
+                <div class="fut n2-lane" style="border-top:0"><span class="n2-now" style="top:-6px">Stop 10:42</span><i class="bar plan" style="left:0;right:0"></i><span class="n2-s-x" style="position:absolute;left:30%;top:0;width:0;height:28px"></span><span class="lt n2-s-strike" style="left:calc(30% + 14px)">15:50 rebalance</span></div>
+              </div>
+            </div>
+            <div class="sm muted" style="line-height:1.55">Today's 15:50 rebalance won't run, and no orders are placed for this session from now on. A stop can't be undone. To run Recession Radar again you start a new session, which gets a new sleeve.</div>
+            <div class="callout" style="font-size:12.5px"><span data-icon="pause"></span><div><b>Pause keeps everything as it is.</b> The sleeve and its holdings stay, rebalances are skipped until you resume.</div></div>
+          </div>
+          <div class="df"><span class="btn ghost" style="margin-right:auto">Cancel</span><span class="btn">Pause instead</span><span class="btn pri">Stop Recession Radar</span></div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span></span><span class="ic" data-icon="more" style="width:22px;height:22px"></span></div>
+      <div class="m-body"><div class="h2">Recession Radar</div><div class="mono" style="font-size:26px;font-weight:600">$31,904.20</div><div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.006" data-h="110"></div></div>
+      <nav data-tabs="sessions" data-items="home,strategies,sessions,portfolio,account"></nav>
+      <div class="scrim"></div>
+      <div class="sheet" style="display:flex;flex-direction:column;gap:12px;padding-bottom:30px">
+        <div><div class="h2">Stop Recession Radar?</div><div class="sm dim" style="margin-top:3px">The sleeve closes. Nothing is sold.</div></div>
+        <div class="m-card rows" style="padding:0 14px">
+          <div class="n2-prow" style="font-size:13.5px;padding:10px 0"><span class="sym" style="width:34px">TLT</span><span class="grow dim">205 · $18,534.05</span><span class="sm">Unmanaged</span></div>
+          <div class="n2-prow" style="font-size:13.5px;padding:10px 0"><span class="sym" style="width:34px">GLD</span><span class="grow dim">53 · $13,136.58</span><span class="sm">Unmanaged</span></div>
+          <div class="n2-prow" style="font-size:13.5px;padding:10px 0"><span style="width:34px" class="sm muted">Cash</span><span class="grow dim mono">$233.57</span><span class="sm">Unallocated</span></div>
+        </div>
+        <div class="sm muted" style="line-height:1.5">Holdings stay in Alpaca paper with no strategy trading them. Today's <span class="n2-s-strike">15:50 rebalance</span> won't run. This can't be undone.</div>
+        <div class="m-btn">Stop Recession Radar</div>
+        <div class="m-btn sec">Pause instead</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================ B: stop on the timeline -->
+  <div class="ax-opt" data-opt="B" data-name="Stop on the timeline"
+    data-note="The session's annotated timeline becomes the control: a dashed stop line sits on Now, and you can move it to just after today's 15:50 rebalance or to the close, with the part of the schedule that won't run hatched. It answers when will this stop and what still happens before then in one picture. The cost is real: StopSession only stops immediately, so the later points need scheduled stops on the server, and a scheduled stop has to survive restarts and holidays.">
+    <div data-frame="desktop" data-path="sessions/recession-radar/stop">
+      <div class="app n2-s-b n2-s-bg">
+        <div data-tb="Sessions"></div>
+        <div class="main"><div class="page">
+          <div class="n2-crumb">Sessions<span data-icon="chevron-right"></span>Recession Radar<span data-icon="chevron-right"></span>Stop</div>
+          <div class="page-head">
+            <div><div class="row"><span class="h1">Choose when Recession Radar stops</span><span class="pill paper">Paper</span></div><div class="sub">Drag the dashed line, or pick a point on the right. Holdings move to Unmanaged when it stops; nothing is sold.</div></div>
+          </div>
+          <div class="wrap">
+            <div class="panel rim" style="padding:16px 20px 8px">
+              <div class="row" style="margin-bottom:10px"><div><div class="lbl">Sleeve value</div><div class="row base" style="gap:10px;margin-top:4px"><span class="big" style="font-size:28px">$31,904.20</span><span class="chg gain">+$196.62 today</span></div></div><span class="sp"></span><div class="n2-leg"><span><i class="l"></i>Recession Radar</span></div></div>
+              <div class="n2-tl">
+                <div class="lab"></div>
+                <div class="past n2-pins"><span class="n2-pin acc end" style="left:calc(100% - 44px)"><span class="n2-n" style="width:13px;height:13px;font-size:8.5px">2</span>Fills 10:31</span></div>
+                <div class="fut n2-pins"><span class="n2-now">Now 10:42</span></div>
+              </div>
+              <div class="n2-tl">
+                <div class="lab" style="flex-direction:column;align-items:stretch;gap:0">
+                  <div class="n2-kv" style="width:100%"><div><span>Since Jun 2</span><span class="gain">+12.4%</span></div><div><span>Rebalances</span><span>24</span></div><div><span>Fills</span><span>51</span></div></div>
+                </div>
+                <div class="past"><div data-chart="area" data-seed="19" data-ret="0.124" data-vol="0.006" data-h="220" data-mark></div></div>
+                <div class="fut n2-fut">
+                  <div class="after" style="left:68%"></div>
+                  <div class="gline" style="left:68%"></div><span class="gtag" style="left:68%">Stop 16:00</span>
+                  <div class="nx" style="top:40px;right:34%"><span class="mono dim">15:50</span> Rebalance</div>
+                  <div class="nx" style="top:62px;right:34%"><span class="mono dim">16:00</span> Close</div>
+                  <div class="nx" style="top:40px;left:calc(68% + 8px);right:4px;color:var(--fg-3);white-space:normal;line-height:1.35">Nov 24 won't run</div>
+                </div>
+              </div>
+              <div class="n2-tl">
+                <div class="lab"><span class="n2-name">TLT · GLD · cash</span></div>
+                <div class="past n2-lane"><i class="bar on" style="left:0;right:0"></i><i class="n2-m" style="left:7%"></i><i class="n2-m" style="left:20%"></i><i class="n2-m" style="left:33%"></i><i class="n2-m" style="left:46%"></i><i class="n2-m" style="left:59%"></i><i class="n2-m" style="left:72%"></i><i class="n2-m" style="left:85%"></i><i class="n2-m fill" style="left:100%">2</i></div>
+                <div class="fut n2-lane"><i class="bar plan" style="left:0;width:68%"></i><i class="n2-m plan" style="left:30%"></i><i class="n2-m stop" style="left:68%"></i><i class="n2-m plan" style="left:90%;opacity:.45"></i></div>
+              </div>
+              <div class="n2-tl">
+                <div class="lab"><div class="n2-keys"><span><i class="n2-m"></i>Rebalance</span><span><i class="n2-m plan"></i>Planned</span></div></div>
+                <div class="past n2-xl"><span style="left:0;transform:none">Aug 17</span><span style="left:33%">Sep 15</span><span style="left:66%">Oct 15</span></div>
+                <div class="fut n2-xl"><span style="left:30%">15:50</span><span style="left:90%">Nov 24</span></div>
+              </div>
+            </div>
+            <div class="col gap-16">
+              <div class="panel"><div class="panel-h">Stop at</div><div class="panel-b col" style="gap:8px">
+                <div class="n2-radio"><span class="rd"></span><div><div class="t">Now</div><div class="d">The sleeve closes at once. Today's 15:50 rebalance doesn't run.</div></div></div>
+                <div class="n2-radio on"><span class="rd"></span><div><div class="t">After today's 15:50 rebalance</div><div class="d">The rebalance runs as usual, then the sleeve closes at 16:00 with whatever it holds.</div></div></div>
+                <div class="n2-radio"><span class="rd"></span><div><div class="t">Before the next rebalance</div><div class="d">Runs until Monday, Nov 23 at 16:00. Nothing changes until then.</div></div></div>
+              </div></div>
+              <div class="panel"><div class="panel-h">At 16:00 today</div><div class="panel-b tight"><div class="n2-kv">
+                <div><span>TLT and GLD</span><span>to Unmanaged</span></div>
+                <div><span>Cash</span><span>to Unallocated</span></div>
+                <div><span>Orders after 16:00</span><span>none</span></div>
+              </div></div></div>
+              <div class="row" style="justify-content:flex-end"><span class="btn ghost">Cancel</span><span class="btn pri">Stop after the 15:50 rebalance</span></div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Recession Radar</span><span></span><span></span></div>
+      <div class="m-body">
+        <div><div class="h2" style="font-size:22px">When should it stop?</div><div class="sm dim" style="margin-top:4px">Holdings move to Unmanaged when it stops. Nothing is sold.</div></div>
+        <div class="m-card" style="padding:12px 14px">
+          <div class="row xs dim" style="justify-content:space-between"><span class="mono">10:42</span><span class="mono">15:50</span><span class="mono">16:00</span><span class="mono">Nov 23</span></div>
+          <div class="n2-plane" style="margin-top:6px;border-top:0"><i class="bar on" style="left:0;width:10%"></i><i class="bar plan" style="left:10%;width:60%"></i><i class="n2-m plan" style="left:37%"></i><i class="n2-m stop" style="left:70%"></i><i class="nowl" style="left:10%"></i></div>
+        </div>
+        <div class="n2-radio"><span class="rd"></span><div><div class="t" style="font-size:14px">Now</div><div class="d">The 15:50 rebalance doesn't run.</div></div></div>
+        <div class="n2-radio on"><span class="rd"></span><div><div class="t" style="font-size:14px">After today's 15:50 rebalance</div><div class="d">Closes at 16:00 with what it holds.</div></div></div>
+        <div class="n2-radio"><span class="rd"></span><div><div class="t" style="font-size:14px">Before the next rebalance</div><div class="d">Runs until Nov 23 at 16:00.</div></div></div>
+        <div class="m-btn" style="margin-top:auto">Stop after 15:50</div>
+      </div>
+      <nav data-tabs="sessions" data-items="home,strategies,sessions,portfolio,account"></nav>
+    </div>
+  </div>
+
+  <!-- ============================================================ C: keep or sell first -->
+  <div class="ax-opt" data-opt="C" data-name="Keep holdings or sell first"
+    data-note="Shown for the live All-Weather Portfolio, where the difference matters most. Stopping offers two outcomes side by side: keep VTI, VGLT, GLD and BND as Unmanaged positions, which is what the API does today, or sell them at market first so the stop leaves cash. Selling would place four live orders through the usual seven checks, and the page says the amounts are estimates at 10:42 prices. It gives a clear answer to what am I left with, but selling on stop isn't in the API: it needs a stop request that carries the choice, plus a way to finish the stop only after the sells fill or fail.">
+    <div data-frame="desktop" data-path="sessions/all-weather-portfolio/stop">
+      <div class="app n2-s-c n2-s-bg">
+        <div data-tb="Sessions"></div>
+        <div class="main"><div class="page" style="max-width:1220px;margin:0 auto">
+          <div class="n2-crumb">Sessions<span data-icon="chevron-right"></span>All-Weather Portfolio<span data-icon="chevron-right"></span>Stop</div>
+          <div class="page-head">
+            <div><div class="row"><span class="h1">Stop All-Weather Portfolio</span><span class="pill live">Live</span></div><div class="sub">Alpaca live ••••7Q2 · $48,210.55 · running since Aug 4</div></div>
+          </div>
+          <div class="wrap">
+            <div class="col gap-16">
+              <div class="h3">What should the session leave behind?</div>
+              <div class="n2-radio on"><span class="rd"></span><div><div class="t">Keep the holdings</div><div class="d">VTI, VGLT, GLD and BND stay in your live account as Unmanaged positions. No orders are placed. Prices keep moving, and nothing trades them until you sell them or start a session that takes them on.</div></div></div>
+              <div class="n2-radio"><span class="rd"></span><div><div class="t">Sell everything first, then stop</div><div class="d">Places four market sell orders now. When they've filled, the cash goes to Unallocated and the session stops. Selling realises gains and losses in your live account.</div></div></div>
+              <div class="panel">
+                <div class="panel-h">Holdings at 10:42 ET<span class="aside">sell amounts are estimates</span></div>
+                <table class="tbl">
+                  <tr><th>Symbol</th><th class="num">Shares</th><th class="num">Last</th><th class="num">Value</th><th>If you keep them</th><th>If you sell first</th></tr>
+                  <tr><td class="sym">VGLT</td><td class="num">331</td><td class="num">$58.12</td><td class="num">$19,237.72</td><td class="sm">Unmanaged</td><td class="sm dim">Sell 331 at market</td></tr>
+                  <tr><td class="sym">VTI</td><td class="num">48</td><td class="num">$301.20</td><td class="num">$14,457.60</td><td class="sm">Unmanaged</td><td class="sm dim">Sell 48 at market</td></tr>
+                  <tr><td class="sym">GLD</td><td class="num">29</td><td class="num">$247.86</td><td class="num">$7,187.94</td><td class="sm">Unmanaged</td><td class="sm dim">Sell 29 at market</td></tr>
+                  <tr><td class="sym">BND</td><td class="num">97</td><td class="num">$73.40</td><td class="num">$7,119.80</td><td class="sm">Unmanaged</td><td class="sm dim">Sell 97 at market</td></tr>
+                  <tr><td class="dim">Cash</td><td class="num"></td><td class="num"></td><td class="num">$207.49</td><td class="sm">Unallocated</td><td class="sm dim">Unallocated</td></tr>
+                  <tr class="total"><td>Total</td><td class="num"></td><td class="num"></td><td class="num">$48,210.55</td><td></td><td></td></tr>
+                </table>
+              </div>
+            </div>
+            <div class="panel rim" style="position:sticky;top:0">
+              <div class="panel-h">You're keeping the holdings</div>
+              <div class="panel-b col gap-16">
+                <div class="n2-kv">
+                  <div><span>Orders placed</span><span>none</span></div>
+                  <div><span>To Unmanaged</span><span>$48,003.06</span></div>
+                  <div><span>To Unallocated</span><span>$207.49</span></div>
+                  <div><span>Dec 1 rebalance</span><span class="n2-s-strike">won't run</span></div>
+                </div>
+                <div class="n2-real"><span data-icon="lock"></span><div><b>This is your live account.</b> The positions stay yours and stay real after the stop. LlamaTrade stops trading them; Alpaca keeps holding them.</div></div>
+                <div class="sm dim" style="line-height:1.5">A stop can't be undone. Starting All-Weather Portfolio again makes a new live session with a new sleeve.</div>
+                <div class="row" style="justify-content:flex-end"><span class="btn ghost">Cancel</span><span class="btn pri">Stop and keep holdings</span></div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>All-Weather</span><span></span><span></span></div>
+      <div class="m-body">
+        <div><div class="row gap-6"><span class="pill live">Live</span><span class="sm dim">$48,210.55</span></div><div class="h2" style="margin-top:8px;font-size:22px">Stop All-Weather Portfolio</div></div>
+        <div class="n2-radio on"><span class="rd"></span><div><div class="t" style="font-size:14px">Keep the holdings</div><div class="d">4 positions stay in your live account as Unmanaged. No orders.</div></div></div>
+        <div class="n2-radio"><span class="rd"></span><div><div class="t" style="font-size:14px">Sell everything first</div><div class="d">4 market sells now, about $48,003 at 10:42 prices. Cash goes to Unallocated.</div></div></div>
+        <div class="n2-real" style="font-size:13px"><span data-icon="lock"></span><div><b>Live account.</b> The positions stay real after the stop. Nothing trades them.</div></div>
+        <div class="sm dim">A stop can't be undone.</div>
+        <div class="m-btn" style="margin-top:auto">Stop and keep holdings</div>
+      </div>
+      <nav data-tabs="sessions" data-items="home,strategies,sessions,portfolio,account"></nav>
+    </div>
+  </div>
+
+  <!-- ============================================================ D: closed record -->
+  <div class="ax-opt" data-opt="D" data-name="The closed record"
+    data-note="What a stopped session looks like afterwards, shown for Tech Momentum Rotation, stopped Nov 12. The page turns into a record: final figures, the curve and lane ending at the stop marker, what moved where at the stop, and one button to start a new session from the same version. It makes a stop feel finished rather than broken. The re-home amounts come from the CloseSleeve response, which would need storing with the session; today it's returned once and not kept.">
+    <div data-frame="desktop" data-path="sessions/tech-momentum-rotation">
+      <div class="app n2-s-d n2-s-bg">
+        <div data-tb="Sessions"></div>
+        <div class="main"><div class="page">
+          <div class="n2-crumb">Sessions<span data-icon="chevron-right"></span>Paper<span data-icon="chevron-right"></span>Stopped</div>
+          <div class="page-head">
+            <div><div class="row"><span class="h1" style="color:var(--fg-2)">Tech Momentum Rotation</span><span class="pill paper">Paper</span><span class="st stop">Stopped Nov 12, 14:06 ET</span></div><div class="sub">Version 2 · ran from Sep 9 to Nov 12 · 46 trading days</div></div>
+            <div class="act"><span class="btn"><span data-icon="download"></span>Export fills</span><span class="btn pri round"><span data-icon="play"></span>Start a new session</span></div>
+          </div>
+          <div class="figs boxed closed" style="--n:5"><div class="fig"><div class="lbl">Started with</div><div class="v">$26,817.73</div><div class="s">Sep 9</div></div><div class="fig"><div class="lbl">Ended at</div><div class="v">$26,173.30</div><div class="s">Nov 12, 14:06</div></div><div class="fig"><div class="lbl">Result</div><div class="v loss">−$644.43</div><div class="s">−2.40%</div></div><div class="fig"><div class="lbl">SPY, same dates</div><div class="v">+3.1%</div><div class="s">for reference</div></div><div class="fig"><div class="lbl">Activity</div><div class="v">10 · 38</div><div class="s">rebalances · fills</div></div></div>
+          <div class="wrap" style="margin-top:16px">
+            <div class="panel closed" style="padding:14px 18px 6px">
+              <div class="n2-tl nofut">
+                <div class="lab"></div>
+                <div class="past n2-pins"><span class="n2-pin start" style="left:0">Started Sep 9</span><span class="n2-pin end" style="left:100%">Stopped Nov 12</span></div>
+              </div>
+              <div class="n2-tl nofut">
+                <div class="lab"></div>
+                <div class="past"><div data-chart="area" data-seed="51" data-ret="-0.024" data-vol="0.008" data-bench="0.031" data-color="muted" data-axis="y" data-start="26817" data-h="250" data-mark></div></div>
+              </div>
+              <div class="n2-tl nofut">
+                <div class="lab"></div>
+                <div class="past n2-lane" style="margin-right:54px"><i class="bar" style="left:0;right:0"></i><i class="n2-m start" style="left:0"></i><i class="n2-m" style="left:10%"></i><i class="n2-m" style="left:20%"></i><i class="n2-m" style="left:30%"></i><i class="n2-m" style="left:40%"></i><i class="n2-m" style="left:50%"></i><i class="n2-m" style="left:60%"></i><i class="n2-m" style="left:70%"></i><i class="n2-m" style="left:80%"></i><i class="n2-m" style="left:90%"></i><i class="n2-m stop" style="left:100%"></i></div>
+              </div>
+              <div class="n2-tl nofut">
+                <div class="lab"></div>
+                <div class="past n2-xl" style="margin-right:54px"><span style="left:0;transform:none">Sep 9</span><span style="left:35%">Oct 1</span><span style="left:70%">Oct 22</span><span style="left:100%;transform:translateX(-100%)">Nov 12</span></div>
+              </div>
+            </div>
+            <div class="col gap-16">
+              <div class="panel"><div class="panel-h">At the stop<span class="aside">Nov 12, 14:06</span></div><div class="panel-b tight">
+                <div class="n2-kv">
+                  <div><span>Positions to Unmanaged</span><span>none</span></div>
+                  <div><span>Cash to Unallocated</span><span>$26,173.30</span></div>
+                  <div><span>Orders cancelled</span><span>none open</span></div>
+                  <div><span>Rebalances skipped</span><span>from Nov 16</span></div>
+                </div>
+                <div class="xs dim" style="padding:4px 0 10px">The sleeve held only cash after its Nov 9 rebalance, so nothing was left to re-home.</div>
+              </div></div>
+              <div class="panel"><div class="panel-h">Run it again</div><div class="panel-b col" style="gap:10px">
+                <div class="sm muted" style="line-height:1.5">A new session starts from Version 2 with its own sleeve and its own record. This one stays as it is.</div>
+                <div class="row"><span class="btn sm">Open the strategy</span><span class="sp"></span><span class="btn pri sm">Start a new session</span></div>
+              </div></div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+    <div data-frame="phone">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Sessions</span><span></span><span class="ic" data-icon="more" style="width:22px;height:22px"></span></div>
+      <div class="m-body">
+        <div><div class="row gap-6"><span class="pill paper">Paper</span><span class="st stop">Stopped Nov 12</span></div><div class="h2" style="margin-top:8px;font-size:22px;color:var(--fg-2)">Tech Momentum Rotation</div><div class="sm dim" style="margin-top:3px">Sep 9 to Nov 12 · Version 2</div></div>
+        <div class="m-card row n2-paper" style="justify-content:space-between;background:transparent"><div><div class="lbl">Ended at</div><div class="mono b" style="font-size:20px;margin-top:2px">$26,173.30</div></div><div style="text-align:right"><div class="lbl">Result</div><div class="mono b loss" style="font-size:20px;margin-top:2px">−2.40%</div></div></div>
+        <div data-chart="area" data-seed="51" data-ret="-0.024" data-vol="0.008" data-color="muted" data-h="110"></div>
+        <div class="n2-plane" style="border-top:0;margin-top:-8px"><i class="bar" style="left:0;right:0"></i><i class="n2-m start" style="left:0"></i><i class="n2-m" style="left:25%"></i><i class="n2-m" style="left:50%"></i><i class="n2-m" style="left:75%"></i><i class="n2-m stop" style="left:calc(100% - 5px)"></i></div>
+        <div class="m-card rows">
+          <div class="n2-prow" style="font-size:14px"><span class="grow">Cash to Unallocated</span><span class="mono sm">$26,173.30</span></div>
+          <div class="n2-prow" style="font-size:14px"><span class="grow">Positions to Unmanaged</span><span class="sm dim">none</span></div>
+        </div>
+        <div class="m-btn" style="margin-top:auto">Start a new session</div>
+      </div>
+      <nav data-tabs="sessions" data-items="home,strategies,sessions,portfolio,account"></nav>
+    </div>
+  </div>
+</section>

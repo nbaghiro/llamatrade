@@ -12,12 +12,14 @@ export interface AttentionItem {
 
 interface AttentionLineProps {
   items: readonly AttentionItem[];
+  /** Start with the list of several items open. */
+  defaultOpen?: boolean;
   className?: string;
 }
 
 /** One amber line above a page. Several issues collapse into a count with a list. */
-export function AttentionLine({ items, className = '' }: AttentionLineProps) {
-  const [open, setOpen] = useState(false);
+export function AttentionLine({ items, defaultOpen = false, className = '' }: AttentionLineProps) {
+  const [open, setOpen] = useState(defaultOpen);
   if (!items.length) return null;
   const shell = `rounded-[8px] border border-risk-line bg-risk-soft text-[12.5px] text-fg ${className}`;
 

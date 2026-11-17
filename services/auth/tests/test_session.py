@@ -136,6 +136,7 @@ class _FakeSession:
         self.added.append(obj)
 
 
+@pytest.mark.usefixtures("accept_any_invite")
 class TestCreateTenantAndUser:
     async def test_creates_admin_user_and_tenant(self) -> None:
         db = _FakeSession()
@@ -145,6 +146,7 @@ class TestCreateTenantAndUser:
             email="new@example.com",
             password="SecurePass123",
             tenant_name="Acme Trading",
+            invite_code="ABCD2345",
             first_name="New",
             last_name="User",
         )
@@ -161,7 +163,9 @@ class TestCreateTenantAndUser:
     async def test_weak_password_rejected_before_db_access(self) -> None:
         db = MagicMock()
         with pytest.raises(PasswordPolicyError):
-            await create_tenant_and_user(db, email="x@y.com", password="short", tenant_name="T")
+            await create_tenant_and_user(
+                db, email="x@y.com", password="short", tenant_name="T", invite_code="ABCD2345"
+            )
         db.scalar.assert_not_called()
         db.add.assert_not_called()
 
@@ -169,7 +173,11 @@ class TestCreateTenantAndUser:
         db = _FakeSession(existing_user=_user())
         with pytest.raises(ValueError, match="email_taken"):
             await create_tenant_and_user(
-                db, email="a@b.com", password="SecurePass123", tenant_name="T"
+                db,
+                email="a@b.com",
+                password="SecurePass123",
+                tenant_name="T",
+                invite_code="ABCD2345",
             )
         assert db.added == []
 

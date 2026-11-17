@@ -121,10 +121,12 @@ describe('offline banner', () => {
       />
     );
     expect(html).toContain('You&#x27;re offline.');
-    expect(html).toContain('Figures are from 10:42 ET.');
-    expect(html).toContain('sessions keep running');
-    expect(html).toContain('Retry now');
+    expect(html).toContain('The figures here are from 10:42 ET.');
+    expect(html).toContain('keep trading');
+    expect(html).toContain('Trying again every 10 seconds');
+    expect(html).toContain('Try now');
     expect(html).toContain('role="status"');
+    expect(html).not.toContain('text-risk');
   });
 
   it('shows progress while retrying and says when the retry failed', () => {

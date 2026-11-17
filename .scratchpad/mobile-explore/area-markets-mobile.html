@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Markets</title>
+<script>try{document.documentElement.dataset.mode=localStorage.getItem("ax-mode")||(matchMedia("(prefers-color-scheme: light)").matches?"light":"dark")}catch(e){document.documentElement.dataset.mode="dark"}</script>
+<link rel="stylesheet" href="kit.css">
+<style>
+  .mk-mkt { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg-3); }
+  .mk-mkt.closed .mkt::before { background: var(--fg-4); }
+  .mk-sec { display: flex; align-items: baseline; justify-content: space-between; font-size: 12.5px; color: var(--fg-3); margin-bottom: -6px; }
+  .mk-sec b { color: var(--fg); font-weight: 600; font-size: 15px; }
+  .mk-cw { position: relative; }
+  .mk-tip { position: absolute; top: -2px; z-index: 3; transform: translateX(-50%); padding: 5px 9px; border-radius: 9px; background: var(--ink); color: var(--ink-text); font: 500 12px var(--mono); white-space: nowrap; box-shadow: var(--shadow); }
+  .mk-tip i { font-style: normal; opacity: 0.65; margin-left: 6px; }
+  .mk-avg { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed var(--fg-3); z-index: 1; pointer-events: none; }
+  .mk-avg span { position: absolute; left: 0; top: -17px; font: 500 10.5px var(--mono); color: var(--fg-3); background: var(--bg); padding: 0 4px 0 0; }
+  .mk-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 11.5px; color: var(--fg-3); }
+  .mk-legend > span { display: inline-flex; align-items: center; gap: 6px; }
+  .mk-legend .o { width: 9px; height: 9px; border-radius: 50%; border: 1.8px solid var(--acc); background: var(--panel); }
+  .mk-legend .ln { width: 14px; border-top: 1px dashed var(--fg-3); }
+  .mk-src { font-size: 11.5px; color: var(--fg-3); line-height: 1.45; }
+  .mk-sw { position: relative; overflow: hidden; border-bottom: 1px solid var(--line); }
+  .mk-sw:last-child { border-bottom: 0; }
+  .mk-sw .m-lrow { border-bottom: 0; margin-right: 44px; background: var(--panel); position: relative; z-index: 1; }
+  .mk-sw .m-lrow [data-chart] { display: none; }
+  .mk-sw .act { position: absolute; top: 0; bottom: 0; right: 0; width: 44px; display: grid; place-items: center; }
+  .mk-sw .act i { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: color-mix(in srgb, var(--loss) 16%, transparent); color: var(--loss); }
+  .mk-sw .act i [data-icon], .mk-sw .act i svg { width: 16px; height: 16px; }
+  .mk-sw .act.held i { background: var(--sunk); color: var(--fg-3); }
+  .mk-add { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 11px; border-radius: 999px; background: var(--sunk); color: var(--fg); font-size: 12.5px; font-weight: 600; }
+  .mk-add .ic { width: 14px; height: 14px; }
+  .mk-add.on { background: transparent; color: var(--fg-3); box-shadow: inset 0 0 0 1px var(--line-2); }
+  .mk-heat { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .mk-t { display: flex; flex-direction: column; justify-content: space-between; height: 82px; padding: 10px 11px; border-radius: 12px; border: 1px solid var(--line); }
+  .mk-t .s { font: 600 14px var(--mono); }
+  .mk-t .p { font: 500 12px var(--mono); color: var(--fg-2); }
+  .mk-t .c { font: 600 13px var(--mono); }
+  .mk-t .w { font-size: 10.5px; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mk-t.sel { box-shadow: 0 0 0 2px var(--fg); }
+  .mk-tick { display: grid; grid-template-columns: 50px minmax(0, 1fr) auto 76px; align-items: center; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+  .mk-tick:last-child { border-bottom: 0; }
+  .mk-tick .s { font: 600 13.5px var(--mono); }
+  .mk-tick .w { font-size: 12px; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mk-tick .p { font: 500 13.5px var(--mono); text-align: right; }
+  .mk-tick .chg { justify-content: center; width: 76px; }
+  .mk-tick .chg.flat { background: var(--sunk); color: var(--fg-3); }
+  .mk-lanes { display: flex; flex-direction: column; gap: 2px; }
+  .mk-lane { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 8px; height: 26px; font-size: 11.5px; color: var(--fg-3); }
+  .mk-lane .tr { position: relative; height: 100%; }
+  .mk-lane .tr::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 1px solid var(--line-2); }
+  .mk-lane .tr.paper::before { border-top-style: dashed; }
+  .mk-lane .ev { position: absolute; top: 50%; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 0 2.5px var(--bg); }
+  .mk-lane .ev.sell { background: var(--bg); box-shadow: inset 0 0 0 1.8px var(--acc), 0 0 0 2.5px var(--bg); }
+  .mk-lane .ev.plan { background: var(--bg); box-shadow: inset 0 0 0 1.5px var(--fg-3), 0 0 0 2.5px var(--bg); }
+  .mk-lane .ev.hi { box-shadow: 0 0 0 2.5px var(--bg), 0 0 0 5px var(--acc-line); }
+  .mk-lane .nw { position: absolute; top: 2px; bottom: 2px; width: 1.5px; background: var(--fg); }
+  .mk-lane.ax { height: 16px; font: 400 10px var(--mono); }
+  .mk-lane.ax .tr::before { display: none; }
+  .mk-lane.ax .tr span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+  .mk-scrubline { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--fg-2); z-index: 2; }
+  .mk-hold { display: flex; flex-direction: column; gap: 8px; }
+  .mk-hold .row .t { font-weight: 600; font-size: 15px; }
+  .mk-fig { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .mk-fig > div { min-width: 0; }
+  .mk-fig .v { font: 600 15px var(--mono); margin-top: 3px; white-space: nowrap; }
+  .mk-fig .s { font: 400 11.5px var(--mono); color: var(--fg-3); margin-top: 1px; white-space: nowrap; }
+  .mk-full { position: absolute; left: 0; right: 0; top: 54px; bottom: 0; display: flex; flex-direction: column; }
+  .mk-full .m-body { padding-bottom: 0; }
+  .mk-dim { opacity: 0.45; }
+  .mk-pin { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-3); }
+  .mk-pin .ic { width: 13px; height: 13px; }
+  .mk-grab { color: var(--fg-4); width: 18px; height: 18px; }
+</style>
+</head>
+<body data-title="Markets" data-desc="Prices on the phone: the Markets tab's watchlist, a symbol's chart with press-and-hold scrubbing, and which of your sessions hold it.">
+
+<!-- ===================================================== 1. Watchlist -->
+<section class="ax-surface" id="mk-watchlist"
+  data-surface="markets/watchlist"
+  data-area="Markets"
+  data-title="Watchlist"
+  data-why="The Markets tab at 10:42 on Tuesday. It should answer how the symbols your sessions hold are moving, then the ones you watch, and make adding or removing a symbol quick. Markets is read-only on the phone: sessions do the trading.">
+
+  <!-- A -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="Held first, then watching"
+    data-note="Recommended. The same order as the web Markets page: every symbol a session holds comes first, each row naming the sessions and the shares, then the symbols you chose to watch. Search adds to Watching, and swiping a watched row removes it; a held row can't be removed, and the swipe says why. It answers the question people open the tab with, and it matches desktop one to one. Costs: held rows come from ledger positions and need no storage, but Watching needs a small watchlist table and endpoints, which don't exist yet, and live prices need a quote stream from the backend while the app is open.">
+    <div data-frame="phone" data-caption="Markets tab"><div data-page-art="markets" class="quiet" data-top="0.3" style="--pa-h:150px"></div>
+      <div class="m-top"><span class="t">Markets</span><span class="sp"></span><span class="m-ic"><span data-icon="search"></span></span></div>
+      <div class="m-body" data-scrolls>
+        <div class="mk-mkt"><span class="mkt">Open until 16:00 ET</span><span class="sp"></span><span class="mono xs">SPY 612.48 <span class="gain">+0.41%</span></span></div>
+        <div class="mk-sec"><b>Held in your sessions</b><span>7 symbols</span></div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow"><div style="min-width:0"><div class="nm mono">SMH</div><div class="d">Momentum Sectors · 31 sh</div></div><span data-chart="spark" data-seed="301" data-ret="0.013" data-vol="0.03" data-color="gain" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">288.40</div><div class="mono xs gain">+1.32%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm mono">XLK</div><div class="d">Momentum Sectors · 46 sh</div></div><span data-chart="spark" data-seed="302" data-ret="0.009" data-vol="0.03" data-color="gain" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">251.06</div><div class="mono xs gain">+0.94%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm mono">VTI</div><div class="d">All-Weather · live · 48 sh</div></div><span data-chart="spark" data-seed="303" data-ret="0.004" data-vol="0.03" data-color="gain" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">301.22</div><div class="mono xs gain">+0.38%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm mono">GLD</div><div class="d">Recession Radar 54 · All-Weather 29</div></div><span data-chart="spark" data-seed="304" data-ret="0.002" data-vol="0.03" data-color="gain" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">247.86</div><div class="mono xs gain">+0.18%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm mono">BND</div><div class="d">All-Weather · live · 100 sh</div></div><span data-chart="spark" data-seed="307" data-ret="-0.001" data-vol="0.03" data-color="loss" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">72.40</div><div class="mono xs loss">−0.05%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm mono">VGLT</div><div class="d">All-Weather · live · 332 sh</div></div><span data-chart="spark" data-seed="305" data-ret="-0.002" data-vol="0.03" data-color="loss" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">58.12</div><div class="mono xs loss">−0.19%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm mono">TLT</div><div class="d">Recession Radar · 205 sh</div></div><span data-chart="spark" data-seed="306" data-ret="-0.002" data-vol="0.03" data-color="loss" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">90.41</div><div class="mono xs loss">−0.22%</div></div></div>
+        </div>
+        <div class="mk-sec"><b>Watching</b><span>3</span></div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow"><div style="min-width:0"><div class="nm mono">QQQ</div><div class="d">Invesco QQQ Trust</div></div><span data-chart="spark" data-seed="310" data-ret="0.007" data-vol="0.03" data-color="gain" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">538.12</div><div class="mono xs gain">+0.66%</div></div></div>
+        </div>
+      </div>
+      <nav data-tabs="markets"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Search adds to Watching">
+      <div class="m-top" style="padding-top:8px"><div class="m-field focus" style="flex:1;height:42px;border-radius:999px"><span data-icon="search"></span><span>IE</span></div><span class="m-link" style="margin-left:4px">Cancel</span></div>
+      <div class="m-body" style="padding-bottom:300px">
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow nosp"><div style="min-width:0"><div class="nm mono">IEF</div><div class="d">iShares 7-10 Year Treasury Bond ETF</div></div><span class="mk-add"><span data-icon="plus"></span>Watch</span></div>
+          <div class="m-lrow nosp"><div style="min-width:0"><div class="nm mono">IEI</div><div class="d">iShares 3-7 Year Treasury Bond ETF</div></div><span class="mk-add on"><span data-icon="check"></span>Watching</span></div>
+          <div class="m-lrow nosp"><div style="min-width:0"><div class="nm mono">IEFA</div><div class="d">iShares Core MSCI EAFE ETF</div></div><span class="mk-add"><span data-icon="plus"></span>Watch</span></div>
+        </div>
+        <div class="sm dim">Symbols Alpaca can trade. Watching only shows prices; a session is what buys or sells.</div>
+      </div>
+      <div data-kb="IEF|IEI|IEFA"></div>
+    </div>
+    <div data-frame="phone" data-caption="Swipe to remove">
+      <div class="m-top"><span class="t">Markets</span><span class="sp"></span><span class="m-ic"><span data-icon="search"></span></span></div>
+      <div class="m-body">
+        <div class="mk-sec"><b>Held in your sessions</b><span>7 symbols</span></div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow"><div style="min-width:0"><div class="nm mono">VGLT</div><div class="d">All-Weather · live · 332 sh</div></div><span data-chart="spark" data-seed="305" data-ret="-0.002" data-vol="0.03" data-color="loss" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">58.12</div><div class="mono xs loss">−0.19%</div></div></div>
+          <div class="mk-sw ch-skip"><div class="m-lrow"><div style="min-width:0"><div class="nm mono">TLT</div><div class="d">Recession Radar · 205 sh</div></div><span data-chart="spark" data-seed="306" data-ret="-0.002" data-vol="0.03" data-color="loss" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">90.41</div><div class="mono xs loss">−0.22%</div></div></div><span class="act held" title="Held by a session"><i><span data-icon="lock"></span></i></span></div>
+        </div>
+        <div class="mk-sec"><b>Watching</b><span>4</span></div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow"><div style="min-width:0"><div class="nm mono">QQQ</div><div class="d">Invesco QQQ Trust</div></div><span data-chart="spark" data-seed="310" data-ret="0.007" data-vol="0.03" data-color="gain" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">538.12</div><div class="mono xs gain">+0.66%</div></div></div>
+          <div class="m-lrow"><div style="min-width:0"><div class="nm mono">IWM</div><div class="d">iShares Russell 2000 ETF</div></div><span data-chart="spark" data-seed="311" data-ret="0.005" data-vol="0.03" data-color="gain" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">224.18</div><div class="mono xs gain">+0.52%</div></div></div>
+          <div class="mk-sw ch-skip"><div class="m-lrow"><div style="min-width:0"><div class="nm mono">IEF</div><div class="d">iShares 7-10 Year Treasury</div></div><span data-chart="spark" data-seed="312" data-ret="0.001" data-vol="0.03" data-color="gain" style="width:58px;height:24px"></span><div class="end"><div class="mono sm">95.12</div><div class="mono xs gain">+0.08%</div></div></div><span class="act" title="Remove"><i><span data-icon="trash"></span></i></span></div>
+        </div>
+        <div class="callout" style="font-size:13px"><span data-icon="info"></span><div>TLT stays on the list while Recession Radar holds it. It leaves on its own when no session does.</div></div>
+      </div>
+      <nav data-tabs="markets"></nav>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="ax-opt" data-opt="B" data-name="Grouped by session"
+    data-note="One section per session, live first, each with its symbols and their weight in that sleeve, then Watching at the end. Long-pressing a row opens a menu with the symbol, its session and Remove. It reads the market through your own sessions, which suits someone who thinks in sleeves. Costs: GLD appears twice because two sessions hold it, the stopped session needs its own empty section or has to be hidden, and the list is longer than A. It needs the same watchlist table as A.">
+    <div data-frame="phone" data-caption="Markets tab">
+      <div class="m-top"><span class="t">Markets</span><span class="sp"></span><span class="m-ic"><span data-icon="search"></span></span></div>
+      <div class="m-body" data-scrolls>
+        <div class="mk-mkt"><span class="mkt">Open until 16:00 ET</span></div>
+        <div class="mk-sec"><b>All-Weather Portfolio</b><span class="pill live">Live</span></div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow nosp"><div style="min-width:0"><div class="nm mono">VGLT</div><div class="d">40.1% of the sleeve</div></div><div class="end"><div class="mono sm">58.12</div><div class="mono xs loss">−0.19%</div></div></div>
+          <div class="m-lrow nosp"><div style="min-width:0"><div class="nm mono">VTI</div><div class="d">30.0%</div></div><div class="end"><div class="mono sm">301.22</div><div class="mono xs gain">+0.38%</div></div></div>
+          <div class="m-lrow nosp"><div style="min-width:0"><div class="nm mono">GLD</div><div class="d">14.9%</div></div><div class="end"><div class="mono sm">247.86</div><div class="mono xs gain">+0.18%</div></div></div>
+          <div class="m-lrow nosp"><div style="min-width:0"><div class="nm mono">BND</div><div class="d">15.0%</div></div><div class="end"><div class="mono sm">72.40</div><div class="mono xs loss">−0.05%</div></div></div>
+        </div>
+        <div class="mk-sec"><b>Recession Radar</b><span class="pill paper">Paper</span></div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow nosp"><div style="min-width:0"><div class="nm mono">TLT</div><div class="d">58.2% · target 60%</div></div><div class="end"><div class="mono sm">90.41</div><div class="mono xs loss">−0.22%</div></div></div>
+          <div class="m-lrow nosp"><div style="min-width:0"><div class="nm mono">GLD</div><div class="d">41.8% · target 40%</div></div><div class="end"><div class="mono sm">247.86</div><div class="mono xs gain">+0.18%</div></div></div>
+        </div>
+        <div class="mk-sec"><b>Momentum Sectors</b><span class="pill paper">Paper</span></div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="m-lrow nosp"><div style="min-width:0"><div class="nm mono">SMH</div><div class="d">40.4%</div></div><div class="end"><div class="mono sm">288.40</div><div class="mono xs gain">+1.32%</div></div></div>
+        </div>
+      </div>
+      <nav data-tabs="markets"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Long press a row">
+      <div class="m-top"><span class="t">Markets</span></div>
+      <div class="m-body">
+        <div class="mk-sec"><b>Recession Radar</b><span class="pill paper">Paper</span></div>
+        <div class="m-card" style="padding:0 14px"><div class="m-lrow nosp"><div><div class="nm mono">TLT</div></div></div></div>
+      </div>
+      <nav data-tabs="markets"></nav>
+      <div class="io-blur"></div>
+      <div class="io-front" style="top:200px">
+        <div class="m-card col" style="gap:8px;box-shadow:var(--shadow-xl)">
+          <div class="row"><b class="mono">TLT</b><span class="sm dim">iShares 20+ Year Treasury</span><span class="sp"></span><span class="mono sm">90.41</span></div>
+          <div data-chart="area" data-seed="61" data-ret="-0.0022" data-vol="0.002" data-h="70" data-color="loss"></div>
+          <div class="sm dim">Recession Radar holds 205 shares, 58.2% against a 60% target.</div>
+        </div>
+        <div class="io-ctx" style="position:relative;margin-top:10px">
+          <span>Open TLT<span data-icon="markets"></span></span>
+          <span>Open Recession Radar<span data-icon="sessions"></span></span>
+          <span>Ask Copilot about TLT<span data-icon="copilot"></span></span>
+          <span class="gap"></span>
+          <span style="color:var(--io-fg-2)">Held by a session<span class="sub">can't remove</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="ax-opt" data-opt="C" data-name="Heat grid"
+    data-note="Every symbol is a tile tinted by today's move, held ones first, so the day's shape reads before any number. Tapping a tile raises a short sheet with the chart and who holds it. It's quick to scan and works well with ten to twenty symbols. Costs: colour carries the meaning, so the percentage has to stay on every tile for anyone who can't tell the tints apart, small moves all look the same, and past about twenty tiles it stops fitting. The watchlist table is still needed.">
+    <div data-frame="phone" data-caption="Markets tab">
+      <div class="m-top"><span class="t">Markets</span><span class="sp"></span><span class="m-ic"><span data-icon="search"></span></span></div>
+      <div class="m-body">
+        <div class="mk-mkt"><span class="mkt">Open until 16:00 ET</span><span class="sp"></span><span class="seg round mono"><span class="on">%</span><span>$</span></span></div>
+        <div class="mk-sec"><b>Held</b><span>7</span></div>
+        <div class="mk-heat">
+          <div class="mk-t" style="background:color-mix(in srgb, var(--gain) 34%, transparent)"><span class="s">SMH</span><span class="c gain">+1.32%</span><span class="w">Momentum</span></div>
+          <div class="mk-t" style="background:color-mix(in srgb, var(--gain) 24%, transparent)"><span class="s">XLK</span><span class="c gain">+0.94%</span><span class="w">Momentum</span></div>
+          <div class="mk-t" style="background:color-mix(in srgb, var(--gain) 13%, transparent)"><span class="s">VTI</span><span class="c gain">+0.38%</span><span class="w">All-Weather</span></div>
+          <div class="mk-t" style="background:color-mix(in srgb, var(--gain) 8%, transparent)"><span class="s">GLD</span><span class="c gain">+0.18%</span><span class="w">2 sessions</span></div>
+          <div class="mk-t" style="background:color-mix(in srgb, var(--loss) 5%, transparent)"><span class="s">BND</span><span class="c loss">−0.05%</span><span class="w">All-Weather</span></div>
+          <div class="mk-t" style="background:color-mix(in srgb, var(--loss) 9%, transparent)"><span class="s">VGLT</span><span class="c loss">−0.19%</span><span class="w">All-Weather</span></div>
+          <div class="mk-t" style="background:color-mix(in srgb, var(--loss) 10%, transparent)"><span class="s">TLT</span><span class="c loss">−0.22%</span><span class="w">Recession Radar</span></div>
+        </div>
+        <div class="mk-sec"><b>Watching</b><span>3</span></div>
+        <div class="mk-heat">
+          <div class="mk-t" style="background:color-mix(in srgb, var(--gain) 18%, transparent)"><span class="s">QQQ</span><span class="c gain">+0.66%</span><span class="p">538.12</span></div>
+          <div class="mk-t" style="background:color-mix(in srgb, var(--gain) 15%, transparent)"><span class="s">IWM</span><span class="c gain">+0.52%</span><span class="p">224.18</span></div>
+          <div class="mk-t" style="background:color-mix(in srgb, var(--gain) 13%, transparent)"><span class="s">SPY</span><span class="c gain">+0.41%</span><span class="p">612.48</span></div>
+        </div>
+      </div>
+      <nav data-tabs="markets"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Tap a tile">
+      <div class="m-top"><span class="t">Markets</span></div>
+      <div class="m-body">
+        <div class="mk-heat">
+          <div class="mk-t" style="background:color-mix(in srgb, var(--gain) 13%, transparent)"><span class="s">VTI</span><span class="c gain">+0.38%</span><span class="w">All-Weather</span></div>
+          <div class="mk-t" style="background:color-mix(in srgb, var(--gain) 8%, transparent)"><span class="s">GLD</span><span class="c gain">+0.18%</span><span class="w">2 sessions</span></div>
+          <div class="mk-t sel" style="background:color-mix(in srgb, var(--loss) 10%, transparent)"><span class="s">TLT</span><span class="c loss">−0.22%</span><span class="w">Recession Radar</span></div>
+        </div>
+      </div>
+      <nav data-tabs="markets"></nav>
+      <div class="scrim"></div>
+      <div class="io-sheet tall"><div class="grab"></div>
+        <div class="sh"><span class="mono">TLT <span class="sm dim" style="font-family:var(--sans);font-weight:400">iShares 20+ Year Treasury</span></span><span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2">
+          <div class="row base"><span class="big" style="font-size:30px">90.41</span><span class="chg loss">−0.20 · −0.22%</span></div>
+          <div data-chart="area" data-seed="61" data-ret="0.018" data-vol="0.004" data-h="110" data-marks="0.48,0.99"></div>
+          <div class="m-card rows">
+            <div class="m-row"><div style="flex:1;min-width:0"><div>Recession Radar</div><div class="d">Paper · 205 sh · 58.2%, target 60%</div></div><span class="mono xs dim">15:50</span></div>
+          </div>
+          <div class="m-btn sec">Open TLT</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- D -->
+  <div class="ax-opt" data-opt="D" data-name="Compact tickers"
+    data-note="One dense line per symbol with the price and a change pill you can tap to switch between percent and dollars, like a quote board. Twelve symbols fit without scrolling, and after the close the same list shows closing prices with the time they're from and when the market opens. Good for people who watch many symbols. Costs: no sparklines and only a short label for who holds it, so it says less about your own sessions than A. It needs the watchlist table, and after-hours prices aren't shown because the IEX feed covers little of that volume.">
+    <div data-frame="phone" data-caption="Open, 10:42">
+      <div class="m-top"><span class="t">Markets</span><span class="sp"></span><span class="m-ic"><span data-icon="search"></span></span></div>
+      <div class="m-body">
+        <div class="mk-mkt"><span class="mkt">Open until 16:00 ET</span><span class="sp"></span><span class="seg round mono"><span class="on">%</span><span>$</span></span></div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="mk-tick"><span class="s">SMH</span><span class="w">Momentum</span><span class="p">288.40</span><span class="chg gain">+1.32%</span></div>
+          <div class="mk-tick"><span class="s">XLK</span><span class="w">Momentum</span><span class="p">251.06</span><span class="chg gain">+0.94%</span></div>
+          <div class="mk-tick"><span class="s">VTI</span><span class="w">All-Weather</span><span class="p">301.22</span><span class="chg gain">+0.38%</span></div>
+          <div class="mk-tick"><span class="s">GLD</span><span class="w">2 sessions</span><span class="p">247.86</span><span class="chg gain">+0.18%</span></div>
+          <div class="mk-tick"><span class="s">BND</span><span class="w">All-Weather</span><span class="p">72.40</span><span class="chg loss">−0.05%</span></div>
+          <div class="mk-tick"><span class="s">VGLT</span><span class="w">All-Weather</span><span class="p">58.12</span><span class="chg loss">−0.19%</span></div>
+          <div class="mk-tick"><span class="s">TLT</span><span class="w">Recession Radar</span><span class="p">90.41</span><span class="chg loss">−0.22%</span></div>
+        </div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="mk-tick"><span class="s">QQQ</span><span class="w">Watching</span><span class="p">538.12</span><span class="chg gain">+0.66%</span></div>
+          <div class="mk-tick"><span class="s">IWM</span><span class="w">Watching</span><span class="p">224.18</span><span class="chg gain">+0.52%</span></div>
+          <div class="mk-tick"><span class="s">SPY</span><span class="w">Watching</span><span class="p">612.48</span><span class="chg gain">+0.41%</span></div>
+        </div>
+        <div class="mk-src">Prices from Alpaca's IEX feed, which covers part of market volume.</div>
+      </div>
+      <nav data-tabs="markets"></nav>
+    </div>
+    <div data-frame="phone" data-time="18:20" data-caption="After the close">
+      <div class="m-top"><span class="t">Markets</span><span class="sp"></span><span class="m-ic"><span data-icon="search"></span></span></div>
+      <div class="m-body">
+        <div class="mk-mkt closed"><span class="mkt closed">Closed · opens Wed 09:30 ET</span></div>
+        <div class="m-card" style="padding:0 14px">
+          <div class="mk-tick"><span class="s">SMH</span><span class="w">Momentum</span><span class="p">289.72</span><span class="chg gain">+$4.25</span></div>
+          <div class="mk-tick"><span class="s">XLK</span><span class="w">Momentum</span><span class="p">251.40</span><span class="chg gain">+$2.68</span></div>
+          <div class="mk-tick"><span class="s">VTI</span><span class="w">All-Weather</span><span class="p">301.88</span><span class="chg gain">+$1.80</span></div>
+          <div class="mk-tick"><span class="s">GLD</span><span class="w">2 sessions</span><span class="p">248.10</span><span class="chg gain">+$0.68</span></div>
+          <div class="mk-tick"><span class="s">BND</span><span class="w">All-Weather</span><span class="p">72.41</span><span class="chg flat">$0.00</span></div>
+          <div class="mk-tick"><span class="s">VGLT</span><span class="w">All-Weather</span><span class="p">58.05</span><span class="chg loss">−$0.18</span></div>
+          <div class="mk-tick"><span class="s">TLT</span><span class="w">Recession Radar</span><span class="p">90.28</span><span class="chg loss">−$0.33</span></div>
+        </div>
+        <div class="callout" style="font-size:13px"><span data-icon="clock"></span><div><b>Closing prices from 16:00 ET.</b> After-hours trades aren't shown. Recession Radar rebalanced at 15:50; its orders are in Activity.</div></div>
+      </div>
+      <nav data-tabs="markets"></nav>
+    </div>
+  </div>
+</section>
+
+<!-- ===================================================== 2. A symbol -->
+<section class="ax-surface" id="mk-symbol"
+  data-surface="markets/symbol"
+  data-area="Markets"
+  data-title="A symbol: chart, scrubbing and who holds it"
+  data-why="TLT, pushed from the watchlist. Press and hold the chart to read any day's price, switch the range, see your own fills, and find which sessions hold it with shares, weight against target and the next rebalance. There is no buy button: sessions do the trading.">
+
+  <!-- A -->
+  <div class="ax-opt" data-opt="A" data-rec data-name="Chart first, then holders"
+    data-note="Recommended. The price and a one-month chart fill the top, with today's buy and the Nov 3 rebalance marked and Recession Radar's average cost as a dashed line. Pressing and holding moves a crosshair: the header switches to that day's close and a small label follows your finger, and letting go returns to today. Below, the session that holds it with shares, weight against target, gain and the 15:50 rebalance, then today's fill. It follows the web Markets page and the usual stock-app pattern, so it needs no explaining. Costs: a light tap on each day while scrubbing needs expo-haptics, which isn't installed, and the chart's fill markers need fills per symbol from the ledger, which exist but have no symbol filter yet.">
+    <div data-frame="phone" data-caption="TLT, one month">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Markets</span><span class="mono">TLT</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div><div class="sm dim">iShares 20+ Year Treasury Bond ETF</div><div class="row base" style="margin-top:6px"><span class="big">90.41</span><span class="chg loss">−0.20 · −0.22%</span></div><div class="xs dim" style="margin-top:4px">Today · +1.8% over 1M</div></div>
+        <div class="mk-cw">
+          <div data-chart="area" data-seed="61" data-ret="0.018" data-vol="0.004" data-h="190" data-marks="0.48,0.99" data-mark></div>
+          <div class="mk-avg" style="top:62%"><span>Avg cost 88.74</span></div>
+        </div>
+        <div class="seg mono round" style="align-self:center"><span>1D</span><span>1W</span><span class="on">1M</span><span>3M</span><span>1Y</span><span>5Y</span></div>
+        <div class="mk-legend"><span><i class="o"></i>Recession Radar fills</span><span><i class="ln"></i>Its average cost</span></div>
+        <div class="m-sec">In your sessions</div>
+        <div class="m-card rows">
+          <div class="m-row"><div style="flex:1;min-width:0"><div>Recession Radar</div><div class="d">Paper · 205 sh · 58.2%, target 60%</div></div><span class="mono xs gain">+$342</span><span data-icon="chevron-right" class="dim"></span></div>
+        </div>
+      </div>
+      <nav data-tabs="markets"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Press and hold">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Markets</span><span class="mono">TLT</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div><div class="sm dim">Close on Mon, Nov 3</div><div class="row base" style="margin-top:6px"><span class="big">89.07</span><span class="chg gain">+1.34 · +1.50% since</span></div><div class="xs dim" style="margin-top:4px">Recession Radar rebalanced: sold 12 TLT at 89.20</div></div>
+        <div class="mk-cw" style="margin-top:14px">
+          <div data-chart="area" data-seed="61" data-ret="0.018" data-vol="0.004" data-h="190" data-marks="0.48,0.99" data-scrub="0.48"></div>
+          <div class="mk-avg" style="top:62%"><span>Avg cost 88.74</span></div>
+          <span class="mk-tip" style="left:48%;top:-26px">Nov 3 · 89.07</span>
+        </div>
+        <div class="seg mono round mk-dim" style="align-self:center"><span>1D</span><span>1W</span><span class="on">1M</span><span>3M</span><span>1Y</span><span>5Y</span></div>
+        <div class="callout" style="font-size:13px"><span data-icon="info"></span><div>Hold and slide to read any day. Let go to return to today.</div></div>
+      </div>
+      <nav data-tabs="markets"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Scrolled to holders">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Markets</span><span class="mono">TLT <span class="dim sm">90.41</span></span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="m-sec">In your sessions</div>
+        <div class="m-card mk-hold">
+          <div class="row"><span class="t">Recession Radar</span><span class="pill paper">Paper</span><span class="sp"></span><span data-icon="chevron-right" class="dim"></span></div>
+          <div class="mk-fig">
+            <div><div class="lbl">Shares</div><div class="v">205</div><div class="s">avg 88.74</div></div>
+            <div><div class="lbl">Weight</div><div class="v">58.2%</div><div class="s">target 60%</div></div>
+            <div><div class="lbl">Gain</div><div class="v gain">+$342</div><div class="s">+1.9%</div></div>
+          </div>
+          <div class="meter" style="margin-top:4px"><i style="width:58.2%"></i></div>
+          <div class="row sm"><span data-icon="clock" class="dim"></span><span>Rebalances today at 15:50 ET</span><span class="sp"></span><span class="mono xs dim">in 5h 08m</span></div>
+        </div>
+        <div class="sm dim">Not held in your live account.</div>
+        <div class="m-sec">Fills</div>
+        <div class="m-card rows">
+          <div class="m-row"><span class="mono xs dim" style="width:46px">Today</span><div style="flex:1;min-width:0"><div>Bought 42 at 90.41</div><div class="d">10:31 · $3,797.22</div></div></div>
+          <div class="m-row"><span class="mono xs dim" style="width:46px">Nov 3</span><div style="flex:1;min-width:0"><div>Sold 12 at 89.20</div><div class="d">15:51 · $1,070.40</div></div></div>
+        </div>
+        <div class="callout" style="font-size:13px"><span data-icon="info"></span><div>LlamaTrade trades through sessions, so there's no buy button here. To change TLT's target, edit Recession Radar on the web.</div></div>
+        <div class="mk-src">Prices from Alpaca's IEX feed, which covers part of market volume.</div>
+      </div>
+      <nav data-tabs="markets"></nav>
+    </div>
+  </div>
+
+  <!-- B -->
+  <div class="ax-opt" data-opt="B" data-name="Holders first"
+    data-note="The screen opens on what TLT means to you: a card with Recession Radar's 205 shares, weight against target and gain, and the 15:50 rebalance, with the price chart smaller below. Scrubbing works the same as in A. It suits a phone that's for checking in, since the first question is usually about your own money. Costs: for a symbol you only watch, the card is empty and the chart starts lower for no reason, so the screen needs two layouts, and the chart is short enough that scrubbing is less precise.">
+    <div data-frame="phone" data-caption="TLT, held">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Markets</span><span class="mono">TLT</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="row base"><span class="big" style="font-size:30px">90.41</span><span class="chg loss">−0.22%</span><span class="sp"></span><span class="xs dim">10:42 ET</span></div>
+        <div class="m-card mk-hold" style="border-color:var(--acc-line)">
+          <div class="lbl">You hold 205 shares</div>
+          <div class="row"><span class="t">Recession Radar</span><span class="pill paper">Paper</span></div>
+          <div class="mk-fig">
+            <div><div class="lbl">Value</div><div class="v">$18,534</div><div class="s">avg 88.74</div></div>
+            <div><div class="lbl">Weight</div><div class="v">58.2%</div><div class="s">target 60%</div></div>
+            <div><div class="lbl">Gain</div><div class="v gain">+$342</div><div class="s">+1.9%</div></div>
+          </div>
+          <div class="row sm"><span data-icon="clock" class="dim"></span><span>Rebalances at 15:50 ET</span><span class="sp"></span><span class="m-link sm">Open session</span></div>
+        </div>
+        <div class="seg mono round" style="align-self:flex-start"><span class="on">1D</span><span>1W</span><span>1M</span><span>1Y</span></div>
+        <div data-chart="area" data-seed="62" data-ret="-0.0022" data-vol="0.0015" data-h="120" data-x="9:30,10:42" data-axis="x" data-marks="0.97" data-mark data-color="loss"></div>
+        <div class="mk-src">Today from 09:30. Prices from Alpaca's IEX feed, which covers part of market volume.</div>
+      </div>
+      <nav data-tabs="markets"></nav>
+    </div>
+    <div data-frame="phone" data-caption="A symbol you only watch">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Markets</span><span class="mono">QQQ</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="row base"><span class="big" style="font-size:30px">538.12</span><span class="chg gain">+0.66%</span><span class="sp"></span><span class="xs dim">10:42 ET</span></div>
+        <div class="m-card col" style="gap:6px">
+          <div class="lbl">Not held</div>
+          <div class="sm muted">None of your sessions hold QQQ. You're watching it.</div>
+        </div>
+        <div class="seg mono round" style="align-self:flex-start"><span class="on">1D</span><span>1W</span><span>1M</span><span>1Y</span></div>
+        <div data-chart="area" data-seed="63" data-ret="0.0066" data-vol="0.0015" data-h="120" data-x="9:30,10:42" data-axis="x" data-mark data-color="gain"></div>
+        <div class="m-btn sec"><span data-icon="minus"></span>Stop watching</div>
+      </div>
+      <nav data-tabs="markets"></nav>
+    </div>
+  </div>
+
+  <!-- C -->
+  <div class="ax-opt" data-opt="C" data-name="Chart over session lanes"
+    data-note="Home's annotated curve, narrowed to one symbol: the price over a month, and under it one lane per session that holds it, with each buy and sell on its date and the 15:50 rebalance drawn past Now. Scrubbing moves one line through the chart and the lanes together, so a dip lines up with what your session did that day. It carries the web's visual language onto the phone. Costs: more height, so holders move below the fold, each lane needs fills per symbol and per session from the ledger, and three or more sessions holding one symbol would crowd the lanes.">
+    <div data-frame="phone" data-caption="TLT with lanes">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Markets</span><span class="mono">TLT</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="row base"><span class="big" style="font-size:30px">90.41</span><span class="chg loss">−0.20 · −0.22%</span></div>
+        <div data-chart="area" data-seed="61" data-ret="0.018" data-vol="0.004" data-h="170" data-mark></div>
+        <div class="mk-lanes">
+          <div class="mk-lane"><span>Recession Radar</span><div class="tr paper"><i class="ev sell" style="left:46%"></i><i class="ev" style="left:94%"></i><i class="nw" style="left:94%"></i><i class="ev plan" style="left:96%"></i></div></div>
+          <div class="mk-lane"><span>All-Weather</span><div class="tr"><span style="position:absolute;left:0;top:5px;background:var(--bg);padding-right:6px" class="xs faint">Doesn't hold TLT</span></div></div>
+          <div class="mk-lane ax"><span></span><div class="tr"><span style="left:4%">Oct 20</span><span style="left:46%">Nov 3</span><span style="left:90%">Today</span></div></div>
+        </div>
+        <div class="mk-legend"><span><i class="o" style="background:var(--acc)"></i>Buy</span><span><i class="o"></i>Sell</span><span><i class="o" style="border-color:var(--fg-3);border-style:dashed"></i>Scheduled</span></div>
+        <div class="m-card rows">
+          <div class="m-row"><div style="flex:1;min-width:0"><div>Recession Radar</div><div class="d">Paper · 205 sh · 58.2%, target 60% · 15:50</div></div><span data-icon="chevron-right" class="dim"></span></div>
+        </div>
+      </div>
+      <nav data-tabs="markets"></nav>
+    </div>
+    <div data-frame="phone" data-caption="Scrubbing through the lanes">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Markets</span><span class="mono">TLT</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div style="margin-bottom:18px"><div class="row base"><span class="big" style="font-size:30px">89.07</span><span class="sm dim">close, Mon Nov 3</span></div></div>
+        <div class="mk-cw">
+          <div data-chart="area" data-seed="61" data-ret="0.018" data-vol="0.004" data-h="170" data-scrub="0.46"></div>
+          <span class="mk-tip" style="left:46%;top:-24px">Nov 3 · 89.07</span>
+        </div>
+        <div class="mk-lanes mk-cw">
+          <div class="mk-lane"><span>Recession Radar</span><div class="tr paper"><i class="ev sell hi" style="left:46%"></i><i class="ev" style="left:94%"></i><i class="nw" style="left:94%"></i><i class="ev plan" style="left:96%"></i></div></div>
+          <div class="mk-lane"><span>All-Weather</span><div class="tr"></div></div>
+        </div>
+        <div class="m-card col" style="gap:6px;border-color:var(--acc-line)">
+          <div class="row"><b>Recession Radar sold 12</b><span class="sp"></span><span class="mono xs dim">Nov 3 · 15:51</span></div>
+          <div class="sm muted">At 89.20 for $1,070.40, to bring TLT back to its 60% target after it rose above it.</div>
+        </div>
+      </div>
+      <nav data-tabs="markets"></nav>
+    </div>
+  </div>
+
+  <!-- D -->
+  <div class="ax-opt" data-opt="D" data-name="Full chart, holders in a sheet"
+    data-note="The chart takes the whole screen, taller and easier to scrub, and the holders sit in a short sheet at the bottom that you drag up for shares, weight, fills and the rebalance. Good for people who come to Markets to look at prices, since the chart gets nearly twice A's height. Costs: the sheet covers the newest part of the chart unless it starts very short, the drag is one more gesture to learn, and the sheet competes with the Copilot half sheet, which also rises from the bottom.">
+    <div data-frame="phone" data-caption="Sheet resting">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Markets</span><span class="mono">TLT</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="row base"><span class="big">90.41</span><span class="chg loss">−0.20 · −0.22%</span></div>
+        <div class="seg mono round" style="align-self:flex-start"><span>1D</span><span>1W</span><span class="on">1M</span><span>3M</span><span>1Y</span><span>5Y</span></div>
+        <div class="mk-cw">
+          <div data-chart="area" data-seed="61" data-ret="0.018" data-vol="0.004" data-h="420" data-axis="y" data-marks="0.48,0.99" data-mark></div>
+          <div class="mk-avg" style="top:62%;right:54px"><span>Avg cost 88.74</span></div>
+        </div>
+      </div>
+      <div class="io-sheet fit" style="padding-bottom:26px"><div class="grab"></div>
+        <div class="sb2" style="padding-bottom:10px">
+          <div class="row"><span class="b">Recession Radar</span><span class="pill paper">Paper</span><span class="sp"></span><span class="mono sm">205 sh</span></div>
+          <div class="row sm dim"><span>58.2%, target 60%</span><span class="sp"></span><span>Rebalances 15:50</span></div>
+        </div>
+      </div>
+    </div>
+    <div data-frame="phone" data-caption="Sheet dragged up">
+      <div class="m-nav"><span class="back"><span data-icon="chevron-left"></span>Markets</span><span class="mono">TLT</span><span class="m-ic" style="width:28px"><span data-icon="more"></span></span></div>
+      <div class="m-body">
+        <div class="row base"><span class="big">90.41</span><span class="chg loss">−0.20 · −0.22%</span></div>
+        <div data-chart="area" data-seed="61" data-ret="0.018" data-vol="0.004" data-h="150" data-marks="0.48,0.99" data-mark></div>
+      </div>
+      <div class="io-sheet tall"><div class="grab"></div>
+        <div class="sh">Who holds TLT<span class="x"><span data-icon="x"></span></span></div>
+        <div class="sb2">
+          <div class="m-card mk-hold">
+            <div class="row"><span class="t">Recession Radar</span><span class="pill paper">Paper</span></div>
+            <div class="mk-fig">
+              <div><div class="lbl">Shares</div><div class="v">205</div><div class="s">avg 88.74</div></div>
+              <div><div class="lbl">Weight</div><div class="v">58.2%</div><div class="s">target 60%</div></div>
+              <div><div class="lbl">Gain</div><div class="v gain">+$342</div><div class="s">+1.9%</div></div>
+            </div>
+          </div>
+          <div class="m-card rows">
+            <div class="m-row"><span class="mono xs dim" style="width:46px">15:50</span><div style="flex:1;min-width:0"><div>Rebalance</div><div class="d">58.2% → 60%</div></div></div>
+            <div class="m-row"><span class="mono xs dim" style="width:46px">10:31</span><div style="flex:1;min-width:0"><div>Bought 42 at 90.41</div><div class="d">$3,797.22</div></div></div>
+          </div>
+          <div class="sm dim">Not held in your live account.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script src="kit.js"></script>
+</body>
+</html>

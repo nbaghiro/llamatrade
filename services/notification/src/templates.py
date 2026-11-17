@@ -225,6 +225,20 @@ def render(event: events_pb2.NotificationEvent) -> Rendered:
             cta_url=link or None,
             cta_label="Reset password" if link else None,
         )
+    if c == e.NOTIFICATION_CATEGORY_INVITE:
+        code = event.extra.get("code", "")
+        link = event.extra.get("link", "")
+        expires = event.extra.get("expires", "")
+        message = "You're invited to LlamaTrade. Create your account with this email address"
+        message += f" and the invite code {code}." if code else "."
+        if expires:
+            message += f" The code expires on {expires}."
+        return Rendered(
+            "You're invited",
+            message,
+            cta_url=link or None,
+            cta_label="Create your account" if link else None,
+        )
     if c == e.NOTIFICATION_CATEGORY_CONFIRMATION_PENDING:
         return Rendered(
             "Copilot action awaiting approval",

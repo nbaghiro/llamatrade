@@ -78,6 +78,16 @@ class Dispatcher:
     async def dispatch(self, pending: list[PendingDelivery]) -> None:  # pragma: no cover
         raise NotImplementedError
 
+    async def send_direct_email(
+        self, to: str, rendered: Rendered, severity: int
+    ) -> None:  # pragma: no cover
+        raise NotImplementedError
+
+
+# Pre-account categories: no tenant exists, so the event carries its recipient in
+# ``extra["to"]`` and is emailed directly with no in-app row or delivery tracking.
+DIRECT_EMAIL_CATEGORIES: frozenset[int] = frozenset({events_pb2.NOTIFICATION_CATEGORY_INVITE})
+
 
 async def email_recipients(
     db: AsyncSession, tenant_id: UUID, *, ignore_disabled: bool = False
@@ -234,7 +244,14 @@ def make_notification_handler(
         except UnknownEventTypeError as e:
             raise PoisonError(str(e)) from e
         if not envelope.tenant_id:
-            raise PoisonError("notification envelope without tenant_id")
+            if event.category not in DIRECT_EMAIL_CATEGORIES:
+                raise PoisonError("notification envelope without tenant_id")
+            to = event.extra.get("to", "").strip()
+            if not to:
+                raise PoisonError("direct notification without a recipient")
+            severity = effective_severity(event.category, event.severity)
+            await dispatcher.send_direct_email(to, render(event), severity)
+            return
         tenant_id = UUID(envelope.tenant_id)
         user_id = UUID(envelope.user_id) if envelope.user_id else None
 

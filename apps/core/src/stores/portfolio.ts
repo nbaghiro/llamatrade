@@ -6,6 +6,7 @@
 import { create } from "zustand";
 
 import {
+  ExecutionMode,
   ExecutionStatus,
   type Timestamp,
 } from "@llamatrade/core/proto/common_pb";
@@ -43,6 +44,8 @@ export interface SleeveSummary {
   strategyId: string;
   name: string;
   executionStatus: ExecutionStatus;
+  /** Runs on the live Alpaca account rather than paper. */
+  live: boolean;
   /** Ledger sleeve id; null when the ledger couldn't be read. */
   sleeveId: string | null;
   frozen: boolean;
@@ -169,6 +172,7 @@ function summarize(
     strategyId: s.strategyId,
     name: s.strategyName || sleeve?.name || "Strategy",
     executionStatus: s.status,
+    live: s.mode === ExecutionMode.LIVE,
     sleeveId: sleeve?.id ?? null,
     frozen: sleeve?.status === SleeveStatus.FROZEN,
     allocatedCapital: num(s.allocatedCapital),
@@ -331,6 +335,7 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
             strategyId: "",
             name: sl.name || "Sleeve",
             executionStatus: ExecutionStatus.UNSPECIFIED,
+            live: false,
             sleeveId: sl.id,
             frozen: sl.status === SleeveStatus.FROZEN,
             allocatedCapital: num(sl.allocatedCapital),

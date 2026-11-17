@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from datetime import timedelta
 from typing import NoReturn
 
 import pytest
@@ -33,6 +34,36 @@ def _fake_notification_stream(monkeypatch: pytest.MonkeyPatch) -> None:
         "_shared",
         NotificationEvents(bus=EventBus(FakeTransport())),
     )
+
+
+@pytest.fixture
+def accept_any_invite(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock-DB tests only: stub the invite check, which needs a real invite_codes row."""
+
+    async def _accept(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr("src.session.check_invite", _accept)
+    monkeypatch.setattr("src.session.redeem_invite", _accept)
+
+
+NewInvite = Callable[..., Awaitable[str]]
+
+
+@pytest_asyncio.fixture
+async def new_invite(session_factory: async_sessionmaker) -> NewInvite:
+    """Factory for real invite codes in the test database; returns the code."""
+    from llamatrade_db import system_session
+
+    from src.services.invites import DEFAULT_TTL, create_invite
+
+    async def _make(email: str | None = None, ttl: timedelta = DEFAULT_TTL) -> str:
+        async with system_session(session_factory) as db:
+            invite = await create_invite(db, email=email, ttl=ttl)
+            await db.commit()
+            return invite.code
+
+    return _make
 
 
 def _skip_or_fail(reason: str) -> NoReturn:

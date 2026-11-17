@@ -1,43 +1,144 @@
 import type { StrategyTemplate } from '@llamatrade/core/proto/strategy_pb';
-import { ChevronRight, Code2, LayoutTemplate, Sparkles } from 'lucide-react';
-import { useEffect, useState, type ComponentType } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useBrokerStore } from '@llamatrade/core/stores/broker';
+import { ChevronRight, FlaskConical } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 
-import { PREFERRED_TEMPLATE_ID, rankTemplates } from '../../components/home/templates';
+import { AccountPath } from '../../components/auth/AccountPath';
+import {
+  PREFERRED_TEMPLATE_ID,
+  rankTemplates,
+  templateMeta,
+} from '../../components/home/templates';
+import { Skeleton } from '../../components/ui';
 import { copilotUrl } from '../../lib/palette';
 import { listTemplates } from '../../services/strategy';
+import { useAuthStore } from '../../store/auth';
 import { useStrategyBuilderStore } from '../../store/strategy-builder';
 
 import { OnboardingLayout, StepTitle } from './OnboardingLayout';
+import { startPath } from './startPath';
 
-type Route = 'template' | 'describe' | 'blank';
+const EXAMPLE = 'Hold bonds and gold when the yield curve inverts, otherwise SPY. Check daily.';
 
-interface Choice {
-  key: Route;
+function Door({
+  title,
+  body,
+  preview,
+  action,
+}: {
   title: string;
   body: string;
-  short: string;
-  Icon: ComponentType<{ className?: string }>;
+  preview: ReactNode;
+  action: ReactNode;
+}) {
+  return (
+    <section
+      aria-label={title}
+      className="grid grid-rows-[auto_1fr] overflow-hidden rounded-panel border border-line bg-panel"
+    >
+      <div className="border-b border-line bg-sunk p-4 md:h-[190px]">{preview}</div>
+      <div className="grid content-start gap-2 p-4">
+        <h2 className="m-0 text-[15px] font-semibold">{title}</h2>
+        <p className="m-0 text-[12.5px] text-fg-2">{body}</p>
+        <span className="mt-1 inline-flex items-center gap-1.5 text-[11.5px] text-fg-3">
+          <FlaskConical aria-hidden="true" className="h-3.5 w-3.5" />
+          Ends in a backtest · no broker needed
+        </span>
+        <div className="mt-1.5">{action}</div>
+      </div>
+    </section>
+  );
 }
 
-function templateBody(templates: StrategyTemplate[] | null): { body: string; short: string } {
-  const preferred = templates?.find((t) => t.id === PREFERRED_TEMPLATE_ID);
-  const first = preferred ? `${preferred.name} is a simple first one.` : '';
-  const count = templates?.length
-    ? `${templates.length} to choose from.`
-    : 'Ready-made strategies.';
-  return { body: [count, first].filter(Boolean).join(' '), short: first || count };
+function TemplatePreview({ templates }: { templates: StrategyTemplate[] | null }) {
+  if (templates === null) {
+    return (
+      <div className="grid gap-3" aria-hidden="true">
+        {[0, 1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-3 w-full" />
+        ))}
+      </div>
+    );
+  }
+  if (templates.length === 0) {
+    return <p className="m-0 text-[12px] text-fg-3">Templates couldn&apos;t be loaded just now.</p>;
+  }
+  return (
+    <ul className="m-0 grid list-none gap-1 p-0">
+      {templates.slice(0, 4).map((t, i) => (
+        <li key={t.id}>
+          <Link
+            to={`/welcome/template/${encodeURIComponent(t.id)}`}
+            className={`flex items-center gap-2 rounded-[6px] px-2 py-1.5 text-[12.5px] transition-colors hover:bg-panel ${
+              i === 0 ? 'bg-panel font-semibold text-fg' : 'text-fg-2'
+            }`}
+          >
+            <span className="min-w-0 flex-1 truncate">{t.name}</span>
+            <span className="num flex-none truncate text-[11px] font-normal text-fg-3">
+              {templateMeta(t)}
+            </span>
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
-/** /welcome: choose a way to start. Each route reaches a backtest before any broker ask. */
+function CopilotPreview() {
+  return (
+    <div className="grid gap-2 text-[12px]">
+      <span className="text-[11px] text-fg-3">For example</span>
+      <div className="justify-self-end rounded-[10px] rounded-br-[3px] bg-panel px-3 py-2 text-fg">
+        {EXAMPLE}
+      </div>
+      <div className="grid gap-1">
+        <span className="text-[11px] font-medium text-fg-3">Copilot</span>
+        <div className="rounded-[10px] rounded-bl-[3px] border border-line bg-canvas px-3 py-2 text-fg-2">
+          Drafts the rules for you to read, then offers a backtest.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BlocksPreview() {
+  const box = 'rounded-[6px] border border-line bg-panel px-2.5 py-1.5 text-[11.5px]';
+  return (
+    <div className="grid gap-1.5" aria-label="An example strategy in blocks">
+      <div className={box}>
+        <span className="text-fg-3">If</span> <span className="num">10Y minus 2Y</span>{' '}
+        <span className="text-fg-3">is below</span> <span className="num">0</span>
+      </div>
+      <div className="grid grid-cols-2 gap-1.5">
+        <div className={box}>
+          <span className="block text-fg-3">Then hold</span>
+          <span className="num">TLT 60% · GLD 40%</span>
+        </div>
+        <div className={box}>
+          <span className="block text-fg-3">Otherwise</span>
+          <span className="num">SPY 100%</span>
+        </div>
+      </div>
+      <div className={box}>
+        <span className="text-fg-3">Rebalance</span> <span className="num">daily</span>
+      </div>
+    </div>
+  );
+}
+
+/** /welcome: three equal ways to a first strategy, each ending in a backtest (start2 A). */
 export default function WelcomePage() {
   const navigate = useNavigate();
   const createNew = useStrategyBuilderStore((s) => s.createNew);
+  const firstName = useAuthStore((s) => s.user?.firstName?.trim() ?? '');
+  const credentials = useBrokerStore((s) => s.credentials);
+  const fetchBroker = useBrokerStore((s) => s.fetch);
   const [templates, setTemplates] = useState<StrategyTemplate[] | null>(null);
-  const [route, setRoute] = useState<Route>('template');
   const [idea, setIdea] = useState('');
 
   useEffect(() => {
+    fetchBroker().catch(() => undefined);
     let live = true;
     listTemplates()
       .then((r) => {
@@ -49,108 +150,87 @@ export default function WelcomePage() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [fetchBroker]);
 
-  const tpl = templateBody(templates);
-  const choices: Choice[] = [
-    { key: 'template', title: 'Start from a template', Icon: LayoutTemplate, ...tpl },
-    {
-      key: 'describe',
-      title: 'Describe it in a sentence',
-      body: 'Copilot turns it into a draft you can read before it runs.',
-      short: 'Copilot writes a draft.',
-      Icon: Sparkles,
-    },
-    {
-      key: 'blank',
-      title: 'Write it yourself',
-      body: 'Open the editor with blocks or code.',
-      short: 'Blocks or code.',
-      Icon: Code2,
-    },
-  ];
-
-  const onContinue = () => {
-    if (route === 'template') {
-      const first = templates?.[0]?.id ?? PREFERRED_TEMPLATE_ID;
-      navigate(`/welcome/template/${encodeURIComponent(first)}`);
-    } else if (route === 'describe') {
-      navigate(copilotUrl(idea));
-    } else {
-      createNew();
-      navigate('/strategies/builder');
-    }
-  };
+  const paperConnected = credentials.some((c) => c.isPaper && c.isActive);
+  const firstTemplate = templates?.[0]?.id ?? PREFERRED_TEMPLATE_ID;
+  const count = templates?.length ?? 0;
 
   return (
     <OnboardingLayout step={1}>
       <StepTitle
-        title="How would you like to start?"
-        lead="Backtests don't need a broker, so you'll see a result before anything asks for Alpaca."
+        title={firstName ? `Welcome, ${firstName}` : 'Welcome to LlamaTrade'}
+        lead="Make a first strategy and see how it would have done. Pick whichever way suits you."
       />
-      <div
-        role="radiogroup"
-        aria-label="How to start"
-        className="my-1 grid w-full max-w-[808px] gap-2.5 md:grid-cols-3 md:gap-3.5"
-      >
-        {choices.map((c) => {
-          const on = route === c.key;
-          return (
-            <button
-              key={c.key}
-              type="button"
-              role="radio"
-              aria-checked={on}
-              onClick={() => setRoute(c.key)}
-              className={`relative flex items-center gap-3 rounded-[10px] border bg-panel px-3.5 py-[13px] text-left transition-colors md:grid md:min-h-[170px] md:content-start md:gap-1.5 md:rounded-[12px] md:p-[18px] ${
-                on
-                  ? 'border-accent shadow-[0_0_0_3px_var(--accent-soft)]'
-                  : 'border-line-strong hover:border-fg-3'
-              }`}
+      <div className="grid w-full max-w-[1040px] gap-3.5 md:grid-cols-3">
+        <Door
+          title="Start from a template"
+          body={`${count > 0 ? `${count} ready-made strategies` : 'Ready-made strategies'} with their rules written out. Run one as it is or change it first.`}
+          preview={<TemplatePreview templates={templates} />}
+          action={
+            <Link
+              to={`/welcome/template/${encodeURIComponent(firstTemplate)}`}
+              className="btn btn-secondary btn-sm"
             >
-              <span className="grid h-[34px] w-[34px] flex-none place-items-center rounded-[9px] bg-sunk text-accent">
-                <c.Icon className="h-[18px] w-[18px]" />
-              </span>
-              <span className="min-w-0 flex-1 md:contents">
-                <b className="block text-[13.5px] font-semibold md:mt-1.5 md:text-[14px]">
-                  {c.title}
-                </b>
-                <span className="block text-[12.5px] text-fg-2 md:hidden">{c.short}</span>
-                <span className="hidden text-[12.5px] text-fg-2 md:block">{c.body}</span>
-              </span>
-              <ChevronRight aria-hidden="true" className="h-4 w-4 flex-none text-fg-3 md:hidden" />
-              <span
-                aria-hidden="true"
-                className={`absolute right-4 top-4 hidden h-4 w-4 rounded-full md:block ${
-                  on ? 'border-[5px] border-accent-fill' : 'border-[1.5px] border-line-strong'
-                }`}
+              Choose a template
+              <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
+            </Link>
+          }
+        />
+        <Door
+          title="Describe it to Copilot"
+          body="Say what you want in a sentence. Copilot drafts the rules, and you check them before anything runs."
+          preview={<CopilotPreview />}
+          action={
+            <form
+              className="grid gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                navigate(copilotUrl(idea));
+              }}
+            >
+              <label htmlFor="idea" className="sr-only">
+                Your strategy in a sentence
+              </label>
+              <textarea
+                id="idea"
+                rows={2}
+                value={idea}
+                onChange={(e) => setIdea(e.target.value)}
+                className="input h-auto py-2 text-[12.5px]"
+                placeholder="Your strategy in a sentence"
               />
+              <button type="submit" className="btn btn-secondary btn-sm justify-self-start">
+                Ask Copilot
+                <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
+              </button>
+            </form>
+          }
+        />
+        <Door
+          title="Build from blocks"
+          body="Put conditions, holdings and a schedule together yourself. Each block shows what it does as you add it."
+          preview={<BlocksPreview />}
+          action={
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => {
+                createNew();
+                navigate('/strategies/builder');
+              }}
+            >
+              Open the builder
+              <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
             </button>
-          );
-        })}
+          }
+        />
       </div>
-      {route === 'describe' && (
-        <div className="grid w-full max-w-[560px] gap-1.5">
-          <label htmlFor="idea" className="text-[12px] font-medium text-fg-2">
-            Your strategy in a sentence
-          </label>
-          <textarea
-            id="idea"
-            rows={2}
-            value={idea}
-            onChange={(e) => setIdea(e.target.value)}
-            className="input h-auto py-2"
-            placeholder="For example: hold bonds when SPY is overbought, otherwise the strongest sector fund."
-          />
-        </div>
-      )}
-      <button
-        type="button"
-        onClick={onContinue}
-        className="btn btn-primary btn-lg w-full md:w-auto"
-      >
-        Continue
-      </button>
+      <AccountPath
+        steps={startPath(paperConnected)}
+        label="From a backtest to paper and live"
+        className="w-full max-w-[1040px]"
+      />
     </OnboardingLayout>
   );
 }

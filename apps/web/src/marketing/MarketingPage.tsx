@@ -6,7 +6,7 @@ import { Backtest } from './sections/Backtest';
 import { Build } from './sections/Build';
 import { Copilot } from './sections/Copilot';
 import { Film } from './sections/Film';
-import { Closing, Footer } from './sections/Footer';
+import { Footer } from './sections/Footer';
 import { Hero } from './sections/Hero';
 import { Join } from './sections/Join';
 import { Live } from './sections/Live';
@@ -43,7 +43,6 @@ export default function MarketingPage() {
         <Own />
         <Join />
       </main>
-      <Closing />
       <Footer />
     </div>
   );

@@ -18,10 +18,12 @@ from llamatrade_db.models.auth import (
     AlpacaCredentials,
     APIKey,
     AuthToken,
+    InviteCode,
     OAuthIdentity,
     OAuthPendingSignup,
     Tenant,
     User,
+    WaitlistEntry,
 )
 from llamatrade_db.models.backtest import (
     Backtest,
@@ -88,6 +90,8 @@ __all__ = [
     "OAuthPendingSignup",
     "APIKey",
     "AuthToken",
+    "WaitlistEntry",
+    "InviteCode",
     # Strategy
     "Strategy",
     "StrategyVersion",

@@ -343,9 +343,9 @@ html[data-mode="light"] {
 .rim {
   border-color: color-mix(in srgb, var(--acc) 45%, var(--line));
   box-shadow:
-    var(--shadow-lg),
+    var(--shadow),
     0 0 0 1px color-mix(in srgb, var(--acc) 22%, transparent),
-    0 30px 100px -40px color-mix(in srgb, var(--acc) 55%, transparent);
+    0 8px 18px -12px color-mix(in srgb, var(--acc) 40%, transparent);
 }
 .rim::before {
   content: "";

@@ -1,3 +1,4 @@
+import type { AlpacaCredentialsListItem } from '@llamatrade/core/proto/auth_pb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -6,6 +7,7 @@ import {
   startAlpacaLink,
 } from '../../../services/alpacaOAuth';
 import { firstBacktestRange } from '../../onboarding/runTemplate';
+import { activeOf } from '../credentials';
 
 describe('safeReturnPath', () => {
   it('keeps in-app paths and falls back for anything else', () => {
@@ -57,5 +59,17 @@ describe('startAlpacaLink', () => {
   it('throws when the auth service answers with an error', async () => {
     stubStart({ authorizeUrl: 'https://app.alpaca.markets/oauth' }, false);
     await expect(startAlpacaLink('tok')).rejects.toThrow(/Could not start/);
+  });
+});
+
+describe('activeOf', () => {
+  const cred = (id: string, isPaper: boolean, isActive: boolean) =>
+    ({ id, isPaper, isActive, apiKeyPrefix: 'PK', name: '' }) as AlpacaCredentialsListItem;
+
+  it('finds the active key of each kind and ignores switched-off ones', () => {
+    const list = [cred('p0', true, false), cred('p1', true, true), cred('l0', false, false)];
+    expect(activeOf(list, 'paper')?.id).toBe('p1');
+    expect(activeOf(list, 'live')).toBeNull();
+    expect(activeOf([], 'paper')).toBeNull();
   });
 });

@@ -5,7 +5,7 @@ import { CopilotScreen } from './CopilotScreen';
 import { EditorScreen } from './EditorScreen';
 import { BrokerScreen, StrategiesScreen, TemplatesScreen, TradesScreen } from './LibraryScreens';
 import { ChecksScreen, OrdersScreen, ReconScreen } from './LiveScreens';
-import { CopilotPhone, HomePhone, PortfolioPhone, StrategyPhone } from './PhoneScreens';
+import { AlertsPhone, CopilotPhone, HomePhone, SessionPhone } from './PhoneScreens';
 import { PortfolioScreen } from './PortfolioScreen';
 import { SessionScreen } from './SessionScreen';
 
@@ -23,7 +23,7 @@ export type ScreenName =
   | 'orders'
   | 'recon';
 
-export type PhoneName = 'home' | 'strategy' | 'portfolio' | 'copilot';
+export type PhoneName = 'home' | 'session' | 'alerts' | 'copilot';
 
 export const SCREENS: Record<ScreenName, { title: string; Component: ComponentType }> = {
   backtest: { title: 'Backtest · Recession Radar', Component: BacktestScreen },
@@ -42,7 +42,7 @@ export const SCREENS: Record<ScreenName, { title: string; Component: ComponentTy
 
 export const PHONES: Record<PhoneName, ComponentType> = {
   home: HomePhone,
-  strategy: StrategyPhone,
-  portfolio: PortfolioPhone,
+  session: SessionPhone,
+  alerts: AlertsPhone,
   copilot: CopilotPhone,
 };

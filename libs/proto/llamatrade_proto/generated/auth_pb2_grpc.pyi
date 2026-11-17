@@ -64,6 +64,10 @@ class AuthServiceStub:
     ResendVerification: _grpc.UnaryUnaryMultiCallable[
         _auth_pb2.ResendVerificationRequest, _auth_pb2.ResendVerificationResponse
     ]
+    JoinWaitlist: _grpc.UnaryUnaryMultiCallable[
+        _auth_pb2.JoinWaitlistRequest, _auth_pb2.JoinWaitlistResponse
+    ]
+    """Marketing waitlist (unauthenticated)"""
     ValidateToken: _grpc.UnaryUnaryMultiCallable[
         _auth_pb2.ValidateTokenRequest, _auth_pb2.ValidateTokenResponse
     ]
@@ -134,6 +138,10 @@ class AuthServiceAsyncStub(AuthServiceStub):
     ResendVerification: _aio.UnaryUnaryMultiCallable[
         _auth_pb2.ResendVerificationRequest, _auth_pb2.ResendVerificationResponse
     ]  # type: ignore[assignment]
+    JoinWaitlist: _aio.UnaryUnaryMultiCallable[
+        _auth_pb2.JoinWaitlistRequest, _auth_pb2.JoinWaitlistResponse
+    ]  # type: ignore[assignment]
+    """Marketing waitlist (unauthenticated)"""
     ValidateToken: _aio.UnaryUnaryMultiCallable[
         _auth_pb2.ValidateTokenRequest, _auth_pb2.ValidateTokenResponse
     ]  # type: ignore[assignment]
@@ -256,6 +264,16 @@ class AuthServiceServicer(metaclass=_abc_1.ABCMeta):
     ) -> _typing.Union[
         _auth_pb2.ResendVerificationResponse, _abc.Awaitable[_auth_pb2.ResendVerificationResponse]
     ]: ...
+    @_abc_1.abstractmethod
+    def JoinWaitlist(
+        self,
+        request: _auth_pb2.JoinWaitlistRequest,
+        context: _ServicerContext,
+    ) -> _typing.Union[
+        _auth_pb2.JoinWaitlistResponse, _abc.Awaitable[_auth_pb2.JoinWaitlistResponse]
+    ]:
+        """Marketing waitlist (unauthenticated)"""
+
     @_abc_1.abstractmethod
     def ValidateToken(
         self,

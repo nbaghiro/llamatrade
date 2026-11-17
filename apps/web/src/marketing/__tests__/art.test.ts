@@ -2,7 +2,16 @@ import { describe, expect, it } from 'vitest';
 
 import { TAPE_ITEMS } from '../../config/marketing';
 import { EDITOR_LEVELS } from '../data/editorLevels';
-import { accountMonth, INDICATORS, METRICS } from '../data/illustrative';
+import {
+  accountMonth,
+  dayChange,
+  EQUITY,
+  INDICATORS,
+  METRICS,
+  momentumLines,
+  sleeveRows,
+  techMomentum,
+} from '../data/illustrative';
 import { highlightDsl } from '../lib/dsl';
 import { chartArt, levelLabel, SECTION_SHAPES, sectionBox } from '../lib/sectionArt';
 import { walk, walkPath } from '../lib/shapes';
@@ -119,6 +128,36 @@ describe('screen data', () => {
     expect(m.days.length).toBe(m.account.length);
     expect(m.account[0]).toBeCloseTo(101_284.6, 2);
     expect(m.account[m.account.length - 1]).toBeCloseTo(103_410.27, 2);
+    expect(m.account[m.account.length - 2]).toBeCloseTo(EQUITY.total - EQUITY.today, 2);
+  });
+});
+
+describe('phone figures', () => {
+  it('ends each sleeve sparkline on its equity, after its move today', () => {
+    for (const s of sleeveRows()) {
+      expect(s.month[s.month.length - 1]).toBeCloseTo(s.equity, 2);
+      expect(s.month[s.month.length - 2]).toBeCloseTo(s.equity - s.today, 2);
+    }
+  });
+
+  it('adds the sleeves up to the change in total equity today', () => {
+    const today = sleeveRows().reduce((a, s) => a + s.today, 0);
+    expect(today).toBeCloseTo(EQUITY.today, 2);
+  });
+
+  it('matches the session screen for Tech Momentum Rotation', () => {
+    const tm = techMomentum();
+    expect(tm.equity[0]).toBe(tm.allocated);
+    expect(tm.equity[tm.equity.length - 1]).toBeCloseTo(24_914.42, 2);
+    expect(tm.equity[tm.equity.length - 1] - tm.allocated).toBeCloseTo(-85.58, 2);
+    expect(dayChange(24_914.42, tm.today)).toBeCloseTo(0.0361, 4);
+    expect(tm.days[tm.rebalanceAt].toISOString().slice(0, 10)).toBe('2026-11-02');
+  });
+
+  it('ranks the momentum lines by return and ends each on it', () => {
+    const lines = momentumLines();
+    expect(lines.map((l) => l.sym)).toEqual(['SMH', 'QQQ', 'XLK']);
+    for (const l of lines) expect(l.values[l.values.length - 1]).toBeCloseTo(1 + l.ret, 9);
   });
 });
 

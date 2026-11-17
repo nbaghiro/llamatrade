@@ -31,11 +31,19 @@ from llamatrade_telemetry import metrics
 
 from src.client_ip import trusted_client_ip
 from src.redis_client import get_redis
+from src.services.invites import InviteCodeError
 from src.services.tokens import (
     PURPOSE_EMAIL_VERIFY,
     PURPOSE_PASSWORD_RESET,
     consume_token,
     issue_token,
+)
+from src.services.waitlist import (
+    WaitlistValidationError,
+    hash_ip,
+    join_waitlist,
+    resolve_source,
+    validate_waitlist_email,
 )
 from src.session import (
     PasswordPolicyError,
@@ -502,10 +510,13 @@ class AuthServicer:
                     email=request.email,
                     password=request.password,
                     tenant_name=request.tenant_name,
+                    invite_code=request.invite_code,
                     first_name=request.first_name or None,
                     last_name=request.last_name or None,
                 )
             except PasswordPolicyError as e:
+                raise ConnectError(Code.INVALID_ARGUMENT, str(e))
+            except InviteCodeError as e:
                 raise ConnectError(Code.INVALID_ARGUMENT, str(e))
             except ValueError:
                 raise ConnectError(Code.ALREADY_EXISTS, "Email already registered")
@@ -796,6 +807,30 @@ class AuthServicer:
             user.is_verified = True
             await db.commit()
         return auth_pb2.VerifyEmailResponse(success=True, message="Email verified.")
+
+    async def join_waitlist(
+        self,
+        request: auth_pb2.JoinWaitlistRequest,
+        ctx: AnyContext,
+    ) -> auth_pb2.JoinWaitlistResponse:
+        """Add an email to the marketing waitlist; the same answer whether new or repeat."""
+        done = auth_pb2.JoinWaitlistResponse(
+            success=True, message="You're on the list. We'll email you when a place opens."
+        )
+        if request.company.strip():
+            return done
+        try:
+            email = validate_waitlist_email(request.email)
+            source = resolve_source(request.source)
+        except WaitlistValidationError as e:
+            raise ConnectError(Code.INVALID_ARGUMENT, str(e))
+
+        ip = self._client_ip(ctx)
+        await self._enforce_credential_rate_limits("waitlist", email, ip, rules=((5, 600),))
+        async with await self._get_db() as db:
+            await join_waitlist(db, email=email, source=source, ip_hash=hash_ip(ip))
+            await db.commit()
+        return done
 
     async def resend_verification(
         self,

@@ -2,6 +2,8 @@
 
 import type { CompletionContext, CompletionResult, Completion } from '@codemirror/autocomplete';
 import { autocompletion } from '@codemirror/autocomplete';
+import { formPathAt, readForms } from '@llamatrade/core/strategy/forms';
+import { DSL_KEYWORDS_BY_FORM } from '@llamatrade/core/strategy/vocabulary';
 
 // Every label below must be vocabulary the backend parser accepts
 // (@llamatrade/core/strategy/vocabulary, generated from libs/dsl into
@@ -68,14 +70,23 @@ const parameters: Completion[] = [
   { label: ':volume', type: 'property', info: 'Volume field' },
 ];
 
-// market-cap parses but the validator rejects it (needs fundamentals), so it is not offered.
+// market-cap parses but the validator rejects it (needs fundamentals), so it is listed
+// as unavailable and picking it inserts nothing.
 const weightMethods: Completion[] = [
-  { label: 'equal', type: 'type', info: 'Equal weight all assets' },
-  { label: 'specified', type: 'type', info: 'Manually specified weights' },
-  { label: 'momentum', type: 'type', info: 'Weight by momentum score' },
-  { label: 'inverse-volatility', type: 'type', info: 'Weight inversely to volatility' },
-  { label: 'min-variance', type: 'type', info: 'Minimum variance optimization' },
-  { label: 'risk-parity', type: 'type', info: 'Risk parity weighting' },
+  { label: 'specified', type: 'type', info: 'Weights you set on each child' },
+  { label: 'equal', type: 'type', info: 'The same share for each child' },
+  { label: 'inverse-volatility', type: 'type', info: 'Calmer children get more' },
+  { label: 'risk-parity', type: 'type', info: 'Each child carries an equal share of risk' },
+  { label: 'min-variance', type: 'type', info: 'The lowest combined swing' },
+  { label: 'momentum', type: 'type', info: 'Ranks by past return over :lookback' },
+  {
+    label: 'market-cap',
+    type: 'type',
+    detail: 'not supported',
+    info: 'Needs company fundamentals the engine does not have, so the check rejects it.',
+    boost: -99,
+    apply: () => undefined,
+  },
 ];
 
 const filterMethods: Completion[] = [
@@ -276,6 +287,26 @@ const commonSymbols: Completion[] = [
   { label: 'XBI', type: 'constant', info: 'SPDR S&P Biotech' },
 ];
 
+type FormWithKeywords = keyof typeof DSL_KEYWORDS_BY_FORM;
+
+function hasKeywordTable(head: string): head is FormWithKeywords {
+  return head in DSL_KEYWORDS_BY_FORM;
+}
+
+/** The head of the innermost form that contains `offset`, or null at the top level. */
+export function formHeadAt(code: string, offset: number): string | null {
+  const path = formPathAt(readForms(code.slice(0, offset)), offset);
+  return path.length ? path[path.length - 1].head : null;
+}
+
+/** The keyword completions a form accepts; forms without keywords (if, else, rsi) offer none. */
+export function keywordsForForm(head: string | null): Completion[] {
+  if (head === null) return [];
+  if (!hasKeywordTable(head)) return [];
+  const allowed = new Set<string>(DSL_KEYWORDS_BY_FORM[head].map((k) => `:${k}`));
+  return parameters.filter((p) => allowed.has(p.label));
+}
+
 /**
  * Get context-aware completions
  */
@@ -318,7 +349,7 @@ function getCompletions(context: CompletionContext): CompletionResult | null {
   }
   // Check if we're typing a parameter (starts with :)
   else if (word.startsWith(':')) {
-    options = parameters;
+    options = keywordsForForm(formHeadAt(context.state.doc.toString(), from));
   }
   // Check if we're in a condition context (after operators)
   else if (/\(\s*(>=|<=|!=|>|<|=|crosses-above|crosses-below)\s*$/.test(textBefore)) {

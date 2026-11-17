@@ -24,9 +24,11 @@ interface CodeEditorProps {
   readOnly?: boolean;
   /** Engine problems for the current text; ignored while the text differs from what was checked. */
   problems?: readonly CodeProblem[];
+  /** Called with the cursor's offset, 1-based line and 1-based column whenever it moves. */
+  onCursor?: (offset: number, line: number, column: number) => void;
 }
 
-export function CodeEditor({ readOnly = false, problems = [] }: CodeEditorProps) {
+export function CodeEditor({ readOnly = false, problems = [], onCursor }: CodeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const readOnlyCompartment = useRef(new Compartment());
@@ -45,6 +47,8 @@ export function CodeEditor({ readOnly = false, problems = [] }: CodeEditorProps)
   );
   const changeRef = useRef(handleChange);
   changeRef.current = handleChange;
+  const cursorRef = useRef(onCursor);
+  cursorRef.current = onCursor;
 
   useEffect(() => {
     if (!editorRef.current || viewRef.current) return;
@@ -69,6 +73,11 @@ export function CodeEditor({ readOnly = false, problems = [] }: CodeEditorProps)
           readOnlyCompartment.current.of(EditorState.readOnly.of(readOnly)),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) changeRef.current(update.state.doc.toString());
+            if (update.docChanged || update.selectionSet) {
+              const head = update.state.selection.main.head;
+              const line = update.state.doc.lineAt(head);
+              cursorRef.current?.(head, line.number, head - line.from + 1);
+            }
           }),
         ],
       }),

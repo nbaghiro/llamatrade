@@ -5,10 +5,17 @@
 
 import { useAgentStore } from '@llamatrade/core/stores/agent';
 import { Maximize2, Plus, X } from 'lucide-react';
-import { useEffect, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
+import { useMediaQuery } from '../strategies/useMediaQuery';
+
 import { CopilotConversation } from './CopilotConversation';
+import { CopilotUnavailable } from './CopilotUnavailable';
+import { askPlaceholder } from './subjects';
+import { useCopilotSubject } from './subjectStore';
+import { useCopilotSend } from './useCopilotSend';
+import { useRouteSubject } from './useRouteSubject';
 
 const MIN_WIDTH = 400;
 const MAX_WIDTH = 760;
@@ -35,6 +42,22 @@ export function CopilotSidePanel() {
   const { sessions, currentSessionId, panelOpen, closePanel, loadSessions, startNewChat } =
     useAgentStore();
   const [width, setWidth] = useState(loadWidth);
+  const [full, setFull] = useState(false);
+  const phone = useMediaQuery('(max-width: 767px)');
+  const dragFrom = useRef<number | null>(null);
+  const routeSubject = useRouteSubject(pathname);
+  const setSubject = useCopilotSubject((s) => s.setSubject);
+  const send = useCopilotSend(pageContext(pathname));
+
+  useEffect(() => {
+    if (panelOpen) setSubject(routeSubject);
+    // The subject follows the page only when the panel opens or the page changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panelOpen, routeSubject?.key]);
+
+  useEffect(() => {
+    if (!panelOpen) setFull(false);
+  }, [panelOpen]);
 
   useEffect(() => {
     try {
@@ -88,8 +111,31 @@ export function CopilotSidePanel() {
       role="dialog"
       aria-label="Copilot"
       style={{ ['--panel-w' as string]: `${width}px` }}
-      className="fixed inset-x-0 bottom-0 top-14 z-50 flex flex-col border-l border-line-strong bg-panel shadow-xl md:left-auto md:w-[var(--panel-w)]"
+      className={`fixed inset-x-0 bottom-0 z-50 flex flex-col border-line-strong bg-panel shadow-xl max-md:rounded-t-[16px] max-md:border-t md:left-auto md:top-14 md:w-[var(--panel-w)] md:border-l ${
+        full ? 'top-14' : 'top-[42dvh]'
+      }`}
     >
+      <button
+        type="button"
+        aria-label={full ? 'Lower the sheet' : 'Raise the sheet to full height'}
+        onClick={() => setFull(!full)}
+        onPointerDown={(e) => {
+          dragFrom.current = e.clientY;
+        }}
+        onPointerUp={(e) => {
+          if (dragFrom.current === null) return;
+          const moved = e.clientY - dragFrom.current;
+          dragFrom.current = null;
+          if (moved < -24) setFull(true);
+          else if (moved > 24) {
+            if (full) setFull(false);
+            else closePanel();
+          }
+        }}
+        className="grid h-5 flex-none touch-none place-items-center md:hidden"
+      >
+        <span className="h-1 w-10 rounded-full bg-line-strong" />
+      </button>
       <div
         role="separator"
         aria-orientation="vertical"
@@ -134,7 +180,9 @@ export function CopilotSidePanel() {
       <CopilotConversation
         variant="panel"
         page={pageContext(pathname)}
-        placeholder="Ask Copilot about this page"
+        placeholder={routeSubject ? askPlaceholder(routeSubject) : 'Ask Copilot about this page'}
+        folded={phone && !full}
+        unavailableView={<CopilotUnavailable onRetry={send} compact />}
         emptyState={
           <div className="grid gap-1.5 py-10 text-center">
             <h2 className="m-0 text-[15px] font-semibold">Ask a quick question</h2>

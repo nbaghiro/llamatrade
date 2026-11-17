@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import os
 import struct
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -281,13 +282,36 @@ def login(
     raise last or MeshError("auth.Login", 429, "resource_exhausted", "login rate-limited")
 
 
+AUTH_CONTAINER = "llamatrade-auth"
+
+
+def mint_invite_code() -> str:
+    """A fresh open invite code, minted by the operator tool inside the auth container."""
+    result = subprocess.run(
+        ["docker", "exec", "-w", "/app", AUTH_CONTAINER, "python", "-m", "src.tools.invites"]
+        + ["create", "--quiet"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"could not mint an invite code: {result.stderr.strip()}")
+    return result.stdout.strip().splitlines()[-1]
+
+
 def register_and_login(tenant_name: str, email: str, password: str = "e2e-Passw0rd!") -> MeshClient:
     """Register a fresh tenant then log in (Register does not auto-login in the UI)."""
     anon = MeshClient()
     anon.call(
         "auth",
         "Register",
-        {"tenantName": tenant_name, "email": email, "password": password},
+        {
+            "tenantName": tenant_name,
+            "email": email,
+            "password": password,
+            "inviteCode": mint_invite_code(),
+        },
         context=False,
     )
     return login(email, password)

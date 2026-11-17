@@ -16,8 +16,8 @@ export type TierKey = "free" | "pro" | "enterprise";
 /** Yearly billing discount reflected by the Monthly/Yearly toggle (-17%). */
 export const YEARLY_DISCOUNT = 0.17;
 
-/** Closed beta: testers are on Pro at no charge, and live trading is unavailable on every plan. */
-export const CLOSED_BETA = true;
+/** Closed-beta mode (testers on Pro at no charge, live trading hidden). Off; delete once no page reads it. */
+export const CLOSED_BETA = false;
 
 export interface PlanFeatureRow {
   label: string;

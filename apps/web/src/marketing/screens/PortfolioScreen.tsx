@@ -4,8 +4,8 @@ import { accountMonth, shortDate, SLEEVE_SPLIT } from '../data/illustrative';
 
 import { AppNav, Figure, Panel, Status, Table, WeightBar } from './parts';
 
-/** Account equity over one month against SPY, for the portfolio screen and the Home phone. */
-export function AccountChart({ height, compact = false }: { height: number; compact?: boolean }) {
+/** Account equity over one month against SPY. */
+function AccountChart({ height }: { height: number }) {
   const am = accountMonth();
   return (
     <LineChart
@@ -13,7 +13,7 @@ export function AccountChart({ height, compact = false }: { height: number; comp
       dates={am.days}
       height={height}
       yTickCount={3}
-      xTickCount={compact ? 2 : 4}
+      xTickCount={4}
       series={[
         { values: am.benchmark, kind: 'bench' },
         { values: am.account, kind: 'main', area: true },
