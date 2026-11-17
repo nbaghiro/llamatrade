@@ -44,4 +44,4 @@ export const WAITLIST_AUTH_URL: string | undefined =
   import.meta.env.VITE_AUTH_URL || (MARKETING_STANDALONE ? undefined : 'http://localhost:8810');
 
 /** Where invite requests go by email when the standalone build has no waitlist endpoint. */
-export const INVITE_EMAIL: string | undefined = import.meta.env.VITE_INVITE_EMAIL || undefined;
+export const INVITE_EMAIL: string = import.meta.env.VITE_INVITE_EMAIL || 'hello@llamatrade.ai';
