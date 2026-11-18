@@ -39,6 +39,7 @@ class _PooledExecutor:
         self.max_in_flight = 0
         self.close_calls = 0
         self.fail_with: BaseException | None = None
+        self.close_error: BaseException | None = None
         self.block: asyncio.Event | None = None
         self.entered = asyncio.Event()
 
@@ -81,6 +82,8 @@ class _PooledExecutor:
     async def aclose(self) -> None:
         self.close_calls += 1
         self.checked_out = False
+        if self.close_error is not None:
+            raise self.close_error
 
 
 def _config() -> RunnerConfig:
@@ -236,13 +239,13 @@ class TestRunnerReleasesTheExecutor:
 
     async def test_close_failure_is_contained(self):
         executor = _PooledExecutor()
-        executor.aclose = AsyncMock(side_effect=OSError("connection reset"))  # type: ignore[method-assign]
+        executor.close_error = OSError("connection reset")
         runner = _runner(executor)
 
         await runner.aclose()
         await runner.aclose()
 
-        executor.aclose.assert_awaited_once()
+        assert executor.close_calls == 1
 
 
 class TestFactoriesCloseTheSessionOnFailure:
