@@ -24,11 +24,13 @@ import json
 import os
 import struct
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import IO, Any
 
 # Decoded Connect-JSON payloads are dynamically shaped (proto→JSON); typed as a
@@ -282,14 +284,28 @@ def login(
     raise last or MeshError("auth.Login", 429, "resource_exhausted", "login rate-limited")
 
 
-AUTH_CONTAINER = "llamatrade-auth"
+# Empty for a host-local (honcho) mesh: the operator tool then runs from services/auth.
+AUTH_CONTAINER = os.getenv("E2E_AUTH_CONTAINER", "llamatrade-auth")
+_AUTH_SERVICE_DIR = Path(__file__).resolve().parents[2] / "services" / "auth"
 
 
 def mint_invite_code() -> str:
-    """A fresh open invite code, minted by the operator tool inside the auth container."""
+    """A fresh open invite code, minted by the auth service's operator tool.
+
+    Runs inside the auth container for the Docker mesh, or with this interpreter
+    from ``services/auth`` (reading ``DATABASE_URL``) when ``E2E_AUTH_CONTAINER``
+    is empty.
+    """
+    tool = ["-m", "src.tools.invites", "create", "--quiet"]
+    if AUTH_CONTAINER:
+        command = ["docker", "exec", "-w", "/app", AUTH_CONTAINER, "python", *tool]
+        cwd = None
+    else:
+        command = [sys.executable, *tool]
+        cwd = _AUTH_SERVICE_DIR
     result = subprocess.run(
-        ["docker", "exec", "-w", "/app", AUTH_CONTAINER, "python", "-m", "src.tools.invites"]
-        + ["create", "--quiet"],
+        command,
+        cwd=cwd,
         capture_output=True,
         text=True,
         timeout=60,
@@ -478,6 +494,14 @@ def mailpit_messages(query: str) -> list[dict[str, object]]:
     body = response.json()
     messages = body.get("messages", [])
     return messages if isinstance(messages, list) else []
+
+
+def find_mailpit_message(email: str, subject: str) -> dict[str, object] | None:
+    """The newest captured message to ``email`` whose subject contains ``subject``."""
+    for message in mailpit_messages(f"to:{email}"):
+        if subject in str(message.get("Subject", "")):
+            return message
+    return None
 
 
 def mailpit_message_text(message_id: str) -> str:

@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "LlamaTrade Notification Service"
 requires-python = ">=3.14"
 dependencies = [
-    "fastapi>=0.109.0",
+    "fastapi>=0.142.0",
     "uvicorn[standard]>=0.27.0",
     "pydantic>=2.5.0",
     "httpx>=0.26.0",

@@ -281,6 +281,8 @@ ruff format --config pyproject.toml services/ libs/ tests/ scripts/
 npm run lint:fix            # Frontend
 ```
 
+**Dependency pins:** `uv.lock` is the single source of third-party versions. `constraints.txt` is generated from it and applied to every `pip install` through `PIP_CONSTRAINT` (CI, the service Dockerfiles, the Makefile, `ci-local.sh`, `dev-local.sh`). To change a version, run `uv lock --upgrade-package <name>` (or `uv lock --upgrade` for everything), then `make constraints`, run the suites, and commit `uv.lock` and `constraints.txt` together. CI fails if they disagree.
+
 **Note:** The generated Python code (`libs/proto/llamatrade_proto/generated/`) is tracked in git. Only the TypeScript output (`apps/core/src/proto/`) is gitignored — run `make proto` after cloning or changing protos to regenerate it (this also refreshes the tracked Python output).
 
 ---

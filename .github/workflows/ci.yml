@@ -10,6 +10,8 @@ on:
 env:
   PYTHON_VERSION: "3.14"
   NODE_VERSION: "20"
+  # Every pip install resolves third-party packages to the versions locked in uv.lock.
+  PIP_CONSTRAINT: ${{ github.workspace }}/constraints.txt
 
 jobs:
   lint-python:
@@ -37,6 +39,13 @@ jobs:
         # Blocks # noqa / # type: ignore / # pyright: in source. This is the
         # authoritative gate — local pre-commit can be bypassed, CI cannot.
         run: ./scripts/check-no-suppressions.sh
+
+      - name: Check constraints.txt matches uv.lock
+        run: |
+          pip install uv==0.10.8
+          uv lock --check
+          make constraints
+          git diff --exit-code -- constraints.txt
 
       - name: Run ruff (lint)
         # --ignore-noqa: a stray # noqa must NOT suppress the underlying error in
@@ -371,6 +380,7 @@ jobs:
       # The honcho mesh runs on the host, so the webhook tests' in-test listener
       # is plain localhost (the docker-mesh default is host.docker.internal).
       E2E_WEBHOOK_CALLBACK_HOST: localhost
+      E2E_AUTH_CONTAINER: ""
       # Service-to-service targets default to docker-compose hostnames, which do
       # not resolve in the honcho mesh; point every hop at the local ports.
       PORTFOLIO_GRPC_TARGET: localhost:8860

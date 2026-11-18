@@ -25,7 +25,7 @@ from llamatrade_db import (
 )
 from llamatrade_db.session import verify_rls_enforcement
 from llamatrade_events import KafkaTransport
-from llamatrade_telemetry import init_telemetry, metrics
+from llamatrade_telemetry import FASTAPI_NATIVE_TELEMETRY_OFF, init_telemetry, metrics
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +191,7 @@ app = FastAPI(
     description="Portfolio tracking and performance analytics (Connect protocol)",
     version="0.1.0",
     lifespan=lifespan,
+    telemetry=FASTAPI_NATIVE_TELEMETRY_OFF,
 )
 
 # Authentication (fail-closed); added before CORS so CORS stays outermost.

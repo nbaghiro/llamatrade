@@ -18,7 +18,7 @@ from llamatrade_common import AuthMiddleware, HealthChecker, check_redis
 from llamatrade_common.health import cached_engine_check
 from llamatrade_db import close_db, get_engine, get_pool_stats
 from llamatrade_db.session import verify_rls_enforcement
-from llamatrade_telemetry import init_telemetry
+from llamatrade_telemetry import FASTAPI_NATIVE_TELEMETRY_OFF, init_telemetry
 
 from src.redis_client import get_redis
 from src.routers.oauth import router as oauth_router
@@ -57,6 +57,7 @@ app = FastAPI(
     description="Authentication and authorization service for LlamaTrade (Connect protocol)",
     version="0.1.0",
     lifespan=lifespan,
+    telemetry=FASTAPI_NATIVE_TELEMETRY_OFF,
 )
 
 # Fail-closed auth. The OAuth callback is public (trust rides the signed state);

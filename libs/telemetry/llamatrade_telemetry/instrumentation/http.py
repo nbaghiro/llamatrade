@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import uuid
 from time import perf_counter
+from typing import TYPE_CHECKING
 
 from opentelemetry import context as otel_context
 from opentelemetry.trace import SpanKind, Status, StatusCode
@@ -25,7 +26,19 @@ from llamatrade_telemetry.logging import clear_request_context, get_logger, set_
 from llamatrade_telemetry.runtime import ensure_runtime_monitor
 from llamatrade_telemetry.tracing import extract_context, get_tracer
 
+if TYPE_CHECKING:
+    from fastapi.telemetry import TelemetryConfig
+
 logger = get_logger(__name__)
+
+# Pass as ``FastAPI(telemetry=...)``: this middleware owns HTTP metrics and spans,
+# so FastAPI's native OTel instrumentation would record every request twice.
+FASTAPI_NATIVE_TELEMETRY_OFF: TelemetryConfig = {
+    "tracing": False,
+    "metrics": False,
+    "logs": False,
+    "operation_spans": False,
+}
 
 HTTP_REQUESTS_TOTAL = registry.counter(
     "llamatrade_http_requests_total",

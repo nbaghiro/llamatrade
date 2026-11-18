@@ -14,7 +14,13 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import StatusCode
 
-from llamatrade_telemetry import init_telemetry, registry, runtime, tracing
+from llamatrade_telemetry import (
+    FASTAPI_NATIVE_TELEMETRY_OFF,
+    init_telemetry,
+    registry,
+    runtime,
+    tracing,
+)
 from llamatrade_telemetry.config import TelemetrySettings
 from llamatrade_telemetry.logging import JSONFormatter, configure_logging
 from llamatrade_telemetry.setup import _build_resource
@@ -120,7 +126,7 @@ async def test_error_response_marks_span_error() -> None:
     assert provider is not None
     provider.add_span_processor(SimpleSpanProcessor(exporter))
 
-    app = FastAPI()
+    app = FastAPI(telemetry=FASTAPI_NATIVE_TELEMETRY_OFF)
 
     @app.get("/explode")
     async def explode() -> dict[str, bool]:

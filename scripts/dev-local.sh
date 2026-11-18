@@ -10,6 +10,7 @@ set -e
 
 SERVICE=$1
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PIP_CONSTRAINT="$PROJECT_ROOT/constraints.txt"
 
 # Load environment variables
 if [ -f "$PROJECT_ROOT/.env" ]; then

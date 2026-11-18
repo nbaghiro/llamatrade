@@ -103,6 +103,14 @@ members = [
     "services/trading",
 ]
 
+[tool.uv]
+constraint-dependencies = [
+    # Matches the version CI's lint gate installs (.github/workflows/ci.yml).
+    "ruff==0.15.4",
+    # 2.1 honors create_type=False on the models' enums, so create_all no longer creates them.
+    "sqlalchemy<2.1",
+]
+
 [tool.uv.sources]
 llamatrade-alpaca = { workspace = true }
 llamatrade-common = { workspace = true }

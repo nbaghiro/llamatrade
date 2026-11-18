@@ -7,13 +7,13 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 from httpx import ASGITransport, AsyncClient
 
-from llamatrade_telemetry import init_telemetry
+from llamatrade_telemetry import FASTAPI_NATIVE_TELEMETRY_OFF, init_telemetry
 from tests.conftest import scrape
 
 
 @pytest.fixture
 def app() -> FastAPI:
-    application = FastAPI()
+    application = FastAPI(telemetry=FASTAPI_NATIVE_TELEMETRY_OFF)
 
     @application.get("/ok")
     async def ok() -> dict[str, bool]:
@@ -98,6 +98,26 @@ async def test_operational_routes_excluded_from_red(app: FastAPI) -> None:
     # /health and /metrics are served but never counted (self-noise).
     assert 'route="/health"' not in out
     assert 'route="/metrics"' not in out
+
+
+async def test_fastapi_native_telemetry_opt_out_prevents_duplicate_series(app: FastAPI) -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as client:
+        assert (await client.get("/ok")).status_code == 200
+    out = scrape()
+    assert 'route="/ok"' in out
+    assert 'http_route="/ok"' not in out
+
+
+async def test_fastapi_native_telemetry_duplicates_series_without_the_opt_out() -> None:
+    default_app = FastAPI()
+
+    @default_app.get("/native")
+    async def native() -> dict[str, bool]:
+        return {"ok": True}
+
+    async with AsyncClient(transport=ASGITransport(app=default_app), base_url="http://t") as c:
+        assert (await c.get("/native")).status_code == 200
+    assert 'http_route="/native"' in scrape()
 
 
 async def test_streaming_skips_duration_histogram(app: FastAPI) -> None:

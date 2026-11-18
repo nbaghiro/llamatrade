@@ -121,6 +121,7 @@ Permanently out of e2e reach (documented, not silently skipped):
 | `E2E_MAILPIT_URL` | `http://localhost:8025` | Mail catcher API |
 | `E2E_DEMO_EMAIL` / `E2E_DEMO_PASSWORD` | seeded demo | Read identity |
 | `E2E_WEBHOOK_CALLBACK_HOST` | `host.docker.internal` | How the mesh reaches the in-test webhook listener; set `localhost` for a host-local (honcho) mesh, or a `host-gateway` mapping / bridge IP on Linux CI |
+| `E2E_AUTH_CONTAINER` | `llamatrade-auth` | Where invite codes are minted for fresh registrations; set it empty for a host-local (honcho) mesh to run the operator tool from `services/auth` against `DATABASE_URL` |
 | `STRIPE_WEBHOOK_SECRET` | unset | Signs synthetic Stripe events when the mesh verifies signatures |
 | `E2E_LIVE_ALPACA` / `E2E_LIVE_LLM` | off | Opt-in gated journeys |
 | `E2E_SLOW` | off | Legs that wait on a real timer (~70s) |

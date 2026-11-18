@@ -107,6 +107,7 @@ run_step() {
 # Ensure we're in project root
 cd "$(dirname "$0")/.."
 PROJECT_ROOT=$(pwd)
+export PIP_CONSTRAINT="$PROJECT_ROOT/constraints.txt"
 
 print_header "Local CI Runner"
 echo "Project root: $PROJECT_ROOT"

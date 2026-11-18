@@ -17,11 +17,11 @@ from . import _scaffold
 from .client import (
     MeshClient,
     MeshError,
+    find_mailpit_message,
     login,
     mailpit_available,
     mailpit_message_html,
     mailpit_message_text,
-    mailpit_messages,
     publish_bar,
     publish_notification_event,
 )
@@ -92,7 +92,9 @@ class TestInAppFlow:
                 dedup=f"e2e-markall-{tenant_id}-{n}",
             )
 
-        assert _poll(lambda: len(_notifications(client)) >= 2), "both events never landed"
+        assert _poll(
+            lambda: sum(n.get("title") == "Sleeve frozen" for n in _notifications(client)) >= 2
+        ), "both events never landed"
         before = client.call("notification", "ListNotifications", {"unreadOnly": True})
         assert before.get("unreadCount", 0) >= 2
 
@@ -222,11 +224,9 @@ class TestEmailDelivery:
         publish_notification_event(
             tenant_id, CATEGORY_PAYMENT_FAILED, reason="e2e invoice", dedup="pay-1"
         )
-        assert _poll(lambda: len(mailpit_messages(f"to:{email}")) >= 1, timeout=30.0), (
-            "no email captured by mailpit"
-        )
-        message = mailpit_messages(f"to:{email}")[0]
-        assert "Payment failed" in str(message.get("Subject", ""))
+        assert _poll(
+            lambda: find_mailpit_message(email, "Payment failed") is not None, timeout=30.0
+        ), "no payment-failed email captured by mailpit"
 
 
 @pytest.mark.skipif(not mailpit_available(), reason="mailpit not running")
@@ -239,18 +239,11 @@ class TestPasswordResetFlow:
         response = anon.call("auth", "RequestPasswordReset", {"email": email}, context=False)
         assert response["success"] is True
 
-        def _find_reset() -> bool:
-            for msg in mailpit_messages(f"to:{email}"):
-                if "Reset your password" in str(msg.get("Subject", "")):
-                    return True
-            return False
-
-        assert _poll(_find_reset, timeout=30.0), "reset email never arrived"
-        message = next(
-            m
-            for m in mailpit_messages(f"to:{email}")
-            if "Reset your password" in str(m.get("Subject", ""))
-        )
+        assert _poll(
+            lambda: find_mailpit_message(email, "Reset your password") is not None, timeout=30.0
+        ), "reset email never arrived"
+        message = find_mailpit_message(email, "Reset your password")
+        assert message is not None
         message_id = str(message.get("ID", ""))
         text = mailpit_message_text(message_id)
         token = text.split("token=")[1].split()[0].strip()

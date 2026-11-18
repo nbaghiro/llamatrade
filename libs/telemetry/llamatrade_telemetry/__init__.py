@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from llamatrade_telemetry import conventions
 from llamatrade_telemetry.domain import metrics
+from llamatrade_telemetry.instrumentation.http import FASTAPI_NATIVE_TELEMETRY_OFF
 from llamatrade_telemetry.logging import (
     LogContext,
     clear_request_context,
@@ -49,6 +50,7 @@ __all__ = [
     # setup
     "init_telemetry",
     "shutdown",
+    "FASTAPI_NATIVE_TELEMETRY_OFF",
     "ensure_runtime_monitor",
     # metrics
     "metrics",

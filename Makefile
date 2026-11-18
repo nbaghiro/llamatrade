@@ -1,4 +1,4 @@
-.PHONY: dev dev-up dev-down dev-infra dev-setup build test test-e2e lint clean ci migrate migrate-status migrate-history waitlist-list waitlist-invite invite-create invite-list seed-demo emails emails-preview docs-docx
+.PHONY: constraints dev dev-up dev-down dev-infra dev-setup build test test-e2e lint clean ci migrate migrate-status migrate-history waitlist-list waitlist-invite invite-create invite-list seed-demo emails emails-preview docs-docx
 
 # Helper to load .env file
 ifneq (,$(wildcard ./.env))
@@ -7,6 +7,9 @@ else
     ENV_FILE := .env.example
 endif
 LOAD_ENV := set -a && [ -f $(ENV_FILE) ] && . ./$(ENV_FILE) && set +a
+
+# Every pip install resolves third-party packages to the versions locked in uv.lock.
+export PIP_CONSTRAINT := $(CURDIR)/constraints.txt
 
 # ===================
 # Development (Docker - all services)
@@ -38,6 +41,11 @@ dev-infra:
 # Create virtual environments for all services
 dev-setup:
 	./scripts/dev-local.sh setup
+
+# Regenerate constraints.txt from uv.lock (after `uv lock --upgrade[-package X]`).
+constraints:
+	uv lock
+	uv export --quiet --frozen --all-packages --all-extras --no-hashes --no-emit-workspace --no-annotate -o constraints.txt
 
 # Stop infrastructure
 dev-infra-down:

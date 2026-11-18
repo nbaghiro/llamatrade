@@ -25,10 +25,10 @@ from .client import (
     HOSTS,
     MeshClient,
     MeshError,
+    find_mailpit_message,
     login,
     mailpit_available,
     mailpit_message_text,
-    mailpit_messages,
 )
 
 pytestmark = pytest.mark.e2e
@@ -49,23 +49,16 @@ def _email_of(client: MeshClient) -> str:
     return str(client.call("auth", "GetCurrentUser", {}).get("user", {}).get("email", ""))
 
 
-def _find_message(email: str, subject: str) -> dict[str, object] | None:
-    for msg in mailpit_messages(f"to:{email}"):
-        if subject in str(msg.get("Subject", "")):
-            return msg
-    return None
-
-
 @pytest.mark.skipif(not mailpit_available(), reason="mailpit not running")
 class TestEmailVerification:
     def test_verify_email_round_trip(self, throwaway_tenant: Callable[[str], MeshClient]) -> None:
         client = throwaway_tenant("verify")
         email = _email_of(client)
 
-        assert _poll(lambda: _find_message(email, "Verify your email") is not None), (
+        assert _poll(lambda: find_mailpit_message(email, "Verify your email") is not None), (
             "verification email never arrived in mailpit"
         )
-        message = _find_message(email, "Verify your email")
+        message = find_mailpit_message(email, "Verify your email")
         assert message is not None
         text = mailpit_message_text(str(message.get("ID", "")))
         assert "verify-email?token=" in text
@@ -85,7 +78,7 @@ class TestEmailVerification:
     ) -> None:
         client = throwaway_tenant("welcome")
         email = _email_of(client)
-        assert _poll(lambda: _find_message(email, "Welcome to LlamaTrade") is not None), (
+        assert _poll(lambda: find_mailpit_message(email, "Welcome to LlamaTrade") is not None), (
             "welcome email never arrived in mailpit"
         )
 
@@ -207,7 +200,7 @@ class TestOAuthRoutes:
         assert resp.status_code == 400
         assert resp.json().get("detail") == "invalid or expired state"
 
-    def test_callback_relays_a_provider_error_to_settings(self) -> None:
+    def test_callback_relays_a_provider_error_to_the_connect_page(self) -> None:
         resp = httpx.get(
             f"{_AUTH_HTTP}/oauth/alpaca/callback",
             params={"error": "access_denied"},
@@ -216,7 +209,7 @@ class TestOAuthRoutes:
         )
         assert resp.status_code == 302
         location = resp.headers.get("location", "")
-        assert "tab=broker" in location and "error=access_denied" in location
+        assert location.endswith("/connect/alpaca?error=access_denied")
 
     def test_exchange_rejects_a_garbage_handoff(self) -> None:
         resp = httpx.post(

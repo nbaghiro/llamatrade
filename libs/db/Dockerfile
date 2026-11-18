@@ -8,6 +8,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Pin third-party packages to uv.lock (see constraints.txt)
+COPY constraints.txt /app/constraints.txt
+ENV PIP_CONSTRAINT=/app/constraints.txt
+
 # Build context is the repo root (see docker-compose.yml db-migrate.build.context).
 # llamatrade_db.models imports llamatrade_proto.generated for enum constants, and
 # llamatrade_proto's client layer imports llamatrade_common.auth, so both proto and

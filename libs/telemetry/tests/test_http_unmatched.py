@@ -8,7 +8,7 @@ from httpx import ASGITransport, AsyncClient
 from starlette.responses import Response
 from starlette.types import Receive, Scope, Send
 
-from llamatrade_telemetry import init_telemetry
+from llamatrade_telemetry import FASTAPI_NATIVE_TELEMETRY_OFF, init_telemetry
 from llamatrade_telemetry.instrumentation.http import UNMATCHED_ROUTE
 from tests.conftest import scrape
 
@@ -29,7 +29,7 @@ class FakeConnectApp:
 
 @pytest.fixture
 def app() -> FastAPI:
-    application = FastAPI()
+    application = FastAPI(telemetry=FASTAPI_NATIVE_TELEMETRY_OFF)
 
     @application.get("/unmatched-known")
     async def known() -> dict[str, bool]:

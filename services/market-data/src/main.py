@@ -26,7 +26,7 @@ from llamatrade_common.health import check_kafka
 from llamatrade_db import close_db, get_pool_stats
 from llamatrade_db.session import verify_rls_enforcement
 from llamatrade_events import EventBus, KafkaTransport
-from llamatrade_telemetry import init_telemetry
+from llamatrade_telemetry import FASTAPI_NATIVE_TELEMETRY_OFF, init_telemetry
 
 from src.cache import close_cache, init_cache
 from src.error_handlers import register_error_handlers
@@ -138,6 +138,7 @@ app = FastAPI(
     description="Real-time and historical market data service (Connect protocol)",
     version=SERVICE_VERSION,
     lifespan=lifespan,
+    telemetry=FASTAPI_NATIVE_TELEMETRY_OFF,
 )
 
 register_error_handlers(app)

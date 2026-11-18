@@ -10,6 +10,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
+# Pin third-party packages to uv.lock (see constraints.txt)
+COPY constraints.txt /app/constraints.txt
+ENV PIP_CONSTRAINT=/app/constraints.txt
+
 # Copy shared libraries first (for layer caching)
 COPY libs/telemetry /app/libs/telemetry
 COPY libs/common /app/libs/common
