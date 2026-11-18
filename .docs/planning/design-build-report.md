@@ -2,7 +2,7 @@
 
 This covers the build of the chosen B Session design into the web app (`apps/web`): the
 marketing site in Light and Dark, the theme system, and the recommended option of every
-product surface from the choose pages in `.scratchpad/design-languages/`. The native app in
+product surface from the choose pages in `.docs/.scratchpad/design-languages/`. The native app in
 `apps/mobile` isn't part of it.
 
 Nothing is committed yet. The changes sit in the working tree alongside other uncommitted

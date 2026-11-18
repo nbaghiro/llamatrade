@@ -85,3 +85,6 @@ secrets/
 
 # Generated email preview gallery (services/notification/tools/preview_emails.py)
 services/notification/tools/email_preview.html
+
+# Design mockups and working files (kept locally)
+.docs/.scratchpad/

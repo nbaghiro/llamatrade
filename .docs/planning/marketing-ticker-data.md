@@ -2,7 +2,7 @@
 
 The tape at the top of the marketing site shows ten ETFs with hard-coded prices, labelled
 "Illustrative prices · IEX". This note covers what it would take to show real prices, what
-the licences allow, and a recommended setup. A working prototype is in `.scratchpad/design-languages/ticker-live.html`,
+the licences allow, and a recommended setup. A working prototype is in `.docs/.scratchpad/design-languages/ticker-live.html`,
 fed by `ticker-data.js`, with the publisher sketched in the appendix below.
 
 All terms pages below were read on 2026-11-15. Where a page shows its own date, it is given.
