@@ -11,9 +11,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from collections.abc import Awaitable, Sequence
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Protocol, cast
+from typing import Protocol
 
 import redis.asyncio as aioredis
 from sqlalchemy import and_, func, or_, select
@@ -77,7 +77,7 @@ class _RedisBroker:
         self._redis = aioredis.from_url(url)
 
     async def llen(self, name: str) -> int:
-        return await cast("Awaitable[int]", self._redis.llen(name))
+        return await self._redis.llen(name)
 
     async def aclose(self) -> None:
         await self._redis.aclose()
