@@ -88,6 +88,8 @@ class AlpacaCredentials(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
     alpaca_account_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Alpaca's human-facing account number (e.g. PA3XXXXXXX); NULL until read from the broker.
+    account_number: Mapped[str | None] = mapped_column(String(32), nullable=True)
     is_paper: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 

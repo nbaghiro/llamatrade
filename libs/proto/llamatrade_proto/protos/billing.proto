@@ -104,6 +104,9 @@ message Subscription {
   // Timestamps
   Timestamp created_at = 17;
   Timestamp updated_at = 18;
+
+  // Closed beta: no charge while set (from subscription metadata)
+  bool is_beta = 19;
 }
 
 // Usage metrics

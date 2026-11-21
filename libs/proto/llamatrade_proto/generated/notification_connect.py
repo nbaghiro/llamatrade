@@ -16,95 +16,57 @@ from . import notification_pb2 as notification__pb2
 
 
 class NotificationService(Protocol):
-    async def list_notifications(
-        self, request: notification__pb2.ListNotificationsRequest, ctx: RequestContext
-    ) -> notification__pb2.ListNotificationsResponse:
+    async def list_notifications(self, request: notification__pb2.ListNotificationsRequest, ctx: RequestContext) -> notification__pb2.ListNotificationsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def mark_as_read(
-        self, request: notification__pb2.MarkAsReadRequest, ctx: RequestContext
-    ) -> notification__pb2.MarkAsReadResponse:
+    async def mark_as_read(self, request: notification__pb2.MarkAsReadRequest, ctx: RequestContext) -> notification__pb2.MarkAsReadResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_alerts(
-        self, request: notification__pb2.ListAlertsRequest, ctx: RequestContext
-    ) -> notification__pb2.ListAlertsResponse:
+    async def list_alerts(self, request: notification__pb2.ListAlertsRequest, ctx: RequestContext) -> notification__pb2.ListAlertsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def create_alert(
-        self, request: notification__pb2.CreateAlertRequest, ctx: RequestContext
-    ) -> notification__pb2.CreateAlertResponse:
+    async def create_alert(self, request: notification__pb2.CreateAlertRequest, ctx: RequestContext) -> notification__pb2.CreateAlertResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def delete_alert(
-        self, request: notification__pb2.DeleteAlertRequest, ctx: RequestContext
-    ) -> notification__pb2.DeleteAlertResponse:
+    async def delete_alert(self, request: notification__pb2.DeleteAlertRequest, ctx: RequestContext) -> notification__pb2.DeleteAlertResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def toggle_alert(
-        self, request: notification__pb2.ToggleAlertRequest, ctx: RequestContext
-    ) -> notification__pb2.ToggleAlertResponse:
+    async def toggle_alert(self, request: notification__pb2.ToggleAlertRequest, ctx: RequestContext) -> notification__pb2.ToggleAlertResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_channels(
-        self, request: notification__pb2.ListChannelsRequest, ctx: RequestContext
-    ) -> notification__pb2.ListChannelsResponse:
+    async def list_channels(self, request: notification__pb2.ListChannelsRequest, ctx: RequestContext) -> notification__pb2.ListChannelsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def update_channel(
-        self, request: notification__pb2.UpdateChannelRequest, ctx: RequestContext
-    ) -> notification__pb2.UpdateChannelResponse:
+    async def update_channel(self, request: notification__pb2.UpdateChannelRequest, ctx: RequestContext) -> notification__pb2.UpdateChannelResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def test_channel(
-        self, request: notification__pb2.TestChannelRequest, ctx: RequestContext
-    ) -> notification__pb2.TestChannelResponse:
+    async def test_channel(self, request: notification__pb2.TestChannelRequest, ctx: RequestContext) -> notification__pb2.TestChannelResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def list_webhooks(
-        self, request: notification__pb2.ListWebhooksRequest, ctx: RequestContext
-    ) -> notification__pb2.ListWebhooksResponse:
+    async def list_webhooks(self, request: notification__pb2.ListWebhooksRequest, ctx: RequestContext) -> notification__pb2.ListWebhooksResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def create_webhook(
-        self, request: notification__pb2.CreateWebhookRequest, ctx: RequestContext
-    ) -> notification__pb2.CreateWebhookResponse:
+    async def create_webhook(self, request: notification__pb2.CreateWebhookRequest, ctx: RequestContext) -> notification__pb2.CreateWebhookResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def update_webhook(
-        self, request: notification__pb2.UpdateWebhookRequest, ctx: RequestContext
-    ) -> notification__pb2.UpdateWebhookResponse:
+    async def update_webhook(self, request: notification__pb2.UpdateWebhookRequest, ctx: RequestContext) -> notification__pb2.UpdateWebhookResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def delete_webhook(
-        self, request: notification__pb2.DeleteWebhookRequest, ctx: RequestContext
-    ) -> notification__pb2.DeleteWebhookResponse:
+    async def delete_webhook(self, request: notification__pb2.DeleteWebhookRequest, ctx: RequestContext) -> notification__pb2.DeleteWebhookResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def test_webhook(
-        self, request: notification__pb2.TestWebhookRequest, ctx: RequestContext
-    ) -> notification__pb2.TestWebhookResponse:
+    async def test_webhook(self, request: notification__pb2.TestWebhookRequest, ctx: RequestContext) -> notification__pb2.TestWebhookResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def get_preferences(
-        self, request: notification__pb2.GetPreferencesRequest, ctx: RequestContext
-    ) -> notification__pb2.GetPreferencesResponse:
+    async def get_preferences(self, request: notification__pb2.GetPreferencesRequest, ctx: RequestContext) -> notification__pb2.GetPreferencesResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
-    async def update_preferences(
-        self, request: notification__pb2.UpdatePreferencesRequest, ctx: RequestContext
-    ) -> notification__pb2.UpdatePreferencesResponse:
+    async def update_preferences(self, request: notification__pb2.UpdatePreferencesRequest, ctx: RequestContext) -> notification__pb2.UpdatePreferencesResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class NotificationServiceASGIApplication(ConnectASGIApplication[NotificationService]):
-    def __init__(
-        self,
-        service: NotificationService | AsyncGenerator[NotificationService],
-        *,
-        interceptors: Iterable[Interceptor] = (),
-        read_max_bytes: int | None = None,
-    ) -> None:
+    def __init__(self, service: NotificationService | AsyncGenerator[NotificationService], *, interceptors: Iterable[Interceptor]=(), read_max_bytes: int | None = None) -> None:
         super().__init__(
             service=service,
             endpoints=lambda svc: {
@@ -602,94 +564,42 @@ class NotificationServiceClient(ConnectClient):
 
 
 class NotificationServiceSync(Protocol):
-    def list_notifications(
-        self, request: notification__pb2.ListNotificationsRequest, ctx: RequestContext
-    ) -> notification__pb2.ListNotificationsResponse:
+    def list_notifications(self, request: notification__pb2.ListNotificationsRequest, ctx: RequestContext) -> notification__pb2.ListNotificationsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def mark_as_read(
-        self, request: notification__pb2.MarkAsReadRequest, ctx: RequestContext
-    ) -> notification__pb2.MarkAsReadResponse:
+    def mark_as_read(self, request: notification__pb2.MarkAsReadRequest, ctx: RequestContext) -> notification__pb2.MarkAsReadResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def list_alerts(
-        self, request: notification__pb2.ListAlertsRequest, ctx: RequestContext
-    ) -> notification__pb2.ListAlertsResponse:
+    def list_alerts(self, request: notification__pb2.ListAlertsRequest, ctx: RequestContext) -> notification__pb2.ListAlertsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def create_alert(
-        self, request: notification__pb2.CreateAlertRequest, ctx: RequestContext
-    ) -> notification__pb2.CreateAlertResponse:
+    def create_alert(self, request: notification__pb2.CreateAlertRequest, ctx: RequestContext) -> notification__pb2.CreateAlertResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def delete_alert(
-        self, request: notification__pb2.DeleteAlertRequest, ctx: RequestContext
-    ) -> notification__pb2.DeleteAlertResponse:
+    def delete_alert(self, request: notification__pb2.DeleteAlertRequest, ctx: RequestContext) -> notification__pb2.DeleteAlertResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def toggle_alert(
-        self, request: notification__pb2.ToggleAlertRequest, ctx: RequestContext
-    ) -> notification__pb2.ToggleAlertResponse:
+    def toggle_alert(self, request: notification__pb2.ToggleAlertRequest, ctx: RequestContext) -> notification__pb2.ToggleAlertResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def list_channels(
-        self, request: notification__pb2.ListChannelsRequest, ctx: RequestContext
-    ) -> notification__pb2.ListChannelsResponse:
+    def list_channels(self, request: notification__pb2.ListChannelsRequest, ctx: RequestContext) -> notification__pb2.ListChannelsResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def update_channel(
-        self, request: notification__pb2.UpdateChannelRequest, ctx: RequestContext
-    ) -> notification__pb2.UpdateChannelResponse:
+    def update_channel(self, request: notification__pb2.UpdateChannelRequest, ctx: RequestContext) -> notification__pb2.UpdateChannelResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def test_channel(
-        self, request: notification__pb2.TestChannelRequest, ctx: RequestContext
-    ) -> notification__pb2.TestChannelResponse:
+    def test_channel(self, request: notification__pb2.TestChannelRequest, ctx: RequestContext) -> notification__pb2.TestChannelResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def list_webhooks(
-        self, request: notification__pb2.ListWebhooksRequest, ctx: RequestContext
-    ) -> notification__pb2.ListWebhooksResponse:
+    def list_webhooks(self, request: notification__pb2.ListWebhooksRequest, ctx: RequestContext) -> notification__pb2.ListWebhooksResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def create_webhook(
-        self, request: notification__pb2.CreateWebhookRequest, ctx: RequestContext
-    ) -> notification__pb2.CreateWebhookResponse:
+    def create_webhook(self, request: notification__pb2.CreateWebhookRequest, ctx: RequestContext) -> notification__pb2.CreateWebhookResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def update_webhook(
-        self, request: notification__pb2.UpdateWebhookRequest, ctx: RequestContext
-    ) -> notification__pb2.UpdateWebhookResponse:
+    def update_webhook(self, request: notification__pb2.UpdateWebhookRequest, ctx: RequestContext) -> notification__pb2.UpdateWebhookResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def delete_webhook(
-        self, request: notification__pb2.DeleteWebhookRequest, ctx: RequestContext
-    ) -> notification__pb2.DeleteWebhookResponse:
+    def delete_webhook(self, request: notification__pb2.DeleteWebhookRequest, ctx: RequestContext) -> notification__pb2.DeleteWebhookResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def test_webhook(
-        self, request: notification__pb2.TestWebhookRequest, ctx: RequestContext
-    ) -> notification__pb2.TestWebhookResponse:
+    def test_webhook(self, request: notification__pb2.TestWebhookRequest, ctx: RequestContext) -> notification__pb2.TestWebhookResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def get_preferences(
-        self, request: notification__pb2.GetPreferencesRequest, ctx: RequestContext
-    ) -> notification__pb2.GetPreferencesResponse:
+    def get_preferences(self, request: notification__pb2.GetPreferencesRequest, ctx: RequestContext) -> notification__pb2.GetPreferencesResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
-
-    def update_preferences(
-        self, request: notification__pb2.UpdatePreferencesRequest, ctx: RequestContext
-    ) -> notification__pb2.UpdatePreferencesResponse:
+    def update_preferences(self, request: notification__pb2.UpdatePreferencesRequest, ctx: RequestContext) -> notification__pb2.UpdatePreferencesResponse:
         raise ConnectError(Code.UNIMPLEMENTED, "Not implemented")
 
 
 class NotificationServiceWSGIApplication(ConnectWSGIApplication):
-    def __init__(
-        self,
-        service: NotificationServiceSync,
-        interceptors: Iterable[InterceptorSync] = (),
-        read_max_bytes: int | None = None,
-    ) -> None:
+    def __init__(self, service: NotificationServiceSync, interceptors: Iterable[InterceptorSync]=(), read_max_bytes: int | None = None) -> None:
         super().__init__(
             endpoints={
                 "/llamatrade.NotificationService/ListNotifications": EndpointSync.unary(

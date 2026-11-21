@@ -119,6 +119,9 @@ message Transaction {
   string description = 9;
   string reference_id = 10;  // Order ID, transfer ID, etc.
   Timestamp timestamp = 11;
+  string account_id = 12;            // Ledger account the event was booked on
+  ExecutionMode execution_mode = 13; // Paper or live, from the account's broker credentials
+  string sleeve_id = 14;             // Sleeve whose cash or positions the event moves
 }
 
 // Asset allocation breakdown

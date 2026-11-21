@@ -24,9 +24,7 @@ class _SleeveType:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _SleeveTypeEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_SleeveType.ValueType], builtins.type
-):
+class _SleeveTypeEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_SleeveType.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     SLEEVE_TYPE_UNSPECIFIED: _SleeveType.ValueType  # 0
     SLEEVE_TYPE_STRATEGY: _SleeveType.ValueType  # 1
@@ -60,9 +58,7 @@ class _SleeveStatus:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _SleeveStatusEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_SleeveStatus.ValueType], builtins.type
-):
+class _SleeveStatusEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_SleeveStatus.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     SLEEVE_STATUS_UNSPECIFIED: _SleeveStatus.ValueType  # 0
     SLEEVE_STATUS_ACTIVE: _SleeveStatus.ValueType  # 1
@@ -83,9 +79,7 @@ class _LotSide:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _LotSideEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_LotSide.ValueType], builtins.type
-):
+class _LotSideEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_LotSide.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     LOT_SIDE_UNSPECIFIED: _LotSide.ValueType  # 0
     LOT_SIDE_LONG: _LotSide.ValueType  # 1
@@ -102,9 +96,7 @@ class _LedgerEventType:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _LedgerEventTypeEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_LedgerEventType.ValueType], builtins.type
-):
+class _LedgerEventTypeEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_LedgerEventType.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     LEDGER_EVENT_TYPE_UNSPECIFIED: _LedgerEventType.ValueType  # 0
     LEDGER_EVENT_TYPE_FUNDS_DEPOSITED: _LedgerEventType.ValueType  # 1
@@ -187,9 +179,7 @@ class _CorporateActionKind:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _CorporateActionKindEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_CorporateActionKind.ValueType], builtins.type
-):
+class _CorporateActionKindEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_CorporateActionKind.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     CORPORATE_ACTION_KIND_UNSPECIFIED: _CorporateActionKind.ValueType  # 0
     CORPORATE_ACTION_KIND_SPLIT: _CorporateActionKind.ValueType  # 1
@@ -243,24 +233,9 @@ class LedgerAccount(message.Message):
         created_at: common_pb2.Timestamp | None = ...,
         updated_at: common_pb2.Timestamp | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "created_at", b"created_at", "updated_at", b"updated_at"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["created_at", b"created_at", "updated_at", b"updated_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "base_currency",
-        b"base_currency",
-        "created_at",
-        b"created_at",
-        "credentials_id",
-        b"credentials_id",
-        "id",
-        b"id",
-        "tenant_id",
-        b"tenant_id",
-        "updated_at",
-        b"updated_at",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["base_currency", b"base_currency", "created_at", b"created_at", "credentials_id", b"credentials_id", "id", b"id", "tenant_id", b"tenant_id", "updated_at", b"updated_at"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -291,13 +266,9 @@ class SleeveCash(message.Message):
         reserved: common_pb2.Decimal | None = ...,
         unsettled: common_pb2.Decimal | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "balance", b"balance", "reserved", b"reserved", "unsettled", b"unsettled"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["balance", b"balance", "reserved", b"reserved", "unsettled", b"unsettled"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "balance", b"balance", "reserved", b"reserved", "unsettled", b"unsettled"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["balance", b"balance", "reserved", b"reserved", "unsettled", b"unsettled"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -356,45 +327,9 @@ class Sleeve(message.Message):
         updated_at: common_pb2.Timestamp | None = ...,
         realized_pnl: common_pb2.Decimal | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "allocated_capital",
-        b"allocated_capital",
-        "cash",
-        b"cash",
-        "created_at",
-        b"created_at",
-        "realized_pnl",
-        b"realized_pnl",
-        "updated_at",
-        b"updated_at",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["allocated_capital", b"allocated_capital", "cash", b"cash", "created_at", b"created_at", "realized_pnl", b"realized_pnl", "updated_at", b"updated_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "account_id",
-        b"account_id",
-        "allocated_capital",
-        b"allocated_capital",
-        "cash",
-        b"cash",
-        "created_at",
-        b"created_at",
-        "id",
-        b"id",
-        "name",
-        b"name",
-        "realized_pnl",
-        b"realized_pnl",
-        "status",
-        b"status",
-        "strategy_execution_id",
-        b"strategy_execution_id",
-        "tenant_id",
-        b"tenant_id",
-        "type",
-        b"type",
-        "updated_at",
-        b"updated_at",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "allocated_capital", b"allocated_capital", "cash", b"cash", "created_at", b"created_at", "id", b"id", "name", b"name", "realized_pnl", b"realized_pnl", "status", b"status", "strategy_execution_id", b"strategy_execution_id", "tenant_id", b"tenant_id", "type", b"type", "updated_at", b"updated_at"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -460,49 +395,9 @@ class Lot(message.Message):
         opened_at: common_pb2.Timestamp | None = ...,
         closed_at: common_pb2.Timestamp | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "avg_price",
-        b"avg_price",
-        "closed_at",
-        b"closed_at",
-        "cost_basis",
-        b"cost_basis",
-        "opened_at",
-        b"opened_at",
-        "qty",
-        b"qty",
-        "realized_pnl",
-        b"realized_pnl",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["avg_price", b"avg_price", "closed_at", b"closed_at", "cost_basis", b"cost_basis", "opened_at", b"opened_at", "qty", b"qty", "realized_pnl", b"realized_pnl"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "avg_price",
-        b"avg_price",
-        "closed_at",
-        b"closed_at",
-        "cost_basis",
-        b"cost_basis",
-        "id",
-        b"id",
-        "is_open",
-        b"is_open",
-        "opened_at",
-        b"opened_at",
-        "opened_by_order_id",
-        b"opened_by_order_id",
-        "qty",
-        b"qty",
-        "realized_pnl",
-        b"realized_pnl",
-        "side",
-        b"side",
-        "sleeve_id",
-        b"sleeve_id",
-        "symbol",
-        b"symbol",
-        "tenant_id",
-        b"tenant_id",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["avg_price", b"avg_price", "closed_at", b"closed_at", "cost_basis", b"cost_basis", "id", b"id", "is_open", b"is_open", "opened_at", b"opened_at", "opened_by_order_id", b"opened_by_order_id", "qty", b"qty", "realized_pnl", b"realized_pnl", "side", b"side", "sleeve_id", b"sleeve_id", "symbol", b"symbol", "tenant_id", b"tenant_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -548,30 +443,9 @@ class LedgerEvent(message.Message):
         occurred_at: common_pb2.Timestamp | None = ...,
         recorded_at: common_pb2.Timestamp | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "occurred_at", b"occurred_at", "recorded_at", b"recorded_at"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["occurred_at", b"occurred_at", "recorded_at", b"recorded_at"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "account_id",
-        b"account_id",
-        "data_json",
-        b"data_json",
-        "event_id",
-        b"event_id",
-        "occurred_at",
-        b"occurred_at",
-        "recorded_at",
-        b"recorded_at",
-        "sequence",
-        b"sequence",
-        "sleeve_id",
-        b"sleeve_id",
-        "tenant_id",
-        b"tenant_id",
-        "type",
-        b"type",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "data_json", b"data_json", "event_id", b"event_id", "occurred_at", b"occurred_at", "recorded_at", b"recorded_at", "sequence", b"sequence", "sleeve_id", b"sleeve_id", "tenant_id", b"tenant_id", "type", b"type"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -599,9 +473,7 @@ class GetOrCreateAccountRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "credentials_id", b"credentials_id"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "credentials_id", b"credentials_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -624,9 +496,7 @@ class GetOrCreateAccountResponse(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["account", b"account"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "account", b"account", "base_sleeves", b"base_sleeves"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account", b"account", "base_sleeves", b"base_sleeves"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -670,22 +540,7 @@ class AllocateCapitalRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["amount", b"amount", "context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "account_id",
-        b"account_id",
-        "amount",
-        b"amount",
-        "context",
-        b"context",
-        "request_id",
-        b"request_id",
-        "sleeve_name",
-        b"sleeve_name",
-        "strategy_execution_id",
-        b"strategy_execution_id",
-        "to_sleeve_id",
-        b"to_sleeve_id",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "amount", b"amount", "context", b"context", "request_id", b"request_id", "sleeve_name", b"sleeve_name", "strategy_execution_id", b"strategy_execution_id", "to_sleeve_id", b"to_sleeve_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -736,20 +591,7 @@ class TransferCapitalRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["amount", b"amount", "context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "account_id",
-        b"account_id",
-        "amount",
-        b"amount",
-        "context",
-        b"context",
-        "from_sleeve_id",
-        b"from_sleeve_id",
-        "request_id",
-        b"request_id",
-        "to_sleeve_id",
-        b"to_sleeve_id",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "amount", b"amount", "context", b"context", "from_sleeve_id", b"from_sleeve_id", "request_id", b"request_id", "to_sleeve_id", b"to_sleeve_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -768,13 +610,9 @@ class TransferCapitalResponse(message.Message):
         from_sleeve: Sleeve | None = ...,
         to_sleeve: Sleeve | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "from_sleeve", b"from_sleeve", "to_sleeve", b"to_sleeve"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["from_sleeve", b"from_sleeve", "to_sleeve", b"to_sleeve"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "from_sleeve", b"from_sleeve", "to_sleeve", b"to_sleeve"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["from_sleeve", b"from_sleeve", "to_sleeve", b"to_sleeve"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -805,16 +643,7 @@ class CloseSleeveRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "account_id",
-        b"account_id",
-        "context",
-        b"context",
-        "reason",
-        b"reason",
-        "sleeve_id",
-        b"sleeve_id",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "context", b"context", "reason", b"reason", "sleeve_id", b"sleeve_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -838,9 +667,7 @@ class RehomedPosition(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["cost_basis", b"cost_basis", "qty", b"qty"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "cost_basis", b"cost_basis", "qty", b"qty", "symbol", b"symbol"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["cost_basis", b"cost_basis", "qty", b"qty", "symbol", b"symbol"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -873,20 +700,9 @@ class CloseSleeveResponse(message.Message):
         rehomed_cash: common_pb2.Decimal | None = ...,
         rehomed_positions: abc.Iterable[RehomedPosition] | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "rehomed_cash", b"rehomed_cash", "sleeve", b"sleeve"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["rehomed_cash", b"rehomed_cash", "sleeve", b"sleeve"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "already_closed",
-        b"already_closed",
-        "rehomed_cash",
-        b"rehomed_cash",
-        "rehomed_positions",
-        b"rehomed_positions",
-        "sleeve",
-        b"sleeve",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["already_closed", b"already_closed", "rehomed_cash", b"rehomed_cash", "rehomed_positions", b"rehomed_positions", "sleeve", b"sleeve"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -914,16 +730,7 @@ class DepositFundsRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["amount", b"amount", "context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "account_id",
-        b"account_id",
-        "amount",
-        b"amount",
-        "context",
-        b"context",
-        "request_id",
-        b"request_id",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "amount", b"amount", "context", b"context", "request_id", b"request_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -968,16 +775,7 @@ class WithdrawFundsRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["amount", b"amount", "context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "account_id",
-        b"account_id",
-        "amount",
-        b"amount",
-        "context",
-        b"context",
-        "request_id",
-        b"request_id",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "amount", b"amount", "context", b"context", "request_id", b"request_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1014,9 +812,7 @@ class ListSleevesRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "account_id", b"account_id", "context", b"context"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "context", b"context"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1051,9 +847,7 @@ class GetSleeveRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "context", b"context", "sleeve_id", b"sleeve_id"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["context", b"context", "sleeve_id", b"sleeve_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1099,9 +893,7 @@ class GetHoldingHistoryRequest(message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = typing.Literal["context", b"context"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "account_id", b"account_id", "context", b"context", "symbol", b"symbol"
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "context", b"context", "symbol", b"symbol"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1144,37 +936,9 @@ class HoldingHistoryEntry(message.Message):
         realized_pnl: common_pb2.Decimal | None = ...,
         order_id: builtins.str = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "occurred_at",
-        b"occurred_at",
-        "price",
-        b"price",
-        "qty",
-        b"qty",
-        "realized_pnl",
-        b"realized_pnl",
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["occurred_at", b"occurred_at", "price", b"price", "qty", b"qty", "realized_pnl", b"realized_pnl"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "occurred_at",
-        b"occurred_at",
-        "order_id",
-        b"order_id",
-        "price",
-        b"price",
-        "qty",
-        b"qty",
-        "realized_pnl",
-        b"realized_pnl",
-        "side",
-        b"side",
-        "sleeve_id",
-        b"sleeve_id",
-        "source",
-        b"source",
-        "strategy_execution_id",
-        b"strategy_execution_id",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["occurred_at", b"occurred_at", "order_id", b"order_id", "price", b"price", "qty", b"qty", "realized_pnl", b"realized_pnl", "side", b"side", "sleeve_id", b"sleeve_id", "source", b"source", "strategy_execution_id", b"strategy_execution_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -1234,28 +998,9 @@ class ApplyCorporateActionRequest(message.Message):
         amount: common_pb2.Decimal | None = ...,
         external_id: builtins.str = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = typing.Literal[
-        "amount", b"amount", "context", b"context", "ratio", b"ratio"
-    ]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = typing.Literal["amount", b"amount", "context", b"context", "ratio", b"ratio"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "account_id",
-        b"account_id",
-        "amount",
-        b"amount",
-        "context",
-        b"context",
-        "external_id",
-        b"external_id",
-        "kind",
-        b"kind",
-        "new_symbol",
-        b"new_symbol",
-        "ratio",
-        b"ratio",
-        "symbol",
-        b"symbol",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "amount", b"amount", "context", b"context", "external_id", b"external_id", "kind", b"kind", "new_symbol", b"new_symbol", "ratio", b"ratio", "symbol", b"symbol"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final

@@ -23,9 +23,7 @@ class _EventType:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _EventTypeEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_EventType.ValueType], builtins.type
-):
+class _EventTypeEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_EventType.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     EVENT_TYPE_UNSPECIFIED: _EventType.ValueType  # 0
     EVENT_TYPE_ORDER_SUBMITTED: _EventType.ValueType  # 1
@@ -78,9 +76,7 @@ class _NotificationCategory:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _NotificationCategoryEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_NotificationCategory.ValueType], builtins.type
-):
+class _NotificationCategoryEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_NotificationCategory.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     NOTIFICATION_CATEGORY_UNSPECIFIED: _NotificationCategory.ValueType  # 0
     NOTIFICATION_CATEGORY_SLEEVE_FROZEN: _NotificationCategory.ValueType  # 1
@@ -203,9 +199,7 @@ class _NotificationSeverity:
     ValueType = typing.NewType("ValueType", builtins.int)
     V: _TypeAlias = ValueType  # noqa: Y015
 
-class _NotificationSeverityEnumTypeWrapper(
-    enum_type_wrapper._EnumTypeWrapper[_NotificationSeverity.ValueType], builtins.type
-):
+class _NotificationSeverityEnumTypeWrapper(enum_type_wrapper._EnumTypeWrapper[_NotificationSeverity.ValueType], builtins.type):
     DESCRIPTOR: descriptor.EnumDescriptor
     NOTIFICATION_SEVERITY_UNSPECIFIED: _NotificationSeverity.ValueType  # 0
     NOTIFICATION_SEVERITY_INFO: _NotificationSeverity.ValueType  # 1
@@ -213,9 +207,7 @@ class _NotificationSeverityEnumTypeWrapper(
     NOTIFICATION_SEVERITY_CRITICAL: _NotificationSeverity.ValueType  # 3
     NOTIFICATION_SEVERITY_SECURITY: _NotificationSeverity.ValueType  # 4
 
-class NotificationSeverity(
-    _NotificationSeverity, metaclass=_NotificationSeverityEnumTypeWrapper
-): ...
+class NotificationSeverity(_NotificationSeverity, metaclass=_NotificationSeverityEnumTypeWrapper): ...
 
 NOTIFICATION_SEVERITY_UNSPECIFIED: NotificationSeverity.ValueType  # 0
 NOTIFICATION_SEVERITY_INFO: NotificationSeverity.ValueType  # 1
@@ -288,22 +280,7 @@ class EventEnvelope(message.Message):
         payload: builtins.bytes = ...,
         metadata: abc.Mapping[builtins.str, builtins.str] | None = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "created_at_unix_ms",
-        b"created_at_unix_ms",
-        "id",
-        b"id",
-        "metadata",
-        b"metadata",
-        "payload",
-        b"payload",
-        "tenant_id",
-        b"tenant_id",
-        "type",
-        b"type",
-        "user_id",
-        b"user_id",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["created_at_unix_ms", b"created_at_unix_ms", "id", b"id", "metadata", b"metadata", "payload", b"payload", "tenant_id", b"tenant_id", "type", b"type", "user_id", b"user_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -376,32 +353,7 @@ class NotificationEvent(message.Message):
         reason: builtins.str = ...,
         extra: abc.Mapping[builtins.str, builtins.str] | None = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "account_id",
-        b"account_id",
-        "amount",
-        b"amount",
-        "backtest_id",
-        b"backtest_id",
-        "category",
-        b"category",
-        "execution_id",
-        b"execution_id",
-        "extra",
-        b"extra",
-        "reason",
-        b"reason",
-        "session_id",
-        b"session_id",
-        "severity",
-        b"severity",
-        "sleeve_id",
-        b"sleeve_id",
-        "strategy_id",
-        b"strategy_id",
-        "symbol",
-        b"symbol",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "amount", b"amount", "backtest_id", b"backtest_id", "category", b"category", "execution_id", b"execution_id", "extra", b"extra", "reason", b"reason", "session_id", b"session_id", "severity", b"severity", "sleeve_id", b"sleeve_id", "strategy_id", b"strategy_id", "symbol", b"symbol"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -461,34 +413,7 @@ class LedgerFill(message.Message):
         realized_pnl: builtins.str = ...,
         filled_at: builtins.str = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "account_id",
-        b"account_id",
-        "client_order_id",
-        b"client_order_id",
-        "cost_basis",
-        b"cost_basis",
-        "fees",
-        b"fees",
-        "filled_at",
-        b"filled_at",
-        "order_id",
-        b"order_id",
-        "price",
-        b"price",
-        "qty",
-        b"qty",
-        "realized_pnl",
-        b"realized_pnl",
-        "side",
-        b"side",
-        "sleeve_id",
-        b"sleeve_id",
-        "symbol",
-        b"symbol",
-        "tenant_id",
-        b"tenant_id",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "client_order_id", b"client_order_id", "cost_basis", b"cost_basis", "fees", b"fees", "filled_at", b"filled_at", "order_id", b"order_id", "price", b"price", "qty", b"qty", "realized_pnl", b"realized_pnl", "side", b"side", "sleeve_id", b"sleeve_id", "symbol", b"symbol", "tenant_id", b"tenant_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
 
 @typing.final
@@ -533,24 +458,5 @@ class LedgerReservation(message.Message):
         side: builtins.str = ...,
         order_id: builtins.str = ...,
     ) -> None: ...
-    _ClearFieldArgType: _TypeAlias = typing.Literal[
-        "account_id",
-        b"account_id",
-        "client_order_id",
-        b"client_order_id",
-        "event_type",
-        b"event_type",
-        "order_id",
-        b"order_id",
-        "reserved",
-        b"reserved",
-        "side",
-        b"side",
-        "sleeve_id",
-        b"sleeve_id",
-        "symbol",
-        b"symbol",
-        "tenant_id",
-        b"tenant_id",
-    ]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = typing.Literal["account_id", b"account_id", "client_order_id", b"client_order_id", "event_type", b"event_type", "order_id", b"order_id", "reserved", b"reserved", "side", b"side", "sleeve_id", b"sleeve_id", "symbol", b"symbol", "tenant_id", b"tenant_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
