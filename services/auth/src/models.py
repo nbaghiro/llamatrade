@@ -37,3 +37,4 @@ class AlpacaCredentialsListItem(BaseModel):
     is_paper: bool
     is_active: bool
     created_at: datetime
+    account_number: str | None = None

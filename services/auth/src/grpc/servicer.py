@@ -80,10 +80,11 @@ def _bind_rls_bypass(session: AsyncSession) -> None:
     event.listen(session.sync_session, "after_begin", _apply)
 
 
-def _user_to_proto(user: User) -> auth_pb2.User:
+def _user_to_proto(user: User, *, alpaca_linked: bool = False) -> auth_pb2.User:
     """Map a DB user row to the auth User proto — the single source for every
     response that returns a user (login/register/refresh/get)."""
     return auth_pb2.User(
+        alpaca_linked=alpaca_linked,
         id=str(user.id),
         tenant_id=str(user.tenant_id),
         email=user.email,
@@ -97,6 +98,39 @@ def _user_to_proto(user: User) -> auth_pb2.User:
         if user.last_login
         else None,
     )
+
+
+async def _is_alpaca_linked(db: AsyncSession, user: User) -> bool:
+    """Whether the user has an Alpaca sign-in (OAuth identity) linked."""
+    from sqlalchemy import select
+
+    from llamatrade_db.models import OAuthIdentity
+
+    stmt = (
+        select(OAuthIdentity.id)
+        .where(OAuthIdentity.tenant_id == user.tenant_id)
+        .where(OAuthIdentity.user_id == user.id)
+        .where(OAuthIdentity.provider == "alpaca")
+        .limit(1)
+    )
+    return (await db.execute(stmt)).scalar_one_or_none() is not None
+
+
+async def _probe_account_number(api_key: str, api_secret: str, is_paper: bool) -> str | None:
+    """Read the Alpaca account number for new credentials; None when the broker can't say."""
+    from llamatrade_alpaca import AlpacaCredentials, TradingClient
+
+    try:
+        async with TradingClient(
+            credentials=AlpacaCredentials(api_key=api_key, api_secret=api_secret),
+            paper=is_paper,
+            timeout=5.0,
+        ) as client:
+            account = await client.get_account()
+    except Exception:
+        logger.warning("Could not read the Alpaca account number for new credentials")
+        return None
+    return account.account_number or None
 
 
 async def _notify_security(
@@ -444,7 +478,9 @@ class AuthServicer:
                     f"User not found: {request.user_id}",
                 )
 
-            return auth_pb2.GetUserResponse(user=_user_to_proto(user))
+            return auth_pb2.GetUserResponse(
+                user=_user_to_proto(user, alpaca_linked=await _is_alpaca_linked(db, user))
+            )
 
     async def get_tenant(
         self,
@@ -896,7 +932,7 @@ class AuthServicer:
                 raise ConnectError(Code.NOT_FOUND, "Tenant not found")
 
             return auth_pb2.GetCurrentUserResponse(
-                user=_user_to_proto(user),
+                user=_user_to_proto(user, alpaca_linked=await _is_alpaca_linked(db, user)),
                 tenant=auth_pb2.Tenant(
                     id=str(tenant.id),
                     name=tenant.name,
@@ -1038,11 +1074,13 @@ class AuthServicer:
             )
             raise ConnectError(Code.INVALID_ARGUMENT, f"Invalid credentials: {detail}") from e
 
+        account_number = await _probe_account_number(data.api_key, data.api_secret, data.is_paper)
         async with await self._get_db() as db:
             service = TenantService(db)
             creds = await service.create_alpaca_credentials(
                 tenant_id=UUID(tenant_id),
                 data=data,
+                account_number=account_number,
             )
 
             # Write-only: never return the secret, and only a masked key prefix —
@@ -1119,6 +1157,7 @@ class AuthServicer:
                         id=str(c.id),
                         name=c.name,
                         api_key_prefix=c.api_key_prefix,
+                        account_number=c.account_number or "",
                         is_paper=c.is_paper,
                         is_active=c.is_active,
                         created_at=common_pb2.Timestamp(seconds=int(c.created_at.timestamp())),

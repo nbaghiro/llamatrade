@@ -28,6 +28,8 @@ from tests.fakes import (
 )
 
 if TYPE_CHECKING:
+    from llamatrade_proto.generated import auth_pb2
+
     from src.grpc.servicer import AuthServicer
 
 # Set test environment before importing servicer
@@ -891,9 +893,12 @@ class TestValidateAPIKey:
 class _FakeAccount:
     """Minimal stand-in for llamatrade_alpaca Account."""
 
-    def __init__(self, status: str = "ACTIVE", buying_power: float = 100000.0) -> None:
+    def __init__(
+        self, status: str = "ACTIVE", buying_power: float = 100000.0, account_number: str = ""
+    ) -> None:
         self.status = status
         self.buying_power = buying_power
+        self.account_number = account_number
 
 
 class _FakeClientCtx:
@@ -1749,3 +1754,123 @@ class TestDeleteAlpacaCredentials:
             )
 
         assert exc_info.value.code == Code.UNAUTHENTICATED
+
+
+# ===================
+# Alpaca sign-in flag and account number
+# ===================
+
+
+class TestAlpacaLinked:
+    """User.alpaca_linked reflects a linked Alpaca OAuth identity."""
+
+    async def test_get_user_reports_linked_identity(
+        self, auth_servicer: AuthServicer, mock_db: MockAsyncSession, context: MockRequestContext
+    ) -> None:
+        from llamatrade_db.models import OAuthIdentity, User
+        from llamatrade_proto.generated import auth_pb2
+
+        user = MockUser()
+        mock_db.queue_result(User, user)
+        mock_db.queue_result(OAuthIdentity, uuid4())
+
+        response = await auth_servicer.get_user(
+            auth_pb2.GetUserRequest(user_id=str(user.id)), context
+        )
+
+        assert response.user.alpaca_linked is True
+
+    async def test_get_user_without_identity_is_not_linked(
+        self, auth_servicer: AuthServicer, mock_db: MockAsyncSession, context: MockRequestContext
+    ) -> None:
+        from llamatrade_db.models import OAuthIdentity, User
+        from llamatrade_proto.generated import auth_pb2
+
+        user = MockUser()
+        mock_db.queue_result(User, user)
+        mock_db.queue_result(OAuthIdentity, None)
+
+        response = await auth_servicer.get_user(
+            auth_pb2.GetUserRequest(user_id=str(user.id)), context
+        )
+
+        assert response.user.alpaca_linked is False
+
+    async def test_linked_query_is_scoped_to_the_user_and_alpaca(self) -> None:
+        from sqlalchemy import Select
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        from llamatrade_db.models import User
+        from tests.fakes import FakeResult
+
+        from src.grpc.servicer import _is_alpaca_linked
+
+        db = AsyncMock(spec=AsyncSession)
+        db.execute.return_value = FakeResult(None)
+        user = User(id=uuid4(), tenant_id=uuid4(), email="test@example.com")
+
+        assert await _is_alpaca_linked(db, user) is False
+        db.execute.assert_awaited_once()
+        stmt = db.execute.await_args.args[0]
+        assert isinstance(stmt, Select)
+        params = stmt.compile().params
+        assert user.id in params.values()
+        assert user.tenant_id in params.values()
+        assert "alpaca" in params.values()
+
+
+class TestCreateCredentialsAccountNumber:
+    """Create reads the Alpaca account number so paper and live can be told apart."""
+
+    def _request(self) -> auth_pb2.CreateAlpacaCredentialsRequest:
+        from llamatrade_proto.generated import auth_pb2
+
+        return auth_pb2.CreateAlpacaCredentialsRequest(
+            name="Paper",
+            api_key="PKTEST12345678901234",
+            api_secret="SKTEST12345678901234567890123456789012345",
+            is_paper=True,
+        )
+
+    async def _create(
+        self,
+        auth_servicer: AuthServicer,
+        auth_context: MockRequestContext,
+        account: Callable[[], object],
+    ) -> AsyncMock:
+        from src.services.tenant_service import TenantService
+
+        created = MagicMock(
+            id=uuid4(),
+            api_key="PKTEST12345678901234",
+            is_paper=True,
+            is_active=True,
+            created_at=datetime.now(UTC),
+        )
+        created.name = "Paper"
+        create = AsyncMock(return_value=created)
+        factory = _fake_trading_client({True: account})
+        with (
+            patch("llamatrade_alpaca.TradingClient", factory),
+            patch.object(TenantService, "create_alpaca_credentials", create),
+        ):
+            await auth_servicer.create_alpaca_credentials(self._request(), auth_context)
+        return create
+
+    async def test_stores_the_broker_account_number(
+        self, auth_servicer: AuthServicer, auth_context: MockRequestContext
+    ) -> None:
+        account = _FakeAccount(account_number="PA3ABCDPA92")
+
+        create = await self._create(auth_servicer, auth_context, lambda: account)
+
+        assert create.call_args.kwargs["account_number"] == "PA3ABCDPA92"
+
+    async def test_broker_failure_still_creates_without_a_number(
+        self, auth_servicer: AuthServicer, auth_context: MockRequestContext
+    ) -> None:
+        create = await self._create(
+            auth_servicer, auth_context, _raiser(ConnectionError("alpaca down"))
+        )
+
+        assert create.call_args.kwargs["account_number"] is None

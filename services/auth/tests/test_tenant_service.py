@@ -39,6 +39,7 @@ def _mock_creds(
     api_key_prefix: str | None = "PKTEST12",
     api_key_encrypted: str | None = "encrypted_key",
     is_paper: bool = True,
+    account_number: str | None = None,
 ) -> MagicMock:
     """Credential-row stand-in with the prefix/encrypted attrs set explicitly."""
     from datetime import UTC, datetime
@@ -50,6 +51,7 @@ def _mock_creds(
     creds.api_key_encrypted = api_key_encrypted
     creds.api_secret_encrypted = "encrypted_secret" if api_key_encrypted else None
     creds.is_paper = is_paper
+    creds.account_number = account_number
     creds.is_active = True
     creds.created_at = datetime.now(UTC)
     return creds
@@ -214,6 +216,33 @@ class TestCreateAlpacaCredentials:
 
         added = tenant_service.db.add.call_args[0][0]
         assert added.api_key_prefix == "PKTEST12"
+        assert added.account_number is None
+
+    async def test_create_alpaca_credentials_stores_account_number(
+        self, tenant_service: TenantService, test_tenant_id: UUID
+    ) -> None:
+        from datetime import UTC, datetime
+
+        from src.models import AlpacaCredentialsCreate
+
+        def mock_refresh(obj: Any) -> None:
+            obj.id = uuid4()
+            obj.created_at = datetime.now(UTC)
+
+        tenant_service.db.add = MagicMock()
+        tenant_service.db.refresh = AsyncMock(side_effect=mock_refresh)
+
+        data = AlpacaCredentialsCreate(
+            name="Test Keys",
+            api_key="PKTEST12345678901234",
+            api_secret="SKTEST12345678901234567890123456789012345",
+            is_paper=True,
+        )
+        await tenant_service.create_alpaca_credentials(
+            tenant_id=test_tenant_id, data=data, account_number="PA3ABCD4821"
+        )
+
+        assert tenant_service.db.add.call_args[0][0].account_number == "PA3ABCD4821"
 
 
 # === list_alpaca_credentials Tests ===
@@ -245,6 +274,7 @@ class TestListAlpacaCredentials:
             assert len(result) == 2
             assert result[0].api_key_prefix == "PKTEST12"
             assert result[1].api_key_prefix == "AKTEST98"
+            assert result[0].account_number is None
             # Full secrets should NOT be included
             assert not hasattr(result[0], "api_secret")
             assert not hasattr(result[1], "api_secret")
@@ -281,6 +311,22 @@ class TestListAlpacaCredentials:
 
             assert result[0].api_key_prefix == ""
             mock_decrypt.assert_not_called()
+
+    async def test_list_alpaca_credentials_returns_account_numbers(
+        self, tenant_service: TenantService, test_tenant_id: UUID
+    ) -> None:
+        """Paper and live keys can share a prefix; the account number tells them apart."""
+        rows = [
+            _mock_creds(name="Paper", api_key_prefix="PKDEMOSO", account_number="PA3XYZPA92"),
+            _mock_creds(
+                name="Live", api_key_prefix="AKDEMOSO", is_paper=False, account_number="674214821"
+            ),
+        ]
+        self._stub_list(tenant_service, rows)
+
+        result = await tenant_service.list_alpaca_credentials(test_tenant_id)
+
+        assert [r.account_number for r in result] == ["PA3XYZPA92", "674214821"]
 
 
 # === delete_alpaca_credentials Tests ===

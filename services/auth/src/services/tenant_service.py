@@ -112,13 +112,17 @@ class TenantService:
         )
 
     async def create_alpaca_credentials(
-        self, tenant_id: UUID, data: AlpacaCredentialsCreate
+        self,
+        tenant_id: UUID,
+        data: AlpacaCredentialsCreate,
+        account_number: str | None = None,
     ) -> AlpacaCredentialsResponse:
         """Create new encrypted Alpaca credentials.
 
         Args:
             tenant_id: Tenant to associate credentials with.
             data: Credential data including API key and secret.
+            account_number: Alpaca account number read from the broker, when known.
 
         Returns:
             Created credentials with decrypted values for immediate use.
@@ -129,6 +133,7 @@ class TenantService:
             api_key_encrypted=await async_encrypt_value(data.api_key),
             api_secret_encrypted=await async_encrypt_value(data.api_secret),
             api_key_prefix=data.api_key[:_KEY_PREFIX_LENGTH],
+            account_number=account_number,
             is_paper=data.is_paper,
             is_active=True,
         )
@@ -169,6 +174,7 @@ class TenantService:
                 id=creds.id,
                 name=creds.name,
                 api_key_prefix=await self._key_prefix(creds),
+                account_number=creds.account_number,
                 is_paper=creds.is_paper,
                 is_active=creds.is_active,
                 created_at=creds.created_at,
