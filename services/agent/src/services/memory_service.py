@@ -20,6 +20,7 @@ from llamatrade_db.models import (
     AgentSession,
     MemoryFactCategory,
     Strategy,
+    StrategyVersion,
 )
 
 logger = logging.getLogger(__name__)
@@ -399,9 +400,28 @@ class MemoryService:
         """
         # Only the acting user's own strategies — Strategy is tenant-scoped, so
         # created_by is what keeps one user's history out of another's memory.
-        stmt = select(Strategy).where(
-            Strategy.tenant_id == self.tenant_id,
-            Strategy.created_by == self.user_id,
+        # Columns are selected (not the entity) so nothing lazy-loads off the async session.
+        stmt = (
+            select(
+                Strategy.id,
+                Strategy.name,
+                Strategy.description,
+                Strategy.updated_at,
+                StrategyVersion.config_sexpr,
+                StrategyVersion.symbols,
+            )
+            .outerjoin(
+                StrategyVersion,
+                and_(
+                    StrategyVersion.strategy_id == Strategy.id,
+                    StrategyVersion.version == Strategy.current_version,
+                    StrategyVersion.tenant_id == self.tenant_id,
+                ),
+            )
+            .where(
+                Strategy.tenant_id == self.tenant_id,
+                Strategy.created_by == self.user_id,
+            )
         )
 
         if not include_drafts:
@@ -420,37 +440,21 @@ class MemoryService:
         stmt = stmt.order_by(Strategy.updated_at.desc()).limit(limit)
 
         result = await self.db.execute(stmt)
-        strategies = result.scalars().all()
 
-        # Convert to StrategyMemory objects
         memories: list[StrategyMemory] = []
-        for strategy in strategies:
-            # Extract symbols from DSL if available
-            extracted_symbols: list[str] = []
-            # Get DSL from the latest version if available
-            dsl: str | None = None
-            if strategy.versions:
-                dsl = strategy.versions[0].config_sexpr
-            if dsl:
-                # Simple regex extraction
-                import re
-
-                matches = re.findall(r"\(asset\s+([A-Z]+)", dsl)
-                extracted_symbols = list(set(matches))
-
-            # Filter by symbols if provided
-            if symbols:
-                if not any(s in extracted_symbols for s in symbols):
-                    continue
+        for strategy_id, name, description, updated_at, dsl, version_symbols in result.all():
+            strategy_symbols = [str(s) for s in (version_symbols or [])]
+            if symbols and not any(s in strategy_symbols for s in symbols):
+                continue
 
             memories.append(
                 StrategyMemory(
-                    strategy_id=strategy.id,
-                    strategy_name=strategy.name,
+                    strategy_id=strategy_id,
+                    strategy_name=name,
                     dsl_snippet=(dsl[:200] + "..." if dsl and len(dsl) > 200 else dsl),
-                    symbols=extracted_symbols[:5],
-                    discussed_at=strategy.updated_at,
-                    context=strategy.description,
+                    symbols=strategy_symbols[:5],
+                    discussed_at=updated_at,
+                    context=description,
                 )
             )
 

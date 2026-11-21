@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from uuid import UUID
 
 from src.tools.base import BaseTool, ToolContext, ToolResult
 
@@ -149,7 +150,10 @@ class GetStrategyTool(BaseTool):
             "properties": {
                 "strategy_id": {
                     "type": "string",
-                    "description": "UUID of the strategy to retrieve",
+                    "description": (
+                        "UUID of the strategy to retrieve (from list_strategies). "
+                        "An exact strategy name is also accepted."
+                    ),
                 },
             },
             "required": ["strategy_id"],
@@ -172,18 +176,36 @@ class GetStrategyTool(BaseTool):
             from src.tools.clients import STRATEGY_SERVICE_URL, tenant_headers
 
             client = StrategyServiceClient(STRATEGY_SERVICE_URL)
-
-            request = strategy_pb2.GetStrategyRequest(
-                context=common_pb2.TenantContext(
-                    tenant_id=str(context.tenant_id),
-                    user_id=str(context.user_id),
-                ),
-                strategy_id=strategy_id,
+            tenant_context = common_pb2.TenantContext(
+                tenant_id=str(context.tenant_id),
+                user_id=str(context.user_id),
             )
+            headers = tenant_headers(str(context.tenant_id), str(context.user_id))
+
+            if not _is_uuid(strategy_id):
+                matches = await client.list_strategies(
+                    strategy_pb2.ListStrategiesRequest(
+                        context=tenant_context,
+                        search=strategy_id,
+                        pagination=common_pb2.PaginationRequest(page=1, page_size=20),
+                    ),
+                    headers=headers,
+                )
+                wanted = strategy_id.strip().casefold()
+                named = [s for s in matches.strategies if s.name.strip().casefold() == wanted]
+                if len(named) != 1:
+                    return ToolResult(
+                        success=False,
+                        error=(
+                            f"No single strategy named '{strategy_id}'. "
+                            "Call list_strategies and pass the strategy's id."
+                        ),
+                    )
+                strategy_id = named[0].id
 
             response = await client.get_strategy(
-                request,
-                headers=tenant_headers(str(context.tenant_id), str(context.user_id)),
+                strategy_pb2.GetStrategyRequest(context=tenant_context, strategy_id=strategy_id),
+                headers=headers,
             )
 
             s = response.strategy
@@ -431,3 +453,11 @@ def _get_builtin_templates() -> list[dict[str, Any]]:
     (asset EEM)))""",
         },
     ]
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        UUID(value)
+    except ValueError:
+        return False
+    return True

@@ -163,6 +163,29 @@ class TestGetStrategyTool:
         assert result.success is False
         assert result.error is not None and "not found" in result.error
 
+    async def test_name_resolves_to_id_before_get(self, ctx: ToolContext) -> None:
+        """The model often passes the strategy's name; it resolves to the id."""
+        strategy = _strategy(name="Recession Radar")
+        other = _strategy(name="Recession Radar v2")
+        listing = AsyncMock(return_value=_list_response(other, strategy))
+        call = AsyncMock(return_value=strategy_pb2.GetStrategyResponse(strategy=strategy))
+        with patch(CLIENT_PATH, _client_class(list_strategies=listing, get_strategy=call)):
+            result = await GetStrategyTool().execute({"strategy_id": "recession radar"}, ctx)
+
+        assert result.success is True
+        assert listing.call_args.args[0].search == "recession radar"
+        assert call.call_args.args[0].strategy_id == strategy.id
+
+    async def test_unknown_name_fails_without_get(self, ctx: ToolContext) -> None:
+        listing = AsyncMock(return_value=_list_response(_strategy(name="Other")))
+        call = AsyncMock()
+        with patch(CLIENT_PATH, _client_class(list_strategies=listing, get_strategy=call)):
+            result = await GetStrategyTool().execute({"strategy_id": "Recession Radar"}, ctx)
+
+        assert result.success is False
+        assert result.error is not None and "list_strategies" in result.error
+        call.assert_not_awaited()
+
 
 class TestListTemplatesTool:
     """list_templates enum mapping and builtin fallback."""
