@@ -1,221 +1,191 @@
-import { num, pct } from '@llamatrade/core/format';
-import type { BacktestRun } from '@llamatrade/core/proto/backtest_pb';
-import { ExecutionMode } from '@llamatrade/core/proto/common_pb';
-import { StrategyStatus } from '@llamatrade/core/proto/strategy_pb';
+import { money, num, pct, signedMoney } from '@llamatrade/core/format';
 import { useStrategiesStore } from '@llamatrade/core/stores/strategies';
+import { useTradingStore } from '@llamatrade/core/stores/trading';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { View } from 'react-native';
 
-import { LineChart } from '../../src/charts/LineChart';
-import { timeLabels } from '../../src/charts/paths';
-import { DslBlock } from '../../src/copilot/DslBlock';
-import { makeStyles, useTheme } from '../../src/theme';
-import { Button, Card, ListRow, Loading, PanelError, Screen, StatusMark, Text, WeightStrip, pnlTone } from '../../src/ui';
-import { cadence, runStateOfStrategy } from '../../src/ui/status';
-
-/** Per-asset weights (%) from a backtest's final holdings, largest first. */
-function positionAllocations(run: BacktestRun | null | undefined): { symbol: string; weight: number }[] {
-  const positions = run?.results?.finalPositions ?? [];
-  const valued = positions
-    .map((p) => ({ symbol: p.symbol, value: num(p.marketValue) || num(p.quantity) * num(p.currentPrice) }))
-    .filter((p) => p.value > 0);
-  const total = valued.reduce((s, p) => s + p.value, 0);
-  if (total <= 0) return [];
-  return valued.map((p) => ({ symbol: p.symbol, weight: (p.value / total) * 100 })).sort((a, b) => b.weight - a.weight);
-}
-
-function Metric({ label, value, tone }: { label: string; value: string; tone?: 'gain' | 'loss' | 'fg' | 'fg3' }) {
-  const s = useStyles();
-  return (
-    <View style={s.metric}>
-      <Text variant="label" tone="fg3">{label}</Text>
-      <Text variant="numLarge" tone={tone ?? 'fg'}>{value}</Text>
-    </View>
-  );
-}
+import { AxisLabels, Curve, LineKey, MarkLane } from '../../src/backtests/charts';
+import { pointsOf } from '../../src/backtests/data';
+import { readStrategy } from '../../src/builder/sentences';
+import { SentenceView } from '../../src/builder/SentenceView';
+import { fillsOf } from '../../src/sessions/data';
+import { rebalanceDays } from '../../src/sessions/model';
+import { sessionFacts, useSameDates, useSessionsWithCurves } from '../../src/strategies/data';
+import { gapLabel, shortDate, stageLine, stageOf } from '../../src/strategies/model';
+import { ModeTag } from '../../src/strategies/parts';
+import { makeStyles } from '../../src/theme';
+import { Button, Card, ListRow, Loading, PanelError, Screen, StatusMark, Text, pnlTone, type RunState } from '../../src/ui';
+import { cadence } from '../../src/ui/status';
 
 const back = { label: 'Strategies', onPress: () => (router.canGoBack() ? router.back() : router.replace('/strategies')) };
+const thisYear = new Date().getUTCFullYear();
 
-export default function StrategyDetailScreen() {
+export default function StrategyOverviewScreen() {
   const s = useStyles();
-  const { c } = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const {
-    strategies,
-    details,
-    detailLoading,
-    deployments,
-    backtestReturns,
-    runs,
-    runLoading,
-    fetchStrategyDetail,
-    fetchStrategyRun,
-    activateStrategy,
-    pauseStrategy,
-  } = useStrategiesStore();
+  const { strategies, details, detailLoading, runs, runLoading, backtestReturns, fetchStrategyDetail, fetchStrategyRun, fetchStrategies, fetchBacktestReturns } =
+    useStrategiesStore();
+  const { rows, curves } = useSessionsWithCurves();
+  const orders = useTradingStore((st) => st.orders);
+  const positions = useTradingStore((st) => st.positions);
 
   useEffect(() => {
     if (!id) return;
     fetchStrategyDetail(id);
     fetchStrategyRun(id);
-    // Opened from Portfolio or Home: the list and deployment figures may not be loaded yet.
-    const store = useStrategiesStore.getState();
-    if (store.strategies.length === 0) store.fetchStrategies();
-    if (Object.keys(store.deployments).length === 0) store.fetchDeployments();
+    const st = useStrategiesStore.getState();
+    if (!st.strategies.length) fetchStrategies();
+    if (!Object.keys(st.backtestReturns).length) fetchBacktestReturns();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  const summary = strategies.find((x) => x.id === id);
-  const strategy = (id ? details[id] : undefined) ?? summary;
+  const strategy = (id ? details[id] : undefined) ?? strategies.find((x) => x.id === id);
+  const session = rows.find((r) => r.strategyId === id && r.state !== 'stopped') ?? null;
+  const points = session?.executionId ? curves[session.executionId] ?? [] : [];
+  const same = useSameDates(id ?? '', points, session?.startedAt ?? null, session?.version ?? null);
+  const read = useMemo(() => (strategy?.dslCode ? readStrategy(strategy.dslCode) : null), [strategy?.dslCode]);
 
-  if (!strategy) {
+  if (!strategy || !id) {
     return (
-      <Screen title="Strategy" back={back}>
-        {id && detailLoading[id] ? (
+      <Screen title="Strategy" back={back} art="bold" artSeed={`strategy-${id ?? ''}`}>
+        {id && detailLoading[id] !== false ? (
           <Loading label="Loading strategy" />
         ) : (
-          <PanelError title="Couldn't find this strategy" detail="It may have been archived or removed." onRetry={id ? () => fetchStrategyDetail(id) : undefined} />
+          <PanelError title="This strategy could not be found" detail="It may have been archived or removed." onRetry={id ? () => fetchStrategyDetail(id) : undefined} />
         )}
       </Screen>
     );
   }
 
-  const dep = deployments[strategy.id];
-  const deployed = dep !== undefined;
-  const run = id ? runs[id] : undefined;
-  const loadingRun = id ? runLoading[id] : false;
-  const loadingDsl = id ? detailLoading[id] : false;
-  const metrics = run?.results?.metrics;
+  const stage = stageOf(id, sessionFacts(rows), backtestReturns[id] !== undefined || !!runs[id]);
+  const runState: RunState = session ? session.state : stage.kind === 'stopped' ? 'stopped' : 'draft';
+  const statusLabel = session
+    ? `${session.state === 'running' ? 'Running' : session.state.charAt(0).toUpperCase() + session.state.slice(1)} in ${session.mode}`
+    : stageLine(stage, thisYear);
 
-  const btReturn = metrics ? num(metrics.totalReturn) * 100 : id ? backtestReturns[id] : undefined;
-  const returnPct = deployed ? dep.returnAll : (btReturn ?? null);
-  const sharpe = metrics ? num(metrics.sharpeRatio) : null;
-  const maxDD = metrics ? num(metrics.maxDrawdown) * 100 : null;
-  const benchReturn = metrics ? num(metrics.benchmarkReturn) * 100 : null;
+  const ready = same.status === 'ready' ? same.same : null;
+  const sessionPct = ready ? ready.session[ready.session.length - 1] * 100 : session?.returnAllPct ?? null;
+  const backtestPct = ready ? ready.backtest[ready.backtest.length - 1] * 100 : null;
+  const curveStart = ready ? ready.dates[0] : points[0]?.at ?? 0;
+  const curveEnd = ready ? ready.dates[ready.dates.length - 1] : points[points.length - 1]?.at ?? 0;
+  const fills = session ? fillsOf(orders.filter((o) => o.sessionId === session.id)) : [];
+  const marks = curveEnd > curveStart ? rebalanceDays(fills).map((d) => (d.at - curveStart) / (curveEnd - curveStart)).filter((x) => x >= 0 && x <= 1) : [];
+  const held = session
+    ? positions
+        .filter((p) => p.sessionId === session.id)
+        .map((p) => ({ symbol: p.symbol, value: num(p.marketValue) }))
+        .filter((p) => p.value > 0)
+    : [];
+  const heldTotal = held.reduce((t, p) => t + p.value, 0);
 
-  const equity = (run?.results?.equityCurve ?? []).map((p) => num(p.equity));
-  const equityTimes = (run?.results?.equityCurve ?? []).map((p) => Number(p.timestamp?.seconds ?? 0));
-  const bench = (run?.results?.benchmarkEquityCurve ?? []).map((p) => num(p.equity));
-  const benchSym = (run?.results?.benchmarkSymbol || strategy.dslCode.match(/:benchmark\s+([A-Za-z]+)/)?.[1] || 'SPY').toUpperCase();
-  const positions = positionAllocations(run);
-  const live = dep?.mode === ExecutionMode.LIVE;
+  const run = runs[id];
+  const btPoints = pointsOf(run?.results?.equityCurve);
+  const btBench = pointsOf(run?.results?.benchmarkEquityCurve);
+  const btRet = run?.results?.metrics ? num(run.results.metrics.totalReturn) * 100 : backtestReturns[id];
+  const benchSym = run?.results?.benchmarkSymbol || 'SPY';
+  const benchRet = run?.results?.metrics?.benchmarkReturn?.value ? num(run.results.metrics.benchmarkReturn) * 100 : null;
 
   return (
-    <Screen title={strategy.name} back={back} eyebrow={`Strategy · ${live ? 'Live' : 'Paper'}`}>
-      <View style={s.statusLine}>
-        <StatusMark state={runStateOfStrategy(strategy.status, dep?.status)} />
-        {strategy.templateId ? <Text variant="small" tone="fg3">From a template</Text> : null}
+    <Screen title={strategy.name} back={back} art="bold" artSeed={`strategy-${id}`}>
+      <View style={s.status}>
+        <StatusMark state={runState} label={statusLabel} />
+        {session ? <ModeTag mode={session.mode} /> : null}
       </View>
 
-      {strategy.description ? <Text variant="small" tone="fg2">{strategy.description}</Text> : null}
-
-      <Card style={s.metrics}>
-        <Metric
-          label={deployed || returnPct === null ? 'Return' : 'Backtest'}
-          value={returnPct === null ? '–' : pct(returnPct, 1)}
-          tone={returnPct === null ? 'fg3' : pnlTone(returnPct) === 'loss' ? 'loss' : 'gain'}
-        />
-        <Metric label="Sharpe" value={sharpe === null ? '–' : sharpe.toFixed(2)} tone={sharpe === null ? 'fg3' : 'fg'} />
-        <Metric
-          label="Max DD"
-          value={maxDD === null ? '–' : `−${Math.abs(maxDD).toFixed(1)}%`}
-          tone={maxDD === null ? 'fg3' : 'loss'}
-        />
-      </Card>
-
-      {equity.length > 1 ? (
-        <Card style={s.chartCard}>
-          <LineChart values={equity} benchmark={bench.length > 1 ? bench : undefined} height={140} axis xLabels={timeLabels(equityTimes)} />
-          <View style={s.legend}>
-            <View style={s.legendItem}>
-              <View style={[s.swatch, { backgroundColor: c.accent }]} />
-              <Text variant="numSmall" tone="fg2">Strategy {returnPct === null ? '' : pct(returnPct, 1)}</Text>
-            </View>
-            {bench.length > 1 ? (
-              <View style={s.legendItem}>
-                <View style={[s.swatch, { backgroundColor: c.fg3 }]} />
-                <Text variant="numSmall" tone="fg2">{benchSym} {benchReturn === null ? '' : pct(benchReturn, 1)}</Text>
-              </View>
-            ) : null}
-          </View>
-        </Card>
-      ) : loadingRun ? (
-        <Card><Loading label="Loading the latest backtest" /></Card>
-      ) : null}
-
-      <Card style={s.holdings}>
-        <Text variant="label" tone="fg3">Holdings</Text>
-        {positions.length ? (
-          <>
-            <WeightStrip weights={positions.map((p) => p.weight)} />
-            <View style={s.holdingLabels}>
-              {positions.map((p) => (
-                <Text key={p.symbol} variant="numSmall" tone="fg2">
-                  <Text variant="numSmall" tone="fg">{p.symbol}</Text> {p.weight.toFixed(1)}%
-                </Text>
-              ))}
-            </View>
-          </>
-        ) : (
-          <Text variant="small" tone="fg3">No holdings yet. Run a backtest on the web to see what it would hold.</Text>
-        )}
-      </Card>
-
-      <Card style={s.rows}>
-        <ListRow
-          label="Universe"
-          right={
-            <Text variant="numSmall" style={s.universe} numberOfLines={2}>
-              {strategy.symbols.length ? strategy.symbols.join(' ') : '–'}
+      {session ? (
+        <>
+          <View style={s.money}>
+            <Text variant="label" tone="fg3" style={s.caps}>{session.mode === 'live' ? 'LIVE SLEEVE' : 'PAPER SLEEVE'}</Text>
+            <Text variant="hero">{session.value === null ? '–' : money(session.value, 2)}</Text>
+            <Text variant="numSmall" tone="fg3">
+              {session.today !== null ? <Text variant="numSmall" tone={pnlTone(session.today)}>{signedMoney(session.today, 2)} today  </Text> : null}
+              {sessionPct !== null ? <Text variant="numSmall" tone={pnlTone(sessionPct)}>{pct(sessionPct, 1)}</Text> : null}
+              {session.startedAt ? ` since ${shortDate(session.startedAt, thisYear)}` : ''}
             </Text>
-          }
-        />
-        <ListRow label="Rebalance" value={cadence(strategy.rebalance) || '–'} />
-        <ListRow label="Benchmark" right={<Text variant="numSmall">{benchSym}</Text>} />
-        <ListRow label="Version" right={<Text variant="numSmall">{String(strategy.version)}</Text>} last />
-      </Card>
-
-      <View style={s.definition}>
-        <Text variant="label" tone="fg3">Definition</Text>
-        {strategy.dslCode ? (
-          <DslBlock code={strategy.dslCode} />
-        ) : loadingDsl ? (
-          <Card><Loading label="Loading the definition" /></Card>
-        ) : (
-          <PanelError
-            title="Couldn't load the definition"
-            detail="The strategy service didn't respond."
-            onRetry={id ? () => fetchStrategyDetail(id) : undefined}
+          </View>
+          {points.length > 1 ? (
+            <Card style={s.bt}>
+              <Curve values={ready ? ready.sessionValues : points.map((p) => p.value)} benchmark={ready?.backtestScaled} height={150} dot />
+              {marks.length ? <MarkLane label="Rebalances" marks={marks} /> : null}
+            </Card>
+          ) : (
+            <Text variant="small" tone="fg3">The curve appears after the session's first close.</Text>
+          )}
+          <LineKey
+            main={session.mode === 'live' ? 'Live' : 'Paper'}
+            dashed={backtestPct !== null && sessionPct !== null ? `Backtest, same dates ${pct(backtestPct, 1)} (${gapLabel(sessionPct, backtestPct)})` : undefined}
           />
-        )}
-      </View>
+          {same.status === 'none' ? <Text variant="caption" tone="fg3">No completed backtest covers these dates yet, so there's no dashed line.</Text> : null}
 
-      {strategy.status === StrategyStatus.ACTIVE ? (
-        <Button label="Pause strategy" variant="secondary" onPress={() => pauseStrategy(strategy.id)} />
-      ) : strategy.status === StrategyStatus.PAUSED ? (
-        <Button label="Resume strategy" onPress={() => activateStrategy(strategy.id)} />
+          <Card style={s.group}>
+            <ListRow label="Rebalance" value={cadence(strategy.rebalance) || '–'} />
+            <ListRow
+              label="Holds"
+              sub={held.length ? 'Positions now, %' : 'No positions yet'}
+              right={
+                <Text variant="numSmall" style={s.holds} numberOfLines={2}>
+                  {held.map((p) => `${p.symbol} ${((p.value / heldTotal) * 100).toFixed(1)}`).join(' · ')}
+                </Text>
+              }
+            />
+            <ListRow
+              label={`Version ${session.version ?? strategy.version}`}
+              sub={session.version !== null && session.version !== strategy.version ? `Version ${strategy.version} is saved but not running` : 'The version this session runs'}
+              onPress={() => router.push(`/builder/${id}`)}
+              last
+            />
+          </Card>
+        </>
+      ) : (
+        <>
+          {btPoints.length > 1 ? (
+            <Card style={s.bt}>
+              <View style={s.line}>
+                <Text variant="small" tone="fg3">Latest backtest</Text>
+                {btRet !== undefined ? <Text variant="numStrong" tone={pnlTone(btRet)}>{pct(btRet, 1)}</Text> : null}
+              </View>
+              <Curve values={btPoints.map((p) => p.value)} benchmark={btBench.length > 1 ? btBench.map((p) => p.value) : undefined} height={120} />
+              <AxisLabels labels={[shortDate(btPoints[0].at, 0), shortDate(btPoints[btPoints.length - 1].at, 0)]} />
+              <LineKey main={`Backtest v${run?.strategyVersion ?? strategy.version}`} dashed={benchRet !== null ? `${benchSym} ${pct(benchRet, 1)}` : benchSym} />
+              {stage.kind === 'neverRun' ? <Text variant="caption" tone="fg3">Backtested, never run on paper or live.</Text> : null}
+            </Card>
+          ) : runLoading[id] ? (
+            <Loading label="Loading the latest backtest" />
+          ) : (
+            <Text variant="small" tone="fg3">No completed backtest yet.</Text>
+          )}
+          <Button label="Start on paper" onPress={() => router.push(`/sessions/start?strategy=${id}`)} />
+        </>
+      )}
+
+      {read ? (
+        <View style={s.rules}>
+          <View style={s.line}>
+            <Text variant="subhead">Rules</Text>
+            <Text variant="small" tone="accent" onPress={() => router.push(`/builder/${id}`)}>Edit</Text>
+          </View>
+          <Card>
+            <SentenceView sentences={read.sentences} onPick={() => router.push(`/builder/${id}`)} />
+          </Card>
+        </View>
       ) : null}
 
-      <Text variant="caption" tone="fg3" style={s.footnote}>
-        Edit the strategy and run backtests in the web builder.
-      </Text>
+      <Card style={s.group}>
+        <ListRow label="Backtest this strategy" onPress={() => router.push(`/backtests/new?strategy=${id}`)} />
+        <ListRow label="All backtests" onPress={() => router.push('/backtests')} last />
+      </Card>
     </Screen>
   );
 }
 
 const useStyles = makeStyles(() => ({
-  statusLine: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: -6 },
-  metrics: { flexDirection: 'row', gap: 8 },
-  metric: { flex: 1, gap: 4 },
-  chartCard: { paddingHorizontal: 12, gap: 10 },
-  legend: { flexDirection: 'row', gap: 16 },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  swatch: { width: 12, height: 2, borderRadius: 1 },
-  holdings: { gap: 10 },
-  holdingLabels: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 14, rowGap: 4 },
-  rows: { paddingVertical: 2 },
-  universe: { flexShrink: 1, textAlign: 'right', maxWidth: '65%' },
-  definition: { gap: 8 },
-  footnote: { textAlign: 'center' },
+  status: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: -6 },
+  money: { gap: 2 },
+  caps: { letterSpacing: 0.6, fontSize: 11 },
+  group: { paddingVertical: 2 },
+  holds: { flexShrink: 1, textAlign: 'right', maxWidth: '55%' },
+  bt: { gap: 8 },
+  line: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  rules: { gap: 8 },
 }));

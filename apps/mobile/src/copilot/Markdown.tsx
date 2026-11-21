@@ -11,18 +11,39 @@ interface Palette {
   rule: string;
   fenceBg: string;
   fenceBorder: string;
+  citeBg: string;
 }
 
 function paletteFor(c: Colors): Palette {
-  return { text: c.fg, dim: c.fg3, codeBg: c.sunk, link: c.accent, rule: c.line, fenceBg: c.sunk, fenceBorder: c.line };
+  return { text: c.fg, dim: c.fg3, codeBg: c.sunk, link: c.accent, rule: c.line, fenceBg: c.sunk, fenceBorder: c.line, citeBg: c.accentSoft };
 }
 
-const INLINE = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g;
+const INLINE = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\([^)]+\)|\[\d{1,2}(?:\s*,\s*\d{1,2})*\](?!\())/g;
+const CITE = /^\[(\d{1,2}(?:\s*,\s*\d{1,2})*)\]$/;
+
+type OnCite = (n: number) => void;
 
 /** Inline spans (bold / italic / code chip / link) for one line, as <Text> children. */
-function inline(content: string, p: Palette, keyBase: string): ReactNode[] {
+function inline(content: string, p: Palette, keyBase: string, onCite?: OnCite): ReactNode[] {
   return content.split(INLINE).map((seg, i) => {
     const key = `${keyBase}-${i}`;
+    const cite = seg.match(CITE);
+    if (cite) {
+      return cite[1].split(',').map((raw, j) => {
+        const n = Number(raw.trim());
+        return (
+          <Text
+            key={`${key}-${j}`}
+            accessibilityRole="button"
+            accessibilityLabel={`Source ${n}`}
+            onPress={onCite ? () => onCite(n) : undefined}
+            style={{ fontFamily: fonts.monoMedium, fontSize: 11, color: p.link, backgroundColor: p.citeBg }}
+          >
+            {` ${n} `}
+          </Text>
+        );
+      });
+    }
     if (seg.startsWith('**') && seg.endsWith('**')) {
       return (
         <Text key={key} style={{ fontFamily: fonts.semibold }}>
@@ -76,8 +97,8 @@ function Fence({ code, language, p }: { code: string; language: string; p: Palet
 
 const HEADER_SIZE: Record<number, number> = { 1: 19, 2: 17, 3: 15, 4: 14, 5: 13, 6: 12 };
 
-/** Markdown for Copilot messages: paragraphs, headings, lists, rules, inline code and links. */
-export function Markdown({ content, size = 14 }: { content: string; size?: number }) {
+/** Markdown for Copilot messages: paragraphs, headings, lists, rules, inline code, links and citation markers. */
+export function Markdown({ content, size = 14, onCite }: { content: string; size?: number; onCite?: OnCite }) {
   const { c } = useTheme();
   const p = paletteFor(c);
   const base = { fontFamily: fonts.sans, fontSize: size, lineHeight: size * 1.5, color: p.text } as const;
@@ -108,7 +129,7 @@ export function Markdown({ content, size = 14 }: { content: string; size?: numbe
           {cur.items.map((it, i) => (
             <View key={i} style={{ flexDirection: 'row', gap: 7 }}>
               <Text style={[base, { color: p.dim }]}>{cur.ordered ? `${i + 1}.` : '•'}</Text>
-              <Text style={[base, { flex: 1 }]}>{inline(it, p, `li-${pi}-${lk}-${i}`)}</Text>
+              <Text style={[base, { flex: 1 }]}>{inline(it, p, `li-${pi}-${lk}-${i}`, onCite)}</Text>
             </View>
           ))}
         </View>,
@@ -128,7 +149,7 @@ export function Markdown({ content, size = 14 }: { content: string; size?: numbe
         const lvl = h[1].length;
         blocks.push(
           <Text key={`h-${pi}-${li}`} style={[base, { fontFamily: fonts.semibold, fontSize: HEADER_SIZE[lvl], lineHeight: HEADER_SIZE[lvl] * 1.3, marginTop: 8, marginBottom: 3 }]}>
-            {inline(h[2], p, `h-${pi}-${li}`)}
+            {inline(h[2], p, `h-${pi}-${li}`, onCite)}
           </Text>,
         );
         return;
@@ -159,7 +180,7 @@ export function Markdown({ content, size = 14 }: { content: string; size?: numbe
       flush();
       blocks.push(
         <Text key={`p-${pi}-${li}`} style={[base, { marginVertical: 3 }]}>
-          {inline(line, p, `p-${pi}-${li}`)}
+          {inline(line, p, `p-${pi}-${li}`, onCite)}
         </Text>,
       );
     });

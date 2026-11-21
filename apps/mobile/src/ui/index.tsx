@@ -7,8 +7,9 @@ import { Text } from './Text';
 
 export { Button } from './Button';
 export { Field } from './Field';
-export { Logo, LogoMark } from './Logo';
-export { BackButton, Screen, ScreenHeader, type BackLink } from './Screen';
+export { artHeight, CandleBackdrop, type ArtIntensity } from './CandleBackdrop';
+export { BrandLockup, CopilotMark, Logo, LogoMark } from './Logo';
+export { BackButton, Canvas, Screen, ScreenHeader, useScreenScroll, type BackLink } from './Screen';
 export { Segmented, type Segment } from './Segmented';
 export { pnlTone, Text, type TextTone, type TextVariant } from './Text';
 

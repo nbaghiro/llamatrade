@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  artFor,
   DARK_ACCENTS,
   DEFAULT_APPEARANCE,
   LIGHT_ACCENTS,
@@ -94,7 +95,7 @@ describe('colorsFor', () => {
     assert.equal(c.accentFill, '#475f8a');
     assert.equal(c.accentInk, '#ffffff');
     assert.equal(c.accentSoft, 'rgba(143,164,207,0.16)');
-    assert.equal(c.gain, '#3fbf7a');
+    assert.equal(c.gain, '#79b394');
     assert.equal(c.risk, '#f0a63a');
   });
 
@@ -106,7 +107,7 @@ describe('colorsFor', () => {
     assert.equal(c.accentFill, '#475f8a');
     assert.equal(c.accentInk, '#ffffff');
     assert.equal(c.accentSoft, '#edeff3');
-    assert.equal(c.loss, '#b3261e');
+    assert.equal(c.loss, '#a5544d');
     assert.equal(c.risk, '#8a5a00');
   });
 
@@ -149,5 +150,16 @@ describe('colour helpers', () => {
     assert.equal(mixWithWhite('#000000', 0.1), '#e6e6e6');
     assert.equal(mixWithWhite('#ffffff', 0.5), '#ffffff');
     assert.equal(mixWithWhite('#475f8a', 1), '#475f8a');
+  });
+});
+
+describe('artFor', () => {
+  it('keeps the art fainter in light than in dark, in the accent', () => {
+    const dark = artFor({ accent: '#8fa4cf' }, 'dark');
+    const light = artFor({ accent: '#1d4e89' }, 'light');
+    assert.equal(dark.color, '#8fa4cf');
+    assert.equal(light.color, '#1d4e89');
+    assert.ok(light.opacity < dark.opacity);
+    assert.ok(dark.opacity <= 0.25 && dark.glowOpacity <= 0.2);
   });
 });

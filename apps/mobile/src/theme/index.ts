@@ -3,9 +3,11 @@ import { useShallow } from 'zustand/react/shallow';
 
 import { useAppearanceStore } from '../stores/appearance';
 import {
+  artFor,
   colorsFor,
   resolveMode,
   type AppearancePrefs,
+  type ArtTokens,
   type Colors,
   type ThemeMode,
 } from './palette';
@@ -38,6 +40,7 @@ export const space = { gutter: 20, gap: 14 } as const;
 export interface Theme {
   mode: ThemeMode;
   c: Colors;
+  art: ArtTokens;
   shadow: { sm: ViewStyle; md: ViewStyle; lg: ViewStyle };
 }
 
@@ -73,7 +76,8 @@ export function themeFor(prefs: AppearancePrefs, mode: ThemeMode): Theme {
   const key = `${mode}:${prefs.darkSurface}:${prefs.lightSurface}:${prefs.darkAccent}:${prefs.lightAccent}`;
   let theme = themeCache.get(key);
   if (!theme) {
-    theme = { mode, c: colorsFor(prefs, mode), shadow: shadows(mode) };
+    const c = colorsFor(prefs, mode);
+    theme = { mode, c, art: artFor(c, mode), shadow: shadows(mode) };
     themeCache.set(key, theme);
   }
   return theme;

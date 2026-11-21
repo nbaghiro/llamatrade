@@ -5,6 +5,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { CopilotSheet } from '../src/copilot/CopilotSheet';
 import '../src/net/clients'; // side-effect: configure() the shared @llamatrade/core clients at startup
 import { useAppearanceStore } from '../src/stores/appearance';
 import { isTokenExpired, useAuthStore } from '../src/stores/auth';
@@ -37,7 +38,8 @@ function useAuthRedirect(ready: boolean) {
     }
 
     const onAuthScreen = segments[0] === 'login' || segments[0] === 'register';
-    if (!isAuthenticated && !onAuthScreen) {
+    const onResetScreen = segments[0] === 'account' && segments[1] === 'reset';
+    if (!isAuthenticated && !onAuthScreen && !onResetScreen) {
       router.replace('/login');
     } else if (isAuthenticated && onAuthScreen) {
       router.replace('/(tabs)');
@@ -77,10 +79,14 @@ export default function RootLayout() {
         <Stack.Screen name="register" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="strategy/[id]" />
+        <Stack.Screen name="portfolio/index" />
+        <Stack.Screen name="account/index" />
+        <Stack.Screen name="notifications" />
         <Stack.Screen name="account/connect-broker" />
         <Stack.Screen name="account/plans" />
         <Stack.Screen name="spike" options={{ presentation: 'modal' }} />
       </Stack>
+      <CopilotSheet />
     </SafeAreaProvider>
   );
 }

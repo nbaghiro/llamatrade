@@ -1,66 +1,52 @@
 import { Pressable, View } from 'react-native';
 
 import { useAppearanceStore } from '../stores/appearance';
-import { accentsFor, makeStyles, useTheme, type ModePreference } from '../theme';
+import { accentsFor, makeStyles, type ModePreference, type ThemeMode } from '../theme';
 import { Segmented, type Segment } from './Segmented';
 import { Text } from './Text';
 
-const MODES: readonly Segment<ModePreference>[] = [
-  { key: 'system', label: 'System' },
+export const MODE_OPTIONS: readonly Segment<ModePreference>[] = [
   { key: 'light', label: 'Light' },
   { key: 'dark', label: 'Dark' },
+  { key: 'system', label: 'System' },
 ];
 
-/** Mode, surface and accent, as in the web app's Settings, Appearance. */
-export function AppearancePicker() {
-  const { mode: shown } = useTheme();
-  const s = useStyles();
+/** Light, Dark or System for the whole app. */
+export function ModePicker() {
   const mode = useAppearanceStore((st) => st.mode);
+  const setMode = useAppearanceStore((st) => st.setMode);
+  return <Segmented options={MODE_OPTIONS} value={mode} onChange={setMode} fill />;
+}
+
+/** The surface and accent for one mode, so each pair is chosen where it will be used. */
+export function AppearancePicker({ editing }: { editing: ThemeMode }) {
+  const s = useStyles();
   const darkSurface = useAppearanceStore((st) => st.darkSurface);
   const lightSurface = useAppearanceStore((st) => st.lightSurface);
-  const accentKey = useAppearanceStore((st) => (shown === 'dark' ? st.darkAccent : st.lightAccent));
-  const setMode = useAppearanceStore((st) => st.setMode);
+  const accentKey = useAppearanceStore((st) => (editing === 'dark' ? st.darkAccent : st.lightAccent));
   const setDarkSurface = useAppearanceStore((st) => st.setDarkSurface);
   const setLightSurface = useAppearanceStore((st) => st.setLightSurface);
   const setAccent = useAppearanceStore((st) => st.setAccent);
+  const accents = accentsFor(editing);
+  const current = accents.find((a) => a.key === accentKey);
 
   return (
     <View style={s.wrap}>
       <View style={s.row}>
-        <Text variant="smallStrong">Mode</Text>
-        <Segmented options={MODES} value={mode} onChange={setMode} />
-        {mode === 'system' ? (
-          <Text variant="caption" tone="fg3">Follows your device, which is {shown} right now.</Text>
-        ) : null}
-      </View>
-
-      <View style={s.row}>
-        <Text variant="smallStrong">{shown === 'dark' ? 'Dark surface' : 'Light surface'}</Text>
-        {shown === 'dark' ? (
-          <Segmented
-            options={[
-              { key: 'black', label: 'Black' },
-              { key: 'slate', label: 'Slate' },
-            ]}
-            value={darkSurface}
-            onChange={setDarkSurface}
-          />
+        <Text variant="label" tone="fg3">{editing === 'dark' ? 'Dark surface' : 'Light surface'}</Text>
+        {editing === 'dark' ? (
+          <Segmented options={[{ key: 'black', label: 'Black' }, { key: 'slate', label: 'Slate' }]} value={darkSurface} onChange={setDarkSurface} fill />
         ) : (
-          <Segmented
-            options={[
-              { key: 'white', label: 'White' },
-              { key: 'warm', label: 'Warm' },
-            ]}
-            value={lightSurface}
-            onChange={setLightSurface}
-          />
+          <Segmented options={[{ key: 'white', label: 'White' }, { key: 'warm', label: 'Warm' }]} value={lightSurface} onChange={setLightSurface} fill />
         )}
       </View>
 
       <View style={s.row}>
-        <Text variant="smallStrong">Accent</Text>
+        <Text variant="label" tone="fg3">
+          Accent in {editing}{current ? ` · ${current.label}` : ''}
+        </Text>
         <View accessibilityRole="radiogroup" style={s.swatches}>
-          {accentsFor(shown).map((a) => {
+          {accents.map((a) => {
             const on = a.key === accentKey;
             return (
               <Pressable
@@ -68,7 +54,7 @@ export function AppearancePicker() {
                 accessibilityRole="radio"
                 accessibilityLabel={a.label}
                 accessibilityState={{ checked: on }}
-                onPress={() => setAccent(shown, a.key)}
+                onPress={() => setAccent(editing, a.key)}
                 hitSlop={4}
                 style={[s.ring, on ? s.ringOn : null]}
               >
@@ -77,7 +63,7 @@ export function AppearancePicker() {
             );
           })}
         </View>
-        <Text variant="caption" tone="fg3">Used for actions and selection in {shown} mode.</Text>
+        <Text variant="caption" tone="fg3">Used for charts, the background art, actions and selection.</Text>
       </View>
     </View>
   );
@@ -87,7 +73,7 @@ const useStyles = makeStyles((t) => ({
   wrap: { gap: 18 },
   row: { gap: 8 },
   swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  ring: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: 'transparent' },
+  ring: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: 'transparent' },
   ringOn: { borderColor: t.c.fg2 },
-  swatch: { width: 24, height: 24, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(127,127,127,0.35)' },
+  swatch: { width: 26, height: 26, borderRadius: 13, borderWidth: 1, borderColor: 'rgba(127,127,127,0.35)' },
 }));

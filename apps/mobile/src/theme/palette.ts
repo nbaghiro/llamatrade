@@ -118,9 +118,10 @@ const LIGHT_SURFACES: Record<LightSurface, Surface> = {
   },
 };
 
+/** The calm, desaturated gain/loss pair the web uses (tokens.css --gain/--loss). */
 const DARK_STATUS = {
-  gain: '#3fbf7a',
-  loss: '#f2555a',
+  gain: '#79b394',
+  loss: '#d48b84',
   risk: '#f0a63a',
   riskSoft: 'rgba(240,166,58,0.1)',
   riskLine: 'rgba(240,166,58,0.45)',
@@ -128,8 +129,8 @@ const DARK_STATUS = {
 } as const;
 
 const LIGHT_STATUS = {
-  gain: '#17703f',
-  loss: '#b3261e',
+  gain: '#3f7a5c',
+  loss: '#a5544d',
   risk: '#8a5a00',
   riskSoft: '#fbf3e2',
   riskLine: '#e7cf9d',
@@ -307,4 +308,19 @@ export function colorsFor(prefs: AppearancePrefs, mode: ThemeMode): Colors {
         ...LIGHT_STATUS,
         ...lightAccentColors(prefs.lightAccent),
       };
+}
+
+/** Background candle art: drawn in the accent, faint, with a soft glow from one side. */
+export interface ArtTokens {
+  color: string;
+  /** Candle opacity at full intensity. */
+  opacity: number;
+  glow: string;
+  glowOpacity: number;
+}
+
+export function artFor(colors: Pick<Colors, 'accent'>, mode: ThemeMode): ArtTokens {
+  return mode === 'dark'
+    ? { color: colors.accent, opacity: 0.24, glow: colors.accent, glowOpacity: 0.2 }
+    : { color: colors.accent, opacity: 0.17, glow: colors.accent, glowOpacity: 0.12 };
 }

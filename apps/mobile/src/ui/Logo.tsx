@@ -1,7 +1,7 @@
 import { View } from 'react-native';
 import Svg, { Path, Rect } from 'react-native-svg';
 
-import { makeStyles, radius, useTheme } from '../theme';
+import { fonts, makeStyles, radius, useTheme } from '../theme';
 import { Text } from './Text';
 
 const BODY: ReadonlyArray<readonly [number, number, number, number]> = [
@@ -14,21 +14,56 @@ const BODY: ReadonlyArray<readonly [number, number, number, number]> = [
 ];
 
 /** The Candlesticks mark: a llama drawn as a run of candles, the first one in the accent. */
-export function LogoMark({ size = 22 }: { size?: number }) {
+export function LogoMark({ size = 22, bold = false, color }: { size?: number; bold?: boolean; color?: string }) {
   const { c } = useTheme();
+  const ink = color ?? c.fg;
+  const scale = bold ? 1.1 : 1;
   return (
     <Svg width={size} height={size} viewBox="0 0 32 32" fill="none">
       <Path
         d="M8 2v20M12.4 13v16.5M25.6 13v16.5M16.8 12.5v10M21.2 13v9"
-        stroke={c.fg}
-        strokeWidth={1.1}
+        stroke={ink}
+        strokeWidth={bold ? 1.4 : 1.1}
         strokeLinecap="round"
       />
-      <Rect x={2} y={7} width={3.2} height={4} rx={0.5} fill={c.accent} />
+      <Rect x={2 - (3.2 * scale - 3.2) / 2} y={7} width={3.2 * scale} height={4} rx={0.5} fill={c.accent} />
       {BODY.map(([x, y, w, h]) => (
-        <Rect key={x} x={x} y={y} width={w} height={h} rx={0.5} fill={c.fg} />
+        <Rect key={x} x={x - (w * scale - w) / 2} y={y} width={w * scale} height={h} rx={0.5} fill={ink} />
       ))}
     </Svg>
+  );
+}
+
+/**
+ * Copilot's mark, the Wick Asterisk: one candle whose wick splits into three strokes, with the
+ * body in the accent at its centre.
+ */
+export function CopilotMark({ size = 22, bold = false, color }: { size?: number; bold?: boolean; color?: string }) {
+  const { c } = useTheme();
+  const w = bold ? 5.3 : 4.8;
+  return (
+    <Svg width={size} height={size} viewBox="0 0 32 32" fill="none">
+      <Path
+        d="M16 3.5V28.5M5.2 9.75L26.8 22.25M5.2 22.25L26.8 9.75"
+        stroke={color ?? c.fg}
+        strokeWidth={bold ? 1.9 : 1.7}
+        strokeLinecap="round"
+      />
+      <Rect x={16 - w / 2} y={10} width={w} height={12} rx={0.6} fill={c.accent} />
+    </Svg>
+  );
+}
+
+/** The brand as in the web top bar: the 34pt Candlesticks mark with the caps wordmark. */
+export function BrandLockup({ size = 34 }: { size?: number }) {
+  const s = useStyles();
+  return (
+    <View style={s.lockup}>
+      <LogoMark size={size} bold />
+      <Text variant="label" style={s.word}>
+        LLAMATRADE
+      </Text>
+    </View>
   );
 }
 
@@ -51,6 +86,8 @@ export function Logo({ size = 40, showText = false }: { size?: number; showText?
 
 const useStyles = makeStyles((t) => ({
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  lockup: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  word: { fontFamily: fonts.semibold, fontSize: 12, lineHeight: 14, letterSpacing: 1.9 },
   tile: {
     alignItems: 'center',
     justifyContent: 'center',

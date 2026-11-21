@@ -1,166 +1,291 @@
-import { money, num, pct, signedMoney, timeAgo, toDate } from '@llamatrade/core/format';
-import { ExecutionStatus } from '@llamatrade/core/proto/common_pb';
-import { MarketStatus } from '@llamatrade/core/proto/market_data_pb';
-import { TransactionType, type Transaction } from '@llamatrade/core/proto/portfolio_pb';
+import { money } from '@llamatrade/core/format';
 import { router } from 'expo-router';
-import { useEffect } from 'react';
-import { View } from 'react-native';
+import { useMemo, useRef, useState } from 'react';
+import { Animated, RefreshControl, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { LineChart } from '../../src/charts/LineChart';
-import { timeLabels } from '../../src/charts/paths';
-import { usePortfolioStore } from '../../src/stores/portfolio';
-import { makeStyles, radius } from '../../src/theme';
-import { Button, Card, Loading, Notice, PanelError, Screen, StatusMark, Text, pnlTone, type RunState } from '../../src/ui';
+import { AnnotatedCurve } from '../../src/charts/AnnotatedCurve';
+import { Lanes } from '../../src/charts/Lanes';
+import { useHomeData } from '../../src/home/data';
+import { DaySheet, type DaySheetSubject } from '../../src/home/DaySheet';
+import { toChartLanes } from '../../src/home/laneView';
+import {
+  accountSplit,
+  attentionItems,
+  blendEquity,
+  closedRecap,
+  displayName,
+  fillsOn,
+  homeMode,
+  periodStart,
+  PERIODS,
+  plannedRebalances,
+  sessionLanes,
+  sessionRows,
+  timeline,
+  type Attention,
+  type Period,
+  type Point,
+  type SessionRow,
+} from '../../src/home/model';
+import { OfflineStrip } from '../../src/home/OfflineStrip';
+import {
+  AttentionTray,
+  DayChange,
+  HomeTopRow,
+  SearchButton,
+  SectionHead,
+  SessionsByAccount,
+  SplitBlock,
+  TimelineCard,
+  type ChartFilter,
+} from '../../src/home/parts';
+import { ClosedRecap, FirstVisit } from '../../src/home/states';
+import { dayLabel, hm } from '../../src/home/when';
+import { HeaderActions } from '../../src/shell/HeaderActions';
+import { useAuthStore } from '../../src/stores/auth';
+import { makeStyles, space, useTheme } from '../../src/theme';
+import { Canvas, Card, Loading, Notice, PanelError, Segmented, Text } from '../../src/ui';
 
-function marketState(status: MarketStatus | null): { state: RunState; label: string } | null {
-  switch (status) {
-    case MarketStatus.OPEN:
-      return { state: 'running', label: 'Market open' };
-    case MarketStatus.PRE_MARKET:
-      return { state: 'stopped', label: 'Pre-market' };
-    case MarketStatus.AFTER_HOURS:
-      return { state: 'stopped', label: 'After hours' };
-    case MarketStatus.CLOSED:
-      return { state: 'stopped', label: 'Market closed' };
-    default:
-      return null;
-  }
-}
+const LABEL_W = 28;
+const DAY = 86_400_000;
 
-const TXN_TAG: Partial<Record<TransactionType, string>> = {
-  [TransactionType.BUY]: 'BUY',
-  [TransactionType.SELL]: 'SELL',
-  [TransactionType.DIVIDEND]: 'DIV',
-  [TransactionType.DEPOSIT]: 'DEP',
-  [TransactionType.WITHDRAWAL]: 'WD',
-  [TransactionType.FEE]: 'FEE',
-  [TransactionType.INTEREST]: 'INT',
-};
-
-function txnRow(t: Transaction): { tag: string; title: string; when: string } {
-  const tag = TXN_TAG[t.type] ?? 'TXN';
-  const shares = num(t.quantity);
-  const trade = (t.type === TransactionType.BUY || t.type === TransactionType.SELL) && shares;
-  const title = trade
-    ? `${shares} ${t.symbol} at ${money(t.price, 2)}`
-    : t.description || `${money(t.amount, 2)}${t.symbol ? ` · ${t.symbol}` : ''}`;
-  return { tag, title, when: timeAgo(toDate(t.timestamp)) };
-}
-
+/** Home (home/phone B list first, with layout2 A's curve and lanes, hero B, sessions D, activity B, attention2 C). */
 export default function HomeScreen() {
+  const { c } = useTheme();
   const s = useStyles();
-  const {
-    portfolio,
-    strategies,
-    equityCurve,
-    equityTimes,
-    benchmarkCurve,
-    transactions,
-    marketStatus,
-    loading,
-    refreshing,
-    loaded,
-    error,
-    fetch,
-  } = usePortfolioStore();
+  const insets = useSafeAreaInsets();
+  const d = useHomeData();
+  const user = useAuthStore((st) => st.user);
+  const [filter, setFilter] = useState<ChartFilter>('both');
+  const [period, setPeriod] = useState<Period>('3M');
+  const [sheet, setSheet] = useState<DaySheetSubject | null>(null);
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const onScroll = useMemo(
+    () => Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true }),
+    [scrollY],
+  );
 
-  useEffect(() => {
-    fetch();
-  }, [fetch]);
+  const rows = useMemo(() => sessionRows(d.sessions), [d.sessions]);
+  const split = useMemo(() => accountSplit(d.sessions, d.paperCash, d.liveCash), [d.sessions, d.paperCash, d.liveCash]);
+  const planned = useMemo(() => plannedRebalances(d.sessions, d.fills, d.now), [d.sessions, d.fills, d.now]);
+  const entries = useMemo(() => timeline(d.fills, planned, d.sessions, d.now), [d.fills, planned, d.sessions, d.now]);
+  const attention = useMemo(() => attentionItems(d.frozen, d.rejected), [d.frozen, d.rejected]);
+  const mode = homeMode({ loaded: d.loaded, strategyCount: d.strategyCount, sessionCount: d.sessions.length, marketOpen: d.marketOpen });
 
-  const market = marketState(marketStatus);
-  const failing = strategies.filter((x) => x.status === ExecutionStatus.ERROR);
-  const day = num(portfolio?.dayReturn);
+  const shown = useMemo(
+    () => d.sessions.filter((x) => filter === 'both' || x.mode === filter),
+    [d.sessions, filter],
+  );
+  const curve = useMemo(() => blendEquity(shown.map((x) => x.equity), shown.map((x) => x.allocated)), [shown]);
+  const from = useMemo(() => {
+    const p = periodStart(period, d.now);
+    const first = curve[0]?.t ?? d.now - 30 * DAY;
+    return p === null ? first : Math.max(p, first);
+  }, [period, d.now, curve]);
+  const until = d.now + 14 * DAY;
+  const bench = useMemo(() => rebasedBenchmark(d.benchmark, curve, from), [d.benchmark, curve, from]);
+
+  const lanesIn = useMemo(
+    () => sessionLanes(shown, d.fills, planned.filter((p) => shown.some((x) => x.id === p.sessionId))),
+    [shown, d.fills, planned],
+  );
+  const lanes = toChartLanes(lanesIn);
+
+  const nextFor = (r: SessionRow): string | null => {
+    const p = planned.find((x) => x.sessionId === r.id);
+    if (!p) return null;
+    const label = dayLabel(p.day, d.now);
+    return label === 'Today' ? 'today' : label;
+  };
+
+  const openSession = (r: { sessionId: string | null; strategyId: string }) => {
+    if (r.sessionId) router.push({ pathname: '/sessions/[id]', params: { id: r.sessionId } });
+    else router.push({ pathname: '/strategy/[id]', params: { id: r.strategyId } });
+  };
+  const openById = (executionId: string) => {
+    const x = d.sessions.find((y) => y.id === executionId);
+    if (x) openSession(x);
+  };
+  const owner = (f: { sessionId: string; strategyId: string }) => {
+    const x = d.sessions.find((y) => (y.sessionId ? y.sessionId === f.sessionId : y.strategyId === f.strategyId));
+    return { name: x ? displayName(x.name) : '', mode: x?.mode ?? null };
+  };
+  const openDay = (day: number, executionId: string | null) => {
+    const x = executionId ? d.sessions.find((y) => y.id === executionId) : undefined;
+    setSheet({
+      day,
+      session: x ? { name: displayName(x.name), sessionId: x.sessionId, mode: x.mode } : null,
+      fills: fillsOn(d.fills, day, x),
+      owner,
+    });
+  };
+  const review = (a: Attention) => {
+    if (a.kind === 'frozen') openById(a.executionId);
+    else router.push({ pathname: '/sessions/order/[id]', params: { id: a.orderId } });
+  };
+
+  const compactOpacity = scrollY.interpolate({ inputRange: [90, 140], outputRange: [0, 1], extrapolate: 'clamp' });
+  const firstName = user?.firstName || null;
+  const closed = mode === 'closed';
 
   return (
-    <Screen refreshing={refreshing} onRefresh={() => fetch({ refresh: true })}>
-      <View style={s.top}>
-        <Text variant="label" tone="fg3">Today · Paper</Text>
-        {market ? <StatusMark state={market.state} label={market.label} /> : null}
-      </View>
-      {loading && !loaded ? (
-        <Loading label="Loading your account" />
-      ) : error && !portfolio ? (
-        <PanelError title="Couldn't load your account" detail={error} onRetry={() => fetch()} />
-      ) : portfolio ? (
-        <>
-          {error ? <Notice title="Couldn't refresh." detail={`${error} Pull down to try again.`} /> : null}
-          {failing.length ? (
-            <Notice
-              title={failing.length === 1 ? `${failing[0].strategyName} stopped with an error.` : `${failing.length} sessions stopped with an error.`}
-              detail="Open Portfolio to see which."
-              onPress={() => router.push('/portfolio')}
-            />
-          ) : null}
+    <Canvas art="bold" artSeed="home-ordinary-day" scrollY={scrollY}>
+      <SafeAreaView edges={['top']} style={s.flex}>
+        <Animated.ScrollView
+          contentContainerStyle={s.body}
+          showsVerticalScrollIndicator={false}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          refreshControl={<RefreshControl refreshing={d.refreshing} onRefresh={d.refresh} tintColor={c.fg3} />}
+        >
+          <HomeTopRow />
+          <OfflineStrip />
+          {mode === 'loading' && !d.error ? (
+            <Loading label="Loading your account" />
+          ) : d.error && !d.loaded ? (
+            <PanelError title="Couldn't load your account" detail={d.error} onRetry={d.refresh} />
+          ) : mode === 'first' ? (
+            <FirstVisit name={firstName} />
+          ) : (
+            <>
+              {d.error ? <Notice title="Couldn't refresh." detail={`${d.error} Pull down to try again.`} /> : null}
+              <View style={s.hero}>
+                <Text variant="label" tone="fg3">
+                  TOTAL EQUITY · {split.live > 0 && split.paper > 0 ? 'PAPER AND LIVE' : split.live > 0 ? 'LIVE' : 'PAPER'}
+                </Text>
+                <Text variant="hero">{money(d.totalEquity, 2)}</Text>
+                <DayChange amount={d.dayPnl} percent={d.dayPnlPercent} suffix={closed ? 'at the last close' : 'today'} />
+              </View>
 
-          <View style={s.hero}>
-            <Text variant="hero">{money(portfolio.totalValue, 2)}</Text>
-            <Text variant="numStrong" tone={pnlTone(day)}>
-              {signedMoney(day, 2)} ({pct(portfolio.dayReturnPercent)})
-            </Text>
-          </View>
+              {split.total > 0 ? <SplitBlock split={split} filter={filter} onFilter={setFilter} /> : null}
 
-          {equityCurve.length > 1 ? (
-            <Card style={s.chartCard}>
-              <LineChart
-                values={equityCurve}
-                benchmark={benchmarkCurve.length > 1 ? benchmarkCurve : undefined}
-                height={130}
-                axis
-                xLabels={timeLabels(equityTimes)}
-              />
-            </Card>
-          ) : null}
-
-          <View style={s.actions}>
-            <Button label="Copilot" variant="secondary" onPress={() => router.push('/copilot')} style={s.action} />
-            <Button label="Strategies" variant="secondary" onPress={() => router.push('/strategies')} style={s.action} />
-            <Button label="Connect" variant="secondary" onPress={() => router.push('/account/connect-broker')} style={s.action} />
-          </View>
-
-          {transactions.length ? (
-            <Card>
-              <Text variant="label" tone="fg3" style={s.cardLabel}>Recent activity</Text>
-              {transactions.slice(0, 6).map((t, i, list) => {
-                const r = txnRow(t);
-                return (
-                  <View key={t.id || i} style={[s.txn, i < list.length - 1 ? s.txnDivider : null]}>
-                    <View style={s.tag}>
-                      <Text variant="numSmall" tone="fg2" style={s.tagText}>{r.tag}</Text>
+              <View>
+                <AttentionTray items={attention} onReview={review} />
+                {curve.length > 1 ? (
+                  <View style={s.chart}>
+                    <AnnotatedCurve
+                      series={curve}
+                      benchmark={bench}
+                      from={from}
+                      until={closed ? d.now : until}
+                      now={d.now}
+                      inset={LABEL_W}
+                      height={150}
+                      onPressNow={() => openDay(d.now, null)}
+                      accessibilityLabel={`${filter === 'both' ? 'Sessions' : filter === 'live' ? 'Live sessions' : 'Paper sessions'}, value over time, with SPY dashed`}
+                    />
+                    {lanes.length ? (
+                      <View style={s.lanes}>
+                        <Lanes
+                          lanes={lanes}
+                          from={from}
+                          until={closed ? d.now : until}
+                          now={d.now}
+                          labelWidth={LABEL_W}
+                          onPressMarker={(lane, m) => (m.kind === 'fill' ? openDay(m.t, lane.key) : openById(lane.key))}
+                          onPressLane={(lane) => openById(lane.key)}
+                        />
+                      </View>
+                    ) : null}
+                    <View style={s.chartFoot}>
+                      <Segmented
+                        options={PERIODS.map((p) => ({ key: p, label: p }))}
+                        value={period}
+                        onChange={setPeriod}
+                      />
+                      <Text variant="caption" tone="fg3" style={s.legend}>
+                        Sessions' value, SPY dashed. Dots are fills; hollow dots are planned rebalances.
+                      </Text>
                     </View>
-                    <Text variant="small" style={s.txnTitle} numberOfLines={1}>{r.title}</Text>
-                    <Text variant="numSmall" tone="fg3">{r.when}</Text>
                   </View>
-                );
-              })}
-            </Card>
-          ) : null}
-        </>
-      ) : loaded ? (
-        <PanelError title="No portfolio yet" detail="This account has no paper portfolio. Connect Alpaca paper keys to start." />
-      ) : null}
-    </Screen>
+                ) : (
+                  <Card>
+                    <Text variant="small" tone="fg2">
+                      The curve appears once a session has a day of history.
+                    </Text>
+                  </Card>
+                )}
+              </View>
+
+              {closed ? (
+                <ClosedRecap
+                  recap={closedRecap(d.sessions)}
+                  nextOpen={d.marketNextOpen}
+                  now={d.now}
+                  waiting={rows.filter((r) => r.state === 'frozen').map((r) => r.title)}
+                  onOpen={openById}
+                />
+              ) : null}
+
+              {rows.length ? (
+                <>
+                  <SectionHead title="Sessions" link="See all" onPress={() => router.push('/sessions')} />
+                  <SessionsByAccount rows={rows} split={split} nextFor={nextFor} onOpen={openSession} />
+                </>
+              ) : (
+                <Card>
+                  <Text variant="bodyStrong">No sessions yet</Text>
+                  <Text variant="small" tone="fg2">
+                    Backtest a strategy, then start it on paper from its page.
+                  </Text>
+                </Card>
+              )}
+
+              {!closed ? (
+                <>
+                  <SectionHead title="Today and next" link="Activity" onPress={() => router.push('/portfolio/activity')} />
+                  <TimelineCard entries={entries} now={d.now} onOpenSession={openById} />
+                </>
+              ) : null}
+              <Text variant="caption" tone="fg3" style={s.asOf}>
+                {d.equityAsOf ? `Figures from ${asOfLabel(d.equityAsOf.getTime(), d.now)}.` : ''}
+              </Text>
+            </>
+          )}
+        </Animated.ScrollView>
+        {mode === 'open' || mode === 'closed' ? (
+          <Animated.View pointerEvents="box-none" style={[s.compact, { paddingTop: insets.top, opacity: compactOpacity }]}>
+            <View style={s.compactRow}>
+              <Text variant="numStrong">{money(d.totalEquity, 2)}</Text>
+              <DayChange amount={d.dayPnl} percent={d.dayPnlPercent} />
+              <View style={s.flex} />
+              <SearchButton color={c.fg2} />
+              <HeaderActions />
+            </View>
+          </Animated.View>
+        ) : null}
+      </SafeAreaView>
+      <DaySheet subject={sheet} onClose={() => setSheet(null)} />
+    </Canvas>
   );
 }
 
+/** "16:00 today" or "16:00, Nov 17". */
+function asOfLabel(t: number, now: number): string {
+  const day = dayLabel(t, now);
+  return day === 'Today' || day === 'Yesterday' ? `${hm(t)} ${day.toLowerCase()}` : `${hm(t)}, ${day}`;
+}
+
+/** SPY's percent curve as values on the sessions' scale, starting where the curve starts. */
+function rebasedBenchmark(bench: readonly { timestamp: string; value: number }[], curve: readonly Point[], from: number): Point[] {
+  if (bench.length < 2 || curve.length < 2) return [];
+  const pts = bench.map((b) => ({ t: new Date(b.timestamp).getTime(), v: b.value })).filter((p) => Number.isFinite(p.t));
+  const start = pts.find((p) => p.t >= from);
+  const base = curve.find((p) => p.t >= from);
+  if (!start || !base) return [];
+  return pts.filter((p) => p.t >= from).map((p) => ({ t: p.t, v: (base.v * (1 + p.v / 100)) / (1 + start.v / 100) }));
+}
+
 const useStyles = makeStyles((t) => ({
-  top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', minHeight: 22 },
-  hero: { gap: 4, marginTop: -6 },
-  chartCard: { paddingHorizontal: 12, paddingVertical: 12 },
-  actions: { flexDirection: 'row', gap: 8 },
-  action: { flex: 1, paddingHorizontal: 6 },
-  cardLabel: { marginBottom: 4 },
-  txn: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 9 },
-  txnDivider: { borderBottomWidth: 1, borderColor: t.c.line },
-  tag: {
-    minWidth: 38,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: t.c.lineStrong,
-    borderRadius: radius.xs,
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-  },
-  tagText: { fontSize: 10.5, lineHeight: 14 },
-  txnTitle: { flex: 1 },
+  flex: { flex: 1 },
+  body: { paddingHorizontal: space.gutter, paddingTop: 6, paddingBottom: 40, gap: space.gap },
+  hero: { gap: 4, marginTop: 6 },
+  chart: { gap: 8, padding: 8, marginHorizontal: -8, borderRadius: 12, backgroundColor: t.c.canvas + "b3" },
+  lanes: { marginTop: 4 },
+  chartFoot: { gap: 8, alignItems: 'center', marginTop: 4 },
+  legend: { textAlign: 'center' },
+  asOf: { textAlign: 'center', marginTop: 4 },
+  compact: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: t.c.canvas, borderBottomWidth: 1, borderColor: t.c.line },
+  compactRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: space.gutter, paddingVertical: 8 },
 }));

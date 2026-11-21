@@ -12,6 +12,9 @@ export function Field({
   autoCapitalizeWords = false,
   keyboardType,
   mono = false,
+  error,
+  help,
+  textContentType,
 }: {
   label: string;
   value: string;
@@ -22,6 +25,11 @@ export function Field({
   keyboardType?: KeyboardTypeOptions;
   /** Mono face for keys and codes. */
   mono?: boolean;
+  /** Says what to do; outlines the input in amber. */
+  error?: string | null;
+  /** A quiet line under the input when there is no error. */
+  help?: string;
+  textContentType?: 'emailAddress' | 'password' | 'newPassword' | 'oneTimeCode' | 'organizationName' | 'none';
 }) {
   const { c, mode } = useTheme();
   const s = useStyles();
@@ -42,8 +50,18 @@ export function Field({
         secureTextEntry={secure}
         keyboardAppearance={mode}
         selectionColor={c.accent}
-        style={[s.input, mono ? s.mono : null]}
+        textContentType={textContentType}
+        style={[s.input, mono ? s.mono : null, error ? s.inputError : null]}
       />
+      {error ? (
+        <Text variant="small" tone="risk">
+          {error}
+        </Text>
+      ) : help ? (
+        <Text variant="caption" tone="fg3">
+          {help}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -62,4 +80,5 @@ const useStyles = makeStyles((t) => ({
     color: t.c.fg,
   },
   mono: { fontFamily: fonts.mono, fontSize: 14 },
+  inputError: { borderColor: t.c.risk },
 }));

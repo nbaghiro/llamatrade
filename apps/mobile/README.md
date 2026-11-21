@@ -21,12 +21,12 @@ offset shadows).
 ```
 app/                     Expo Router screens
   _layout.tsx            root: fonts + splash + Stack
-  (tabs)/_layout.tsx     5-tab bar (Home · Book · Copilot · Strats · You)
+  (tabs)/_layout.tsx     5-tab bar (Home · Markets · Sessions · Strategies · Copilot)
   (tabs)/index.tsx       Home — KPI hero, equity chart, strategies, activity
-  (tabs)/portfolio.tsx   Portfolio — KPIs, equity, positions
+  portfolio/index.tsx    Portfolio, pushed from Home — KPIs, equity, positions
   (tabs)/strategies.tsx  Strategies — sortable card list + sparklines
   (tabs)/copilot.tsx     Copilot — chat preview → launches the spike
-  (tabs)/account.tsx     Account — profile, broker connect, plan, usage
+  account/index.tsx      Account, pushed from Home — profile, broker, plan, usage
   spike.tsx              ★ the runnable Connect-streaming spike harness
 src/
   net/                   clients (expo/fetch!), service config, secure storage
