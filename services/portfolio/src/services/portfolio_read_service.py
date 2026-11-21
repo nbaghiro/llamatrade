@@ -11,6 +11,7 @@ rows.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from uuid import UUID
@@ -19,6 +20,7 @@ import numpy as np
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from llamatrade_db.models.auth import AlpacaCredentials
 from llamatrade_db.models.ledger import Account, Sleeve, SleeveSnapshot
 from llamatrade_proto.generated import common_pb2, portfolio_pb2
 
@@ -111,7 +113,10 @@ class PortfolioReadService(LedgerReadBase):
         views: list[read_model.TransactionView] = []
         for account in accounts:
             events = await self._projector.read_events(tenant_id, account.id)
-            views.extend(read_model.transactions_view(events))
+            views.extend(
+                replace(view, account_id=str(account.id))
+                for view in read_model.transactions_view(events)
+            )
         # newest-first across accounts
         views.sort(key=lambda v: (v.occurred_at is not None, v.occurred_at), reverse=True)
 
@@ -125,15 +130,36 @@ class PortfolioReadService(LedgerReadBase):
         start = (page - 1) * page_size
         page_views = views[start : start + page_size]
         sleeve_names = await self._sleeve_names({v.sleeve_id for v in page_views if v.sleeve_id})
+        modes = await self._account_modes(tenant_id, accounts)
         transactions = [
             transaction_view_to_proto(
                 v,
                 tenant_id=tenant_id,
                 description=sleeve_names.get(v.sleeve_id, "") if v.sleeve_id else "",
+                execution_mode=modes.get(v.account_id or "", common_pb2.EXECUTION_MODE_UNSPECIFIED),
             )
             for v in page_views
         ]
         return transactions, total
+
+    async def _account_modes(
+        self, tenant_id: UUID, accounts: list[Account]
+    ) -> dict[str, common_pb2.ExecutionMode.ValueType]:
+        """Map account id -> paper/live, from each account's broker credentials."""
+        by_credentials = {account.credentials_id: str(account.id) for account in accounts}
+        if not by_credentials:
+            return {}
+        rows = await self.db.execute(
+            select(AlpacaCredentials.id, AlpacaCredentials.is_paper)
+            .where(AlpacaCredentials.tenant_id == tenant_id)
+            .where(AlpacaCredentials.id.in_(set(by_credentials)))
+        )
+        return {
+            by_credentials[cred_id]: (
+                common_pb2.EXECUTION_MODE_PAPER if is_paper else common_pb2.EXECUTION_MODE_LIVE
+            )
+            for cred_id, is_paper in rows.all()
+        }
 
     async def _sleeve_names(self, sleeve_ids: set[str]) -> dict[str, str]:
         """Map sleeve id -> human name, so allocation rows can name their strategy."""

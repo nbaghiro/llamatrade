@@ -146,7 +146,9 @@ def test_close_sleeve_handler_is_bound_on_the_asgi_app() -> None:
 
 @contextlib.asynccontextmanager
 async def _fake_tenant_session(tenant_id, maker):
-    yield MagicMock()
+    db = MagicMock()
+    db.commit = AsyncMock()
+    yield db
 
 
 def _projection(poison_events: int) -> AccountProjection:
@@ -371,3 +373,72 @@ async def test_backfill_account_failure_degrades_to_none() -> None:
         cast(Any, MagicMock()), exploding_sleeves, uuid4(), uuid4()
     )
     assert result is None
+
+
+async def _get_or_create(servicer: LedgerServicer, tenant_id, credentials_id) -> None:
+    request = ledger_pb2.GetOrCreateAccountRequest(
+        context=common_pb2.TenantContext(tenant_id=str(tenant_id)),
+        credentials_id=str(credentials_id),
+    )
+    await servicer.get_or_create_account(request, cast(Any, None))
+
+
+@pytest.mark.asyncio
+async def test_failed_backfill_is_not_retried_on_every_call() -> None:
+    """An unseeded account must not cost a broker call (and a pinned DB connection)
+    on every dashboard load; a retry waits out the cooldown."""
+    from src.grpc.ledger_servicer import _BackfillCooldown
+
+    tenant_id, credentials_id = uuid4(), uuid4()
+    account = Account(tenant_id=tenant_id, credentials_id=credentials_id, base_currency="USD")
+    account.id = uuid4()
+    account.alpaca_account_id = None
+    repo = MagicMock()
+    repo.get_account_by_credentials = AsyncMock(return_value=account)
+    sleeves = MagicMock()
+    sleeves.ensure_base_sleeves = AsyncMock(return_value={})
+    projector = MagicMock()
+    projector.project_account = AsyncMock(return_value=AccountProjection())
+    backfill = AsyncMock(return_value=None)
+
+    now = [0.0]
+    servicer = LedgerServicer()
+    servicer._session_factory = MagicMock()
+    servicer._backfill_cooldown = _BackfillCooldown(300.0, clock=lambda: now[0])
+    token = set_context(TenantContext(tenant_id=tenant_id, user_id=uuid4()))
+    try:
+        with (
+            patch("src.grpc.ledger_servicer.tenant_session", _fake_tenant_session),
+            patch("src.grpc.ledger_servicer.SqlSleeveRepository", return_value=repo),
+            patch("src.grpc.ledger_servicer.SleeveService", return_value=sleeves),
+            patch("src.grpc.ledger_servicer.LedgerProjector", return_value=projector),
+            patch.object(LedgerServicer, "_backfill_account", backfill),
+        ):
+            await _get_or_create(servicer, tenant_id, credentials_id)
+            await _get_or_create(servicer, tenant_id, credentials_id)
+            assert backfill.await_count == 1
+
+            now[0] = 301.0
+            await _get_or_create(servicer, tenant_id, credentials_id)
+            assert backfill.await_count == 2
+
+            other_credentials = uuid4()
+            await _get_or_create(servicer, tenant_id, other_credentials)
+            assert backfill.await_count == 3
+    finally:
+        reset_context(token)
+
+
+def test_backfill_cooldown_clears_on_success() -> None:
+    from src.grpc.ledger_servicer import _BackfillCooldown
+
+    now = [0.0]
+    cooldown = _BackfillCooldown(60.0, clock=lambda: now[0])
+    tenant_id, credentials_id = uuid4(), uuid4()
+
+    assert cooldown.due(tenant_id, credentials_id)
+    cooldown.record(tenant_id, credentials_id, succeeded=False)
+    assert not cooldown.due(tenant_id, credentials_id)
+    assert cooldown.due(uuid4(), credentials_id)
+    cooldown.record(tenant_id, credentials_id, succeeded=True)
+    assert cooldown.due(tenant_id, credentials_id)

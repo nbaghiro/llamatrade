@@ -8,6 +8,9 @@ All balances are projected from the event log — the book of record.
 from __future__ import annotations
 
 import logging
+import os
+import time
+from collections.abc import Callable
 from decimal import Decimal
 from typing import TYPE_CHECKING, cast
 from uuid import UUID, uuid4
@@ -128,11 +131,37 @@ def _account_to_proto(account: Account) -> ledger_pb2.LedgerAccount:
     )
 
 
+class _BackfillCooldown:
+    """Spaces out broker backfill retries for an account that already exists unseeded.
+
+    ``GetOrCreateAccount`` runs on every dashboard load; without this, an account
+    whose broker read keeps failing makes a remote Alpaca call on each one while
+    holding a pooled DB connection.
+    """
+
+    def __init__(self, seconds: float, clock: Callable[[], float] = time.monotonic) -> None:
+        self._seconds = seconds
+        self._clock = clock
+        self._retry_at: dict[tuple[UUID, UUID], float] = {}
+
+    def due(self, tenant_id: UUID, credentials_id: UUID) -> bool:
+        return self._clock() >= self._retry_at.get((tenant_id, credentials_id), 0.0)
+
+    def record(self, tenant_id: UUID, credentials_id: UUID, *, succeeded: bool) -> None:
+        if succeeded:
+            self._retry_at.pop((tenant_id, credentials_id), None)
+        else:
+            self._retry_at[(tenant_id, credentials_id)] = self._clock() + self._seconds
+
+
 class LedgerServicer:
     """Connect servicer for ``LedgerService`` (port 8860, portfolio process)."""
 
     def __init__(self) -> None:
         self._session_factory: async_sessionmaker[AsyncSession] | None = None
+        self._backfill_cooldown = _BackfillCooldown(
+            float(os.getenv("LEDGER_BACKFILL_RETRY_SECONDS", "300"))
+        )
 
     def _maker(self) -> async_sessionmaker[AsyncSession]:
         """The session factory (lazily created; tests inject a test-DB factory)."""
@@ -153,7 +182,8 @@ class LedgerServicer:
         invariant holds from day one. Onboarding also runs for an account whose
         broker id was never recorded, filling it from that same snapshot.
         Backfill is best-effort: a broker outage logs and proceeds — re-onboarding
-        is idempotent and reconciliation surfaces the gap until then.
+        is idempotent and reconciliation surfaces the gap until then. Retries for an
+        existing unseeded account wait out ``LEDGER_BACKFILL_RETRY_SECONDS``.
         """
         tenant_id, _ = resolve_identity_connect(request.context)
         try:
@@ -166,11 +196,17 @@ class LedgerServicer:
                 sleeves = SleeveService(repo)
                 existing = await repo.get_account_by_credentials(tenant_id, credentials_id)
                 account = existing
-                if existing is None or existing.alpaca_account_id is None:
-                    account = (
-                        await self._backfill_account(db, sleeves, tenant_id, credentials_id)
-                        or existing
+                if existing is None or (
+                    existing.alpaca_account_id is None
+                    and self._backfill_cooldown.due(tenant_id, credentials_id)
+                ):
+                    backfilled = await self._backfill_account(
+                        db, sleeves, tenant_id, credentials_id
                     )
+                    self._backfill_cooldown.record(
+                        tenant_id, credentials_id, succeeded=backfilled is not None
+                    )
+                    account = backfilled or existing
                 if account is None:
                     account = await sleeves.get_or_create_account(tenant_id, credentials_id)
                 base = await sleeves.ensure_base_sleeves(account)

@@ -88,7 +88,11 @@ def position_view_to_proto(view: PositionView) -> trading_pb2.Position:
 
 
 def transaction_view_to_proto(
-    view: TransactionView, *, tenant_id: UUID, description: str = ""
+    view: TransactionView,
+    *,
+    tenant_id: UUID,
+    description: str = "",
+    execution_mode: common_pb2.ExecutionMode.ValueType = common_pb2.EXECUTION_MODE_UNSPECIFIED,
 ) -> portfolio_pb2.Transaction:
     """Map a ``TransactionView`` to a proto Transaction (7A field names, 5A money)."""
     try:
@@ -107,6 +111,9 @@ def transaction_view_to_proto(
         fees=_dec(view.fees),
         description=description,
         timestamp=to_proto_timestamp(occurred),
+        account_id=view.account_id or "",
+        execution_mode=execution_mode,
+        sleeve_id=view.owner_sleeve_id or "",
     )
 
 

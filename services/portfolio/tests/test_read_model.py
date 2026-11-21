@@ -114,6 +114,9 @@ def test_transactions_view_from_events() -> None:
     assert views[0].amount == 1500.0  # 10 * 150
     assert views[1].type == "deposit"
     assert views[1].amount == 10000.0
+    assert views[0].owner_sleeve_id == sleeve
+    assert views[1].owner_sleeve_id == sleeve
+    assert views[0].sleeve_id is None  # description target stays unset for fills/deposits
 
 
 def test_transactions_view_allocation_carries_target_sleeve() -> None:
@@ -156,6 +159,8 @@ def test_transactions_view_transfer_renders_both_legs() -> None:
     assert set(by_type) == {"transfer_out", "transfer_in"}
     assert by_type["transfer_out"].sleeve_id == src
     assert by_type["transfer_in"].sleeve_id == dst
+    assert by_type["transfer_out"].owner_sleeve_id == src
+    assert by_type["transfer_in"].owner_sleeve_id == dst
     assert by_type["transfer_out"].amount == 500.0
     assert by_type["transfer_in"].amount == 500.0
 

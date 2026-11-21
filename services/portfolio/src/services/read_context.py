@@ -66,12 +66,18 @@ class PriceCache:
     def __init__(self, market_data: PriceProvider | None) -> None:
         self._market_data = market_data
         self._prices: dict[str, Decimal] = {}
+        self._requested: set[str] = set()
 
     async def get(self, symbols: list[str]) -> dict[str, Decimal]:
-        """Prices for ``symbols`` (subset of the shared cache), fetching misses once."""
+        """Prices for ``symbols`` (subset of the shared cache), fetching each symbol once.
+
+        A symbol the provider returned no price for stays unpriced for the request
+        (cost-basis fallback) instead of being re-fetched by every later reader.
+        """
         if self._market_data is None:
             return {}
-        missing = sorted({s for s in symbols if s not in self._prices})
+        missing = sorted({s for s in symbols if s not in self._requested})
         if missing:
+            self._requested.update(missing)
             self._prices.update(await self._market_data.get_prices(missing))
         return {s: self._prices[s] for s in symbols if s in self._prices}

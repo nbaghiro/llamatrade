@@ -102,6 +102,18 @@ async def test_price_cache_priceless_symbol_stays_a_miss() -> None:
     assert prices == {"AAPL": D("150")}
 
 
+async def test_price_cache_does_not_refetch_an_unpriced_symbol() -> None:
+    """Each strategy row asking again for an unpriced symbol must not re-hit market-data."""
+    provider = _CountingPrices({"AAPL": D("150")})
+    cache = PriceCache(cast(Any, provider))
+
+    await cache.get(["AAPL", "GOOG"])
+    await cache.get(["GOOG"])
+    await cache.get(["GOOG", "AAPL"])
+
+    assert provider.fetches == [["AAPL", "GOOG"]]
+
+
 async def test_price_cache_without_a_provider_returns_empty() -> None:
     cache = PriceCache(None)
     assert await cache.get(["AAPL"]) == {}

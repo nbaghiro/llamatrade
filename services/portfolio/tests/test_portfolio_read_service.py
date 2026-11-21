@@ -13,6 +13,11 @@ from unittest.mock import AsyncMock
 from uuid import uuid4
 
 from llamatrade_db.models.ledger import LedgerEventType
+from llamatrade_proto.generated.common_pb2 import (
+    EXECUTION_MODE_LIVE,
+    EXECUTION_MODE_PAPER,
+    EXECUTION_MODE_UNSPECIFIED,
+)
 from llamatrade_proto.generated.portfolio_pb2 import (
     TRANSACTION_TYPE_BUY,
     TRANSACTION_TYPE_TRANSFER_IN,
@@ -44,7 +49,9 @@ def _proj(cash: str, symbol: str, qty: str, cost: str) -> AccountProjection:
 
 
 def _svc(prices: dict[str, Decimal] | None = None) -> PortfolioReadService:
-    return PortfolioReadService(db=AsyncMock(), market_data=FakeMarketData(prices))
+    svc = PortfolioReadService(db=AsyncMock(), market_data=FakeMarketData(prices))
+    svc._account_modes = AsyncMock(return_value={})
+    return svc
 
 
 async def test_get_summary_returns_view() -> None:
@@ -224,3 +231,74 @@ async def test_projections_clean_account_not_surfaced(monkeypatch) -> None:
     await svc.list_positions(TENANT)
 
     assert surfaced == [(account.id, 0)]  # helper no-ops at zero poison events
+
+
+async def test_list_transactions_carries_account_mode_and_sleeve() -> None:
+    """A live deposit must be labellable as live: each row names its account, mode, sleeve."""
+    svc = _svc()
+    paper_acct = SimpleNamespace(id=uuid4(), tenant_id=TENANT, credentials_id=uuid4())
+    live_acct = SimpleNamespace(id=uuid4(), tenant_id=TENANT, credentials_id=uuid4())
+    orphan_acct = SimpleNamespace(id=uuid4(), tenant_id=TENANT, credentials_id=uuid4())
+    svc._accounts = AsyncMock(return_value=[paper_acct, live_acct, orphan_acct])
+    paper_sleeve, live_sleeve, orphan_sleeve = str(uuid4()), str(uuid4()), str(uuid4())
+
+    def deposit(sleeve: str, day: int) -> SimpleNamespace:
+        return SimpleNamespace(
+            event_id=str(uuid4()),
+            event_type=LedgerEventType.FUNDS_DEPOSITED,
+            data={"sleeve_id": sleeve, "amount": "1000"},
+            occurred_at=datetime(2026, 1, day, tzinfo=UTC),
+        )
+
+    by_account = {
+        paper_acct.id: [deposit(paper_sleeve, 1)],
+        live_acct.id: [deposit(live_sleeve, 2)],
+        orphan_acct.id: [deposit(orphan_sleeve, 3)],
+    }
+    svc._projector = cast(
+        Any,
+        SimpleNamespace(read_events=AsyncMock(side_effect=lambda _t, aid: by_account[aid])),
+    )
+    svc._account_modes = AsyncMock(
+        return_value={
+            str(paper_acct.id): EXECUTION_MODE_PAPER,
+            str(live_acct.id): EXECUTION_MODE_LIVE,
+        }
+    )
+
+    txns, _ = await svc.list_transactions(TENANT, type=None, symbol=None, page=1, page_size=10)
+
+    rows = {t.account_id: t for t in txns}
+    assert rows[str(live_acct.id)].execution_mode == EXECUTION_MODE_LIVE
+    assert rows[str(live_acct.id)].sleeve_id == live_sleeve
+    assert rows[str(paper_acct.id)].execution_mode == EXECUTION_MODE_PAPER
+    assert rows[str(paper_acct.id)].sleeve_id == paper_sleeve
+    assert rows[str(orphan_acct.id)].execution_mode == EXECUTION_MODE_UNSPECIFIED
+    assert rows[str(live_acct.id)].description == ""  # description stays the transfer target
+
+
+async def test_account_modes_reads_credentials_scoped_to_tenant() -> None:
+    from unittest.mock import MagicMock
+
+    from sqlalchemy import Select
+
+    paper_creds, live_creds = uuid4(), uuid4()
+    paper_acct = SimpleNamespace(id=uuid4(), credentials_id=paper_creds)
+    live_acct = SimpleNamespace(id=uuid4(), credentials_id=live_creds)
+    db = AsyncMock()
+    db.execute.return_value = MagicMock(
+        all=MagicMock(return_value=[(paper_creds, True), (live_creds, False)])
+    )
+    svc = PortfolioReadService(db=db, market_data=FakeMarketData())
+
+    modes = await svc._account_modes(TENANT, cast(Any, [paper_acct, live_acct]))
+
+    assert modes == {
+        str(paper_acct.id): EXECUTION_MODE_PAPER,
+        str(live_acct.id): EXECUTION_MODE_LIVE,
+    }
+    db.execute.assert_awaited_once()
+    stmt = db.execute.await_args.args[0]
+    assert isinstance(stmt, Select)
+    assert TENANT in stmt.compile().params.values()
+    assert await svc._account_modes(TENANT, []) == {}

@@ -8,6 +8,7 @@ fail-soft empty results on transport errors.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, cast
@@ -124,7 +125,9 @@ class _FakeConnectClient:
         bars: list[market_data_pb2.Bar] | None = None,
         *,
         fail: bool = False,
+        delay: float = 0.0,
     ) -> None:
+        self._delay = delay
         self._snapshots = snapshots or {}
         self._bars = bars or []
         self._fail = fail
@@ -135,9 +138,10 @@ class _FakeConnectClient:
     async def get_snapshots(
         self, request: market_data_pb2.GetSnapshotsRequest, headers: dict[str, str]
     ) -> market_data_pb2.GetSnapshotsResponse:
+        self.snapshot_requests.append(list(request.symbols))
+        await asyncio.sleep(self._delay)
         if self._fail:
             raise ConnectionError("market-data unreachable")
-        self.snapshot_requests.append(list(request.symbols))
         self.headers_seen.append(headers)
         response = market_data_pb2.GetSnapshotsResponse()
         for symbol, snapshot in self._snapshots.items():
@@ -147,16 +151,40 @@ class _FakeConnectClient:
     async def get_historical_bars(
         self, request: market_data_pb2.GetHistoricalBarsRequest, headers: dict[str, str]
     ) -> market_data_pb2.GetHistoricalBarsResponse:
+        self.bar_requests.append(request)
+        await asyncio.sleep(self._delay)
         if self._fail:
             raise ConnectionError("market-data unreachable")
-        self.bar_requests.append(request)
         return market_data_pb2.GetHistoricalBarsResponse(bars=self._bars)
 
 
-def _client(fake: _FakeConnectClient) -> MarketDataClient:
-    client = MarketDataClient(target="market-data:8840")
+class _Clock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def _client(
+    fake: _FakeConnectClient, clock: _Clock | None = None, call_timeout: float = 5.0
+) -> MarketDataClient:
+    client = MarketDataClient(
+        target="market-data:8840",
+        price_ttl=15.0,
+        closes_ttl=300.0,
+        call_timeout=call_timeout,
+        clock=clock or _Clock(),
+    )
     client._client = cast(Any, fake)
     return client
+
+
+def _priced(**prices: str) -> dict[str, market_data_pb2.Snapshot]:
+    return {
+        symbol: market_data_pb2.Snapshot(latest_trade=market_data_pb2.Trade(price=_dec(price)))
+        for symbol, price in prices.items()
+    }
 
 
 async def test_get_prices_uppercases_and_maps_usable_prices() -> None:
@@ -250,3 +278,105 @@ async def test_close_disposes_the_underlying_client() -> None:
     await client.close()
     assert fake.closed is True
     assert client._client is None
+
+
+# --- shared cache, single-flight, timeout --------------------------------------
+
+
+async def test_concurrent_price_reads_share_one_fetch() -> None:
+    """A dashboard fan-out (one request per strategy) makes one snapshot call, not N."""
+    fake = _FakeConnectClient(snapshots=_priced(SPY="500", TLT="90"), delay=0.01)
+    client = _client(fake)
+
+    results = await asyncio.gather(*[client.get_prices(["SPY", "TLT"]) for _ in range(20)])
+
+    assert fake.snapshot_requests == [["SPY", "TLT"]]
+    assert all(r == {"SPY": D("500"), "TLT": D("90")} for r in results)
+
+
+async def test_price_cache_fetches_only_new_symbols_and_expires() -> None:
+    clock = _Clock()
+    fake = _FakeConnectClient(snapshots=_priced(SPY="500", TLT="90"))
+    client = _client(fake, clock)
+
+    await client.get_prices(["SPY"])
+    await client.get_prices(["SPY", "TLT"])
+    clock.now = 14.0
+    await client.get_prices(["SPY", "TLT"])
+    clock.now = 16.0
+    await client.get_prices(["TLT"])
+
+    assert fake.snapshot_requests == [["SPY"], ["TLT"], ["TLT"]]
+
+
+async def test_priceless_symbol_is_cached_as_a_miss() -> None:
+    fake = _FakeConnectClient(snapshots=_priced(SPY="500"))
+    client = _client(fake)
+
+    assert await client.get_prices(["SPY", "GOOG"]) == {"SPY": D("500")}
+    assert await client.get_prices(["GOOG"]) == {}
+    assert fake.snapshot_requests == [["SPY", "GOOG"]]
+
+
+async def test_failed_fetch_is_not_cached_and_reaches_every_waiter() -> None:
+    fake = _FakeConnectClient(snapshots=_priced(SPY="500"), fail=True, delay=0.01)
+    client = _client(fake)
+
+    results = await asyncio.gather(*[client.get_prices(["SPY"]) for _ in range(5)])
+    fake._fail = False
+    retried = await client.get_prices(["SPY"])
+
+    assert results == [{}] * 5
+    assert fake.snapshot_requests == [["SPY"], ["SPY"]]
+    assert retried == {"SPY": D("500")}
+
+
+async def test_slow_market_data_times_out_to_empty() -> None:
+    """A stalled upstream must not hold the caller (and its DB connection) past the bound."""
+    fake = _FakeConnectClient(snapshots=_priced(SPY="500"), delay=1.0)
+    client = _client(fake, call_timeout=0.05)
+
+    started = asyncio.get_running_loop().time()
+    prices = await client.get_prices(["SPY"])
+    closes = await client.get_daily_closes(
+        "SPY", datetime(2026, 6, 1, tzinfo=UTC), datetime(2026, 6, 13, tzinfo=UTC)
+    )
+
+    assert prices == {}
+    assert closes == {}
+    assert asyncio.get_running_loop().time() - started < 0.5
+
+
+async def test_cancelled_loader_does_not_leave_waiters_hanging() -> None:
+    fake = _FakeConnectClient(snapshots=_priced(SPY="500"), delay=0.2)
+    client = _client(fake)
+
+    leader = asyncio.create_task(client.get_prices(["SPY"]))
+    await asyncio.sleep(0.01)
+    follower = asyncio.create_task(client.get_prices(["SPY"]))
+    await asyncio.sleep(0.01)
+    leader.cancel()
+
+    assert await asyncio.wait_for(follower, timeout=1.0) == {}
+    assert await client.get_prices(["SPY"]) == {"SPY": D("500")}
+
+
+async def test_concurrent_benchmark_reads_share_one_fetch_per_window() -> None:
+    ts = datetime(2026, 6, 12, 20, 0, tzinfo=UTC)
+    bar = _bar("480")
+    bar.timestamp.CopyFrom(to_proto_timestamp(ts))
+    fake = _FakeConnectClient(bars=[bar], delay=0.01)
+    client = _client(fake)
+    start, end = datetime(2026, 6, 1, 9, tzinfo=UTC), datetime(2026, 6, 13, tzinfo=UTC)
+    other_start = datetime(2026, 6, 2, tzinfo=UTC)
+
+    results = await asyncio.gather(
+        *[client.get_daily_closes("SPY", start, end) for _ in range(10)],
+        client.get_daily_closes("spy", start.replace(hour=15), end),
+        client.get_daily_closes("SPY", other_start, end),
+    )
+
+    assert len(fake.bar_requests) == 2
+    assert all(r == results[0] for r in results)
+    results[0].clear()
+    assert await client.get_daily_closes("SPY", start, end) != {}

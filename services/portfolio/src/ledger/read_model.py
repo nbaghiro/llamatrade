@@ -69,6 +69,8 @@ class TransactionView:
     sleeve_id: str | None = (
         None  # target sleeve for allocations/transfers (name resolved by caller)
     )
+    owner_sleeve_id: str | None = None  # sleeve whose cash or positions the event moves
+    account_id: str | None = None  # set by the caller, which reads events per account
 
 
 def _price(prices: dict[str, Decimal], symbol: str, fallback: Decimal) -> Decimal:
@@ -173,6 +175,11 @@ _TXN_TYPE: dict[LedgerEventType, str] = {
 }
 
 
+def _sleeve_ref(data: dict[str, object], key: str) -> str | None:
+    val = data.get(key)
+    return str(val) if val else None
+
+
 def _f(data: dict[str, object], key: str) -> Decimal | None:
     val = data.get(key)
     return Decimal(str(val)) if val is not None else None
@@ -214,6 +221,7 @@ def transactions_view(events: Iterable[LedgerEventLike]) -> list[TransactionView
                     amount=amount,
                     fees=_f(data, "fees") or ZERO,
                     occurred_at=occurred,
+                    owner_sleeve_id=_sleeve_ref(data, "sleeve_id"),
                 )
             )
             continue
@@ -241,6 +249,7 @@ def transactions_view(events: Iterable[LedgerEventLike]) -> list[TransactionView
                     fees=ZERO,
                     occurred_at=occurred,
                     sleeve_id=str(data["from_sleeve_id"]),
+                    owner_sleeve_id=str(data["from_sleeve_id"]),
                 )
             )
         out.append(
@@ -253,7 +262,8 @@ def transactions_view(events: Iterable[LedgerEventLike]) -> list[TransactionView
                 amount=amount,
                 fees=ZERO,
                 occurred_at=occurred,
-                sleeve_id=str(data["to_sleeve_id"]) if data.get("to_sleeve_id") else None,
+                sleeve_id=_sleeve_ref(data, "to_sleeve_id"),
+                owner_sleeve_id=_sleeve_ref(data, "to_sleeve_id") or _sleeve_ref(data, "sleeve_id"),
             )
         )
     out.reverse()  # events arrive oldest-first; history is newest-first
