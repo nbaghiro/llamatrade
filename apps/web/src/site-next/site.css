@@ -1,0 +1,219 @@
+/* Entry for site-next.html: the token layer, the shared layer and Tailwind, then the page's few
+   own rules. */
+@import '../styles/tokens.css';
+@import '../styles/ui-layer.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* The site's type: Archivo for display and text, Space Mono for figures, as in the hero demo. Set on
+   the root because Tailwind's base takes the body font from there. */
+html:root {
+  --font-sans: 'Archivo', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-display: var(--font-sans);
+}
+
+/* Dark mode takes the autoplay demo's blue-slate palette, so the page and the video read as one
+   surface. Light mode keeps the app's own tokens. */
+html:root:not([data-mode='light']) {
+  --canvas: 15 19 22;
+  --panel: 21 26 31;
+  --sunk: 28 34 40;
+  --line: 37 44 52;
+  --line-strong: 54 64 74;
+  --fg: 230 234 238;
+  --fg-2: 170 179 189;
+  --fg-3: 127 137 148;
+  --gain: 121 179 148;
+  --loss: 212 139 132;
+}
+:root:not([data-mode='light']) .sn {
+  --accent: 230 234 238;
+  --accent-ink: 15 19 22;
+}
+
+/* The site-next page keeps to the neutral ink accent whatever accent the app has saved. */
+.sn {
+  --accent: 222 222 222;
+  --accent-ink: 10 10 10;
+  --accent-soft: rgb(var(--accent) / 0.08);
+}
+:root[data-mode='light'] .sn {
+  --accent: 23 23 23;
+  --accent-ink: 255 255 255;
+}
+
+.sn-art-fade::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 160px;
+  background: linear-gradient(to bottom, transparent, rgb(var(--canvas)));
+  pointer-events: none;
+}
+.sn-art-fade-top::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 120px;
+  background: linear-gradient(to top, transparent, rgb(var(--canvas)));
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* InviteForm renders fixed class names; these give it the page's look. */
+.sn .invite {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: min(460px, 100%);
+  margin: 0 auto;
+  padding: 5px;
+  border-radius: 999px;
+  background: rgb(var(--canvas));
+  border: 1px solid rgb(var(--line-strong));
+  transition: border-color 0.2s ease;
+}
+.sn .invite:focus-within {
+  border-color: rgb(var(--fg-3));
+}
+.sn .invite input[type='email'] {
+  flex: 1;
+  min-width: 0;
+  height: 42px;
+  border: 0;
+  background: transparent;
+  padding: 0 16px;
+  font: 400 15px var(--font-sans);
+  color: rgb(var(--fg));
+  outline: 0;
+}
+.sn .invite input[type='email']::placeholder {
+  color: rgb(var(--fg-3));
+}
+.sn .invite input[type='email']:disabled {
+  cursor: not-allowed;
+}
+.sn .invite .hp {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+.sn .mk-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 18px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--fg));
+  background: rgb(var(--fg));
+  color: rgb(var(--canvas));
+  font: 500 14.5px/1 var(--font-sans);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.sn .mk-btn:hover {
+  background: rgb(var(--fg) / 0.86);
+}
+.sn .mk-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sn .mk-btn .arr {
+  font-style: normal;
+  transition: transform 0.2s ease;
+}
+.sn .mk-btn:hover .arr {
+  transform: translateX(3px);
+}
+.sn .invite-msg {
+  min-height: 20px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: rgb(var(--loss));
+}
+.sn .invite-msg.note {
+  color: rgb(var(--fg-3));
+}
+.sn .invite-ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 100%;
+  padding: 5px 20px 5px 5px;
+  border-radius: 999px;
+  background: rgb(var(--canvas));
+  border: 1px solid rgb(var(--line-strong));
+  font-size: 14.5px;
+  text-align: left;
+  color: rgb(var(--fg));
+}
+.sn .invite-ok .tick {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgb(var(--gain) / 0.14);
+  color: rgb(var(--gain));
+}
+
+.sn details > summary {
+  list-style: none;
+}
+.sn details > summary::-webkit-details-marker {
+  display: none;
+}
+.sn details[open] .sn-plus {
+  transform: rotate(45deg);
+}
+
+@media (max-width: 520px) {
+  .sn .invite input[type='email'] {
+    padding: 0 8px 0 14px;
+    font-size: 14.5px;
+  }
+  .sn .mk-btn {
+    padding: 0 14px;
+    font-size: 13.5px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sn .mk-btn .arr {
+    transition: none;
+  }
+}
+
+/* A softer rim than the sign-in card: the page shows several, so the halo stays small. */
+.sn .auth-card {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, rgb(var(--accent)) 14%, transparent),
+    0 30px 80px -44px color-mix(in srgb, rgb(var(--accent)) 34%, transparent),
+    0 24px 48px -28px rgb(0 0 0 / 0.3);
+}
+.sn-art-side {
+  left: 30%;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 40%);
+  mask-image: linear-gradient(to right, transparent, #000 40%);
+}
+@media (max-width: 1023px) {
+  .sn-art-side {
+    left: 0;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+}
+
+/* In light mode the hero matches the demo's app background as the browser draws the video (the
+   app's 250 grey plays back as 252), with no dark centre light around the card. */
+:root[data-mode='light'] .sn #top .auth-aside {
+  background: rgb(252 252 252);
+}
