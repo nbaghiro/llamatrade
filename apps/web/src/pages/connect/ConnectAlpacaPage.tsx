@@ -6,17 +6,18 @@ import { Link, useSearchParams } from 'react-router-dom';
 
 import { LIVE_REQUIREMENTS } from '../../components/auth/accountPaths';
 import { Field, FormNote } from '../../components/auth/fields';
-import { Logo, LogoMark } from '../../components/common/Logo';
+import { BrandLockup, LogoMark } from '../../components/common/Logo';
 import { AlpacaMark } from '../../components/settings/AlpacaMark';
 import { ModeBadge, Skeleton } from '../../components/ui';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
-import { maskedKey } from '../../lib/scope';
+import { maskedAccount } from '../../lib/scope';
 import {
   alpacaLinkErrorMessage,
   safeReturnPath,
   startAlpacaLink,
 } from '../../services/alpacaOAuth';
 import { useAuthStore } from '../../store/auth';
+import { maskedKey } from '../settings/model';
 
 import { activeOf, type Kind } from './credentials';
 
@@ -188,7 +189,11 @@ function Connected({ cred }: { cred: AlpacaCredentialsListItem }) {
         <i aria-hidden="true" className="h-[7px] w-[7px] rounded-full bg-fg" />
         Connected
       </span>
-      <span className="num text-fg-3">Key {maskedKey(cred.apiKeyPrefix)}</span>
+      <span className="num text-fg-3">
+        {cred.accountNumber
+          ? `Account ${maskedAccount(cred.accountNumber)}`
+          : `Key ${maskedKey(cred.apiKeyPrefix)}`}
+      </span>
       <Link to="/settings/broker" className="text-accent hover:underline">
         Manage in Broker settings
       </Link>
@@ -352,7 +357,7 @@ export default function ConnectAlpacaPage() {
     <div className="flex min-h-screen flex-col bg-canvas">
       <header className="flex h-14 flex-none items-center justify-between border-b border-line px-4 md:px-[26px]">
         <Link to="/dashboard" aria-label="LlamaTrade Home">
-          <Logo size={22} showText />
+          <BrandLockup />
         </Link>
         <Link
           to={next}

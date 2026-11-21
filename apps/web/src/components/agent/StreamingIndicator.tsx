@@ -1,29 +1,37 @@
+import { CopilotMark } from '../common/Logo';
+
+import { hideDraftBlock } from './draftQuestions';
+
 interface StreamingIndicatorProps {
   content?: string;
 }
 
-/** Copilot's reply while it streams in, or three dots before the first words arrive. */
-export function StreamingIndicator({ content }: StreamingIndicatorProps) {
+/** Copilot's reply while it streams in, with three dots beside the name until it finishes. */
+export function StreamingIndicator({ content: raw }: StreamingIndicatorProps) {
+  const content = raw ? hideDraftBlock(raw) : raw;
   return (
-    <div className="grid gap-1" aria-live="polite">
-      <span className="font-mono text-[11px] font-medium text-fg-3">Copilot</span>
-      {content ? (
-        <div className="whitespace-pre-wrap text-[14px] leading-[1.55] text-fg">
-          {content}
-          <span
-            aria-hidden="true"
-            className="ml-0.5 inline-block h-[1.1em] w-0.5 bg-accent align-middle motion-safe:animate-pulse"
-          />
-        </div>
-      ) : (
-        <div className="flex items-center gap-1 py-1.5" aria-label="Copilot is replying">
+    <div className="grid gap-2.5 motion-safe:animate-rise" aria-live="polite">
+      <span className="flex items-center gap-2 text-[12px] text-fg-3">
+        <CopilotMark className="h-3.5 w-3.5 text-fg" />
+        Copilot
+        <span className="inline-flex gap-[3px]" role="status" aria-label="Copilot is replying">
           {[0, 150, 300].map((delay) => (
-            <span
+            <i
               key={delay}
-              className="h-1.5 w-1.5 rounded-full bg-fg-3 motion-safe:animate-pulse"
+              aria-hidden="true"
+              className="h-[5px] w-[5px] rounded-full bg-fg-3 motion-safe:animate-bob"
               style={{ animationDelay: `${delay}ms` }}
             />
           ))}
+        </span>
+      </span>
+      {content && (
+        <div className="whitespace-pre-wrap text-[15px] leading-[1.65] text-fg">
+          {content}
+          <span
+            aria-hidden="true"
+            className="ml-0.5 inline-block h-[1.05em] w-px bg-fg align-[-2px] motion-safe:animate-pulse"
+          />
         </div>
       )}
     </div>

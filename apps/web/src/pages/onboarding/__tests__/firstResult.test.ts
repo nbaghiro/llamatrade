@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import type { TradeInput } from '../../../lib/backtestView';
-import { heldPeriods, heldSets, switchesOf, symbolsLabel, worstDrop } from '../firstResult';
+import {
+  dropComparison,
+  heldPeriods,
+  heldSets,
+  switchesOf,
+  symbolsLabel,
+  worstDrop,
+} from '../firstResult';
 
 const d = (s: string) => new Date(`${s}T00:00:00Z`);
 const trade = (symbol: string, entry: string, exit: string | null): TradeInput => ({
@@ -84,5 +91,21 @@ describe('symbolsLabel', () => {
     [['A', 'B', 'C', 'D', 'E'], 'A, B, C and 2 more'],
   ])('labels %j', (symbols, out) => {
     expect(symbolsLabel(symbols)).toBe(out);
+  });
+});
+
+describe('dropComparison', () => {
+  it('compares the worst drops of both curves', () => {
+    expect(dropComparison('SPY', [100, 120, 97.44, 130], -0.123, 'Recession Radar')).toBe(
+      "SPY's worst drop was 18.8%, against 12.3% for Recession Radar."
+    );
+  });
+
+  it('says nothing without a benchmark curve or a drop on either side', () => {
+    expect(dropComparison('', [100, 90], -0.1, 'A')).toBeNull();
+    expect(dropComparison('SPY', undefined, -0.1, 'A')).toBeNull();
+    expect(dropComparison('SPY', [100, 110, 120], -0.1, 'A')).toBeNull();
+    expect(dropComparison('SPY', [100, 90], null, 'A')).toBeNull();
+    expect(dropComparison('SPY', [100, 90], 0, 'A')).toBeNull();
   });
 });

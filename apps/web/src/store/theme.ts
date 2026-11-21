@@ -62,6 +62,22 @@ export function sanitizeTheme(raw: unknown): ThemePrefs {
   };
 }
 
+/** The accents every saved theme carried by default before version 2, when Ink became the default. */
+const V1_DEFAULT_ACCENT: Record<ThemeMode, string> = { dark: 'slate', light: 'ocean' };
+
+/** Sanitizes stored preferences, moving a version 1 default accent to the current default. */
+export function migrateTheme(persisted: unknown, version: number): ThemePrefs {
+  const prefs = sanitizeTheme(persisted);
+  if (version >= 2) return prefs;
+  return {
+    ...prefs,
+    darkAccent:
+      prefs.darkAccent === V1_DEFAULT_ACCENT.dark ? DEFAULT_ACCENT.dark : prefs.darkAccent,
+    lightAccent:
+      prefs.lightAccent === V1_DEFAULT_ACCENT.light ? DEFAULT_ACCENT.light : prefs.lightAccent,
+  };
+}
+
 export function resolveTheme(prefs: ThemePrefs, systemPrefersLight: boolean): ResolvedTheme {
   const mode: ThemeMode =
     prefs.mode === 'system' ? (systemPrefersLight ? 'light' : 'dark') : prefs.mode;
@@ -136,9 +152,9 @@ export const useThemeStore = create<ThemeState>()(
     },
     {
       name: THEME_STORAGE_KEY,
-      version: 1,
+      version: 2,
       partialize: prefsOf,
-      migrate: (persisted) => sanitizeTheme(persisted),
+      migrate: (persisted, version) => migrateTheme(persisted, version),
       merge: (persisted, current) => ({ ...current, ...sanitizeTheme(persisted) }),
       onRehydrateStorage: () => (state) => {
         if (state) applyToDocument(prefsOf(state));

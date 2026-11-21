@@ -136,7 +136,7 @@ export function BacktestScreen() {
         <div className="cols-2">
           <Panel title="Monthly returns, %" aside="year compounds">
             <div className="pn-b mg-host">
-              <MonthlyGrid months={bt.months} />
+              <MonthlyGrid months={bt.months} shaded />
             </div>
           </Panel>
           <Panel title="Indicators and metrics" aside="any symbol">

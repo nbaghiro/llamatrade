@@ -9,6 +9,7 @@ export interface Accent {
 }
 
 export const DARK_ACCENTS: readonly Accent[] = [
+  { key: 'neutral', label: 'Ink', swatch: '#dedede', mode: 'dark' },
   { key: 'silver', label: 'Silver', swatch: '#a1a1aa', mode: 'dark' },
   { key: 'white', label: 'Frost', swatch: '#dbe3f0', mode: 'dark' },
   { key: 'orange', label: 'Orange', swatch: '#ff9f43', mode: 'dark' },
@@ -24,6 +25,7 @@ export const DARK_ACCENTS: readonly Accent[] = [
 ];
 
 export const LIGHT_ACCENTS: readonly Accent[] = [
+  { key: 'neutral', label: 'Ink', swatch: '#171717', mode: 'light' },
   { key: 'charcoal', label: 'Charcoal', swatch: '#3a3f47', mode: 'light' },
   { key: 'ink', label: 'Midnight', swatch: '#1b2940', mode: 'light' },
   { key: 'rust', label: 'Rust', swatch: '#a8520a', mode: 'light' },
@@ -40,7 +42,7 @@ export const LIGHT_ACCENTS: readonly Accent[] = [
 
 export const ACCENTS: readonly Accent[] = [...DARK_ACCENTS, ...LIGHT_ACCENTS];
 
-export const DEFAULT_ACCENT: Record<ThemeMode, string> = { dark: 'slate', light: 'ocean' };
+export const DEFAULT_ACCENT: Record<ThemeMode, string> = { dark: 'neutral', light: 'neutral' };
 
 export function accentsFor(mode: ThemeMode): readonly Accent[] {
   return mode === 'dark' ? DARK_ACCENTS : LIGHT_ACCENTS;

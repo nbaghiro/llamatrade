@@ -5,7 +5,7 @@ import {
   FLAT_RETURN,
   monthlyRows,
 } from '../../lib/chart/monthly';
-import { formatPct } from '../../lib/format';
+import { formatPct, TONE_TEXT } from '../../lib/format';
 import type { MonthReturn } from '../../lib/illustrative/series';
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -15,6 +15,8 @@ interface MonthlyGridProps {
   /** Highlights one cell, e.g. "2025-3" for April 2025. */
   selected?: string;
   className?: string;
+  /** Tints each cell by the size of its return (the marketing art); the app colours the text. */
+  shaded?: boolean;
 }
 
 function cellBackground(r: number): string {
@@ -22,8 +24,18 @@ function cellBackground(r: number): string {
   return `rgb(var(--${r >= 0 ? 'gain' : 'loss'}) / ${cellAlpha(r).toFixed(3)})`;
 }
 
-/** Monthly returns: rows by year, January to December, shaded by size. */
-export function MonthlyGrid({ months, selected, className = '' }: MonthlyGridProps) {
+function cellTone(r: number): string {
+  if (Math.abs(r) < FLAT_RETURN) return 'text-fg-3';
+  return TONE_TEXT[r > 0 ? 'gain' : 'loss'];
+}
+
+/** Monthly returns: rows by year, January to December. */
+export function MonthlyGrid({
+  months,
+  selected,
+  className = '',
+  shaded = false,
+}: MonthlyGridProps) {
   const rows = monthlyRows(months);
   return (
     <table
@@ -63,17 +75,19 @@ export function MonthlyGrid({ months, selected, className = '' }: MonthlyGridPro
                 <td
                   key={c.m}
                   title={`${MON[c.m]} ${row.year}: ${formatPct(c.r, { dp: 1, signed: true })}`}
-                  className={`rounded-[1px] py-[5px] text-center text-fg ${
+                  className={`rounded-[1px] py-[5px] text-center ${shaded ? 'text-fg' : `bg-sunk ${cellTone(c.r)}`} ${
                     selected === `${row.year}-${c.m}` ? 'outline outline-1 outline-accent' : ''
                   }`}
-                  style={{ background: cellBackground(c.r) }}
+                  style={shaded ? { background: cellBackground(c.r) } : undefined}
                 >
                   <span className="sm:hidden">{cellTextShort(c.r)}</span>
                   <span className="hidden sm:inline">{cellText(c.r)}</span>
                 </td>
               )
             )}
-            <td className="pl-1 text-right text-fg-2 sm:pl-1.5">
+            <td
+              className={`pl-1 text-right sm:pl-1.5 ${shaded ? 'text-fg-2' : cellTone(row.total)}`}
+            >
               {formatPct(row.total, { dp: 1, signed: true })}
             </td>
           </tr>

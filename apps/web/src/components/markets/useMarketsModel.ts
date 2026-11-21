@@ -25,7 +25,7 @@ import {
 import type { FillMark } from './PriceChart';
 import { useQuotes, usePriceSeries, type PriceSeries } from './useMarketData';
 
-export type MarketsView = 'map' | 'list';
+export type MarketsView = 'table' | 'chart';
 
 export const RANGES: readonly { key: PriceRange; label: string }[] = [
   { key: '1D', label: '1D' },
@@ -50,7 +50,10 @@ export interface MarketsModel {
   watchOnly: string[];
   watch: (next: string[]) => void;
   symbol: string;
+  /** The symbol named in the URL, which the quote table shows opened. */
+  opened: string | null;
   select: (symbol: string) => void;
+  close: () => void;
   quotes: Record<string, SymbolQuote | null>;
   sparks: Record<string, number[]>;
   daily: Record<string, Candle | null>;
@@ -74,7 +77,7 @@ export interface MarketsModel {
   sleeveById: Map<string | null, SleeveSummary>;
 }
 
-/** Everything both Markets views read: holdings, quotes, the selected symbol and its prices. */
+/** Everything the quote table and the full chart read: holdings, quotes, the selected symbol and its prices. */
 export function useMarketsModel(): MarketsModel {
   const { sleeves, unallocated, loaded, error, fetchPortfolio } = usePortfolioStore();
   const { fills } = useSleeveFills();
@@ -86,8 +89,8 @@ export function useMarketsModel(): MarketsModel {
   const today = etToday(now);
 
   useEffect(() => {
-    if (!loaded) fetchPortfolio();
-  }, [loaded, fetchPortfolio]);
+    fetchPortfolio();
+  }, [fetchPortfolio]);
 
   const held = useMemo(
     () => heldRows(sleeves.map((s) => ({ ...s, running: sleeveRunState(s) === 'running' }))),
@@ -112,7 +115,8 @@ export function useMarketsModel(): MarketsModel {
       .filter((d): d is Date => d !== null)
       .sort((a, b) => a.getTime() - b.getTime())[0] ?? null;
   const start = useMemo(() => rangeStart(range, now, firstStart), [range, now, firstStart]);
-  const series = usePriceSeries(symbol, range, start, attempt);
+  const charted = params.get('view') === 'chart' || params.has('symbol');
+  const series = usePriceSeries(charted ? symbol : '', range, start, attempt);
 
   const holders = held.find((r) => r.symbol === symbol)?.holders ?? [];
   const sleeveById = new Map<string | null, SleeveSummary>(sleeves.map((s) => [s.sleeveId, s]));
@@ -139,7 +143,7 @@ export function useMarketsModel(): MarketsModel {
   const rangeLabel = RANGES.find((r) => r.key === range)?.label ?? '';
 
   return {
-    view: params.get('view') === 'list' ? 'list' : 'map',
+    view: params.get('view') === 'chart' ? 'chart' : 'table',
     setView: (v) => setParam('view', v),
     sleeves,
     unallocated,
@@ -157,7 +161,13 @@ export function useMarketsModel(): MarketsModel {
       saveWatchlist(next);
     },
     symbol,
+    opened: cleanSymbol(params.get('symbol') ?? ''),
     select: (s) => setParam('symbol', s),
+    close: () => {
+      const p = new URLSearchParams(params);
+      p.delete('symbol');
+      setParams(p, { replace: true });
+    },
     quotes,
     sparks,
     daily,

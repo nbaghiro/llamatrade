@@ -5,7 +5,7 @@ import { useTradingStore } from '@llamatrade/core/stores/trading';
 import { useEffect, useMemo } from 'react';
 import { create } from 'zustand';
 
-import { activeDestination, DESKTOP_NAV, type DestinationKey } from '../../lib/navigation';
+import { activeDestination, AREAS, type DestinationKey } from '../../lib/navigation';
 import type { AttentionEntry } from '../home/attention';
 import { useAttentionEntries } from '../home/useAttentionEntries';
 
@@ -45,7 +45,7 @@ export function useReportAttention(source: string, marks: readonly AreaMark[]) {
 /** Frozen and rejected work lives under Sessions (attention2 A); notices go where they link. */
 export function entryArea(entry: AttentionEntry): DestinationKey | null {
   if (entry.kind === 'frozen' || entry.kind === 'rejected') return 'sessions';
-  return activeDestination(entry.href.split('?')[0], DESKTOP_NAV);
+  return activeDestination(entry.href.split('?')[0], AREAS);
 }
 
 /** Frozen sleeves from the trading store, named by their session where one matches. */
@@ -99,4 +99,42 @@ export function useAreaMarks(): Partial<Record<DestinationKey, AreaMark[]>> {
         : [];
     return groupMarks([...entries, ...extra], reported);
   }, [entries, dashboardFrozen, sleeves, reported]);
+}
+
+/** Frozen sleeves are carried by the seam, so the nav doesn't flag them again. */
+export const isFrozenMark = (m: AreaMark) => m.id.startsWith('frozen-');
+
+/** What the amber seam under the bar says (attention2 B); null when nothing is frozen. */
+export interface SeamNotice {
+  title: string;
+  detail: string;
+  href: string;
+  /** Further frozen sleeves beyond the one named. */
+  more: number;
+}
+
+/** The first frozen sleeve, named, with a link to its session or sleeve page. */
+export function seamNotice(frozen: readonly FrozenSleeve[]): SeamNotice | null {
+  const seen = new Set<string>();
+  const unique = frozen.filter((f) => !seen.has(f.id) && seen.add(f.id));
+  const first = unique[0];
+  if (!first) return null;
+  return {
+    title: `${first.name || 'A sleeve'} is frozen`,
+    detail: "Its holdings don't match Alpaca",
+    href: first.executionId
+      ? `/trading/${encodeURIComponent(first.executionId)}`
+      : `/portfolio/sleeves/${encodeURIComponent(first.id)}`,
+    more: unique.length - 1,
+  };
+}
+
+/** Frozen sleeves from Home's read and the trading store's, for the seam. */
+export function useSeamNotice(): SeamNotice | null {
+  const dashboardFrozen = useDashboardStore((s) => s.frozenSleeves);
+  const sleeves = useTradingStore((s) => s.sleeves);
+  return useMemo(
+    () => seamNotice([...(dashboardFrozen ?? []), ...frozenFromSleeves(sleeves)]),
+    [dashboardFrozen, sleeves]
+  );
 }

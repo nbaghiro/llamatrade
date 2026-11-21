@@ -2,7 +2,17 @@ import { ExecutionStatus } from '@llamatrade/core/proto/common_pb';
 import { SleeveStatus } from '@llamatrade/core/proto/ledger_pb';
 import { describe, expect, it } from 'vitest';
 
-import { buildSessionRow, sessionName, sortRows } from '../sessionRows';
+import {
+  buildSessionRow,
+  dayLabel,
+  isDaily,
+  marketNotes,
+  nextDailyRun,
+  nextRun,
+  relativeDay,
+  sessionName,
+  sortRows,
+} from '../sessionRows';
 
 type Session = Parameters<typeof buildSessionRow>[0];
 type Ctx = Parameters<typeof buildSessionRow>[1];
@@ -81,5 +91,45 @@ describe('buildSessionRow', () => {
     );
     const c = buildSessionRow(session({ id: 'c' }), ctx());
     expect(sortRows([a, c, b]).map((r) => r.session.id)).toEqual(['b', 'c', 'a']);
+  });
+});
+
+describe('next runs and market notes', () => {
+  // 10:42 ET on Tue Nov 17 2026 (EST, UTC-5).
+  const morning = new Date('2026-11-17T15:42:00Z');
+  const evening = new Date('2026-11-17T22:00:00Z');
+  const utc = (s: string) => new Date(`${s}T00:00:00Z`);
+
+  it('runs a daily schedule today before the close, else the next trading day', () => {
+    expect(nextDailyRun(morning)).toEqual(utc('2026-11-17'));
+    expect(nextDailyRun(evening)).toEqual(utc('2026-11-18'));
+  });
+
+  it('skips Thanksgiving and the weekend for a daily run', () => {
+    expect(nextDailyRun(new Date('2026-11-25T22:00:00Z'))).toEqual(utc('2026-11-27'));
+    expect(nextDailyRun(new Date('2026-11-27T19:00:00Z'))).toEqual(utc('2026-11-30'));
+  });
+
+  it('uses the period schedule for anything but daily', () => {
+    expect(nextRun('Monthly', morning)).toEqual(utc('2026-12-01'));
+    expect(nextRun('Daily', morning)).toEqual(utc('2026-11-17'));
+    expect(nextRun('', morning)).toBeNull();
+    expect(isDaily(' daily ')).toBe(true);
+  });
+
+  it('names today and tomorrow', () => {
+    const today = utc('2026-11-17');
+    expect(relativeDay(today, today)).toBe('today');
+    expect(relativeDay(utc('2026-11-18'), today)).toBe('tomorrow');
+    expect(relativeDay(utc('2026-12-01'), today)).toBe('Dec 1');
+  });
+
+  it('lists weekday closures and early closes in a window', () => {
+    const notes = marketNotes(utc('2026-11-17'), utc('2026-12-01'));
+    expect(notes.map((n) => [dayLabel(n.at), n.text])).toEqual([
+      ['Nov 26', 'Market closed, Thanksgiving'],
+      ['Nov 27', 'Market closes 13:00, Day after Thanksgiving'],
+    ]);
+    expect(marketNotes(utc('2026-12-02'), utc('2026-12-10'))).toEqual([]);
   });
 });

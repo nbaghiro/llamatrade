@@ -1,23 +1,32 @@
-import { Search } from 'lucide-react';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { Snowflake } from 'lucide-react';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 
 import { activeDestination, DESKTOP_NAV } from '../../lib/navigation';
-import { LogoMark } from '../common/Logo';
+import { useAuthStore } from '../../store/auth';
+import { Avatar } from '../common/Avatar';
+import { BrandLockup, LogoMark } from '../common/Logo';
 import { NotificationBell } from '../notifications/NotificationBell';
-import { Kbd } from '../ui/Kbd';
 
 import { AccountMenu } from './AccountMenu';
-import { useAreaMarks, type AreaMark } from './attention';
-import { BarClock } from './BarClock';
-import { usePalette } from './usePalette';
+import {
+  isFrozenMark,
+  useAreaMarks,
+  useSeamNotice,
+  type AreaMark,
+  type SeamNotice,
+} from './attention';
+import { MarketStatus } from './MarketStatus';
 
-function markLabel(label: string, marks: readonly AreaMark[] | undefined): string {
-  if (!marks?.length) return label;
+const flagged = (marks: readonly AreaMark[] | undefined) =>
+  (marks ?? []).filter((m) => !isFrozenMark(m));
+
+function markLabel(label: string, marks: readonly AreaMark[]): string {
+  if (!marks.length) return label;
   return `${label}, ${marks.length} ${marks.length === 1 ? 'needs' : 'need'} attention`;
 }
 
-function AreaFlag({ marks }: { marks: readonly AreaMark[] | undefined }) {
-  if (!marks?.length) return null;
+function AreaFlag({ marks }: { marks: readonly AreaMark[] }) {
+  if (!marks.length) return null;
   return (
     <span aria-hidden="true" className="inline-flex items-center gap-1">
       <i className="h-1.5 w-1.5 rounded-full bg-risk shadow-[0_0_0_3px_var(--risk-soft)]" />
@@ -28,76 +37,111 @@ function AreaFlag({ marks }: { marks: readonly AreaMark[] | undefined }) {
   );
 }
 
-/** The logo, then the seven areas as text links on the left, with the market clock beside search. */
+/** A 2px amber edge under the bar with a tab at its right end that opens the review (attention2 B). */
+export function Seam({ notice }: { notice: SeamNotice }) {
+  return (
+    <div role="status" className="relative h-0.5 bg-risk">
+      <Link
+        to={notice.href}
+        className="absolute right-3 top-0.5 inline-flex h-[26px] max-w-[calc(100vw-24px)] items-center gap-2 overflow-hidden whitespace-nowrap rounded-b-[8px] border border-t-0 border-risk-line bg-panel px-3 text-[12px] text-fg-2 shadow-sm hover:text-fg md:right-5"
+      >
+        <Snowflake aria-hidden="true" className="h-[13px] w-[13px] flex-none text-risk" />
+        <b className="font-semibold text-risk">{notice.title}</b>
+        <span className="hidden truncate sm:inline">
+          {notice.detail}
+          {notice.more > 0 && `, and ${notice.more} more`}
+        </span>
+        <span className="text-fg underline decoration-line-strong underline-offset-[3px]">
+          Review
+        </span>
+      </Link>
+    </div>
+  );
+}
+
+/** On a phone the avatar opens the Account list (phone-nav2 A). */
+function PhoneAvatar() {
+  const user = useAuthStore((s) => s.user);
+  return (
+    <Link to="/settings" aria-label="Account" className="rounded-full md:hidden">
+      <Avatar
+        avatarUrl={user?.avatarUrl}
+        firstName={user?.firstName}
+        lastName={user?.lastName}
+        email={user?.email}
+        size={30}
+      />
+    </Link>
+  );
+}
+
+/**
+ * The logo and five areas on the left; the market status, the bell and the account on the right.
+ * A frozen sleeve turns the bottom edge amber.
+ */
 export function TopBar() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const showPalette = usePalette((s) => s.show);
   const active = activeDestination(pathname, DESKTOP_NAV);
   const marks = useAreaMarks();
+  const seam = useSeamNotice();
 
   return (
-    <header className="sticky top-0 z-40 flex h-14 items-center gap-3 border-b border-line bg-canvas/95 px-4 backdrop-blur md:px-5">
-      <a
-        href="/home"
-        aria-label="LlamaTrade home"
-        className="flex-none"
-        onClick={(e) => {
-          // First click goes to Home; a second click on Home opens the marketing page at /home.
-          if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
-          if (pathname !== '/dashboard') {
-            e.preventDefault();
-            navigate('/dashboard');
-          }
-        }}
+    <div className="sticky top-0 z-40">
+      <header
+        className={`flex h-14 items-center gap-3 bg-canvas/90 px-4 backdrop-blur md:px-6 ${seam ? '' : 'border-b border-line/70'}`}
       >
-        <span className="flex items-center gap-3 text-fg">
-          <LogoMark size={34} bold className="-my-2" />
-          <span className="hidden whitespace-nowrap text-[12px] font-semibold uppercase leading-none tracking-[0.16em] min-[1360px]:inline">
-            LlamaTrade
-          </span>
-        </span>
-      </a>
-
-      <nav aria-label="Main" className="ml-3 hidden min-w-0 md:flex md:gap-0.5 lg:ml-7">
-        {DESKTOP_NAV.map((d) => {
-          const on = active === d.key;
-          const areaMarks = marks[d.key];
-          return (
-            <NavLink
-              key={d.key}
-              to={d.to}
-              aria-current={on ? 'page' : undefined}
-              aria-label={markLabel(d.label, areaMarks)}
-              title={areaMarks?.map((m) => m.title).join('\n') || d.label}
-              className={`relative inline-flex items-center gap-[7px] whitespace-nowrap rounded-md px-2.5 py-1.5 text-[14px] transition-colors xl:px-3 ${
-                on ? 'font-semibold text-fg' : 'text-fg-2 hover:text-fg'
-              }`}
-            >
-              {d.label}
-              <AreaFlag marks={areaMarks} />
-            </NavLink>
-          );
-        })}
-      </nav>
-
-      <div className="ml-auto flex flex-none items-center gap-1.5 sm:gap-2">
-        <BarClock className="max-[340px]:hidden" />
-        <button
-          type="button"
-          onClick={showPalette}
-          aria-label="Search or jump to"
-          className="flex h-[34px] items-center gap-2 rounded-full border border-line bg-panel px-2.5 text-fg-3 hover:text-fg-2"
+        <a
+          href="/home"
+          aria-label="LlamaTrade home"
+          className="flex-none"
+          onClick={(e) => {
+            // First click goes to Home; a second click on Home opens the marketing page at /home.
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+            if (pathname !== '/dashboard') {
+              e.preventDefault();
+              navigate('/dashboard');
+            }
+          }}
         >
-          <Search className="h-4 w-4" />
-          <span className="hidden text-[13px] min-[1440px]:inline">Search</span>
-          <Kbd className="hidden min-[1440px]:inline">⌘K</Kbd>
-        </button>
-        <span className="hidden md:contents">
+          <span className="hidden md:inline">
+            <BrandLockup wordClassName="hidden min-[1280px]:inline" />
+          </span>
+          <LogoMark size={28} bold className="md:hidden" />
+        </a>
+
+        <nav aria-label="Main" className="ml-3 hidden min-w-0 md:flex md:gap-1 lg:ml-8">
+          {DESKTOP_NAV.map((d) => {
+            const on = active === d.key;
+            const areaMarks = flagged(marks[d.key]);
+            return (
+              <NavLink
+                key={d.key}
+                to={d.to}
+                aria-current={on ? 'page' : undefined}
+                aria-label={markLabel(d.label, areaMarks)}
+                title={areaMarks.map((m) => m.title).join('\n') || d.label}
+                className={`relative inline-flex items-center gap-[7px] whitespace-nowrap rounded-full px-3 py-[5px] text-[13.5px] transition-colors ${
+                  on ? 'bg-sunk font-semibold text-fg' : 'text-fg-3 hover:text-fg'
+                }`}
+              >
+                {d.label}
+                <AreaFlag marks={areaMarks} />
+              </NavLink>
+            );
+          })}
+        </nav>
+
+        <div className="ml-auto flex flex-none items-center gap-1 sm:gap-3">
+          <MarketStatus />
           <NotificationBell />
-          <AccountMenu />
-        </span>
-      </div>
-    </header>
+          <span className="hidden md:contents">
+            <AccountMenu />
+          </span>
+          <PhoneAvatar />
+        </div>
+      </header>
+      {seam && <Seam notice={seam} />}
+    </div>
   );
 }

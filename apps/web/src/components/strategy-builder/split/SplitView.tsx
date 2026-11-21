@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 
 import { buildOutline, metaParts, methodWords, type OutlineLine } from '../../../lib/outline';
 import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
+import { useMediaQuery } from '../../strategies/useMediaQuery';
 import { fileName } from '../code/cursorInfo';
 import { EngineState } from '../code/EngineState';
 import type { EngineCheck } from '../hooks/useEngineCheck';
@@ -12,6 +13,7 @@ import type { TokenEditHandler } from '../outline/Token';
 import { useTokenEdit } from '../outline/useTokenEdit';
 
 import { codeTokens, splitRows, type CodeTokenKind } from './rows';
+import { SplitHistoryStrip, type SplitHistory } from './SplitHistoryStrip';
 
 const TOKEN_CLASS: Record<CodeTokenKind, string> = {
   head: 'text-accent',
@@ -22,12 +24,30 @@ const TOKEN_CLASS: Record<CodeTokenKind, string> = {
   text: 'text-fg',
 };
 
-function CodeLines({ lines, from, to }: { lines: readonly string[]; from: number; to: number }) {
+function CodeLines({
+  lines,
+  from,
+  to,
+  lit,
+}: {
+  lines: readonly string[];
+  from: number;
+  to: number;
+  /** Lines drawn as selected. */
+  lit?: { from: number; to: number } | null;
+}) {
   if (to < from) return null;
   return (
     <pre className="m-0 overflow-x-auto py-2.5 font-mono text-[12.5px] leading-[1.75]">
       {lines.slice(from - 1, to).map((text, i) => (
-        <div key={from + i} className="grid grid-cols-[40px_minmax(0,1fr)]">
+        <div
+          key={from + i}
+          className={`grid grid-cols-[40px_minmax(0,1fr)] ${
+            lit && from + i >= lit.from && from + i <= lit.to
+              ? 'bg-accent-soft shadow-[inset_2px_0_0_rgb(var(--accent))]'
+              : ''
+          }`}
+        >
           <span className="select-none pr-3 text-right text-fg-3 opacity-70">{from + i}</span>
           <code className="whitespace-pre">
             {codeTokens(text).map((t, j) => (
@@ -82,8 +102,19 @@ function WordLine({ line, onEdit }: { line: OutlineLine; onEdit: TokenEditHandle
   );
 }
 
-/** Rules in words beside the code they become, one aligned row per rule (split2 A). */
-export function SplitView({ engine }: { engine: EngineCheck }) {
+interface SplitViewProps {
+  engine: EngineCheck;
+  counts?: { errors: number; warnings: number };
+  /** The saved version's last backtest, for the side-held pane on wide screens. */
+  history: SplitHistory | null;
+}
+
+/**
+ * Rules in words beside the code they become. On wide screens, three panes (split2 C):
+ * compact rules, the code, and when each side held; otherwise one aligned row per rule.
+ */
+export function SplitView({ engine, counts, history }: SplitViewProps) {
+  const wide = useMediaQuery('(min-width: 1280px)');
   const store = useStrategyBuilderStoreWithContext();
   const { tree, timeframe, benchmark, strategyName, strategyDescription, ui } = store;
   const onEdit = useTokenEdit();
@@ -107,7 +138,7 @@ export function SplitView({ engine }: { engine: EngineCheck }) {
     <div className="grid border-b border-line lg:grid-cols-2">
       <div className="flex items-center justify-between gap-3 px-4 py-2.5">
         <h3 className="m-0 text-[13px] font-semibold text-fg">Rules</h3>
-        <EngineState engine={engine} />
+        <EngineState engine={engine} counts={counts} />
       </div>
       <div className="hidden items-center gap-2 border-l border-line px-4 py-2.5 lg:flex">
         <Code2 className="h-4 w-4 text-fg-3" aria-hidden="true" />
@@ -124,6 +155,81 @@ export function SplitView({ engine }: { engine: EngineCheck }) {
       </span>
     </div>
   );
+
+  if (wide) {
+    const selectedRow =
+      rows?.find((r) => r.kind === 'rule' && selected !== null && r.blockIds.includes(selected)) ??
+      null;
+    return (
+      <div className="grid items-start gap-5 grid-cols-[minmax(0,0.85fr)_minmax(0,1.05fr)_minmax(280px,0.8fr)]">
+        <section className="panel min-w-0 overflow-hidden" aria-label="Rules">
+          <header className="border-b border-line px-4 py-2.5">
+            <h3 className="m-0 text-[13px] font-semibold text-fg">Rules</h3>
+          </header>
+          <div className="grid gap-1 px-2 py-3">
+            <div className="px-2 pb-1">{settingsWords}</div>
+            {rows
+              ? rows
+                  .filter((r) => r.kind === 'rule')
+                  .map((row) => {
+                    const on = row === selectedRow;
+                    return (
+                      <div
+                        key={row.key}
+                        onClick={() => store.selectBlock(on ? null : row.blockIds[0])}
+                        className={`cursor-pointer rounded-[8px] border px-2 py-1 ${
+                          on
+                            ? 'border-accent/45 bg-accent-soft'
+                            : 'border-transparent hover:bg-sunk/60'
+                        }`}
+                      >
+                        {row.lines.map((l) => (
+                          <WordLine key={l.key} line={l} onEdit={onEdit} />
+                        ))}
+                      </div>
+                    );
+                  })
+              : buildOutline(tree).map((l) => <WordLine key={l.key} line={l} onEdit={onEdit} />)}
+          </div>
+        </section>
+        <section className="panel min-w-0 overflow-hidden" aria-label="Code">
+          <header className="flex items-center justify-between gap-3 border-b border-line px-4 py-2.5">
+            <span className="flex min-w-0 items-center gap-2">
+              <Code2 className="h-4 w-4 flex-none text-fg-3" aria-hidden="true" />
+              <b className="truncate font-mono text-[12.5px] font-medium text-fg-2">
+                {fileName(strategyName)}
+              </b>
+            </span>
+            <EngineState engine={engine} counts={counts} />
+          </header>
+          <CodeLines
+            lines={codeLines}
+            from={1}
+            to={codeLines.length}
+            lit={selectedRow ? selectedRow.code : null}
+          />
+          {!rows && (
+            <p className="m-0 border-t border-line px-4 py-2 text-[12px] text-fg-3">
+              Selection lines up again once the code and the rules match.
+            </p>
+          )}
+        </section>
+        {history ? (
+          <SplitHistoryStrip {...history} />
+        ) : (
+          <section className="panel min-w-0" aria-label="When each side held">
+            <header className="border-b border-line px-4 py-2.5">
+              <h3 className="m-0 text-[13px] font-semibold text-fg">When each side held</h3>
+            </header>
+            <p className="m-0 px-4 py-4 text-[12.5px] leading-[1.55] text-fg-2">
+              No backtest of the saved version yet. Once there is one, this shows which side of each
+              rule held at every rebalance.
+            </p>
+          </section>
+        )}
+      </div>
+    );
+  }
 
   if (!rows) {
     return (

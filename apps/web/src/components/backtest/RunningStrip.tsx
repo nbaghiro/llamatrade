@@ -1,13 +1,26 @@
 import type { BacktestRun } from '@llamatrade/core/proto/backtest_pb';
 import { Link } from 'react-router-dom';
 
+import { longDate, type RebalanceFrequency } from '../../lib/backtestView';
 import { formatNumber } from '../../lib/format';
 import { StatusMark } from '../ui/StatusMark';
 
+import { rebalancesThrough } from './historyLanes';
+
 /** A run in progress, above the history, with how far it has got and a way back to it. */
-export function RunningStrip({ run, strategyName }: { run: BacktestRun; strategyName: string }) {
+export function RunningStrip({
+  run,
+  strategyName,
+  rebalance = null,
+}: {
+  run: BacktestRun;
+  strategyName: string;
+  rebalance?: RebalanceFrequency | null;
+}) {
   const pct = Math.max(0, Math.min(100, run.progressPercent));
   const queued = pct === 0 && !run.currentDate;
+  const count = rebalancesThrough(run, rebalance);
+  const through = run.currentDate ? new Date(`${run.currentDate}T00:00:00Z`) : null;
   return (
     <section
       aria-label={`${strategyName} run in progress`}
@@ -18,7 +31,13 @@ export function RunningStrip({ run, strategyName }: { run: BacktestRun; strategy
         label={`${strategyName} v${run.strategyVersion}`}
       />
       <span className="num text-fg-3">
-        {queued ? 'Queued' : run.currentDate ? `Through ${run.currentDate}` : 'Starting'}
+        {queued
+          ? 'Queued'
+          : through && !Number.isNaN(through.getTime())
+            ? `Through ${longDate(through)}`
+            : 'Starting'}
+        {count &&
+          ` · ${formatNumber(count.passed, { dp: 0 })} of ${formatNumber(count.total, { dp: 0 })} rebalances`}
       </span>
       <span
         className="relative h-1 min-w-[80px] flex-1 overflow-hidden rounded-full bg-line"

@@ -1,5 +1,6 @@
-import { Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
+
+import { CopilotMark } from '../common/Logo';
 
 interface DescribeBoxProps {
   onSubmit: (text: string) => void;
@@ -28,7 +29,7 @@ export function DescribeBox({ onSubmit, placeholder, autoFocus, busy }: Describe
       onSubmit={submit}
       className="flex h-11 items-center gap-2 rounded-[6px] border border-line-strong bg-panel pl-3 pr-1.5 focus-within:border-accent focus-within:shadow-[0_0_0_3px_var(--accent-soft)]"
     >
-      <Sparkles className="h-4 w-4 flex-none text-fg-3" aria-hidden="true" />
+      <CopilotMark className="h-4 w-4 text-fg-3" />
       <label className="sr-only" htmlFor="describe-strategy">
         Describe a strategy
       </label>

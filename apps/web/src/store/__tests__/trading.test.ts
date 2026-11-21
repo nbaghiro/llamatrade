@@ -110,6 +110,15 @@ describe('loadBlotter', () => {
     }
   });
 
+  it('shares one read between callers that ask at the same time', async () => {
+    const { loadBlotter } = useTradingStore.getState();
+    await Promise.all([loadBlotter(), loadBlotter(), loadBlotter()]);
+    expect(listSessions).toHaveBeenCalledTimes(1);
+
+    await loadBlotter();
+    expect(listSessions).toHaveBeenCalledTimes(2);
+  });
+
   it('asks for orders across all sessions rather than per session', async () => {
     await useTradingStore.getState().loadBlotter();
 

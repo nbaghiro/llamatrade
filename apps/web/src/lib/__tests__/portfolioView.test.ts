@@ -7,7 +7,6 @@ import {
   allocationSegments,
   amountProblem,
   dayChange,
-  dayChangeFraction,
   fundsPreview,
   groupByMonth,
   hasTargets,
@@ -141,11 +140,6 @@ describe('dayChange', () => {
     expect(dayChange(1000, 0)).toBe(0);
     expect(dayChange(1000, Number.NaN)).toBe(0);
     expect(dayChange(0, -100)).toBe(0);
-  });
-
-  it('expresses the change against yesterday’s value', () => {
-    expect(dayChangeFraction(103410.27, 895.4)).toBeCloseTo(895.4 / (103410.27 - 895.4));
-    expect(dayChangeFraction(0, 0)).toBe(0);
   });
 });
 

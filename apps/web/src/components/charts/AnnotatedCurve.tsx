@@ -1,4 +1,12 @@
-import { useId, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  useCallback,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { Link } from 'react-router-dom';
 
 import { yDomain } from '../../lib/chart/scale';
@@ -11,6 +19,7 @@ import {
   timePath,
   tickLabel,
 } from '../../lib/chart/timeScale';
+import { useDismiss } from '../ui/useDismiss';
 
 import {
   LaneLegend,
@@ -25,7 +34,7 @@ import { useWidth } from './useWidth';
 export interface CurvePin {
   at: Date;
   label: ReactNode;
-  /** accent for today's news, loss for a drawdown; neutral otherwise. */
+  /** accent for today's news; loss marks a drawdown, outlined in ink; neutral otherwise. */
   tone?: 'neutral' | 'accent' | 'loss';
   /** A number in a dot before the label, e.g. "3 Fills today". */
   count?: number;
@@ -54,6 +63,8 @@ export interface LaneEvent {
   title?: string;
   /** A short note to the right of the mark, e.g. "+$3,000" or "v3 saved Nov 3". */
   text?: ReactNode;
+  /** Makes the mark a button that opens this card about the event. */
+  card?: (close: () => void) => ReactNode;
 }
 
 /** A stretch of a lane: the line a session ran on, or a labelled bar. */
@@ -121,6 +132,8 @@ export interface AnnotatedCurveProps {
   values: readonly number[];
   /** A recessive dashed line on the same dates, such as SPY scaled to the same start. */
   benchmark?: readonly number[];
+  /** More solid lines on the same dates and scale, such as a second run, drawn under the main one. */
+  others?: readonly { values: readonly number[]; color: string }[];
   /** The window shown; defaults to the first and last date. */
   start?: Date;
   /** The end of the past, where Now sits when there is a future column. */
@@ -158,7 +171,7 @@ const VIEW_W = 1000;
 const PIN_TONE: Record<NonNullable<CurvePin['tone']>, string> = {
   neutral: 'border-line-strong bg-panel text-fg-2',
   accent: 'border-accent/45 bg-accent-soft text-fg',
-  loss: 'border-loss/40 bg-loss/10 text-loss',
+  loss: 'border-fg-3 bg-panel text-fg',
 };
 
 const BAND_TONE: Record<NonNullable<CurveBand['tone']>, string> = {
@@ -191,6 +204,7 @@ export function AnnotatedCurve({
   dates,
   values,
   benchmark,
+  others,
   start: startProp,
   end: endProp,
   now,
@@ -221,8 +235,9 @@ export function AnnotatedCurve({
   const spanDays = Math.max(1, (end.getTime() - start.getTime()) / 86_400_000);
 
   const domain = useMemo(
-    () => yDomain(benchmark ? [values, benchmark] : [values]),
-    [values, benchmark]
+    () =>
+      yDomain([values, ...(benchmark ? [benchmark] : []), ...(others ?? []).map((o) => o.values)]),
+    [values, benchmark, others]
   );
   const main = useMemo(
     () => timePath(dates, values, start, end, domain, VIEW_W, height),
@@ -235,6 +250,15 @@ export function AnnotatedCurve({
   const bench = useMemo(
     () => (benchmark ? timePath(dates, benchmark, start, end, domain, VIEW_W, height) : ''),
     [dates, benchmark, start, end, domain, height]
+  );
+
+  const otherPaths = useMemo(
+    () =>
+      (others ?? []).map((o) => ({
+        color: o.color,
+        d: timePath(dates, o.values, start, end, domain, VIEW_W, height),
+      })),
+    [others, dates, start, end, domain, height]
   );
 
   const pinRows = pins.length ? Math.max(...pins.map((p) => p.row ?? 0)) + 1 : 0;
@@ -386,6 +410,17 @@ export function AnnotatedCurve({
                   vectorEffect="non-scaling-stroke"
                 />
               )}
+              {otherPaths.map((o, i) => (
+                <path
+                  key={`other-${i}`}
+                  d={o.d}
+                  fill="none"
+                  stroke={o.color}
+                  strokeWidth={1.4}
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              ))}
               {main && (
                 <path
                   d={main}
@@ -612,6 +647,7 @@ function EventMark({
   const tone = event.tone ?? (laneRisk ? 'risk' : 'accent');
   return (
     <>
+      {event.card && <EventCard event={event} card={event.card} f={f} />}
       <LaneMarker
         shape={event.shape}
         tone={tone}
@@ -629,6 +665,43 @@ function EventMark({
         </span>
       )}
     </>
+  );
+}
+
+/** A hit area over a mark that opens its card under it, kept inside the chart's width. */
+function EventCard({
+  event,
+  card,
+  f,
+}: {
+  event: LaneEvent;
+  card: (close: () => void) => ReactNode;
+  f: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLSpanElement>(null);
+  const close = useCallback(() => setOpen(false), []);
+  const refs = useMemo(() => [root], []);
+  useDismiss(open, close, refs);
+  return (
+    <span ref={root} className="absolute top-1/2 z-[6]" style={left(f)}>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label={event.title ?? 'Open this event'}
+        onClick={() => setOpen((o) => !o)}
+        className={`absolute -left-[11px] -top-[11px] h-[22px] w-[22px] rounded-full hover:shadow-[0_0_0_3px_var(--accent-soft)] ${open ? 'shadow-[0_0_0_3px_var(--accent-soft)]' : ''}`}
+      />
+      {open && (
+        <div
+          role="dialog"
+          aria-label={event.title}
+          className={`absolute top-3.5 z-40 w-[340px] max-w-[calc(100vw-32px)] overflow-hidden rounded-[10px] border border-line-strong bg-panel text-left font-sans shadow-lg ${f > 0.55 ? 'right-[-14px]' : 'left-[-14px]'}`}
+        >
+          {card(close)}
+        </div>
+      )}
+    </span>
   );
 }
 

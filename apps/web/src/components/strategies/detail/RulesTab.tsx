@@ -1,10 +1,7 @@
-import type { BacktestRun } from '@llamatrade/core/proto/backtest_pb';
 import type { Strategy } from '@llamatrade/core/proto/strategy_pb';
-import { fromDSLString } from '@llamatrade/core/strategy/serializer';
-import { lazy, Suspense, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
-import { formatPct } from '../../../lib/format';
 import {
   buildOutline,
   longestLookback,
@@ -13,146 +10,216 @@ import {
   strategySymbols,
 } from '../../../lib/outline';
 import { nextRebalanceDate } from '../../../lib/sessionState';
-import { AnnotatedCurve } from '../../charts';
 import { dayLabel, etToday } from '../../sessions/sessionRows';
 import { Outline, Parts } from '../../strategy-builder/outline/Outline';
-import { Pct, Segmented, Skeleton, SkeletonChart, StatList } from '../../ui';
-import { longestRun, rangeLabel, runFigures } from '../strategyView';
-
-import { Panel } from './OverviewTab';
-import { useFullRun } from './useRuns';
+import { Segmented, Skeleton } from '../../ui';
+import type { SentenceTerm } from '../rules/ruleSentence';
+import { RuleSentenceView } from '../rules/RuleSentenceView';
+import { TermPanel } from '../rules/TermPanel';
+import type { RulesModel } from '../rules/useRulesModel';
+import { useMediaQuery } from '../useMediaQuery';
 
 const DslCodeBlock = lazy(() => import('../DslCodeBlock'));
 
+type View = 'sentence' | 'outline' | 'code';
+
 const VIEWS = [
+  { key: 'sentence', label: 'Sentence' },
   { key: 'outline', label: 'Outline' },
   { key: 'code', label: 'Code' },
 ] as const;
 
-/**
- * Rules (rules2 C, with round one's numbered outline): the longest backtest's curve on top,
- * then the rules as numbered sentences beside what they need.
- */
-export function RulesTab({ strategy, runs }: { strategy: Strategy; runs: readonly BacktestRun[] }) {
-  const [view, setView] = useState<'outline' | 'code'>('outline');
-  const parsed = useMemo(() => fromDSLString(strategy.dslCode), [strategy.dslCode]);
-  const lines = useMemo(() => (parsed ? buildOutline(parsed.tree) : []), [parsed]);
-  const longest = useMemo(() => longestRun(runs, strategy.version), [runs, strategy.version]);
-  const full = useFullRun(longest?.id);
-  const f = useMemo(() => runFigures(full), [full]);
+export function FactRow({
+  items,
+}: {
+  items: ReadonlyArray<{ label: string; value: ReactNode; sub?: ReactNode }>;
+}) {
+  return (
+    <dl
+      className={`m-0 grid grid-cols-2 gap-px overflow-hidden rounded-panel border border-line bg-line ${
+        items.length === 4 ? 'md:grid-cols-4' : 'md:grid-cols-3'
+      }`}
+    >
+      {items.map((it, i) => (
+        <div key={i} className="min-w-0 bg-panel px-4 py-3">
+          <dt className="kicker">{it.label}</dt>
+          <dd className="m-0 mt-1 truncate font-mono text-[15px] font-medium">{it.value}</dd>
+          {it.sub && (
+            <div className="mt-0.5 truncate font-mono text-[11.5px] text-fg-3">{it.sub}</div>
+          )}
+        </div>
+      ))}
+    </dl>
+  );
+}
 
-  const timeframe = parsed?.metadata.timeframe ?? '1D';
-  const benchmark = parsed?.metadata.benchmark ?? '';
-  const symbols = parsed ? strategySymbols(parsed.tree, benchmark) : { held: [], signals: [] };
-  const lookback = parsed ? longestLookback(parsed.tree) : 0;
+/** A bottom sheet for one term on a phone. */
+function TermSheet({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div
+      className="fixed inset-0 z-[70] flex items-end"
+      style={{ background: 'var(--scrim)' }}
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="max-h-[80vh] w-full overflow-y-auto rounded-t-[18px] border-t border-line-strong bg-panel px-5 pb-8 pt-2 shadow-xl"
+      >
+        <div className="mx-auto mb-3 h-1 w-9 rounded-full bg-line-strong" />
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** Rules (rules2 A): one sentence with every value opening its rule, then Outline and Code. */
+export function RulesTab({ strategy, model }: { strategy: Strategy; model: RulesModel }) {
+  const { sentence, tree, timeframe, benchmark } = model;
+  const wide = useMediaQuery('(min-width: 1024px)');
+  const [params, setParams] = useSearchParams();
+  const [view, setView] = useState<View>(sentence?.outlineFirst ? 'outline' : 'sentence');
+  const terms = useMemo(
+    () => (sentence?.parts ?? []).filter((p): p is SentenceTerm => p.kind === 'term'),
+    [sentence]
+  );
+  const asked = params.get('term');
+  const [openId, setOpenId] = useState<string | null>(asked);
+  useEffect(() => {
+    if (asked) {
+      setOpenId(asked);
+      return;
+    }
+    if (wide && openId === null) {
+      const first = terms.find(
+        (t) => t.target.kind === 'condition' && t.target.part === 'threshold'
+      );
+      if (first) setOpenId(first.id);
+    }
+    // Only on first render and when the link asks for a term.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asked, wide, terms]);
+  const open = terms.find((t) => t.id === openId) ?? null;
+  const close = () => {
+    setOpenId(null);
+    if (asked) {
+      params.delete('term');
+      setParams(params, { replace: true });
+    }
+  };
+
+  const lines = useMemo(() => (tree ? buildOutline(tree) : []), [tree]);
+  const symbols = tree ? strategySymbols(tree, benchmark) : { held: [], signals: [] };
+  const signalsOnly = tree ? strategySymbols(tree).signals : [];
+  const lookback = tree ? longestLookback(tree) : 0;
   const rebalance = rebalanceWord(timeframe);
-  const next = nextRebalanceDate(strategy.rebalance || rebalance, etToday());
+  const next = nextRebalanceDate(rebalance, etToday());
+  const today = etToday();
+
+  const meta = !sentence
+    ? `Version ${strategy.version || 1}`
+    : sentence.outlineFirst
+      ? `Version ${strategy.version || 1} · ${sentence.ruleCount} rules, so it opens in Outline`
+      : `Version ${strategy.version || 1} · written from the rules`;
+
+  const panel = open ? (
+    <TermPanel
+      key={open.id}
+      term={open}
+      model={model}
+      strategy={strategy}
+      onClose={close}
+      compact={!wide}
+    />
+  ) : null;
 
   return (
     <div className="grid gap-5">
-      {longest && (
-        <section className="panel-rim px-5 pb-2 pt-4">
-          <span className="kicker">
-            Version {full?.strategyVersion || longest.strategyVersion} over its longest backtest
-          </span>
-          {full === undefined ? (
-            <SkeletonChart height={196} />
-          ) : !f || f.equity.length < 2 ? (
-            <p className="m-0 py-6 text-[13px] text-fg-2">This backtest has no curve to draw.</p>
-          ) : (
-            <>
-              <div className="mb-3 mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <b className="text-[17px] font-semibold">{rangeLabel(f)}</b>
-                <span className="font-mono text-[13px]">
-                  <Pct value={f.totalReturn} pnl dp={1} />
-                </span>
-                {f.benchmarkReturn !== null && (
-                  <span className="font-mono text-[12.5px] text-fg-3">
-                    {f.benchmarkSymbol} {formatPct(f.benchmarkReturn, { dp: 1, signed: true })}
-                  </span>
-                )}
-              </div>
-              <AnnotatedCurve
-                label={`${strategy.name} over its longest backtest`}
-                dates={f.dates}
-                values={f.equity}
-                benchmark={f.bench.length === f.equity.length ? f.bench : undefined}
-                side={
-                  <StatList
-                    items={[
-                      { label: 'Trades', value: String(full?.results?.metrics?.totalTrades ?? 0) },
-                      {
-                        label: 'Max drawdown',
-                        value: formatPct(f.maxDrawdown, { dp: 1 }),
-                        tone: 'loss',
-                      },
-                      { label: 'Sharpe', value: f.sharpe.toFixed(2) },
-                    ]}
-                  />
-                }
-                legend={[
-                  { shape: 'dot', label: strategy.name },
-                  ...(f.bench.length
-                    ? [{ shape: 'planned' as const, label: f.benchmarkSymbol }]
-                    : []),
-                ]}
-              />
-              <p className="m-0 mb-2 mt-1 text-[11.5px] text-fg-3">
-                Backtests don’t record which branch held at each rebalance yet, so the timeline
-                shows the curve without the branch band.{' '}
-                <Link to={`/backtest/${longest.id}`} className="text-accent hover:underline">
-                  Open this backtest
-                </Link>
-              </p>
-            </>
-          )}
-        </section>
-      )}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="text-[12px] text-fg-3">{meta}</span>
+        <span className="flex items-center gap-2">
+          <Segmented label="Rules view" options={VIEWS} value={view} onChange={setView} />
+        </span>
+      </div>
 
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
-        <section className="min-w-0">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <b className="text-[15px] font-semibold">Version {strategy.version || 1}</b>
-            <span className="flex gap-2">
-              <Segmented label="Rules view" options={VIEWS} value={view} onChange={setView} />
-              <Link to={`/strategies/${strategy.id}/edit`} className="btn btn-secondary btn-sm">
-                Edit
-              </Link>
-            </span>
-          </div>
-          {view === 'code' || !parsed ? (
+      <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_400px]">
+        <section className="grid min-w-0 gap-5">
+          {view === 'code' || !tree || !sentence ? (
             <Suspense fallback={<Skeleton className="h-48 w-full" />}>
               <DslCodeBlock code={strategy.dslCode} className="rounded-panel border border-line" />
             </Suspense>
           ) : (
-            <div className="panel px-5 py-4">
-              <p className="m-0 mb-4 text-[13.5px] text-fg-2">
-                <Parts parts={metaParts({ timeframe, benchmark })} />
-              </p>
-              <Outline lines={lines} label={`${strategy.name} outline`} />
-            </div>
+            <>
+              <RuleSentenceView
+                parts={sentence.parts}
+                openId={openId}
+                onOpen={(id) => setOpenId((cur) => (cur === id ? null : id))}
+                className={`text-fg-2 ${
+                  view === 'outline'
+                    ? 'text-[20px] leading-[1.6] md:text-[26px]'
+                    : 'text-[21px] leading-[1.6] tracking-[-0.01em] md:text-[30px] md:leading-[1.55]'
+                }`}
+              />
+              {view === 'sentence' ? (
+                <>
+                  <p className="m-0 text-[12.5px] text-fg-3">
+                    Each underlined part opens its rule. The sentence is rebuilt from the code
+                    whenever you save, so it matches what runs.
+                  </p>
+                  <FactRow
+                    items={[
+                      {
+                        label: 'Trades',
+                        value: `${symbols.held.length} ${symbols.held.length === 1 ? 'symbol' : 'symbols'}`,
+                        sub: symbols.held.join(' '),
+                      },
+                      {
+                        label: 'Reads only',
+                        value: symbols.signals.length ? symbols.signals.join(' ') : 'Nothing else',
+                        sub: !symbols.signals.includes(benchmark)
+                          ? 'signals'
+                          : signalsOnly.includes(benchmark)
+                            ? 'signal and benchmark'
+                            : symbols.signals.length === 1
+                              ? 'benchmark'
+                              : `${benchmark} is the benchmark`,
+                      },
+                      {
+                        label: 'History needed',
+                        value: lookback ? `${lookback} days` : 'None',
+                        sub: lookback ? 'trading days' : undefined,
+                      },
+                      {
+                        label: 'Next rebalance',
+                        value: next
+                          ? next.getTime() === today.getTime()
+                            ? 'Today'
+                            : dayLabel(next)
+                          : 'Each day',
+                        sub: rebalance,
+                      },
+                    ]}
+                  />
+                </>
+              ) : (
+                <div className="panel px-5 py-4">
+                  <p className="m-0 mb-4 text-[13.5px] text-fg-2">
+                    <Parts parts={metaParts({ timeframe, benchmark })} />
+                  </p>
+                  <Outline lines={lines} label={`${strategy.name} outline`} />
+                </div>
+              )}
+            </>
           )}
         </section>
-        <Panel title="What the rules need">
-          <StatList
-            items={[
-              { label: 'Symbols held', value: String(symbols.held.length) },
-              ...(symbols.signals.length
-                ? [{ label: 'Signals read', value: symbols.signals.join(' ') }]
-                : []),
-              {
-                label: 'History before the first rebalance',
-                value: lookback ? `${lookback} days` : 'None',
-              },
-              { label: 'Rebalance', value: rebalance },
-              ...(next ? [{ label: 'Next scheduled', value: dayLabel(next) }] : []),
-            ]}
-          />
-          <p className="m-0 mt-3 font-mono text-[11.5px] leading-[1.7] text-fg-2">
-            {symbols.held.join(' ')}
-          </p>
-        </Panel>
+        {wide && panel && view !== 'code' && <aside className="lg:sticky lg:top-4">{panel}</aside>}
       </div>
+      {!wide && panel && view !== 'code' && <TermSheet onClose={close}>{panel}</TermSheet>}
     </div>
   );
 }

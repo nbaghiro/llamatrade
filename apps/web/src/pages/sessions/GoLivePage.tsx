@@ -11,6 +11,7 @@ import { AnnotatedCurve } from '../../components/charts';
 import { buildSessionRow, etToday } from '../../components/sessions';
 import { dayLabel } from '../../components/sessions/sessionRows';
 import {
+  asOf,
   curveStats,
   etDayLabel,
   etHm,
@@ -26,7 +27,7 @@ import { Money, Pct } from '../../components/ui/Num';
 import { PanelError } from '../../components/ui/PanelError';
 import { SkeletonChart } from '../../components/ui/Skeleton';
 import { formatMoney, formatNumber, formatPct } from '../../lib/format';
-import { maskedKey } from '../../lib/scope';
+import { alpacaAccountLabel } from '../../lib/scope';
 import { DEFAULT_RISK_LIMITS } from '../../lib/sessionState';
 
 const DAY_MS = 86_400_000;
@@ -128,6 +129,11 @@ export default function GoLivePage() {
     f.equity
   );
   const stats = curveStats(series.values);
+  const bench = detail.benchmark.length ? asOf(toSeries(detail.benchmark), series.dates) : [];
+  const benchmark = bench.some(Number.isFinite) ? bench : undefined;
+  const benchStats = benchmark ? curveStats(benchmark.filter(Number.isFinite)) : null;
+  const benchReturn =
+    benchStats && benchStats.first > 0 ? benchStats.last / benchStats.first - 1 : null;
   const days = fillDays(orders);
   const filled = orders.filter(isFilled).length;
   const planned = nextRebalances(row.rebalance, etToday(now), 4);
@@ -203,20 +209,8 @@ export default function GoLivePage() {
               {f.equity !== null && (
                 <Money value={f.equity} className="text-[28px] font-semibold tracking-[-0.03em]" />
               )}
-              {f.total !== null && (
-                <span
-                  className={`rounded px-1.5 py-0.5 text-[12px] ${f.total < 0 ? 'bg-loss/10' : 'bg-gain/10'}`}
-                >
-                  <Money value={f.total} pnl />
-                </span>
-              )}
-              {f.totalPct !== null && (
-                <span
-                  className={`rounded px-1.5 py-0.5 text-[12px] ${f.totalPct < 0 ? 'bg-loss/10' : 'bg-gain/10'}`}
-                >
-                  <Pct value={f.totalPct} pnl dp={1} />
-                </span>
-              )}
+              {f.total !== null && <Money value={f.total} pnl className="text-[12px]" />}
+              {f.totalPct !== null && <Pct value={f.totalPct} pnl dp={1} className="text-[12px]" />}
               <ModeBadge mode="paper" size="sm" />
             </div>
             {series.dates.length > 1 ? (
@@ -224,6 +218,7 @@ export default function GoLivePage() {
                 label={`${row.name} paper sleeve value`}
                 dates={series.dates}
                 values={series.values}
+                benchmark={benchmark}
                 end={now}
                 now={{ label: `Now ${etHm(now)}` }}
                 height={170}
@@ -292,18 +287,21 @@ export default function GoLivePage() {
               </p>
             )}
           </div>
-          <dl className="m-0 grid grid-cols-2 overflow-hidden rounded-panel border border-line bg-panel sm:grid-cols-4">
+          <dl
+            className={`m-0 grid grid-cols-2 overflow-hidden rounded-panel border border-line bg-panel ${
+              benchReturn !== null ? 'sm:grid-cols-5' : 'sm:grid-cols-4'
+            }`}
+          >
             <Cell label={started ? `Paper, since ${etDayLabel(started)}` : 'Paper, since start'}>
               {f.totalPct === null ? '·' : <Pct value={f.totalPct} pnl dp={1} />}
             </Cell>
+            {benchReturn !== null && (
+              <Cell label="SPY, same dates">
+                <Pct value={benchReturn} signed dp={1} />
+              </Cell>
+            )}
             <Cell label="Largest drawdown">
-              {stats ? (
-                <span className={stats.maxDrawdown < 0 ? 'text-loss' : ''}>
-                  {formatPct(stats.maxDrawdown, { dp: 1 })}
-                </span>
-              ) : (
-                '·'
-              )}
+              {stats ? <span>{formatPct(stats.maxDrawdown, { dp: 1 })}</span> : '·'}
             </Cell>
             <Cell label="Rebalances that traded">{days.length}</Cell>
             <Cell label="Orders filled">{filled}</Cell>
@@ -344,7 +342,7 @@ export default function GoLivePage() {
             {account && (
               <label className="grid gap-1.5">
                 <span className="text-[12.5px] text-fg-2">
-                  Capital from Alpaca live {maskedKey(account.apiKeyPrefix)}
+                  Capital from {alpacaAccountLabel(true, account.accountNumber)}
                 </span>
                 <span className="flex items-center gap-2 rounded-[10px] border border-line-strong px-3 py-2">
                   <span className="text-fg-3">$</span>

@@ -65,6 +65,61 @@ export function LogoMark({
   );
 }
 
+/**
+ * Copilot's mark: one candle whose wick splits into three strokes, an asterisk with the body,
+ * in the accent, at its centre. Sized by `size`, or by `className` when `size` is left out.
+ */
+export function CopilotMark({
+  size,
+  className = '',
+  bold = false,
+}: {
+  size?: number;
+  className?: string;
+  bold?: boolean;
+}) {
+  const w = bold ? 5.3 : 4.8;
+  return (
+    <svg
+      viewBox="0 0 32 32"
+      width={size}
+      height={size}
+      fill="none"
+      aria-hidden="true"
+      className={`block flex-none ${className}`}
+    >
+      <path
+        d="M16 3.5V28.5M5.2 9.75L26.8 22.25M5.2 22.25L26.8 9.75"
+        stroke="currentColor"
+        strokeWidth={bold ? 1.9 : 1.7}
+        strokeLinecap="round"
+      />
+      <rect
+        x={16 - w / 2}
+        y="10"
+        width={w}
+        height="12"
+        rx="0.6"
+        style={{ fill: 'rgb(var(--accent))' }}
+      />
+    </svg>
+  );
+}
+
+/** The app's brand: the 34px Candlesticks mark with the caps wordmark, as in the top bar. */
+export function BrandLockup({ wordClassName = '' }: { wordClassName?: string }) {
+  return (
+    <span className="flex items-center gap-3 text-fg">
+      <LogoMark size={34} bold className="-my-2" />
+      <span
+        className={`whitespace-nowrap text-[12px] font-semibold uppercase leading-none tracking-[0.16em] ${wordClassName}`}
+      >
+        LlamaTrade
+      </span>
+    </span>
+  );
+}
+
 export function Logo({ size = 22, showText = false, className = '' }: LogoProps) {
   return (
     <span className={`inline-flex items-center gap-2 text-fg ${className}`}>

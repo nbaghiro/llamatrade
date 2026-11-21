@@ -1,11 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  cashLine,
   cleanSymbol,
-  dayMoves,
   heldRows,
-  mapTiles,
   lastSessionOnly,
   rangeBars,
   rangeStart,
@@ -110,82 +107,5 @@ describe('cleanSymbol', () => {
     expect(cleanSymbol('')).toBeNull();
     expect(cleanSymbol('1ABC')).toBeNull();
     expect(cleanSymbol('TOO-LONG-SYMBOL')).toBeNull();
-  });
-});
-
-describe('mapTiles and dayMoves', () => {
-  const rows = heldRows([
-    sleeve({
-      executionId: 'a',
-      holdings: [h('TLT', 200, 18000), h('SMH', 30, 7800), h('XLI', 40, 5500)],
-    }),
-    sleeve({ executionId: 'b', name: 'All-Weather', live: true, holdings: [h('TLT', 212, 19500)] }),
-  ]);
-  const quotes = {
-    TLT: { change: -0.2, changePercent: -0.22 },
-    SMH: { change: 3.38, changePercent: 1.32 },
-    XLI: null,
-  };
-
-  it('sums dollars and shares per symbol and applies the move to the shares held', () => {
-    const tiles = mapTiles(rows, quotes, 100000);
-    const tlt = tiles.find((t) => t.symbol === 'TLT');
-    expect(tlt?.value).toBe(37500);
-    expect(tlt?.qty).toBe(412);
-    expect(tlt?.share).toBeCloseTo(0.375, 9);
-    expect(tlt?.pct).toBe(-0.22);
-    expect(tlt?.dayMove).toBeCloseTo(-82.4, 9);
-    expect(tiles.find((t) => t.symbol === 'XLI')).toMatchObject({ pct: null, dayMove: null });
-    expect(mapTiles(rows, quotes, 0)[0].share).toBeNull();
-  });
-
-  it('totals the known moves and lists the largest from best to worst', () => {
-    const d = dayMoves(mapTiles(rows, quotes, 100000));
-    expect(d.total).toBeCloseTo(101.4 - 82.4, 9);
-    expect(d.held).toBe(50800);
-    expect(d.movers.map((m) => m.symbol)).toEqual(['SMH', 'TLT']);
-    expect(d.missing).toEqual(['XLI']);
-    expect(dayMoves(mapTiles(rows, quotes, 1), 1).movers.map((m) => m.symbol)).toEqual(['SMH']);
-    expect(dayMoves([])).toEqual({ total: 0, held: 0, movers: [], missing: [] });
-  });
-});
-
-describe('cashLine', () => {
-  it('adds sleeve cash to unallocated and names where most of it is', () => {
-    expect(
-      cashLine(
-        [
-          { name: 'Tech Momentum', cash: 20000 },
-          { name: 'All-Weather', cash: 300 },
-          { name: 'Unknown', cash: null },
-        ],
-        6000
-      )
-    ).toEqual({
-      total: 26300,
-      most: { sleeve: { name: 'Tech Momentum', cash: 20000 }, amount: 20000 },
-    });
-    expect(cashLine([{ name: 'A', cash: 100 }], 900)).toEqual({
-      total: 1000,
-      most: { sleeve: null, amount: 900 },
-    });
-  });
-
-  it('names nobody when the cash is spread out or in one place only', () => {
-    expect(
-      cashLine(
-        [
-          { name: 'A', cash: 50 },
-          { name: 'B', cash: 50 },
-        ],
-        null
-      )?.most
-    ).toBeNull();
-    expect(cashLine([{ name: 'A', cash: 50 }], null)).toEqual({ total: 50, most: null });
-    expect(cashLine([], 0)).toEqual({ total: 0, most: null });
-  });
-
-  it('is unknown when the ledger gave no figures', () => {
-    expect(cashLine([{ name: 'A', cash: null }], null)).toBeNull();
   });
 });

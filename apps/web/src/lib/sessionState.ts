@@ -6,6 +6,8 @@ import { OrderStatus } from '@llamatrade/core/proto/trading_pb';
 
 import type { RunState } from '../components/ui/StatusMark';
 
+import { tradingDayOnOrAfter } from './marketHolidays';
+
 export type SessionState = 'running' | 'starting' | 'paused' | 'frozen' | 'stopped' | 'error';
 
 export interface SessionStateInput {
@@ -230,29 +232,11 @@ export function sessionFigures({
 
 const FIRST_OF_PERIOD: Record<string, number> = { monthly: 1, quarterly: 3, annually: 12 };
 
-/** NYSE closures that can land on the first weekday of a week or month. */
-function isClosedHoliday(d: Date): boolean {
-  const m = d.getUTCMonth();
-  const day = d.getUTCDate();
-  const wd = d.getUTCDay();
-  if (m === 0 && (day === 1 || (day === 2 && wd === 1))) return true;
-  if (m === 8 && wd === 1 && day <= 7) return true;
-  return false;
-}
-
-function firstTradingDayFrom(d: Date): Date {
-  const out = new Date(d);
-  while (out.getUTCDay() === 0 || out.getUTCDay() === 6 || isClosedHoliday(out)) {
-    out.setUTCDate(out.getUTCDate() + 1);
-  }
-  return out;
-}
-
 /**
  * The next scheduled rebalance for a running session: the first trading day of the next
  * week, month, quarter or year (the runtime rebalances on the first bar of a new period).
  * `today` is the calendar date in New York at UTC midnight. Daily and unknown schedules
- * return null. Only weekends, New Year's Day and Labor Day are skipped.
+ * return null. Weekends and NYSE holidays are skipped.
  */
 export function nextRebalanceDate(rebalance: string | undefined, today: Date): Date | null {
   const freq = (rebalance ?? '').trim().toLowerCase();
@@ -260,10 +244,10 @@ export function nextRebalanceDate(rebalance: string | undefined, today: Date): D
   const m = today.getUTCMonth();
   if (freq === 'weekly') {
     const daysToMonday = (8 - today.getUTCDay()) % 7 || 7;
-    return firstTradingDayFrom(new Date(Date.UTC(y, m, today.getUTCDate() + daysToMonday)));
+    return tradingDayOnOrAfter(new Date(Date.UTC(y, m, today.getUTCDate() + daysToMonday)));
   }
   const step = FIRST_OF_PERIOD[freq];
   if (!step) return null;
   const nextMonth = (Math.floor(m / step) + 1) * step;
-  return firstTradingDayFrom(new Date(Date.UTC(y, nextMonth, 1)));
+  return tradingDayOnOrAfter(new Date(Date.UTC(y, nextMonth, 1)));
 }

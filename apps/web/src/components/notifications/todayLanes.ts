@@ -13,6 +13,10 @@ export interface LaneSessionInput {
   name: string;
   isActive: boolean;
   sleeveId: string;
+  /** The session's schedule rebalances today. */
+  rebalancesToday?: boolean;
+  /** When the sleeve froze, where known. */
+  frozenAt?: Date | null;
 }
 
 export interface LaneOrderInput {
@@ -32,6 +36,10 @@ export interface TodayLane {
   name: string;
   frozen: boolean;
   fills: LaneFill[];
+  /** A rebalance is still to come before the close. */
+  planned: boolean;
+  /** The New York minute the sleeve froze, when that was today. */
+  frozenMinute: number | null;
 }
 
 const sameEtDay = (a: Date, b: Date) => {
@@ -78,11 +86,15 @@ export function todayLanes(
       if (last && m - last.minute < MERGE_MIN) last.count += 1;
       else fills.push({ minute: m, count: 1 });
     }
+    const frozen = s.sleeveId !== '' && frozenSleeveIds.has(s.sleeveId);
+    const frozenToday = frozen && s.frozenAt && sameEtDay(s.frozenAt, now) ? s.frozenAt : null;
     lanes.push({
       id: s.id,
       name: s.name,
-      frozen: s.sleeveId !== '' && frozenSleeveIds.has(s.sleeveId),
+      frozen,
       fills,
+      planned: Boolean(s.rebalancesToday) && s.isActive && etParts(now).minutes < CLOSE_MIN,
+      frozenMinute: frozenToday ? etParts(frozenToday).minutes : null,
     });
   }
   return lanes.sort((a, b) => Number(b.frozen) - Number(a.frozen));

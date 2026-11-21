@@ -3,10 +3,12 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import { TopUpDialog } from '../../components/funding/TopUpDialog';
+import { fillNote, useSaleHistory } from '../../components/portfolio/fillNotes';
 import { etDayKey, type SleeveFill } from '../../components/portfolio/history';
 import { ReconciliationPanel } from '../../components/portfolio/ReconciliationPanel';
 import { SleeveCurve } from '../../components/portfolio/SleeveCurve';
 import { shortDate, sinceStart, sleeveRunState } from '../../components/portfolio/sleeveView';
+import { useAssetNames } from '../../components/portfolio/useAssetNames';
 import { useEquityCurves } from '../../components/portfolio/useEquityCurves';
 import {
   useAllActivity,
@@ -69,7 +71,13 @@ const TH =
   'border-b border-line px-3 py-2.5 text-left font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-fg-3';
 const TD = 'border-b border-line px-3 py-3';
 
-function Holdings({ sleeve }: { sleeve: SleeveDetail }) {
+function Holdings({
+  sleeve,
+  names,
+}: {
+  sleeve: SleeveDetail;
+  names: Readonly<Record<string, string>>;
+}) {
   const rows = weightRows(sleeve.holdings, sleeve.value, sleeve.targets);
   const cash = sleeve.cash;
   return (
@@ -96,10 +104,18 @@ function Holdings({ sleeve }: { sleeve: SleeveDetail }) {
           )}
           {rows.map(({ holding: h, weight, target }) => (
             <tr key={h.symbol}>
-              <td className={`${TD} font-mono font-semibold`}>
-                <Link to={`/markets?symbol=${h.symbol}`} className="hover:underline">
+              <td className={TD}>
+                <Link
+                  to={`/markets?symbol=${h.symbol}`}
+                  className="font-mono font-semibold hover:underline"
+                >
                   {h.symbol}
                 </Link>
+                {names[h.symbol] && (
+                  <div className="max-w-[220px] truncate text-[12px] text-fg-3">
+                    {names[h.symbol]}
+                  </div>
+                )}
               </td>
               <td className={`${TD} text-right`}>
                 <Num value={h.qty} dp={h.qty % 1 ? 4 : 0} />
@@ -157,10 +173,28 @@ function Holdings({ sleeve }: { sleeve: SleeveDetail }) {
   );
 }
 
-function Fills({ fills, now }: { fills: readonly SleeveFill[]; now: Date }) {
+function Fills({
+  sleeve,
+  fills,
+  now,
+}: {
+  sleeve: SleeveDetail;
+  fills: readonly SleeveFill[];
+  now: Date;
+}) {
   const todayKey = etDayKey(now);
   const todays = fills.filter((f) => etDayKey(f.at) === todayKey);
   const list = (todays.length ? todays : fills).slice(0, MAX_FILLS);
+  const history = useSaleHistory(
+    sleeve.accountId,
+    list.filter((f) => f.side === 'sell').map((f) => f.symbol)
+  );
+  const noteText = (f: SleeveFill) => {
+    const note = fillNote(f, sleeve.lots, history);
+    if (note.kind === 'newLot') return 'new lot';
+    if (note.kind === 'realized') return `realized ${formatMoney(note.amount, { signed: true })}`;
+    return null;
+  };
   return (
     <section className="panel">
       <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
@@ -170,27 +204,36 @@ function Fills({ fills, now }: { fills: readonly SleeveFill[]; now: Date }) {
       {list.length === 0 ? (
         <p className="m-0 px-4 py-3.5 text-[12.5px] text-fg-3">No fills yet.</p>
       ) : (
-        list.map((f) => (
-          <div
-            key={f.id}
-            className="flex items-start gap-3 border-b border-line px-4 py-3 last:border-b-0"
-          >
-            <span className="mt-0.5 rounded-[3px] border border-line-strong px-1.5 font-mono text-[10.5px] uppercase text-fg-2">
-              {f.side}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block">
-                {formatNumber(f.qty, { dp: f.qty % 1 ? 2 : 0 })} {f.symbol} at{' '}
-                {formatMoney(f.price)}
+        list.map((f) => {
+          const note = noteText(f);
+          return (
+            <div
+              key={f.id}
+              className="flex items-start gap-3 border-b border-line px-4 py-3 last:border-b-0"
+            >
+              <span className="mt-0.5 rounded-[3px] border border-line-strong px-1.5 font-mono text-[10.5px] uppercase text-fg-2">
+                {f.side}
               </span>
-              <span className="text-[12px] text-fg-3">
-                {todays.length ? etClock(f.at) : `${shortDate(f.at)} · ${etClock(f.at)}`}
+              <span className="min-w-0 flex-1">
+                <span className="block">
+                  {formatNumber(f.qty, { dp: f.qty % 1 ? 2 : 0 })} {f.symbol} at{' '}
+                  {formatMoney(f.price)}
+                </span>
+                <span className="text-[12px] text-fg-3">
+                  {todays.length ? etClock(f.at) : `${shortDate(f.at)} · ${etClock(f.at)}`}
+                  {note ? ` · ${note}` : ''}
+                </span>
               </span>
-            </span>
-            <Money value={f.qty * f.price} className="text-[13px]" />
-          </div>
-        ))
+              <Money value={f.qty * f.price} className="text-[13px]" />
+            </div>
+          );
+        })
       )}
+      <p className="m-0 border-t border-line px-4 py-2.5 text-[12px] text-fg-3">
+        {sleeve.frozen
+          ? 'The ledger and Alpaca disagree on a holding here.'
+          : 'No difference with Alpaca is open for this sleeve.'}
+      </p>
     </section>
   );
 }
@@ -211,6 +254,7 @@ export default function SleevePage() {
   const sessionId = useSessionForSleeve(current?.sleeveId ?? null);
   const executionIds = current?.executionId ? [current.executionId] : [];
   const { curves } = useEquityCurves(executionIds, { benchmark: true });
+  const names = useAssetNames(current?.holdings.map((h) => h.symbol) ?? []);
 
   if (!current) {
     return (
@@ -332,8 +376,8 @@ export default function SleevePage() {
       </section>
 
       <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <Holdings sleeve={current} />
-        <Fills fills={fills} now={now} />
+        <Holdings sleeve={current} names={names} />
+        <Fills sleeve={current} fills={fills} now={now} />
       </div>
 
       {current.sleeveId && (

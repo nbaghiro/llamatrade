@@ -118,30 +118,9 @@
     @apply bg-panel border border-line rounded-panel;
   }
 
-  /* The hero panel around an annotated curve: an accent rim and a soft glow. */
+  /* The hero panel around an annotated curve: a quiet raised card. */
   .panel-rim {
-    @apply relative bg-panel border rounded-[10px];
-    border-color: color-mix(in srgb, rgb(var(--accent)) 45%, rgb(var(--line)));
-    box-shadow:
-      var(--shadow),
-      0 0 0 1px color-mix(in srgb, rgb(var(--accent)) 22%, transparent),
-      0 8px 18px -12px color-mix(in srgb, rgb(var(--accent)) 40%, transparent);
-  }
-
-  .panel-rim::before {
-    content: '';
-    position: absolute;
-    left: 10%;
-    right: 10%;
-    top: -1px;
-    height: 1px;
-    background: linear-gradient(
-      90deg,
-      transparent,
-      color-mix(in srgb, rgb(var(--accent)) 85%, #fff),
-      transparent
-    );
-    pointer-events: none;
+    @apply relative bg-panel border border-line rounded-[10px] shadow-sm;
   }
 
   .card-shadow {
@@ -330,45 +309,6 @@
     color-mix(in srgb, rgb(var(--accent)) 90%, #fff),
     transparent
   );
-}
-
-/* Page art: the site's background chart behind the top of a page. */
-.page-art {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  z-index: -1;
-  width: 100vw;
-  height: 460px;
-  transform: translateX(-50%);
-  color: rgb(var(--accent));
-  pointer-events: none;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 45%, transparent 100%);
-  mask-image: linear-gradient(to bottom, #000 0, #000 45%, transparent 100%);
-}
-.page-art svg {
-  display: block;
-}
-.page-art .sa {
-  opacity: 0.14;
-}
-.page-art .sa.acc {
-  opacity: 0.45;
-}
-:root[data-mode='light'] .page-art .sa {
-  opacity: 0.11;
-}
-:root[data-mode='light'] .page-art .sa.acc {
-  opacity: 0.4;
-}
-@media (max-width: 767px) {
-  .page-art .sa {
-    opacity: 0.08;
-  }
-  .page-art .sa.acc {
-    opacity: 0.25;
-  }
 }
 
 /* Holdings map tiles on Markets. The gain and loss tints and text colours for tiles are set

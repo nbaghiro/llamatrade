@@ -132,7 +132,7 @@ module.exports = {
         DEFAULT: 'rgb(var(--canvas))',
       },
       maxWidth: {
-        content: '1920px',
+        content: '1384px',
       },
     },
   },

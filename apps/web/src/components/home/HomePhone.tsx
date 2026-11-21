@@ -1,3 +1,4 @@
+import { ChevronRight } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 
@@ -6,8 +7,8 @@ import { etClock } from '../../lib/marketClock';
 import { Sparkline } from '../charts';
 import { useWidth } from '../charts/useWidth';
 
-import type { HeroFigures } from './HomeHero';
-import { Chg, Label } from './HomeHero';
+import type { HeroFigures } from './HomeHead';
+import { Chg, Label } from './HomeHead';
 import {
   dayLabel,
   etDay,
@@ -105,13 +106,13 @@ export function HomePhone({
   const byId = new Map(sessions.map((s) => [s.id, s]));
 
   return (
-    <div className="grid gap-5 md:hidden">
+    <div className="grid gap-5 pb-16 md:hidden">
       {scrolled && (
         <div className="fixed inset-x-0 top-14 z-30 flex items-center gap-2.5 border-b border-line bg-canvas/95 px-4 py-2.5 backdrop-blur">
           <span className="font-mono text-[16px] font-semibold">{formatMoney(figures.total)}</span>
           {figures.todayPct !== null && (
             <span
-              className={`font-mono text-[13px] ${pnlTone(figures.todayPct) === 'loss' ? 'text-loss' : pnlTone(figures.todayPct) === 'gain' ? 'text-gain' : 'text-fg-3'}`}
+              className={`font-mono text-[13px] ${pnlTone(figures.todayPct * 100) === 'loss' ? 'text-loss' : pnlTone(figures.todayPct * 100) === 'gain' ? 'text-gain' : 'text-fg-3'}`}
             >
               {formatPct(figures.todayPct, { signed: true })}
             </span>
@@ -129,7 +130,9 @@ export function HomePhone({
           <div className="mt-2 flex items-center gap-1.5">
             <Chg value={figures.today}>{formatMoney(figures.today, { signed: true })}</Chg>
             {figures.todayPct !== null && (
-              <Chg value={figures.todayPct}>{formatPct(figures.todayPct, { signed: true })}</Chg>
+              <Chg value={figures.todayPct * 100}>
+                {formatPct(figures.todayPct, { signed: true })}
+              </Chg>
             )}
             <span className="text-[13px] text-fg-3">today</span>
           </div>
@@ -144,6 +147,13 @@ export function HomePhone({
         )}
       </div>
       {recent.length > 1 && <WideSpark values={recent} />}
+      <Link
+        to="/portfolio/activity"
+        className="-mt-2 inline-flex items-center gap-1 justify-self-start text-[13.5px] text-fg-2 hover:text-fg"
+      >
+        Cash and every fill
+        <ChevronRight aria-hidden="true" className="h-4 w-4 text-fg-3" />
+      </Link>
 
       <Section title="Sessions" link={{ to: '/trading', label: 'See all' }}>
         {sessions.length === 0 ? (
@@ -178,7 +188,7 @@ export function HomePhone({
                         {s.value === null ? 'No value' : formatMoney(s.value)}
                       </div>
                       <div
-                        className={`font-mono text-[12px] ${s.todayPct === null || stopped ? 'text-fg-3' : pnlTone(s.todayPct) === 'gain' ? 'text-gain' : pnlTone(s.todayPct) === 'loss' ? 'text-loss' : 'text-fg-3'}`}
+                        className={`font-mono text-[12px] ${s.todayPct === null || stopped ? 'text-fg-3' : pnlTone(s.todayPct * 100) === 'gain' ? 'text-gain' : pnlTone(s.todayPct * 100) === 'loss' ? 'text-loss' : 'text-fg-3'}`}
                       >
                         {s.todayPct === null || stopped
                           ? '0.00%'

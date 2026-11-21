@@ -1,5 +1,7 @@
 import { MessageRole, type AgentMessage } from '@llamatrade/core/stores/agent';
 
+import { stripDraftInstruction } from './draftQuestions';
+
 export type ConversationKind = 'explained' | 'drafts' | 'backtests';
 
 export const KIND_LABEL: Record<ConversationKind, string> = {
@@ -51,8 +53,9 @@ export function outcomeLabel(messages: readonly AgentMessage[]): string {
 
 /** Splits a reply into the paragraphs a search result can point at. */
 export function paragraphs(content: string): string[] {
-  return content
+  return stripDraftInstruction(content)
     .replace(/```[\s\S]*?```/g, '')
+    .replace(/\s?\[\d{1,2}(?:\s*,\s*\d{1,2})*\](?!\()/g, '')
     .split(/\n\s*\n/)
     .map((p) =>
       p

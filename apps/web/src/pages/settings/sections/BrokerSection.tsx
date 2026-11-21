@@ -2,18 +2,27 @@ import { toDate } from '@llamatrade/core/format';
 import type { AlpacaCredentialsListItem } from '@llamatrade/core/proto/auth_pb';
 import { ExecutionMode } from '@llamatrade/core/proto/common_pb';
 import { useBrokerStore } from '@llamatrade/core/stores/broker';
-import { AlertTriangle, Check, Minus } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
 import { LIVE_REQUIREMENTS } from '../../../components/auth/accountPaths';
 import { AlpacaMark } from '../../../components/settings/AlpacaMark';
 import { useSessionRows } from '../../../components/shell/useSessionRows';
-import { Dialog, ModeBadge, PanelError, Skeleton } from '../../../components/ui';
+import { Dialog, ModeBadge, PanelError, Segmented, Skeleton } from '../../../components/ui';
 import { asSentence } from '../../../lib/format';
-import { maskedKey as shortKey } from '../../../lib/scope';
+import { maskedAccount } from '../../../lib/scope';
 import { startAlpacaLink } from '../../../services/alpacaOAuth';
 import { useAuthStore } from '../../../store/auth';
+import {
+  brokerEvents,
+  filterEvents,
+  readChecks,
+  recordCheck,
+  type BrokerEvent,
+  type BrowserCheck,
+  type LogFilter,
+} from '../brokerLog';
 import { etTime, problemText, type AccountKind, type AccountProblem } from '../health';
 import { keyMismatch, maskedKey, primaryCredential } from '../model';
 import { useSettingsSummary } from '../useSettingsSummary';
@@ -25,30 +34,6 @@ const longDay = (d: Date | null) =>
   d
     ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : 'Not available';
-
-function CheckRow({
-  state,
-  children,
-  detail,
-}: {
-  state: 'pass' | 'fail' | 'unknown';
-  children: ReactNode;
-  detail?: ReactNode;
-}) {
-  return (
-    <div className="flex items-center gap-2 py-1 text-[12.5px] text-fg">
-      {state === 'pass' ? (
-        <Check aria-label="Passed" className="h-4 w-4 flex-none text-accent" />
-      ) : state === 'fail' ? (
-        <AlertTriangle aria-label="Failed" className="h-4 w-4 flex-none text-risk" />
-      ) : (
-        <Minus aria-label="Not checked" className="h-4 w-4 flex-none text-fg-3" />
-      )}
-      <span className="min-w-0 flex-1">{children}</span>
-      {detail && <span className="num flex-none text-[11.5px] text-fg-3">{detail}</span>}
-    </div>
-  );
-}
 
 function KV({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -85,7 +70,7 @@ function ProblemStrip({ problem }: { problem: AccountProblem }) {
       ? 'The keys were probably regenerated or revoked in Alpaca. Approve LlamaTrade again, or paste the new pair.'
       : 'Approve LlamaTrade on Alpaca again, or paste a new key pair.';
   return (
-    <div className="grid gap-3 border-b border-risk-line bg-risk-soft px-4 py-3.5 text-[12.5px] text-fg-2 md:grid-cols-3 md:gap-5">
+    <div className="grid gap-3 border-b border-risk-line bg-risk-soft px-4 py-3.5 text-[12.5px] text-fg-2">
       <div className="grid content-start gap-1">
         <b className="font-semibold text-fg">What happened</b>
         <span>{t.happened}</span>
@@ -125,16 +110,15 @@ interface AccountPanelProps {
   problem: AccountProblem | null;
   running: number;
   stopped: number;
+  onChecked: (check: BrowserCheck) => void;
 }
 
-function AccountPanel({ kind, cred, problem, running, stopped }: AccountPanelProps) {
+/** One compact account tile: who it is, the key, since when, its sessions and the last check. */
+function AccountPanel({ kind, cred, problem, running, stopped, onChecked }: AccountPanelProps) {
   const lastCheck = useBrokerStore((s) => s.lastCheck);
-  const remove = useBrokerStore((s) => s.remove);
   const [checkOpen, setCheckOpen] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [removing, setRemoving] = useState(false);
   const check = lastCheck && lastCheck.isPaper === cred.isPaper ? lastCheck : null;
-  const label = `Alpaca ${kind}`;
+  const label = kind === 'paper' ? 'Paper' : 'Live';
 
   const status = problem ? (
     <span className="text-[12.5px] font-medium text-risk">{problemText(problem).short}</span>
@@ -145,103 +129,189 @@ function AccountPanel({ kind, cred, problem, running, stopped }: AccountPanelPro
     </span>
   );
 
-  const disconnect = async () => {
-    setRemoving(true);
-    await remove(cred.id);
-    setRemoving(false);
-    setConfirmOpen(false);
-  };
-
   return (
     <section
-      aria-label={label}
+      aria-label={`Alpaca ${kind}`}
       className={`min-w-0 overflow-hidden rounded-panel border bg-panel ${
         problem ? 'border-risk-line' : 'border-line'
       }`}
     >
-      <header className="flex flex-wrap items-center gap-2.5 border-b border-line px-4 py-3">
+      <header className="flex flex-wrap items-center gap-2.5 px-4 pt-3">
         <AlpacaMark />
         <b className="text-[14px] font-semibold">{label}</b>
-        <ModeBadge mode={kind} size="sm" />
-        <span className="num text-[11.5px] text-fg-3">{shortKey(cred.apiKeyPrefix)}</span>
+        <span className="num text-[11.5px] text-fg-3">{maskedAccount(cred.accountNumber)}</span>
         <span className="ml-auto">{status}</span>
       </header>
-      {problem && <ProblemStrip problem={problem} />}
-      <div className="grid gap-4 px-4 py-3.5 md:grid-cols-2 md:gap-8">
-        <dl className="m-0 grid grid-cols-[110px_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[12.5px]">
-          <KV label="Key">
-            <span className="num">{maskedKey(cred.apiKeyPrefix)}</span>
-          </KV>
-          <KV label="Name">{cred.name || 'Alpaca account'}</KV>
-          <KV label="Connected on">{longDay(toDate(cred.createdAt))}</KV>
-          <KV label="Sessions">{sessionsLine(running, stopped)}</KV>
-        </dl>
-        <div className="grid content-start">
-          <CheckRow state={cred.isActive ? 'pass' : 'fail'}>
-            {cred.isActive ? 'Keys stored and active' : 'Keys stored but switched off'}
-          </CheckRow>
-          <CheckRow
-            state={check === null ? 'unknown' : check.valid ? 'pass' : 'fail'}
-            detail={check ? (check.valid ? etTime(check.at) : `failed ${etTime(check.at)}`) : null}
-          >
-            Credentials accepted by Alpaca
-            {check === null && <span className="text-fg-3"> · not checked from here</span>}
-          </CheckRow>
-          <CheckRow state="pass">Account is {kind}</CheckRow>
+      {problem && (
+        <div className="mt-3">
+          <ProblemStrip problem={problem} />
         </div>
-      </div>
+      )}
+      <dl className="m-0 grid grid-cols-[84px_minmax(0,1fr)] gap-x-3 gap-y-1.5 px-4 py-3 text-[12.5px]">
+        <KV label="Key">
+          <span className="num">{maskedKey(cred.apiKeyPrefix)}</span>
+        </KV>
+        <KV label="Since">{longDay(toDate(cred.createdAt))}</KV>
+        <KV label="Sessions">{sessionsLine(running, stopped)}</KV>
+        <KV label="Checked">
+          {check ? (
+            <span className={check.valid ? undefined : 'text-risk'}>
+              {check.valid ? 'Accepted' : 'Rejected'} at {etTime(check.at)}
+            </span>
+          ) : (
+            <span className="text-fg-3">Not from this browser</span>
+          )}{' '}
+          <button
+            type="button"
+            className="text-[12px] text-fg-2 underline decoration-line-strong underline-offset-[3px] hover:text-fg"
+            onClick={() => setCheckOpen((v) => !v)}
+            aria-expanded={checkOpen}
+          >
+            {checkOpen ? 'Close' : 'Check the keys'}
+          </button>
+        </KV>
+      </dl>
+      {!cred.isActive && (
+        <p className="m-0 border-t border-line px-4 py-2 text-[12px] text-risk">
+          The stored keys are switched off.
+        </p>
+      )}
       {checkOpen && (
         <CheckForm
           prefix={cred.apiKeyPrefix}
           isPaper={cred.isPaper}
-          onDone={() => setCheckOpen(false)}
+          onDone={(result) => {
+            onChecked(result);
+            setCheckOpen(false);
+          }}
         />
       )}
-      <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-line bg-sunk px-4 py-2.5">
-        <button
-          type="button"
-          className="btn btn-secondary btn-sm"
-          onClick={() => setCheckOpen((v) => !v)}
-          aria-expanded={checkOpen}
-        >
-          Check the keys
+    </section>
+  );
+}
+
+/** Lists the connected accounts, each with its own confirm, so the wrong one isn't removed. */
+function DisconnectDialog({
+  open,
+  onClose,
+  accounts,
+}: {
+  open: boolean;
+  onClose: () => void;
+  accounts: ReadonlyArray<{ kind: AccountKind; cred: AlpacaCredentialsListItem }>;
+}) {
+  const remove = useBrokerStore((s) => s.remove);
+  const [removing, setRemoving] = useState<string | null>(null);
+
+  const disconnect = async (id: string) => {
+    setRemoving(id);
+    const ok = await remove(id);
+    setRemoving(null);
+    if (ok) onClose();
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title="Disconnect an account"
+      footer={
+        <button type="button" className="btn btn-secondary" onClick={onClose}>
+          Keep both connected
         </button>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setConfirmOpen(true)}>
-          Disconnect
-        </button>
-      </footer>
-      <Dialog
-        open={confirmOpen}
-        onClose={() => setConfirmOpen(false)}
-        title={`Disconnect ${label}?`}
-        footer={
-          <>
+      }
+    >
+      <p className="m-0 mb-3 text-[13px] text-fg-2">
+        LlamaTrade removes the stored key. It can&apos;t happen while a session or a funded sleeve
+        still uses it, so stop those first. Positions stay in your Alpaca account.
+      </p>
+      <div className="grid gap-2">
+        {accounts.map(({ kind, cred }) => (
+          <div
+            key={cred.id}
+            className="flex items-center gap-2.5 rounded-[8px] border border-line px-3 py-2 text-[13px]"
+          >
+            <ModeBadge mode={kind} size="sm" />
+            <span className="num text-fg-2">
+              {maskedAccount(cred.accountNumber) || maskedKey(cred.apiKeyPrefix)}
+            </span>
             <button
               type="button"
-              className="btn btn-secondary"
-              onClick={() => setConfirmOpen(false)}
-            >
-              Keep connected
-            </button>
-            <button
-              type="button"
-              className="btn btn-danger"
-              disabled={removing}
+              className="btn btn-danger btn-sm ml-auto"
+              disabled={removing !== null}
               onClick={() => {
-                disconnect().catch(() => setRemoving(false));
+                disconnect(cred.id).catch(() => setRemoving(null));
               }}
             >
-              {removing ? 'Disconnecting…' : 'Disconnect'}
+              {removing === cred.id ? 'Disconnecting…' : `Disconnect ${kind}`}
             </button>
-          </>
-        }
-      >
-        <p className="m-0 text-[13px] text-fg-2">
-          LlamaTrade removes the key {maskedKey(cred.apiKeyPrefix)}. It can&apos;t happen while a
-          session or a funded sleeve still uses it, so stop those first. Positions stay in your
-          Alpaca account.
-        </p>
-      </Dialog>
+          </div>
+        ))}
+      </div>
+    </Dialog>
+  );
+}
+
+const DOT: Record<BrokerEvent['tone'], string> = {
+  ok: 'bg-accent',
+  risk: 'bg-risk',
+  plain: 'shadow-[inset_0_0_0_1.5px_rgb(var(--fg-3))]',
+};
+
+const logTime = (d: Date) => {
+  const day = d.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'America/New_York',
+  });
+  return `${day} ${etTime(d).replace(' ET', '')}`;
+};
+
+/** The dated history beside the accounts, limited to what the app actually knows (broker2 D). */
+function History({ events }: { events: readonly BrokerEvent[] }) {
+  const [filter, setFilter] = useState<LogFilter>('all');
+  const shown = filterEvents(events, filter);
+  return (
+    <section aria-label="History" className="panel min-w-0 overflow-hidden">
+      <header className="flex min-h-[46px] items-center gap-2.5 border-b border-line px-4 py-2">
+        <b className="text-[13px] font-semibold">History</b>
+        <Segmented
+          className="ml-auto"
+          label="Show"
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { key: 'all', label: 'All' },
+            { key: 'paper', label: 'Paper' },
+            { key: 'live', label: 'Live' },
+          ]}
+        />
+      </header>
+      {shown.length === 0 ? (
+        <p className="m-0 px-4 py-4 text-[12.5px] text-fg-3">Nothing here yet.</p>
+      ) : (
+        <ol className="m-0 list-none p-0">
+          {shown.map((e) => (
+            <li
+              key={e.id}
+              className="grid grid-cols-[96px_12px_minmax(0,1fr)] items-baseline gap-x-2.5 border-b border-line px-4 py-2 text-[12.5px] last:border-b-0 sm:grid-cols-[104px_12px_minmax(0,1fr)_auto]"
+            >
+              <span className="num text-[11.5px] text-fg-3">{logTime(e.at)}</span>
+              <i aria-hidden="true" className={`h-[7px] w-[7px] rounded-full ${DOT[e.tone]}`} />
+              <span className="min-w-0 text-fg">{e.text}</span>
+              {e.note && (
+                <span className="col-start-3 text-[11.5px] text-fg-3 sm:col-start-auto">
+                  {e.note}
+                </span>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+      <p className="m-0 border-t border-line bg-sunk px-4 py-2.5 text-[11.5px] text-fg-3">
+        LlamaTrade doesn&apos;t keep a log of broker checks yet. This lists when each account was
+        connected, sessions that stopped, and checks run from this browser.
+      </p>
     </section>
   );
 }
@@ -276,7 +346,7 @@ function NotConnected({ kind }: { kind: AccountKind }) {
   );
 }
 
-/** One panel per Alpaca account; a panel with a problem turns amber and explains itself (broker2 A). */
+/** Compact account tiles beside a dated history (broker2 D); a tile with a problem turns amber. */
 export function BrokerSection() {
   const credentials = useBrokerStore((s) => s.credentials);
   const loaded = useBrokerStore((s) => s.loaded);
@@ -286,6 +356,8 @@ export function BrokerSection() {
   const clearError = useBrokerStore((s) => s.clearError);
   const { health } = useSettingsSummary();
   const rows = useSessionRows();
+  const [checks, setChecks] = useState<BrowserCheck[]>(() => readChecks());
+  const [disconnectOpen, setDisconnectOpen] = useState(false);
 
   useEffect(() => {
     fetch().catch(() => undefined);
@@ -332,36 +404,71 @@ export function BrokerSection() {
     };
   };
   const shown = (['paper', 'live'] as const).map((kind) => ({ kind, cred: byKind(kind) }));
+  const connected = shown.flatMap(({ kind, cred }) => (cred ? [{ kind, cred }] : []));
   const others = credentials.filter((c) => !shown.some((s) => s.cred === c));
   const ordered = [...shown].sort((a, b) => Number(!a.cred) - Number(!b.cred));
+  const events = brokerEvents(
+    credentials.map((c) => ({
+      id: c.id,
+      isPaper: c.isPaper,
+      apiKeyPrefix: c.apiKeyPrefix,
+      createdAt: toDate(c.createdAt),
+    })),
+    checks,
+    rows.map((r) => ({
+      id: r.session.id,
+      name: r.name,
+      kind: r.session.mode === ExecutionMode.LIVE ? 'live' : 'paper',
+      endedAt: toDate(r.session.endedAt),
+    }))
+  );
 
   return (
-    <div className="grid gap-3">
-      {ordered.map(({ kind, cred }) =>
-        cred ? (
-          <AccountPanel
-            key={kind}
-            kind={kind}
-            cred={cred}
-            problem={health.problems.find((p) => p.kind === kind) ?? null}
-            {...counts(kind)}
-          />
-        ) : (
-          <NotConnected key={kind} kind={kind} />
-        )
-      )}
-
-      {others.length > 0 && (
-        <section className="panel px-4 py-3 text-[12.5px]">
-          <b className="font-semibold">Other stored keys</b>
-          {others.map((c) => (
-            <div key={c.id} className="num mt-1 text-fg-3">
-              {maskedKey(c.apiKeyPrefix)} · {c.isPaper ? 'Paper' : 'Live'}
-              {c.isActive ? '' : ' · switched off'}
+    <div className="grid gap-4">
+      <div className="grid items-start gap-5 lg:grid-cols-[400px_minmax(0,1fr)]">
+        <div className="grid gap-3.5">
+          {ordered.map(({ kind, cred }) =>
+            cred ? (
+              <AccountPanel
+                key={kind}
+                kind={kind}
+                cred={cred}
+                problem={health.problems.find((p) => p.kind === kind) ?? null}
+                onChecked={(c) => setChecks(recordCheck(c))}
+                {...counts(kind)}
+              />
+            ) : (
+              <NotConnected key={kind} kind={kind} />
+            )
+          )}
+          {connected.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              <Link to={KEYS_PATH} className="btn btn-secondary btn-sm">
+                Replace keys
+              </Link>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setDisconnectOpen(true)}
+              >
+                {connected.length === 1 ? 'Disconnect' : 'Disconnect an account'}
+              </button>
             </div>
-          ))}
-        </section>
-      )}
+          )}
+          {others.length > 0 && (
+            <section className="panel px-4 py-3 text-[12.5px]">
+              <b className="font-semibold">Other stored keys</b>
+              {others.map((c) => (
+                <div key={c.id} className="num mt-1 text-fg-3">
+                  {maskedKey(c.apiKeyPrefix)} · {c.isPaper ? 'Paper' : 'Live'}
+                  {c.isActive ? '' : ' · switched off'}
+                </div>
+              ))}
+            </section>
+          )}
+        </div>
+        <History events={events} />
+      </div>
 
       {error && (
         <div
@@ -380,6 +487,12 @@ export function BrokerSection() {
         LlamaTrade stores keys encrypted and never shows the secret again. Disconnecting an account
         needs its sessions stopped first. Positions stay in your Alpaca account.
       </p>
+
+      <DisconnectDialog
+        open={disconnectOpen}
+        onClose={() => setDisconnectOpen(false)}
+        accounts={connected}
+      />
     </div>
   );
 }
@@ -387,7 +500,7 @@ export function BrokerSection() {
 interface CheckFormProps {
   prefix: string;
   isPaper: boolean;
-  onDone: () => void;
+  onDone: (check: BrowserCheck) => void;
 }
 
 function CheckForm({ prefix, isPaper, onDone }: CheckFormProps) {
@@ -407,7 +520,7 @@ function CheckForm({ prefix, isPaper, onDone }: CheckFormProps) {
     if (result) {
       setApiKey('');
       setApiSecret('');
-      onDone();
+      onDone({ at: result.at, isPaper: result.isPaper, valid: result.valid });
     }
   };
 

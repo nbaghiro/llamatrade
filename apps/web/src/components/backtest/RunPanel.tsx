@@ -18,10 +18,11 @@ import { Pct } from '../ui/Num';
 import { Segmented } from '../ui/Tabs';
 
 import { LOG_SCALE_FROM_YEARS, scheduleFor, yearsBetween } from './annotations';
-import { Cells, KvList, Pending, RunLogList, type Cell } from './parts';
+import { Cells, KvList, Panel, Pending, RunLogList, type Cell } from './parts';
 import { RunCurve } from './RunCurve';
 import { runMeta, toCurve } from './runData';
 import { RunProgressFrame } from './RunProgressFrame';
+import { runSteps, type RunStep } from './runSteps';
 
 interface RunPanelProps {
   run: BacktestRun | null;
@@ -126,7 +127,7 @@ export function RunPanel({
     },
     afterRun(
       'CAGR',
-      () => <Pct value={toNumber(metrics?.annualizedReturn)} pnl dp={1} />,
+      () => <Pct value={toNumber(metrics?.annualizedReturn)} signed dp={1} />,
       vs(benchFig?.cagr, signed)
     ),
     afterRun(
@@ -142,9 +143,9 @@ export function RunPanel({
     {
       label: 'Max drawdown',
       value: done ? (
-        <Pct value={-Math.abs(toNumber(metrics?.maxDrawdown))} pnl dp={1} />
+        <Pct value={-Math.abs(toNumber(metrics?.maxDrawdown))} dp={1} />
       ) : partial.maxDrawdown !== null ? (
-        <Pct value={partial.maxDrawdown} pnl dp={1} />
+        <Pct value={partial.maxDrawdown} dp={1} />
       ) : (
         <Pending />
       ),
@@ -167,129 +168,237 @@ export function RunPanel({
         schedule.length ? ` · ${passed} of ${schedule.length} rebalances` : ''
       }`;
 
+  const running = !done && !failed;
+
   return (
-    <section
-      aria-label={`${strategyName} run`}
-      aria-busy={!done && !failed}
-      className="min-w-0 overflow-hidden rounded-panel border border-line bg-panel"
-    >
-      <div
-        className="relative h-0.5 bg-line"
-        role="progressbar"
-        aria-valuenow={pct}
-        aria-valuemin={0}
-        aria-valuemax={100}
+    <div className="grid min-w-0 gap-3.5">
+      <section
+        aria-label={`${strategyName} run`}
+        aria-busy={running}
+        className="min-w-0 overflow-hidden rounded-panel border border-line bg-panel"
       >
-        <i
-          className={`block h-full transition-[width] duration-500 motion-reduce:transition-none ${
-            failed ? 'bg-risk' : 'bg-accent-fill'
+        <div
+          className="relative h-0.5 bg-line"
+          role="progressbar"
+          aria-valuenow={pct}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        >
+          <i
+            className={`block h-full transition-[width] duration-500 motion-reduce:transition-none ${
+              failed ? 'bg-risk' : 'bg-accent-fill'
+            }`}
+            style={{ width: `${failed ? Math.max(4, pct) : pct}%` }}
+          />
+        </div>
+        {running && (
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line px-3.5 py-2.5">
+            <StepsRow steps={runSteps(pct, phase, currentDate)} />
+            <span className="text-[12px] text-fg-3">
+              You can leave this page. The run continues and its result appears in Backtests when it
+              ends.
+            </span>
+          </div>
+        )}
+        <div
+          className={`grid ${
+            failed
+              ? 'md:grid-cols-[300px_minmax(0,1fr)]'
+              : running
+                ? 'md:grid-cols-[minmax(0,1fr)_260px]'
+                : ''
           }`}
-          style={{ width: `${failed ? Math.max(4, pct) : pct}%` }}
-        />
-      </div>
-      <div className="grid md:grid-cols-[300px_minmax(0,1fr)]">
-        <div className="order-last flex flex-col border-t border-line md:order-none md:border-r md:border-t-0">
-          <RunLogList lines={log} />
-          {done && (
-            <div className="mt-auto border-t border-line px-3.5 py-2">
-              <KvList
-                rows={[
-                  [
-                    'Rebalances',
-                    schedule.length
-                      ? `${schedule.length}, ${rebalance}`
-                      : (rebalance ?? 'on schedule'),
-                  ],
-                  ['Trades', formatNumber(metrics?.totalTrades ?? 0, { dp: 0 })],
-                  ['Fills', 'close + slippage'],
-                ]}
-              />
+        >
+          {failed && (
+            <div className="order-last flex flex-col border-t border-line md:order-none md:border-r md:border-t-0">
+              <RunLogList lines={log} />
             </div>
           )}
-        </div>
-        {failure ?? (
-          <div className="min-w-0">
-            <Cells cells={cells} />
-            <div className="px-3.5 pb-2 pt-2.5">
-              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2.5">
-                <div className="flex flex-wrap gap-3.5 text-[11.5px] text-fg-2">
-                  <span className="inline-flex items-center gap-1.5">
-                    <i aria-hidden="true" className="w-3.5 border-t-[1.5px] border-accent" />
-                    {strategyName}
-                  </span>
-                  {bench && (
+          {failure ?? (
+            <div className="min-w-0">
+              <Cells cells={cells} />
+              <div className="px-3.5 pb-2 pt-2.5">
+                <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2.5">
+                  <div className="flex flex-wrap gap-3.5 text-[11.5px] text-fg-2">
                     <span className="inline-flex items-center gap-1.5">
-                      <i aria-hidden="true" className="w-3.5 border-t border-dashed border-fg-3" />
-                      {bench}
+                      <i aria-hidden="true" className="w-3.5 border-t-[1.5px] border-accent" />
+                      {strategyName}
+                    </span>
+                    {bench && (
+                      <span className="inline-flex items-center gap-1.5">
+                        <i
+                          aria-hidden="true"
+                          className="w-3.5 border-t border-dashed border-fg-3"
+                        />
+                        {bench}
+                      </span>
+                    )}
+                  </div>
+                  {status ? (
+                    <span className="num text-[11.5px] text-fg-3">{status}</span>
+                  ) : (
+                    <span className="flex flex-wrap gap-2">
+                      {long && (
+                        <Segmented
+                          label="Scale"
+                          value={scale}
+                          onChange={setScale}
+                          options={[
+                            { key: 'linear', label: 'Linear' },
+                            { key: 'log', label: 'Log' },
+                          ]}
+                        />
+                      )}
+                      <Segmented
+                        label="Chart range"
+                        value={span}
+                        onChange={setSpan}
+                        options={[
+                          { key: '1y', label: '1Y' },
+                          { key: 'all', label: 'All' },
+                        ]}
+                      />
                     </span>
                   )}
                 </div>
-                {status ? (
-                  <span className="num text-[11.5px] text-fg-3">{status}</span>
+                {done && chart ? (
+                  <RunCurve
+                    strategyName={strategyName}
+                    benchmark={bench}
+                    dates={chart.dates}
+                    values={chart.values}
+                    benchValues={chart.bench}
+                    trades={trades}
+                    log={scale === 'log'}
+                  />
+                ) : meta.start && meta.end ? (
+                  <RunProgressFrame
+                    start={meta.start}
+                    end={meta.end}
+                    through={done ? meta.end : through}
+                    marker={through ? `Simulated to ${longDate(through)}` : undefined}
+                    rebalances={schedule}
+                    doneNote={
+                      done
+                        ? 'This run has no equity points.'
+                        : 'The curve appears when the run completes.'
+                    }
+                    aheadNote={
+                      through
+                        ? `${monthLabel(currentDate.slice(0, 7))} to ${monthLabel(meta.end.toISOString().slice(0, 7))} hasn't been simulated yet.`
+                        : 'The simulation starts once the price history is loaded.'
+                    }
+                  />
                 ) : (
-                  <span className="flex flex-wrap gap-2">
-                    {long && (
-                      <Segmented
-                        label="Scale"
-                        value={scale}
-                        onChange={setScale}
-                        options={[
-                          { key: 'linear', label: 'Linear' },
-                          { key: 'log', label: 'Log' },
-                        ]}
-                      />
-                    )}
-                    <Segmented
-                      label="Chart range"
-                      value={span}
-                      onChange={setSpan}
-                      options={[
-                        { key: '1y', label: '1Y' },
-                        { key: 'all', label: 'All' },
-                      ]}
-                    />
-                  </span>
+                  <p className="m-0 py-16 text-center text-[12.5px] text-fg-3">
+                    {done
+                      ? 'This run has no equity points.'
+                      : 'The curve appears when the run completes.'}
+                  </p>
                 )}
               </div>
-              {done && chart ? (
-                <RunCurve
-                  strategyName={strategyName}
-                  benchmark={bench}
-                  dates={chart.dates}
-                  values={chart.values}
-                  benchValues={chart.bench}
-                  trades={trades}
-                  log={scale === 'log'}
-                />
-              ) : meta.start && meta.end ? (
-                <RunProgressFrame
-                  start={meta.start}
-                  end={meta.end}
-                  through={done ? meta.end : through}
-                  marker={through ? `Simulated to ${longDate(through)}` : undefined}
-                  rebalances={schedule}
-                  doneNote={
-                    done
-                      ? 'This run has no equity points.'
-                      : 'The curve appears when the run completes.'
-                  }
-                  aheadNote={
-                    through
-                      ? `${monthLabel(currentDate.slice(0, 7))} to ${monthLabel(meta.end.toISOString().slice(0, 7))} hasn't been simulated yet.`
-                      : 'The simulation starts once the price history is loaded.'
-                  }
-                />
-              ) : (
-                <p className="m-0 py-16 text-center text-[12.5px] text-fg-3">
-                  {done
-                    ? 'This run has no equity points.'
-                    : 'The curve appears when the run completes.'}
-                </p>
-              )}
             </div>
-          </div>
-        )}
-      </div>
-    </section>
+          )}
+          {running && (
+            <aside className="border-t border-line px-3.5 py-3 md:border-l md:border-t-0">
+              <h2 className="m-0 mb-1 text-[10.5px] font-medium uppercase tracking-[0.04em] text-fg-3">
+                So far, from the run
+              </h2>
+              <KvList
+                rows={[
+                  [
+                    'Total return',
+                    partial.totalReturn !== null ? (
+                      <Pct key="t" value={partial.totalReturn} pnl dp={1} />
+                    ) : (
+                      <Pending key="t" />
+                    ),
+                  ],
+                  [
+                    'Worst fall',
+                    partial.maxDrawdown !== null ? (
+                      <Pct key="w" value={partial.maxDrawdown} dp={1} className="text-loss" />
+                    ) : (
+                      <Pending key="w" />
+                    ),
+                  ],
+                  [
+                    'Rebalances',
+                    <span key="r" className="num">
+                      {schedule.length
+                        ? `${formatNumber(passed, { dp: 0 })} of ${formatNumber(schedule.length, { dp: 0 })}`
+                        : (rebalance ?? '·')}
+                    </span>,
+                  ],
+                  [
+                    'Sharpe, volatility, orders',
+                    <span key="f" className="text-fg-3">
+                      after the run
+                    </span>,
+                  ],
+                ]}
+              />
+              <p className="m-0 mt-2 text-[11.5px] text-fg-3">
+                The service sends the return and worst fall while it runs. The curve and the other
+                figures arrive when the run completes.
+              </p>
+            </aside>
+          )}
+        </div>
+      </section>
+      {running && (
+        <div className="grid gap-3.5 md:grid-cols-2">
+          <Panel title="Run messages" aside="from the backtest service">
+            <RunLogList lines={log} />
+          </Panel>
+          <Panel title="How this run trades">
+            <p className="m-0 px-3.5 py-3 text-[12.5px] leading-relaxed text-fg-2">
+              Orders fill at each day&apos;s close plus slippage. Prices are split adjusted but not
+              dividend adjusted, so returns leave out dividends for both {strategyName} and{' '}
+              {bench || 'the benchmark'}.
+            </p>
+          </Panel>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The run's stages in a row: ticked, current or still to come. */
+function StepsRow({ steps }: { steps: readonly RunStep[] }) {
+  return (
+    <ol className="m-0 flex list-none flex-wrap items-center gap-x-2 gap-y-1 p-0 text-[12px]">
+      {steps.map((s, i) => (
+        <li key={s.label} className="inline-flex items-center gap-2">
+          {i > 0 && <i aria-hidden="true" className="w-4 border-t border-line-strong" />}
+          <span
+            className={`inline-flex items-center gap-1.5 ${
+              s.state === 'now'
+                ? 'font-medium text-fg'
+                : s.state === 'done'
+                  ? 'text-fg-2'
+                  : 'text-fg-3'
+            }`}
+          >
+            <i
+              aria-hidden="true"
+              className={`h-2 w-2 flex-none rounded-full ${
+                s.state === 'done'
+                  ? 'bg-fg-2'
+                  : s.state === 'now'
+                    ? 'bg-accent'
+                    : s.state === 'stopped'
+                      ? 'bg-risk'
+                      : 'border border-line-strong'
+              }`}
+            />
+            {s.label}
+            <span className="sr-only">
+              {s.state === 'done' ? ', done' : s.state === 'now' ? ', in progress' : ''}
+            </span>
+          </span>
+        </li>
+      ))}
+    </ol>
   );
 }

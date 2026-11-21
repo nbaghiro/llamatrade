@@ -31,7 +31,7 @@ export function SubjectChip({
   onRemove?: () => void;
 }) {
   return (
-    <span className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-full border border-accent/30 bg-accent-soft pl-2.5 pr-1.5 text-[12.5px] text-fg">
+    <span className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-full bg-sunk pl-2.5 pr-1.5 text-[12.5px] text-fg">
       {icon}
       <span className="truncate">{label}</span>
       {onRemove && (
@@ -94,8 +94,10 @@ export function ChatInput({
 
   return (
     <div
-      className={`grid gap-2 rounded-[12px] border border-line-strong bg-panel px-4 pb-2.5 focus-within:border-accent ${
-        large ? 'pt-4 shadow-[0_8px_30px_-12px_rgb(0_0_0/0.18)]' : 'pt-3'
+      className={`grid gap-2 rounded-[14px] border border-line bg-panel pb-2.5 transition-[border-color,box-shadow] focus-within:border-line-strong ${
+        large
+          ? 'px-[18px] pt-4 shadow-[0_18px_50px_-24px_rgb(0_0_0/0.22)]'
+          : 'px-4 pt-3 shadow-[0_8px_30px_-18px_rgb(0_0_0/0.2)]'
       } ${disabled ? 'opacity-60' : ''}`}
     >
       <textarea
@@ -108,13 +110,15 @@ export function ChatInput({
         rows={1}
         aria-label="Message Copilot"
         className={`resize-none bg-transparent leading-6 text-fg outline-none placeholder:text-fg-3 disabled:cursor-not-allowed ${
-          large ? 'min-h-[52px] text-[16px]' : 'min-h-[24px] text-[14px]'
+          large ? 'min-h-[52px] text-[15px]' : 'min-h-[24px] text-[15px]'
         }`}
         style={{ maxHeight: MAX_HEIGHT }}
       />
       <div className="flex min-w-0 items-center gap-2">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">{chips}</div>
-        {hint && <span className="hidden text-[12px] text-fg-3 sm:inline">{hint}</span>}
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+          {chips}
+          {hint && <span className="hidden truncate text-[12px] text-fg-3 sm:inline">{hint}</span>}
+        </div>
         <button
           type="button"
           onClick={submit}

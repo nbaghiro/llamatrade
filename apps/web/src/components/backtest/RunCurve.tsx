@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 
 import { drawdownOf, longDate, type TradeInput } from '../../lib/backtestView';
 import { yDomain } from '../../lib/chart/scale';
@@ -21,8 +21,10 @@ import {
   thinMarks,
   toLog,
   worstStretch,
+  type HoldingLane,
   type WorstStretch,
 } from './annotations';
+import { defensiveKind } from './resultStory';
 
 const LABEL_W = 112;
 const CURVE_H = 236;
@@ -42,6 +44,35 @@ interface RunCurveProps {
   log?: boolean;
   /** A stretch to shade, such as the month picked below the chart. */
   highlight?: { from: Date; to: Date } | null;
+  /** More shaded stretches, such as the moves into bonds and gold. */
+  extraBands?: readonly CurveBand[];
+  extraPins?: readonly CurvePin[];
+  /** Replaces the Ended and Peak list beside the curve. */
+  side?: ReactNode;
+  /** The drawdown strip under the lanes; on by default. */
+  drawdown?: boolean;
+  /** Scheduled rebalance dates, a ring each and a dot where the held symbols changed. */
+  schedule?: readonly Date[];
+  /** Label for the schedule lane, e.g. "Monthly rebalance". */
+  scheduleLabel?: string;
+  /** One lane for bond, gold and cash funds and one for the rest, for long runs. */
+  foldDefensive?: boolean;
+}
+
+/** A switch counts towards a scheduled rebalance when it lands within this many days after it. */
+const SCHEDULE_SLACK_DAYS = 5;
+const DAY_MS = 86_400_000;
+
+/** Bond, gold and cash funds in one lane and everything else in another. */
+function foldByKind(lanes: readonly HoldingLane[]): HoldingLane[] {
+  const merge = (name: string, group: readonly HoldingLane[]): HoldingLane[] => {
+    if (!group.length) return [];
+    const spans = foldLanes(group, 1)[0]?.spans ?? [];
+    return [{ symbol: name, spans, days: group.reduce((s, l) => s + l.days, 0) }];
+  };
+  const defensive = lanes.filter((l) => defensiveKind(l.symbol) !== null);
+  const rest = lanes.filter((l) => defensiveKind(l.symbol) === null);
+  return [...merge('Stocks', rest), ...merge('Bonds, gold', defensive)];
 }
 
 /**
@@ -57,26 +88,62 @@ export function RunCurve({
   trades,
   log = false,
   highlight = null,
+  extraBands = [],
+  extraPins = [],
+  side,
+  drawdown: showDrawdown = true,
+  schedule,
+  scheduleLabel = 'Rebalances',
+  foldDefensive = false,
 }: RunCurveProps) {
   const start = dates[0];
   const end = dates[dates.length - 1];
   const worst = useMemo(() => worstStretch(dates, values), [dates, values]);
   const drawdown = useMemo(() => drawdownOf(values), [values]);
 
-  const { lanes, dense, switches, markCount } = useMemo(() => {
-    if (!trades) return { lanes: [], dense: false, switches: 0, markCount: 0 };
+  const { lanes, dense, switches, markCount, scheduledCount } = useMemo(() => {
+    if (!trades) return { lanes: [], dense: false, switches: 0, markCount: 0, scheduledCount: 0 };
     const marks = rebalanceMarks(trades).filter(
       (m) => m.at.getTime() >= start.getTime() && m.at.getTime() <= end.getTime()
     );
     const thin = thinMarks(marks, start, end, MAX_MARKS);
     const shown = thin.marks;
-    const holding: CurveLane[] = foldLanes(holdingLanes(trades, start, end), MAX_LANES).map(
-      (l) => ({
-        id: `held-${l.symbol}`,
-        label: <span className="font-mono">{l.symbol}</span>,
-        spans: l.spans.map((s) => ({ from: s.from, to: s.to, style: 'bar' as const })),
-      })
+    const held = holdingLanes(trades, start, end);
+    const holding: CurveLane[] = (
+      foldDefensive ? foldByKind(held) : foldLanes(held, MAX_LANES)
+    ).map((l) => ({
+      id: `held-${l.symbol}`,
+      label: <span className={foldDefensive ? '' : 'font-mono'}>{l.symbol}</span>,
+      spans: l.spans.map((s) => ({ from: s.from, to: s.to, style: 'bar' as const })),
+    }));
+    const switchDays = marks.filter((m) => m.switched).map((m) => m.at.getTime());
+    const scheduled = (schedule ?? []).filter(
+      (d) => d.getTime() >= start.getTime() && d.getTime() <= end.getTime()
     );
+    if (scheduled.length) {
+      const lane: CurveLane = {
+        id: 'schedule',
+        label: <span className="font-normal text-fg-2">{scheduleLabel}</span>,
+        spans: [],
+        events: scheduled.map((d) => {
+          const switched = switchDays.some(
+            (t) => t >= d.getTime() && t - d.getTime() <= SCHEDULE_SLACK_DAYS * DAY_MS
+          );
+          return {
+            at: d,
+            shape: switched ? ('dot' as const) : ('ring' as const),
+            title: `${longDate(d)}: ${switched ? 'rebalance that switched symbols' : 'rebalance, same symbols'}`,
+          };
+        }),
+      };
+      return {
+        lanes: [...holding, lane],
+        dense: false,
+        switches: lane.events?.filter((e) => e.shape === 'dot').length ?? 0,
+        markCount: marks.length,
+        scheduledCount: scheduled.length,
+      };
+    }
     const rebalance: CurveLane = {
       id: 'rebalances',
       label: <span className="font-normal text-fg-2">Trading days</span>,
@@ -92,8 +159,9 @@ export function RunCurve({
       dense: thin.thinned,
       switches: marks.filter((m) => m.switched).length,
       markCount: marks.length,
+      scheduledCount: 0,
     };
-  }, [trades, start, end]);
+  }, [trades, start, end, schedule, scheduleLabel, foldDefensive]);
 
   const shown = log ? toLog(values) : values;
   const shownBench = benchValues ? (log ? toLog(benchValues) : benchValues) : undefined;
@@ -103,23 +171,40 @@ export function RunCurve({
       ? [{ from: worst.peak, to: worst.recovered ?? end, tone: 'loss' as const, through: true }]
       : []),
     ...(highlight ? [{ ...highlight, tone: 'accent' as const, through: true }] : []),
+    ...extraBands,
   ];
-  const pins: CurvePin[] = worst
-    ? [{ at: worst.trough, label: stretchLabel(worst), tone: 'loss', guide: false }]
-    : [];
-
-  const peak = Math.max(...values);
-  const legend: LegendItem[] = [
-    ...(markCount ? [{ shape: 'ring' as const, label: 'Orders, same symbols' }] : []),
-    ...(switches
+  const pins: CurvePin[] = [
+    ...(worst
       ? [
           {
-            shape: 'dot' as const,
-            label: `Switched symbols (${formatNumber(switches, { dp: 0 })} days)`,
+            at: worst.trough,
+            label: stretchLabel(worst),
+            tone: 'loss' as const,
+            guide: false,
+            row: extraPins.length ? (1 as const) : (0 as const),
           },
         ]
       : []),
+    ...extraPins,
   ];
+
+  const peak = Math.max(...values);
+  const legend: LegendItem[] = scheduledCount
+    ? [
+        { shape: 'ring' as const, label: 'Rebalance, same symbols' },
+        ...(switches ? [{ shape: 'dot' as const, label: 'Rebalance that switched symbols' }] : []),
+      ]
+    : [
+        ...(markCount ? [{ shape: 'ring' as const, label: 'Orders, same symbols' }] : []),
+        ...(switches
+          ? [
+              {
+                shape: 'dot' as const,
+                label: `Switched symbols (${formatNumber(switches, { dp: 0 })} days)`,
+              },
+            ]
+          : []),
+      ];
 
   return (
     <div>
@@ -134,18 +219,20 @@ export function RunCurve({
         pins={pins}
         lanes={lanes}
         side={
-          <dl className="m-0 grid gap-2.5 pt-1">
-            {[
-              ['Ended', formatMoney(values[values.length - 1], { dp: 0 })],
-              ['Peak', formatMoney(peak, { dp: 0 })],
-              ...(log ? [['Scale', 'Log']] : []),
-            ].map(([k, v]) => (
-              <div key={k}>
-                <dt className="text-[11px] text-fg-3">{k}</dt>
-                <dd className="m-0 font-mono text-[13px] tabular-nums text-fg">{v}</dd>
-              </div>
-            ))}
-          </dl>
+          side ?? (
+            <dl className="m-0 grid gap-2.5 pt-1">
+              {[
+                ['Ended', formatMoney(values[values.length - 1], { dp: 0 })],
+                ['Peak', formatMoney(peak, { dp: 0 })],
+                ...(log ? [['Scale', 'Log']] : []),
+              ].map(([k, v]) => (
+                <div key={k}>
+                  <dt className="text-[11px] text-fg-3">{k}</dt>
+                  <dd className="m-0 font-mono text-[13px] tabular-nums text-fg">{v}</dd>
+                </div>
+              ))}
+            </dl>
+          )
         }
         tooltip={(i) => (
           <>
@@ -159,7 +246,9 @@ export function RunCurve({
           </>
         )}
       />
-      <DrawdownStrip dates={dates} drawdown={drawdown} worst={worst} start={start} end={end} />
+      {showDrawdown && (
+        <DrawdownStrip dates={dates} drawdown={drawdown} worst={worst} start={start} end={end} />
+      )}
       <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5 text-[11.5px] text-fg-3">
         {legend.length > 0 ? <LaneLegend items={legend} /> : <span />}
         {trades === undefined ? null : trades === null ? (
@@ -201,7 +290,7 @@ function DrawdownStrip({
       <div className="hidden pr-3.5 sm:block">
         <div className="text-[11px] font-medium text-fg-3">Drawdown from peak</div>
         {worst && (
-          <div className="mt-0.5 font-mono text-[12px] text-loss">
+          <div className="mt-0.5 font-mono text-[12px] text-fg">
             {formatPct(worst.depth, { dp: 1 })}
           </div>
         )}

@@ -1,211 +1,419 @@
 import type { BacktestRun } from '@llamatrade/core/proto/backtest_pb';
-import { useMemo, type MouseEvent } from 'react';
+import { useMemo, type ReactNode } from 'react';
 
 import {
-  gridCellKey,
   groupRebalances,
   longDate,
   monthLabel,
-  monthlyReturnsFromMap,
-  rebalancesInMonth,
   tradesToOrders,
+  type Rebalance,
+  type SimOrder,
   type TradeInput,
 } from '../../lib/backtestView';
 import { formatMoney, formatNumber } from '../../lib/format';
-import { MonthlyGrid } from '../charts';
 import { EmptyState } from '../ui/EmptyState';
 import { Money, Pct } from '../ui/Num';
+import { PageHead } from '../ui/PageHead';
 import { SkeletonRows } from '../ui/Skeleton';
+import { Segmented } from '../ui/Tabs';
 
 import { Panel, SideTag } from './parts';
-import { T } from './tableStyles';
+import { runMeta } from './runData';
+import { YearCurve } from './YearCurve';
+import {
+  changesLine,
+  kindOf,
+  monthBounds,
+  monthDetailTitle,
+  monthGroups,
+  periodReturn,
+  reasonsOf,
+  sliceYear,
+  switchDays,
+  useFullCurve,
+  yearBounds,
+  yearCounts,
+  type MonthGroup,
+  type RebalanceKind,
+} from './yearView';
+
+interface MonthPartsProps {
+  /** Twelve months of the shown year; null while the trades load. */
+  groups: readonly MonthGroup[] | null;
+  switches: ReadonlySet<string>;
+  month: string | null;
+  /** The picked month's return, when the run reports one. */
+  monthReturn: number | null;
+  onMonth: (month: string) => void;
+}
+
+const MAX_CARD_LINES = 4;
+const KV = 'flex justify-between gap-3 border-b border-line py-[7px] text-[12.5px] last:border-b-0';
+const asDay = (iso: string) => new Date(`${iso}T00:00:00Z`);
+const shortDay = (iso: string) =>
+  asDay(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+const shortMonth = (month: string) =>
+  asDay(`${month}-01`).toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+const shares = (n: number) => formatNumber(n, { dp: Number.isInteger(n) ? 0 : 2 });
+const signedShares = (n: number) => `${n > 0 ? '+' : '−'}${shares(Math.abs(n))}`;
+
+function KindTag({ kind }: { kind: RebalanceKind }) {
+  return (
+    <span
+      className={`rounded-sm px-[5px] py-[3px] font-mono text-[10px] font-semibold uppercase leading-none ring-1 ring-inset ${
+        kind === 'switch' ? 'text-accent ring-accent/45' : 'text-fg-2 ring-line-strong'
+      }`}
+    >
+      {kind}
+    </span>
+  );
+}
+
+/** "Mar 1" for one rebalance, "Mar · 6 days" for several. */
+function groupTitle(g: MonthGroup): string {
+  if (g.rebalances.length === 1) return shortDay(g.rebalances[0].date);
+  return `${shortMonth(g.month)}${g.rebalances.length ? ` · ${g.rebalances.length} days` : ''}`;
+}
+
+function OrderRows({ orders }: { orders: readonly SimOrder[] }) {
+  return (
+    <ul className="m-0 list-none p-0">
+      {orders.map((o, i) => (
+        <li
+          key={`${o.symbol}-${o.side}-${i}`}
+          className="flex items-center justify-between gap-3 py-[5px] text-[12.5px]"
+        >
+          <span className="flex items-center gap-2">
+            <SideTag side={o.side} />
+            <span className="num">{shares(o.quantity)}</span>
+            <span className="font-mono font-semibold">{o.symbol}</span>
+          </span>
+          <span className="num text-fg-2">{formatMoney(o.value)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function RebalanceBlock({ r, kind }: { r: Rebalance; kind: RebalanceKind }) {
+  const reasons = reasonsOf([r]);
+  return (
+    <div className="border-b border-line px-3.5 py-2.5 last:border-b-0">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <span className="num text-[12.5px] font-semibold">{longDate(asDay(r.date))}</span>
+        <KindTag kind={kind} />
+      </div>
+      {reasons.length > 0 && (
+        <p className="m-0 mb-1 text-[12px] leading-[1.5] text-fg-2">{reasons.join(' · ')}</p>
+      )}
+      <OrderRows orders={r.orders} />
+    </div>
+  );
+}
+
+/** The picked month's rebalances, closed P&L and return. */
+export function MonthDetail({
+  group,
+  switches,
+  monthReturn,
+}: {
+  group: MonthGroup;
+  switches: ReadonlySet<string>;
+  monthReturn: number | null;
+}) {
+  return (
+    <>
+      {group.rebalances.length === 0 ? (
+        <p className="m-0 px-3.5 py-4 text-[12.5px] text-fg-2">
+          No orders in {monthLabel(group.month)}. The strategy held its positions that month.
+        </p>
+      ) : (
+        <div className="max-h-[460px] overflow-y-auto">
+          {group.rebalances.map((r) => (
+            <RebalanceBlock key={r.date} r={r} kind={kindOf(r, switches)} />
+          ))}
+        </div>
+      )}
+      <dl className="m-0 border-t border-line px-3.5 py-1">
+        <div className={KV}>
+          <dt className="text-fg-2">Closed P&amp;L</dt>
+          <dd className="m-0">
+            <Money value={group.realised} pnl />
+          </dd>
+        </div>
+        <div className={KV}>
+          <dt className="text-fg-2">{monthLabel(group.month)} return</dt>
+          <dd className="m-0">
+            {monthReturn === null ? (
+              <span className="text-fg-3">·</span>
+            ) : (
+              <Pct value={monthReturn} pnl dp={1} />
+            )}
+          </dd>
+        </div>
+      </dl>
+      <p className="m-0 border-t border-line px-3.5 py-2.5 text-[11.5px] leading-[1.5] text-fg-3">
+        The backtest doesn&apos;t record indicator values at each rebalance, so the ranking behind
+        these orders isn&apos;t shown. Commission is in the run&apos;s totals on the results page.
+      </p>
+    </>
+  );
+}
+
+/** One card per month, summing that month's rebalance days, under the year curve. */
+export function MonthCards({ groups, month, onMonth }: MonthPartsProps) {
+  if (groups === null) return <SkeletonRows rows={2} cols={6} />;
+  return (
+    <div className="grid grid-cols-[112px_minmax(0,1fr)] gap-2">
+      <p className="m-0 text-[11px] leading-[1.45] text-fg-3">
+        Orders placed, in shares: + bought, − sold. One card per month.
+      </p>
+      <div className="grid grid-cols-6 gap-1.5 xl:grid-cols-12">
+        {groups.map((g) => {
+          const on = g.month === month;
+          const more = g.changes.length - MAX_CARD_LINES;
+          return (
+            <button
+              key={g.month}
+              type="button"
+              aria-pressed={on}
+              disabled={g.orders === 0}
+              onClick={() => onMonth(g.month)}
+              className={`min-h-[96px] rounded-md border bg-panel px-2 py-1.5 text-left hover:border-line-strong disabled:cursor-default disabled:hover:border-line ${
+                on ? 'border-accent shadow-[0_0_0_1px_rgb(var(--accent))]' : 'border-line'
+              }`}
+            >
+              <span className="num block text-[11.5px] font-semibold">
+                {g.rebalances.length === 1 ? shortDay(g.rebalances[0].date) : shortMonth(g.month)}
+              </span>
+              <span className="block text-[11px] text-fg-3">
+                {g.kind === null ? (
+                  'No orders'
+                ) : (
+                  <>
+                    <span className={g.kind === 'switch' ? 'text-accent' : ''}>
+                      {g.kind === 'switch' ? 'Switch' : 'Resize'}
+                    </span>
+                    {g.rebalances.length > 1 && ` · ${g.rebalances.length} days`}
+                  </>
+                )}
+              </span>
+              <span className="mt-1 block font-mono text-[11px] leading-[1.45] text-fg-2">
+                {g.changes.slice(0, MAX_CARD_LINES).map((c) => (
+                  <span key={c.symbol} className="block whitespace-nowrap">
+                    {signedShares(c.shares)} {c.symbol}
+                  </span>
+                ))}
+                {more > 0 && <span className="block text-fg-3">{more} more</span>}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Phones: the year's months with orders, the picked one opened. */
+export function MonthList({ groups, switches, month, monthReturn, onMonth }: MonthPartsProps) {
+  if (groups === null) return <SkeletonRows rows={4} cols={2} />;
+  const traded = groups.filter((g) => g.orders > 0);
+  if (!traded.length) {
+    return (
+      <EmptyState title="No orders this year" body="The strategy held its positions all year." />
+    );
+  }
+  return (
+    <ul className="m-0 list-none p-0">
+      {traded.map((g) => {
+        const on = g.month === month;
+        return (
+          <li key={g.month} className="border-b border-line last:border-b-0">
+            <button
+              type="button"
+              aria-expanded={on}
+              onClick={() => onMonth(g.month)}
+              className="flex w-full items-start justify-between gap-3 px-3.5 py-2.5 text-left"
+            >
+              <span className="min-w-0">
+                <span className="block text-[13px] font-semibold">
+                  {groupTitle(g)} · {g.kind === 'switch' ? 'switch' : 'resize'}
+                </span>
+                <span className="block truncate text-[11.5px] text-fg-3">
+                  {changesLine(g.changes)}
+                </span>
+              </span>
+              {on && monthReturn !== null && <Pct value={monthReturn} pnl dp={1} />}
+            </button>
+            {on && (
+              <div className="border-t border-line">
+                <MonthDetail group={g} switches={switches} monthReturn={monthReturn} />
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
 interface MonthByMonthProps {
   run: BacktestRun;
   /** Every trade of the run; null while loading. */
   trades: readonly TradeInput[] | null;
+  /** "2025-03"; the year shown is this month's. */
   month: string | null;
   onMonth: (month: string) => void;
+  strategyName?: string;
+  /** Buttons at the right of the header, e.g. CSV. */
+  actions?: ReactNode;
 }
 
-const day = (iso: string) => longDate(new Date(`${iso}T00:00:00Z`));
-
-/** The monthly grid as an index: pick a month to list its rebalances and orders. */
-export function MonthByMonth({ run, trades, month, onMonth }: MonthByMonthProps) {
-  const months = useMemo(
-    () => monthlyReturnsFromMap(run.results?.monthlyReturns ?? {}),
-    [run.results?.monthlyReturns]
+/** One year of the run: the year's sentence, its curve with monthly returns and every rebalance. */
+export function MonthByMonth({
+  run,
+  trades,
+  month,
+  onMonth,
+  strategyName = 'Strategy',
+  actions,
+}: MonthByMonthProps) {
+  const full = useFullCurve(run);
+  const bench = runMeta(run).benchmark;
+  const years = useMemo(
+    () => [...new Set(full.dates.map((d) => String(d.getUTCFullYear())))],
+    [full.dates]
   );
-  const returnOf = (key: string) => run.results?.monthlyReturns?.[key];
+  const year = month?.slice(0, 4) ?? years[years.length - 1] ?? '';
+
   const rebalances = useMemo(
-    () => (trades ? groupRebalances(tradesToOrders(trades)) : []),
+    () => (trades ? groupRebalances(tradesToOrders(trades)) : null),
     [trades]
   );
-  const picked = month ? rebalancesInMonth(rebalances, month) : [];
-  const orders = picked.flatMap((r) => r.orders);
-  const realised = picked.reduce((s, r) => s + r.realised, 0);
-  const totalOrders = rebalances.reduce((s, r) => s + r.orders.length, 0);
+  const switches = useMemo(() => (trades ? switchDays(trades) : new Set<string>()), [trades]);
+  const groups = useMemo(
+    () => (rebalances ? monthGroups(rebalances, year, switches) : null),
+    [rebalances, year, switches]
+  );
+  const picked = groups?.find((g) => g.month === month) ?? null;
 
-  // MonthlyGrid renders year rows with twelve month cells after the year header.
-  const onGridClick = (e: MouseEvent<HTMLDivElement>) => {
-    const td = (e.target as HTMLElement).closest('td');
-    const year = td?.parentElement?.querySelector('th')?.textContent;
-    const m = td ? td.cellIndex - 1 : -1;
-    if (!td?.title || !year || m < 0 || m > 11) return;
-    onMonth(`${year}-${String(m + 1).padStart(2, '0')}`);
+  const monthReturnOf = (m: string): number | null => {
+    const reported = run.results?.monthlyReturns?.[m];
+    if (reported !== undefined) return reported;
+    const { from, to } = monthBounds(m);
+    return periodReturn(full.dates, full.values, from, to);
   };
+  const monthReturn = month ? monthReturnOf(month) : null;
 
-  const monthReturn = month ? returnOf(month) : undefined;
+  const { from, to } = yearBounds(year);
+  const yearReturn = periodReturn(full.dates, full.values, from, to);
+  const benchReturn = full.bench ? periodReturn(full.dates, full.bench, from, to) : null;
+  const yearRebalances = groups?.flatMap((g) => g.rebalances) ?? [];
+  const switchCount = yearRebalances.filter((r) => switches.has(r.date)).length;
+  const orderCount = groups?.reduce((s, g) => s + g.orders, 0) ?? 0;
+
+  const sentence = (
+    <span>
+      {year} in this backtest
+      {yearReturn !== null && (
+        <>
+          : <Pct value={yearReturn} pnl dp={1} />
+          {benchReturn !== null && bench && (
+            <>
+              {' '}
+              against {bench}&apos;s <Pct value={benchReturn} pnl dp={1} />
+            </>
+          )}
+        </>
+      )}
+      .{' '}
+      {groups === null
+        ? 'Loading the orders…'
+        : yearCounts(switchCount, yearRebalances.length - switchCount, orderCount)}
+    </span>
+  );
+
+  const firstMonthOf = (y: string) => {
+    const traded = rebalances
+      ?.filter((r) => r.month.startsWith(y))
+      .map((r) => r.month)
+      .sort()[0];
+    if (traded) return traded;
+    const slice = sliceYear(full, y);
+    return slice ? slice.dates[0].toISOString().slice(0, 7) : `${y}-01`;
+  };
 
   return (
     <div className="grid gap-3.5">
-      <Panel title="Monthly returns, %" aside="pick a month to see its rebalances and orders">
-        <div
-          className="cursor-pointer px-3.5 py-3 [&_td[title]:hover]:outline [&_td[title]:hover]:outline-1 [&_td[title]:hover]:outline-line-strong"
-          onClick={onGridClick}
-        >
-          {months.length ? (
-            <MonthlyGrid months={months} selected={month ? gridCellKey(month) : undefined} />
-          ) : (
-            <p className="m-0 text-[12.5px] text-fg-3">This run has no monthly returns.</p>
-          )}
-        </div>
-      </Panel>
-      <div className="grid items-start gap-3.5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)]">
-        <Panel title="Rebalances" aside="newest first">
-          {trades === null ? (
-            <SkeletonRows rows={6} cols={4} />
-          ) : rebalances.length === 0 ? (
-            <EmptyState
-              title="No orders in this run"
-              body="The strategy held its starting position throughout."
+      <PageHead
+        title={strategyName}
+        documentTitle={`${strategyName} · ${year}`}
+        badges={
+          <>
+            <span className="rounded-sm px-[5px] py-[3px] font-mono text-[11px] leading-none text-fg-2 ring-1 ring-inset ring-line-strong">
+              v{run.strategyVersion}
+            </span>
+            <span className="text-[12px] text-fg-3">Backtest</span>
+          </>
+        }
+        sub={sentence}
+        actions={
+          <>
+            {years.length > 1 && (
+              <Segmented
+                label="Year"
+                value={year}
+                onChange={(y) => onMonth(firstMonthOf(y))}
+                options={years.map((y) => ({ key: y, label: y }))}
+              />
+            )}
+            {actions}
+          </>
+        }
+      />
+      <div className="grid items-start gap-3.5 md:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="grid min-w-0 gap-3">
+          <YearCurve
+            run={run}
+            full={full}
+            trades={trades}
+            year={year}
+            month={month}
+            strategyName={strategyName}
+          />
+          <div className="hidden md:block">
+            <MonthCards
+              groups={groups}
+              switches={switches}
+              month={month}
+              monthReturn={monthReturn}
+              onMonth={onMonth}
             />
+          </div>
+        </div>
+        <Panel
+          className="hidden md:block"
+          title={picked ? monthDetailTitle(picked) : 'Pick a month'}
+          aside={picked?.kind ? <KindTag kind={picked.kind} /> : undefined}
+        >
+          {groups === null ? (
+            <SkeletonRows rows={4} cols={2} />
+          ) : picked ? (
+            <MonthDetail group={picked} switches={switches} monthReturn={monthReturn} />
           ) : (
-            <div className="max-h-[420px] overflow-y-auto">
-              <div className="grid grid-cols-[92px_minmax(0,1fr)_52px_70px] gap-2.5 px-3.5 py-2 text-[11px] text-fg-3">
-                <span>Date</span>
-                <span>Branch</span>
-                <span className="text-right">Orders</span>
-                <span className="text-right">Month</span>
-              </div>
-              <ul className="m-0 list-none p-0">
-                {rebalances.map((r) => {
-                  const ret = returnOf(r.month);
-                  const on = r.month === month;
-                  return (
-                    <li key={r.date}>
-                      <button
-                        type="button"
-                        aria-pressed={on}
-                        onClick={() => onMonth(r.month)}
-                        className={`grid h-[34px] w-full grid-cols-[92px_minmax(0,1fr)_52px_70px] items-center gap-2.5 border-t border-line px-3.5 text-left text-[12.5px] hover:bg-sunk ${
-                          on ? 'bg-accent-soft shadow-[inset_2px_0_0_rgb(var(--accent))]' : ''
-                        }`}
-                      >
-                        <span className="num text-fg-2">{r.date}</span>
-                        <span className="truncate text-fg-2">{r.branch || '·'}</span>
-                        <span className="num text-right">{r.orders.length}</span>
-                        <span className="text-right">
-                          {ret === undefined ? (
-                            <span className="text-fg-3">·</span>
-                          ) : (
-                            <Pct value={ret} pnl dp={1} />
-                          )}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
+            <p className="m-0 px-3.5 py-4 text-[12.5px] text-fg-3">
+              Choose a month under the curve to see the orders it placed.
+            </p>
           )}
         </Panel>
-        <Panel
-          title={
-            !month
-              ? 'Pick a month'
-              : picked.length === 1
-                ? `${day(picked[0].date)}${picked[0].branch ? ` · ${picked[0].branch}` : ''}`
-                : `${monthLabel(month)}${picked.length ? ` · ${picked.length} rebalances` : ''}`
-          }
-          aside={
-            month && (
-              <span className="num">
-                {orders.length} orders
-                {monthReturn !== undefined && (
-                  <>
-                    {' · '}
-                    {monthLabel(month)} <Pct value={monthReturn} pnl dp={1} />
-                  </>
-                )}
-              </span>
-            )
-          }
-          footer={
-            month && orders.length > 0 ? (
-              <span className="flex justify-between gap-3">
-                <span>
-                  Realised this month <Money value={realised} pnl />
-                </span>
-                <span className="text-fg-3">
-                  {formatNumber(totalOrders, { dp: 0 })} orders in the run
-                </span>
-              </span>
-            ) : undefined
-          }
-        >
-          {trades === null ? (
-            <SkeletonRows rows={4} cols={5} />
-          ) : !month ? (
-            <p className="m-0 px-3.5 py-4 text-[12.5px] text-fg-3">
-              Choose a month in the grid or the list to see the orders it placed.
-            </p>
-          ) : orders.length === 0 ? (
-            <p className="m-0 px-3.5 py-4 text-[12.5px] text-fg-2">
-              No orders in {monthLabel(month)}. The strategy held its positions that month.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className={T.table}>
-                <thead>
-                  <tr>
-                    <th className={T.th}>Date</th>
-                    <th className={T.th}>Branch</th>
-                    <th className={T.th}>Side</th>
-                    <th className={T.th}>Symbol</th>
-                    <th className={T.thN}>Qty</th>
-                    <th className={T.thN}>Fill</th>
-                    <th className={T.thN}>Value</th>
-                    <th className={T.thN}>P&amp;L</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {orders.map((o, i) => (
-                    <tr key={`${o.date}-${o.symbol}-${o.side}-${i}`}>
-                      <td className={`${T.td} num text-fg-2`}>{o.date}</td>
-                      <td className={`${T.td} text-fg-2`}>{o.reason || '·'}</td>
-                      <td className={T.td}>
-                        <SideTag side={o.side} />
-                      </td>
-                      <td className={`${T.td} ${T.sym}`}>{o.symbol}</td>
-                      <td className={T.tdN}>
-                        {formatNumber(o.quantity, { dp: Number.isInteger(o.quantity) ? 0 : 2 })}
-                      </td>
-                      <td className={T.tdN}>{formatNumber(o.price)}</td>
-                      <td className={T.tdN}>{formatMoney(o.value)}</td>
-                      <td className={T.tdN}>
-                        {o.pnl === null ? (
-                          <span className="text-fg-3">·</span>
-                        ) : (
-                          <Money value={o.pnl} pnl />
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+        <Panel title="Rebalances, by month" className="md:hidden">
+          <MonthList
+            groups={groups}
+            switches={switches}
+            month={month}
+            monthReturn={monthReturn}
+            onMonth={onMonth}
+          />
         </Panel>
       </div>
     </div>

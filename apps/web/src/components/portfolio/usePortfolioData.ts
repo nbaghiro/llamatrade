@@ -1,8 +1,9 @@
 import { useActivityStore } from '@llamatrade/core/stores/activity';
+import type { SleeveSummary } from '@llamatrade/core/stores/portfolio';
 import { useTradingStore } from '@llamatrade/core/stores/trading';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
-import { sleeveFills, type SleeveFill } from './history';
+import { fillsByLedgerId, sleeveFills, type SleeveFill } from './history';
 
 let activityRequested = false;
 
@@ -41,6 +42,39 @@ export function useSleeveFills(): { fills: SleeveFill[]; loaded: boolean } {
 
   const fills = useMemo(() => sleeveFills(orders, sessions), [orders, sessions]);
   return { fills, loaded };
+}
+
+/** Fills keyed by the ledger event id each one produced; empty until the ids are worked out. */
+export function useFillsByLedgerId(fills: readonly SleeveFill[]): ReadonlyMap<string, SleeveFill> {
+  const [byId, setById] = useState<ReadonlyMap<string, SleeveFill>>(new Map());
+  useEffect(() => {
+    let live = true;
+    fillsByLedgerId(fills)
+      .then((m) => {
+        if (live) setById(m);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [fills]);
+  return byId;
+}
+
+/**
+ * Sleeves with every ledger sleeve id known: the portfolio reads the paper ledger only, so a live
+ * sleeve's id comes from its execution in the trading blotter.
+ */
+export function useResolvedSleeves(sleeves: readonly SleeveSummary[]): SleeveSummary[] {
+  const executions = useTradingStore((s) => s.executions);
+  return useMemo(
+    () =>
+      sleeves.map((s) => ({
+        ...s,
+        sleeveId: s.sleeveId ?? executions.find((e) => e.id === s.executionId)?.sleeveId ?? null,
+      })),
+    [sleeves, executions]
+  );
 }
 
 /** The session that trades a sleeve, for "Open session" links. */

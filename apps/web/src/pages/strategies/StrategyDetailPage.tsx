@@ -1,7 +1,8 @@
 import { toDate } from '@llamatrade/core/format';
 import { ExecutionMode } from '@llamatrade/core/proto/common_pb';
+import type { StrategyVersion } from '@llamatrade/core/proto/strategy_pb';
 import { fromDSLString } from '@llamatrade/core/strategy/serializer';
-import { Pencil } from 'lucide-react';
+import { ChevronLeft, Pencil, Play } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
@@ -15,6 +16,9 @@ import { toTab, TABS, type DetailTab } from '../../components/strategies/detail/
 import { useFullRun, useStrategyRuns } from '../../components/strategies/detail/useRuns';
 import { useStrategySession } from '../../components/strategies/detail/useStrategySession';
 import { VersionsTab } from '../../components/strategies/detail/VersionsTab';
+import { sentenceText, summaryParts } from '../../components/strategies/rules/ruleSentence';
+import { RuleSentenceView } from '../../components/strategies/rules/RuleSentenceView';
+import { useRulesModel } from '../../components/strategies/rules/useRulesModel';
 import { pickSameDatesRun } from '../../components/strategies/sameDates';
 import { useStrategyDetail } from '../../components/strategies/useStrategyDetail';
 import { useVersions } from '../../components/strategies/versions/useVersions';
@@ -22,16 +26,15 @@ import {
   AttentionLine,
   EmptyState,
   ModeBadge,
-  PageArt,
-  PageHead,
   PanelError,
   Skeleton,
   SkeletonChart,
   StatusMark,
-  Tabs,
-  WebOnlyNote,
 } from '../../components/ui';
+import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 import { rebalanceWord } from '../../lib/outline';
+
+const NO_VERSIONS: readonly StrategyVersion[] = [];
 
 export default function StrategyDetailPage({ tab: fixedTab }: { tab?: DetailTab }) {
   const { id = '', tab: tabParam } = useParams<{ id: string; tab?: string }>();
@@ -58,7 +61,12 @@ export default function StrategyDetailPage({ tab: fixedTab }: { tab?: DetailTab 
   const sameRun = useFullRun(sameMeta?.id);
 
   const strategy = detail.strategy;
-  const crumbs = [{ label: 'Strategies', to: '/strategies' }, { label: strategy?.name ?? '' }];
+  const model = useRulesModel(
+    strategy ?? null,
+    versions.state.status === 'ready' ? versions.state.versions : NO_VERSIONS,
+    runs
+  );
+  useDocumentTitle(strategy?.name);
 
   if (!strategy) {
     return (
@@ -137,49 +145,111 @@ export default function StrategyDetailPage({ tab: fixedTab }: { tab?: DetailTab 
       />
     ) : undefined;
 
+  const summary = model.sentence ? summaryParts(model.sentence) : null;
+  const subLine =
+    tab === 'overview' && summary && summary.length > 0 ? (
+      <div className="min-w-0 truncate text-[13px] text-fg-2" title={sentenceText(summary)}>
+        <span>Version {strategy.version || 1} · </span>
+        <RuleSentenceView
+          parts={summary}
+          href={(t) => `/strategies/${strategy.id}/rules?term=${t}`}
+          className="inline [&_a]:decoration-[1px] [&_a]:underline-offset-[3px]"
+        />
+      </div>
+    ) : (
+      <div className="min-w-0 truncate text-[13px] text-fg-2">{sub}</div>
+    );
+
   return (
     <div className="page relative isolate">
-      <PageArt shape="own" />
-      <PageHead
-        crumbs={crumbs}
-        title={strategy.name}
-        badges={badges}
-        sub={sub}
-        attention={attention}
-        actions={
-          <>
-            <Link to={`/backtest?strategy=${strategy.id}`} className="btn btn-secondary">
-              Backtest
-            </Link>
-            {row && (
-              <Link to={`/trading/${row.session.id}`} className="btn btn-secondary">
+      <Link
+        to="/strategies"
+        className="mb-2 inline-flex items-center gap-1 text-[13px] text-accent md:hidden"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        Strategies
+      </Link>
+      <header className="flex flex-col gap-2 border-b border-line md:flex-row md:items-end md:justify-between md:gap-6">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 md:pb-3">
+          <h1 className="m-0 text-[24px] font-semibold leading-tight tracking-[-0.02em] text-fg md:text-[19px]">
+            {strategy.name}
+          </h1>
+          {badges}
+        </div>
+        <nav
+          role="tablist"
+          aria-label="Strategy sections"
+          className="no-scrollbar -mb-px flex gap-5 overflow-x-auto"
+        >
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              role="tab"
+              aria-selected={t.key === tab}
+              onClick={() =>
+                navigate(
+                  t.key === 'overview' ? `/strategies/${id}` : `/strategies/${id}/${t.key}`,
+                  {
+                    replace: true,
+                  }
+                )
+              }
+              className={`whitespace-nowrap border-b-2 pb-3 pt-1 text-[13.5px] transition-colors ${
+                t.key === tab
+                  ? 'border-fg font-semibold text-fg'
+                  : 'border-transparent text-fg-2 hover:text-fg'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </nav>
+      </header>
+      <div className="mb-5 mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        {subLine}
+        <div className="flex flex-wrap items-center gap-2 md:flex-none">
+          {!ss.loaded ? null : row ? (
+            <>
+              <Link to={`/backtest?strategy=${strategy.id}`} className="btn btn-secondary btn-sm">
+                Backtest
+              </Link>
+              <Link to={`/trading/${row.session.id}`} className="btn btn-secondary btn-sm">
                 Open session
               </Link>
-            )}
-            <Link to={`/strategies/${strategy.id}/edit`} className="btn btn-primary max-md:hidden">
-              <Pencil className="h-3.5 w-3.5" />
-              Edit
-            </Link>
-          </>
-        }
-      />
-      <div className="mb-3 md:hidden">
-        <WebOnlyNote what="Editing strategies" />
+              <Link
+                to={`/strategies/${strategy.id}/edit`}
+                className="btn btn-primary btn-sm max-md:hidden"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Edit
+              </Link>
+            </>
+          ) : (
+            <>
+              <Link
+                to={`/strategies/${strategy.id}/edit`}
+                className="btn btn-secondary btn-sm max-md:hidden"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Edit
+              </Link>
+              <Link to={`/backtest?strategy=${strategy.id}`} className="btn btn-secondary btn-sm">
+                Run a new backtest
+              </Link>
+              <button
+                type="button"
+                onClick={() => setDeploying(true)}
+                className="btn btn-primary btn-sm"
+              >
+                <Play className="h-3.5 w-3.5" />
+                Start in paper
+              </button>
+            </>
+          )}
+        </div>
       </div>
-      <Tabs
-        label="Strategy sections"
-        options={TABS.map((t) => ({
-          key: t.key,
-          label: <span className="whitespace-nowrap">{t.label}</span>,
-        }))}
-        value={tab}
-        onChange={(k) =>
-          navigate(k === 'overview' ? `/strategies/${id}` : `/strategies/${id}/${k}`, {
-            replace: true,
-          })
-        }
-        className="no-scrollbar mb-5 overflow-x-auto"
-      />
+      {attention && <div className="mb-4">{attention}</div>}
 
       {!ss.loaded && tab !== 'rules' ? <SkeletonChart height={240} /> : null}
       {ss.loaded && tab === 'overview' && (
@@ -190,13 +260,14 @@ export default function StrategyDetailPage({ tab: fixedTab }: { tab?: DetailTab 
           latestRun={detail.run}
           sameRun={sameMeta ? sameRun : null}
           versions={versions.state.status === 'ready' ? versions.state.versions : []}
+          model={model}
           onDeploy={() => setDeploying(true)}
         />
       )}
       {ss.loaded && tab === 'today' && (
-        <HoldTodayTab strategy={strategy} ss={ss} running={detail.session} />
+        <HoldTodayTab strategy={strategy} ss={ss} running={detail.session} model={model} />
       )}
-      {tab === 'rules' && <RulesTab strategy={strategy} runs={runs} />}
+      {tab === 'rules' && <RulesTab strategy={strategy} model={model} />}
       {ss.loaded && tab === 'performance' && (
         <PerformanceTab
           strategy={strategy}

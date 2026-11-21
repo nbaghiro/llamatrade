@@ -9,6 +9,8 @@ import { HealthCard } from './HealthCard';
 import { displayName } from './model';
 import { MobileRow } from './parts';
 import { SECTIONS, sectionPath } from './sections';
+import { useAccountIdentity } from './useAccountIdentity';
+import { useSectionDetails } from './useSectionDetails';
 import { useSettingsSummary } from './useSettingsSummary';
 
 /** The Account tab on a phone: whether anything needs you, who's signed in, then each section. */
@@ -17,6 +19,8 @@ export function MobileAccountList() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
   const { summary, states, brokerLoaded } = useSettingsSummary();
+  const details = useSectionDetails();
+  const { workspace } = useAccountIdentity();
   useDocumentTitle('Account');
 
   const name = displayName(user);
@@ -39,6 +43,9 @@ export function MobileAccountList() {
         <span className="min-w-0 flex-1">
           {name && <b className="block truncate text-[16px] font-semibold">{name}</b>}
           <span className="block truncate text-[13.5px] text-fg-3">{user?.email}</span>
+          {workspace && (
+            <span className="block truncate text-[13.5px] text-fg-3">{workspace} workspace</span>
+          )}
         </span>
         <ChevronRight aria-hidden="true" className="h-4 w-4 text-fg-3" />
       </Link>
@@ -46,13 +53,16 @@ export function MobileAccountList() {
       <nav aria-label="Account" className="rounded-[13px] border border-line bg-panel px-4 py-0.5">
         {SECTIONS.filter((s) => s.key !== 'profile').map((s) => {
           const state = states[s.key];
+          const value = details[s.key].value ?? state?.text;
           return (
             <Link key={s.key} to={sectionPath(s.key)} className="block">
               <MobileRow
                 end={
                   <>
-                    {state && (
-                      <span className={state.risk ? 'text-risk' : 'text-fg-3'}>{state.text}</span>
+                    {value && (
+                      <span className={`truncate ${state?.risk ? 'text-risk' : 'text-fg-3'}`}>
+                        {value}
+                      </span>
                     )}
                     <ChevronRight className="h-4 w-4 text-fg-3" />
                   </>

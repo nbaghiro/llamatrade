@@ -217,7 +217,7 @@ export function SaveDialog({
         <Info className="mt-0.5 h-4 w-4 text-fg-3" aria-hidden="true" />
         <span>
           {hasSession
-            ? `The paper session keeps running ${sessionVersion ? `version ${sessionVersion}` : 'the version it started with'}. To run version ${nextVersion}, backtest it and redeploy from the strategy page.`
+            ? `The paper session keeps running ${sessionVersion ? `version ${sessionVersion}` : 'the version it started with'}. To run version ${nextVersion}, backtest it and restart the session from the strategy page.`
             : 'No session runs this strategy, so nothing else changes.'}
         </span>
       </div>

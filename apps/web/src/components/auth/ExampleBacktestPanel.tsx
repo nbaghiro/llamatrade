@@ -99,7 +99,7 @@ export function ExampleBacktestPanel({ compact = false }: { compact?: boolean })
             </>
           }
         >
-          <Pct value={s.mdd} pnl dp={1} />
+          <Pct value={s.mdd} dp={1} />
         </Figure>
       </div>
       <div className="grid gap-2">

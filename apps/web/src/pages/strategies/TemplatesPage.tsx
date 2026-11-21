@@ -30,15 +30,7 @@ import { TemplateActions, TemplatePreview } from '../../components/strategies/Te
 import { useTemplates } from '../../components/strategies/useTemplates';
 import { HOLDING_FILLS } from '../../components/strategy-builder/outline/holdingFills';
 import { StackedBar } from '../../components/strategy-builder/rail/StackedBar';
-import {
-  NoMatch,
-  PageArt,
-  PageHead,
-  PanelError,
-  Sheet,
-  Skeleton,
-  SkeletonRows,
-} from '../../components/ui';
+import { NoMatch, PageHead, PanelError, Sheet, Skeleton, SkeletonRows } from '../../components/ui';
 import { CATEGORY_LABELS, DIFFICULTY_LABELS } from '../../data/strategy-templates';
 import { useDocumentTitle } from '../../hooks/useDocumentTitle';
 import { rebalanceWord } from '../../lib/outline';
@@ -187,8 +179,6 @@ export default function TemplatesPage() {
 
   return (
     <div className="page relative isolate">
-      <PageArt shape="top" />
-
       {browsing ? (
         <PageHead
           crumbs={crumbs}

@@ -1,11 +1,12 @@
 import { ExecutionMode } from '@llamatrade/core/proto/common_pb';
 
-import { maskedKey } from '../../lib/scope';
+import { distinctMasks } from '../../lib/scope';
 
 export interface ConnectionInput {
   id: string;
   name: string;
-  apiKeyPrefix: string;
+  /** Alpaca account number; empty when not yet known. */
+  accountNumber: string;
   isPaper: boolean;
   isActive: boolean;
 }
@@ -34,7 +35,8 @@ export function connectionRows(
   credentials: readonly ConnectionInput[],
   sessions: readonly SessionInput[]
 ): ConnectionRow[] {
-  const rows = credentials.map((c) => {
+  const masks = distinctMasks(credentials.map((c) => c.accountNumber));
+  const rows = credentials.map((c, i) => {
     const mode: ExecutionMode = c.isPaper ? ExecutionMode.PAPER : ExecutionMode.LIVE;
     const running = sessions.filter((s) => s.isActive && s.mode === mode);
     const known = running.filter((s) => s.equity !== null);
@@ -42,7 +44,7 @@ export function connectionRows(
     return {
       id: c.id,
       mode: c.isPaper ? ('paper' as const) : ('live' as const),
-      masked: maskedKey(c.apiKeyPrefix),
+      masked: masks[i],
       name: c.name,
       connected: c.isActive,
       sessions: running.length,

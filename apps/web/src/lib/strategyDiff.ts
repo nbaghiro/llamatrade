@@ -273,7 +273,7 @@ export function diffStrategies(before: StrategySide, after: StrategySide): Strat
       continue;
     }
     const list = inserts.get(anchor) ?? [];
-    list.push(annotate(line, 'removed'));
+    list.push(annotate(line, 'removed', { key: `removed:${line.key}` }));
     inserts.set(anchor, list);
     if (!hasAncestorIn(before.tree, line.blockId, removed)) {
       changes.push(

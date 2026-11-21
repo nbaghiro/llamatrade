@@ -19,7 +19,14 @@ import { groupRebalances, tradesToOrders, type TradeInput } from '../../lib/back
 import { formatMoney, formatPct } from '../../lib/format';
 import { getStrategy } from '../../services/strategy';
 
-import { heldPeriods, heldSets, switchesOf, symbolsLabel, worstDrop } from './firstResult';
+import {
+  dropComparison,
+  heldPeriods,
+  heldSets,
+  switchesOf,
+  symbolsLabel,
+  worstDrop,
+} from './firstResult';
 import { OnboardingLayout, StepTitle } from './OnboardingLayout';
 import { useBacktestRun } from './useBacktestRun';
 
@@ -70,6 +77,7 @@ function RunSummary({ run, name }: { run: BacktestRun; name: string }) {
     () => (trades ? groupRebalances(tradesToOrders(trades)) : []),
     [trades]
   );
+  const benchDrop = dropComparison(bench, benchValues, drop?.depth ?? null, name);
   const switchDays = new Set(switches.map((s) => s.from.toISOString().slice(0, 10)));
 
   const start = toNumber(run.config?.initialCapital);
@@ -132,15 +140,24 @@ function RunSummary({ run, name }: { run: BacktestRun; name: string }) {
                   {bench} returned <Pct value={benchTotal} signed dp={1} /> over the same dates.
                 </>
               )}
+              {benchDrop && ` ${benchDrop}`}
               {switches.length > 0 &&
                 ` It switched holdings ${switches.length === 1 ? 'once' : switches.length === 2 ? 'twice' : `${switches.length} times`}, marked on the curve.`}
             </p>
           )}
         </div>
-        <Link to={`/backtest/${encodeURIComponent(run.id)}`} className="btn btn-secondary">
-          Open full results
-          <ArrowUpRight aria-hidden="true" className="h-4 w-4" />
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            to={`/strategies/${encodeURIComponent(run.strategyId)}/edit`}
+            className="btn btn-secondary"
+          >
+            Change the rules
+          </Link>
+          <Link to={`/backtest/${encodeURIComponent(run.id)}`} className="btn btn-secondary">
+            Open full results
+            <ArrowUpRight aria-hidden="true" className="h-4 w-4" />
+          </Link>
+        </div>
       </div>
       {curve.values.length > 1 && (
         <AnnotatedCurve
@@ -159,10 +176,9 @@ function RunSummary({ run, name }: { run: BacktestRun; name: string }) {
                   {
                     label: 'CAGR',
                     value: formatPct(toNumber(m.annualizedReturn)),
-                    tone: toNumber(m.annualizedReturn) >= 0 ? 'gain' : 'loss',
                   },
                   { label: 'Sharpe', value: toNumber(m.sharpeRatio).toFixed(2) },
-                  { label: 'Max drawdown', value: formatPct(mdd), tone: 'loss' },
+                  { label: 'Max drawdown', value: formatPct(mdd) },
                   { label: 'Trades', value: String(m.totalTrades) },
                 ]}
               />
@@ -198,7 +214,7 @@ function NextStep({ strategyId }: { strategyId: string }) {
         <b className="block text-[14px] font-semibold">Run it on paper next</b>
         <span className="text-[12.5px] text-fg-2">
           {connected
-            ? 'Your Alpaca paper account is connected, so you can deploy this strategy to a paper session.'
+            ? 'Your Alpaca paper account is connected, so you can start this strategy in a paper session.'
             : 'A paper session places orders in your own Alpaca paper account. Connect it whenever you are ready.'}
         </span>
       </div>
@@ -212,7 +228,7 @@ function NextStep({ strategyId }: { strategyId: string }) {
               to={`/strategies/${encodeURIComponent(strategyId)}/session`}
               className="btn btn-primary btn-lg"
             >
-              Deploy to paper
+              Start on paper
             </Link>
           ) : (
             <Link to="/connect/alpaca?next=/dashboard" className="btn btn-primary btn-lg">

@@ -25,21 +25,28 @@ export function blockOrder(tree: StrategyTree): BlockId[] {
   return out;
 }
 
+/** Each block's first code line, or null when the code's block forms don't line up with the tree. */
+export function blockLines(tree: StrategyTree, code: string): Map<BlockId, number> | null {
+  const order = blockOrder(tree);
+  const forms = blockForms(readForms(code));
+  if (forms.length !== order.length) return null;
+  const out = new Map<BlockId, number>();
+  for (let i = 0; i < order.length; i++) {
+    const block = tree.blocks[order[i]];
+    if (!block || block.type !== forms[i].head) return null;
+    out.set(order[i], forms[i].startLine);
+  }
+  return out;
+}
+
 /**
  * Pairs each rule in words with the code lines it becomes: a settings row first, then one
  * row per rule with its holdings inside it. Returns null when the code's block forms don't
  * line up with the tree, for example while the code is mid-edit.
  */
 export function splitRows(tree: StrategyTree, code: string): SplitRow[] | null {
-  const order = blockOrder(tree);
-  const forms = blockForms(readForms(code));
-  if (forms.length !== order.length) return null;
-  const startLine = new Map<BlockId, number>();
-  for (let i = 0; i < order.length; i++) {
-    const block = tree.blocks[order[i]];
-    if (!block || block.type !== forms[i].head) return null;
-    startLine.set(order[i], forms[i].startLine);
-  }
+  const startLine = blockLines(tree, code);
+  if (!startLine) return null;
 
   const groups: { anchor: number; lines: OutlineLine[] }[] = [];
   for (const line of buildOutline(tree)) {

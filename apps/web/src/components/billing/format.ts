@@ -61,3 +61,8 @@ export function formatUsdWhole(value: number): string {
 export function shortYear(year: number): string {
   return String(year % 100).padStart(2, '0');
 }
+
+/** "Pro · closed beta" while the subscription is in the closed beta, else the plan name. */
+export function planLabel(name: string, isBeta: boolean | undefined): string {
+  return isBeta ? `${name} · closed beta` : name;
+}

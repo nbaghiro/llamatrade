@@ -54,6 +54,15 @@ export function planLine(subscription: Subscription, tier: PlanTierConfig): Plan
       ending: true,
     };
   }
+  if (subscription.isBeta) {
+    return {
+      name,
+      badge: 'Closed beta',
+      note: 'No charge during the closed beta.',
+      amount: formatUsdWhole(0),
+      ending: false,
+    };
+  }
   if (subscription.isTrial) {
     return {
       name,
@@ -80,4 +89,34 @@ export function planLine(subscription: Subscription, tier: PlanTierConfig): Plan
     amount: formatUsdWhole(amount),
     ending: false,
   };
+}
+
+/** What the Alpaca sign-in row says, given whether the account is linked (null: unknown). */
+export function alpacaSignIn(linked: boolean | null): { sub: string; status: string | null } {
+  if (linked === null) return { sub: "Couldn't be checked just now.", status: null };
+  return linked
+    ? { sub: 'Linked. You can sign in with Alpaca or your password.', status: 'Linked' }
+    : { sub: 'Not linked. You sign in with your email and password.', status: 'Not linked' };
+}
+
+/** "September 2026", for member-since lines. */
+export function monthYear(d: Date): string {
+  return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+
+export interface IdentityParts {
+  email?: string | null;
+  workspace?: string | null;
+  memberSince?: Date | null;
+}
+
+/** "sam@x.com · Rivera workspace · member since September 2026", leaving out what isn't known. */
+export function identityLine({ email, workspace, memberSince }: IdentityParts): string {
+  return [
+    email?.trim(),
+    workspace?.trim() ? `${workspace.trim()} workspace` : null,
+    memberSince ? `member since ${monthYear(memberSince)}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }

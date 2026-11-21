@@ -5,10 +5,12 @@ import { fromDSLString } from '@llamatrade/core/strategy/serializer';
 import { useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
+import { formatPct } from '../../../lib/format';
 import { buildOutline, metaParts } from '../../../lib/outline';
 import { diffStrategies, type StrategySide } from '../../../lib/strategyDiff';
 import { updateStrategy } from '../../../services/strategy';
 import { useStrategyBuilderStore } from '../../../store/strategy-builder';
+import { useHandoffRun } from '../../strategy-builder/handoff/useHandoffRun';
 import { Outline, Parts } from '../../strategy-builder/outline/Outline';
 import { EmptyState, PanelError, Pct, Segmented, SkeletonRows } from '../../ui';
 import { dayMonthYear, rangeLabel, runFigures } from '../strategyView';
@@ -34,37 +36,69 @@ function side(v: StrategyVersion | undefined): StrategySide | null {
   };
 }
 
-function ResultChange({ before, after }: { before: BacktestRun; after: BacktestRun }) {
+function ResultChange({
+  before,
+  after,
+  strategyId,
+}: {
+  before: BacktestRun;
+  after: BacktestRun;
+  strategyId: string;
+}) {
+  const handoff = useHandoffRun();
+  const rerun = handoff.phase === 'done' && handoff.run ? handoff.run : null;
+  const shown = rerun ?? after;
   const a = runFigures(before);
-  const b = runFigures(after);
+  const b = runFigures(shown);
   if (!a || !b) return null;
   const sameSetup =
-    num(before.config?.initialCapital) === num(after.config?.initialCapital) &&
-    num(before.config?.commission) === num(after.config?.commission) &&
+    num(before.config?.initialCapital) === num(shown.config?.initialCapital) &&
+    num(before.config?.commission) === num(shown.config?.commission) &&
     rangeLabel(a) === rangeLabel(b);
-  const cell = (label: string, was: number, now: number, pct: boolean) => (
+  const cell = (label: string, was: number, now: number, kind: 'return' | 'pct' | 'ratio') => (
     <div className="min-w-0 border-l border-line px-4 first:border-l-0 first:pl-0">
       <span className="kicker">{label}</span>
-      <div className="mt-1 flex flex-wrap items-baseline gap-1.5 font-mono text-[18px]">
+      <div className="mt-1 flex flex-wrap items-baseline gap-1.5 font-mono text-[15px]">
         <span className="text-[13px] text-fg-3">
-          {pct ? <Pct value={was} dp={1} signed /> : was.toFixed(2)} →
+          {kind === 'ratio' ? was.toFixed(2) : formatPct(was, { dp: 1, signed: true })} →
         </span>
-        {pct ? <Pct value={now} pnl dp={1} /> : <span className="num">{now.toFixed(2)}</span>}
+        {kind === 'return' ? (
+          <Pct value={now} pnl dp={1} />
+        ) : (
+          <span className="num">
+            {kind === 'ratio' ? now.toFixed(2) : formatPct(now, { dp: 1, signed: true })}
+          </span>
+        )}
       </div>
     </div>
   );
   return (
     <div className="panel mt-5 px-4 py-3.5">
       <div className="grid grid-cols-3">
-        {cell('Return', a.totalReturn, b.totalReturn, true)}
-        {cell('Max drawdown', a.maxDrawdown, b.maxDrawdown, true)}
-        {cell('Sharpe', a.sharpe, b.sharpe, false)}
+        {cell('Return', a.totalReturn, b.totalReturn, 'return')}
+        {cell('Max drawdown', a.maxDrawdown, b.maxDrawdown, 'pct')}
+        {cell('Sharpe', a.sharpe, b.sharpe, 'ratio')}
       </div>
-      <p className="m-0 mt-2.5 text-[11.5px] text-fg-3">
-        {sameSetup
-          ? `Both backtests cover ${rangeLabel(b)} with the same capital and commission.`
-          : `The two backtests used different ranges or settings (${rangeLabel(a)} and ${rangeLabel(b)}), so compare them with care.`}
-      </p>
+      <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
+        <p className="m-0 text-[11.5px] text-fg-3">
+          {sameSetup
+            ? `Both backtests cover ${rangeLabel(b)} with the same capital and commission.`
+            : `The two backtests used different ranges or settings (${rangeLabel(a)} and ${rangeLabel(b)}), so the figures don’t compare like for like.`}
+          {handoff.phase === 'failed' && ` The new backtest didn’t finish: ${handoff.error ?? ''}`}
+        </p>
+        {!sameSetup && (
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={handoff.phase === 'running'}
+            onClick={() => handoff.start(strategyId, shown.strategyVersion, before)}
+          >
+            {handoff.phase === 'running'
+              ? 'Backtesting…'
+              : `Backtest version ${shown.strategyVersion} over the same dates`}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -98,7 +132,11 @@ export function VersionsView({
   const selectedNumber = Number(params.get('v')) || versions[0]?.version;
   const idx = versions.findIndex((v) => v.version === selectedNumber);
   const selected = idx >= 0 ? versions[idx] : versions[0];
-  const previous = idx >= 0 ? versions[idx + 1] : versions[1];
+  const defaultPrevious = idx >= 0 ? versions[idx + 1] : versions[1];
+  const vsNumber = Number(params.get('vs'));
+  const previous =
+    versions.find((v) => v.version === vsNumber && v.version !== selected?.version) ??
+    defaultPrevious;
 
   const diff = useMemo(() => {
     const after = side(selected);
@@ -119,6 +157,7 @@ export function VersionsView({
   const select = (v: number) => {
     const next = new URLSearchParams(params);
     next.set('v', String(v));
+    next.delete('vs');
     setParams(next, { replace: true });
   };
 
@@ -260,9 +299,30 @@ export function VersionsView({
                 ? `What changed in version ${selected.version}`
                 : `Version ${selected.version}`}
             </b>
-            <span className="text-[12px] text-fg-3">
-              {previous ? `compared with version ${previous.version}` : 'the first version'}
-            </span>
+            {previous ? (
+              <label className="flex items-center gap-2 text-[12px] text-fg-3">
+                compared with
+                <select
+                  className="select h-7 py-0 text-[12px]"
+                  value={previous.version}
+                  onChange={(e) => {
+                    const next = new URLSearchParams(params);
+                    next.set('vs', e.target.value);
+                    setParams(next, { replace: true });
+                  }}
+                >
+                  {versions
+                    .filter((v) => v.version !== selected.version)
+                    .map((v) => (
+                      <option key={v.version} value={v.version}>
+                        version {v.version}
+                      </option>
+                    ))}
+                </select>
+              </label>
+            ) : (
+              <span className="text-[12px] text-fg-3">the first version</span>
+            )}
           </div>
           {view === 'code' ? (
             <CodeDiff before={previous?.dslCode ?? ''} after={selected.dslCode} />
@@ -290,7 +350,7 @@ export function VersionsView({
               This version can’t be shown as an outline. The code view shows it.
             </p>
           )}
-          {pair && <ResultChange before={pair[0]} after={pair[1]} />}
+          {pair && <ResultChange before={pair[0]} after={pair[1]} strategyId={strategyId} />}
         </div>
       </div>
     </div>

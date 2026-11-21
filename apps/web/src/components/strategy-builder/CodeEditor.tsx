@@ -26,9 +26,11 @@ interface CodeEditorProps {
   problems?: readonly CodeProblem[];
   /** Called with the cursor's offset, 1-based line and 1-based column whenever it moves. */
   onCursor?: (offset: number, line: number, column: number) => void;
+  /** Moves the cursor to a line; a new `seq` repeats the move to the same line. */
+  jump?: { line: number; seq: number } | null;
 }
 
-export function CodeEditor({ readOnly = false, problems = [], onCursor }: CodeEditorProps) {
+export function CodeEditor({ readOnly = false, problems = [], onCursor, jump }: CodeEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const readOnlyCompartment = useRef(new Compartment());
@@ -116,6 +118,15 @@ export function CodeEditor({ readOnly = false, problems = [], onCursor }: CodeEd
   useEffect(() => {
     viewRef.current?.dispatch({ effects: setProblems.of(problems) });
   }, [problems]);
+
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || !jump) return;
+    const n = Math.max(1, Math.min(jump.line, view.state.doc.lines));
+    const at = view.state.doc.line(n).from;
+    view.dispatch({ selection: { anchor: at }, scrollIntoView: true });
+    view.focus();
+  }, [jump]);
 
   return (
     <div className="flex min-h-0 flex-col">

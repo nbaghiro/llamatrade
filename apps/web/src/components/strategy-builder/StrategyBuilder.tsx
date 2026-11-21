@@ -1,21 +1,29 @@
 import { toNumber } from '@llamatrade/core/stores/backtest';
 import { useStrategiesStore } from '@llamatrade/core/stores/strategies';
 import { fromDSLString, toDSL } from '@llamatrade/core/strategy/serializer';
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { longDate } from '../../lib/backtestView';
 import { formatMoney } from '../../lib/format';
 import { metaParts, ruleNumbers, type OutlineToken } from '../../lib/outline';
-import { diffStrategies, suggestNote, type StrategyDiff } from '../../lib/strategyDiff';
+import {
+  diffStrategies,
+  matchBlocks,
+  suggestNote,
+  type StrategyDiff,
+} from '../../lib/strategyDiff';
 import {
   StrategyBuilderStoreContext,
   useStrategyBuilderStore,
   useStrategyBuilderStoreWithContext,
 } from '../../store/strategy-builder';
+import { useSessionRows } from '../shell/useSessionRows';
+import { PhoneRulesView } from '../strategies/rules/PhoneRulesView';
 import { useMediaQuery } from '../strategies/useMediaQuery';
 import { WebOnlyNote } from '../ui';
 
+import { rebalanceEvery } from './blocks/conditionHistory';
 import { useConditionFocus } from './blocks/useConditionFocus';
 import { useWeightsFocus } from './blocks/useWeightsFocus';
 import { CodeWorkspace } from './code/CodeWorkspace';
@@ -28,15 +36,17 @@ import { EditorHeader, type HeaderBacktest } from './EditorHeader';
 import { HandoffPanel } from './handoff/HandoffPanel';
 import { useHandoffRun } from './handoff/useHandoffRun';
 import { SideHistory } from './history/SideHistory';
+import { conditionSides, sideOfBlock } from './history/sides';
 import { useEngineCheck } from './hooks/useEngineCheck';
 import { useRunningSession } from './hooks/useRunningSession';
 import { BuilderOutline } from './outline/BuilderOutline';
 import { Parts } from './outline/Outline';
-import { tokenKey } from './outline/tokenKey';
 import { useTokenEdit } from './outline/useTokenEdit';
 import { PreviewRail } from './rail/PreviewRail';
+import { checkCounts, countsText } from './save/checkList';
 import { SaveControl, type SaveWarning } from './save/SaveControl';
 import { SavedPanel, type SavedInfo } from './save/SavedPanel';
+import { useChecks } from './save/useChecks';
 import { SplitView } from './split/SplitView';
 import { DraftQuestions } from './start/DraftQuestions';
 import { StartRail } from './start/StartRail';
@@ -103,6 +113,17 @@ export function StrategyBuilder() {
   );
 
   const session = useRunningSession(strategyId);
+  const sessionRows = useSessionRows();
+  const sessionId = session.session?.id ?? null;
+  const sessionCurrentEquity = session.session?.currentEquity;
+  const sessionEquity = useMemo(() => {
+    if (!sessionId) return null;
+    const fromRow = sessionRows.find((r) => r.session.id === sessionId)?.figures.equity ?? null;
+    if (fromRow !== null && fromRow > 0) return fromRow;
+    const own = sessionCurrentEquity ? toNumber(sessionCurrentEquity) : 0;
+    return own > 0 ? own : null;
+  }, [sessionId, sessionRows, sessionCurrentEquity]);
+  const held = useMemo(() => new Set(session.positions.map((p) => p.symbol)), [session.positions]);
   const proposal = useProposal();
   const showProposal = proposal !== null && viewMode !== 'code';
 
@@ -144,10 +165,9 @@ export function StrategyBuilder() {
       { tree, meta: { timeframe, benchmark } }
     );
   }, [compareDsl, tree, timeframe, benchmark]);
-  const savedTree = useMemo(
-    () => (savedDsl ? (fromDSLString(savedDsl)?.tree ?? null) : null),
-    [savedDsl]
-  );
+  const savedParsed = useMemo(() => (savedDsl ? fromDSLString(savedDsl) : null), [savedDsl]);
+  const savedTree = savedParsed?.tree ?? null;
+  const savedEvery = rebalanceEvery(savedParsed?.metadata.timeframe ?? timeframe);
 
   const suggestedNote = useMemo(() => {
     if (!strategyId) return 'First version';
@@ -163,13 +183,34 @@ export function StrategyBuilder() {
     }
     return out;
   }, [validationResult.errors, engine]);
+  const checks = useChecks(tree, currentDsl, validationResult, engine);
+  const counts = checkCounts(checks.items);
   const warnings: SaveWarning[] = useMemo(
     () =>
       validationResult.warnings.map((w) => {
         const n = w.blockId ? numbers.get(w.blockId) : undefined;
-        return { message: w.message, where: n ? `rule ${n}` : undefined };
+        const line =
+          checks.items.find((c) => c.blockId === w.blockId && c.message === w.message)?.line ??
+          null;
+        return { message: w.message, where: n ? `rule ${n}` : undefined, line };
       }),
-    [validationResult.warnings, numbers]
+    [validationResult.warnings, numbers, checks.items]
+  );
+  const blockIssues = useMemo(() => {
+    const out = new Map<string, string>();
+    for (const e of validationResult.errors) {
+      if (e.blockId)
+        out.set(e.blockId, out.has(e.blockId) ? `${out.get(e.blockId)} ${e.message}` : e.message);
+    }
+    return out;
+  }, [validationResult.errors]);
+  const [jump, setJump] = useState<{ line: number; seq: number } | null>(null);
+  const goToLine = useCallback(
+    (line: number) => {
+      if (store.viewMode !== 'code') store.setViewMode('code');
+      setJump((j) => ({ line, seq: (j?.seq ?? 0) + 1 }));
+    },
+    [store]
   );
 
   // An untitled draft lives in this browser until version 1 is saved (start2 A).
@@ -264,32 +305,49 @@ export function StrategyBuilder() {
   useEffect(() => {
     if (focus && !tree.blocks[focus.blockId]) setFocus(null);
   }, [focus, tree]);
+  const focusFor = useCallback(
+    (blockId: string, field: string): Focus => {
+      const block = tree.blocks[blockId];
+      if (!block) return null;
+      const key = `${blockId}:${field}`;
+      if (block.type === 'if' && CONDITION_FIELDS.test(field)) {
+        return { kind: 'condition', blockId: block.id, key };
+      }
+      if (block.type === 'weight' && WEIGHT_FIELDS.has(field)) {
+        return { kind: 'weights', blockId: block.id, key };
+      }
+      if ((block.type === 'asset' || block.type === 'group') && field === 'asset.weight') {
+        const parent = block.parentId ? tree.blocks[block.parentId] : undefined;
+        if (parent?.type === 'weight') return { kind: 'weights', blockId: parent.id, key };
+      }
+      return null;
+    },
+    [tree]
+  );
   const onOpen = useCallback(
     (token: OutlineToken) => {
       if (phone || !token.blockId) return false;
-      const block = tree.blocks[token.blockId];
-      if (!block) return false;
-      let next: Focus = null;
-      if (block.type === 'if' && CONDITION_FIELDS.test(token.field)) {
-        next = { kind: 'condition', blockId: block.id, key: tokenKey(token) };
-      } else if (block.type === 'weight' && WEIGHT_FIELDS.has(token.field)) {
-        next = { kind: 'weights', blockId: block.id, key: tokenKey(token) };
-      } else if (
-        (block.type === 'asset' || block.type === 'group') &&
-        token.field === 'asset.weight' &&
-        block.parentId
-      ) {
-        const parent = tree.blocks[block.parentId];
-        if (parent?.type === 'weight') {
-          next = { kind: 'weights', blockId: parent.id, key: tokenKey(token) };
-        }
-      }
+      const next = focusFor(token.blockId, token.field);
       if (!next) return false;
       setFocus((f) => (f?.blockId === next.blockId && f.kind === next.kind ? null : next));
       return true;
     },
-    [phone, tree]
+    [phone, focusFor]
   );
+
+  // A link to one value, e.g. from the Rules tab: ?focus=<rule number>&field=<token field>.
+  const [searchParams] = useSearchParams();
+  const deepLinked = useRef(false);
+  useEffect(() => {
+    const n = Number(searchParams.get('focus'));
+    if (deepLinked.current || phone || !strategyId || !Number.isInteger(n) || n < 1) return;
+    const blockId = [...numbers].find(([, num]) => num === n)?.[0];
+    if (!blockId) return;
+    deepLinked.current = true;
+    store.selectBlock(blockId);
+    const next = focusFor(blockId, searchParams.get('field') ?? '');
+    if (next) setFocus(next);
+  }, [searchParams, phone, strategyId, numbers, focusFor, store]);
   const conditionFocus = useConditionFocus(
     focus?.kind === 'condition' ? focus.blockId : null,
     closeFocus
@@ -298,14 +356,19 @@ export function StrategyBuilder() {
     focus?.kind === 'weights' ? focus.blockId : null,
     closeFocus,
     {
-      sessionEquity: session.session?.currentEquity
-        ? toNumber(session.session.currentEquity)
-        : null,
+      sessionEquity,
       savedDsl,
       savedVersion: serverVersion,
     }
   );
   const openFocus = conditionFocus ?? weightsFocus;
+
+  const litSide = useMemo(() => {
+    const sides = savedTree ? conditionSides(savedTree) : null;
+    if (!savedTree || !sides) return null;
+    const target = focus?.kind === 'condition' ? focus.blockId : ui.selectedBlockId;
+    return sideOfBlock(tree, target, sides.ifId, matchBlocks(savedTree, tree));
+  }, [savedTree, tree, focus, ui.selectedBlockId]);
 
   const [describing, setDescribing] = useState<string | null>(null);
   const isEmptyDraft = !strategyId && ruleCount === 0 && viewMode === 'tree';
@@ -316,7 +379,14 @@ export function StrategyBuilder() {
   let meta: React.ReactNode;
   if (!strategyId) {
     chip = 'Draft';
-    meta = 'Not saved yet. Kept in this browser until you save version 1.';
+    meta = (
+      <>
+        Not saved yet. Kept in this browser until you save version 1.
+        {hasRules && countsText(counts) && (
+          <span className="text-risk"> {countsText(counts)}.</span>
+        )}
+      </>
+    );
   } else if (isDirty) {
     chip = `v${nextVersion} draft`;
     meta = (
@@ -326,12 +396,7 @@ export function StrategyBuilder() {
           ? `${changeCount} ${changeCount === 1 ? 'change' : 'changes'}, not saved`
           : 'Not saved'}
         {sessionVersion !== null && ` · Version ${sessionVersion} runs in paper`}
-        {warnings.length > 0 && (
-          <span className="text-risk">
-            {' '}
-            · {warnings.length} {warnings.length === 1 ? 'warning' : 'warnings'}
-          </span>
-        )}
+        {countsText(counts) && <span className="text-risk"> · {countsText(counts)}</span>}
       </>
     );
   } else {
@@ -351,7 +416,15 @@ export function StrategyBuilder() {
   const like = baseVersion ? ` like version ${baseVersion}` : '';
   const dirtyOrNew = isDirty || !strategyId;
   const backtest: HeaderBacktest | null = !hasRules
-    ? null
+    ? strategyId
+      ? null
+      : {
+          label: 'Backtest',
+          disabled: true,
+          title: 'Add a rule and save version 1 to backtest it.',
+          onRun: () => undefined,
+          settingsHref: null,
+        }
     : {
         label: dirtyOrNew
           ? `Save version ${nextVersion} and backtest${like}`
@@ -396,13 +469,14 @@ export function StrategyBuilder() {
           sessionLine={sessionLine}
           onSave={(note) => save(note).catch(() => undefined)}
           openRequest={saveRequest}
+          onGoToLine={phone ? undefined : goToLine}
         />
       }
     />
   );
 
   const errorLine = error && !saving && (
-    <p role="alert" className="m-0 mb-3 text-[12.5px] text-loss">
+    <p role="alert" className="m-0 mb-3 text-[12.5px] text-risk">
       The version wasn’t saved. {error}
     </p>
   );
@@ -455,7 +529,13 @@ export function StrategyBuilder() {
       <div className="page max-w-[1400px]">
         {header}
         {errorLine}
-        <CodeWorkspace engine={engine} problems={problems} warnings={validationResult.warnings} />
+        <CodeWorkspace
+          engine={engine}
+          problems={problems}
+          checks={checks}
+          jump={jump}
+          onJump={goToLine}
+        />
         <div className="mt-6 grid gap-6">{afterRules}</div>
       </div>
     );
@@ -466,7 +546,15 @@ export function StrategyBuilder() {
       <div className="page max-w-[1400px]">
         {header}
         {errorLine}
-        <SplitView engine={engine} />
+        <SplitView
+          engine={engine}
+          counts={counts}
+          history={
+            run && savedTree
+              ? { run, tree: savedTree, every: savedEvery, lit: litSide, dirty: isDirty }
+              : null
+          }
+        />
         <div className="mt-6 grid gap-6">{afterRules}</div>
       </div>
     );
@@ -498,7 +586,7 @@ export function StrategyBuilder() {
           <EmptyRulesHint />
         </>
       ) : (
-        <div className="px-3 pb-3 pt-1 sm:px-5">
+        <div className="pb-3 pt-1">
           <BuilderOutline
             hideMeta
             tracked={showProposal && proposal ? proposal.diff : null}
@@ -506,6 +594,8 @@ export function StrategyBuilder() {
             structural={!phone}
             onOpen={onOpen}
             openKey={focus?.key ?? null}
+            issues={blockIssues}
+            held={held}
             below={(line) =>
               openFocus && focus && line.blockId === focus.blockId ? (
                 <div className="pb-3 pt-1">{openFocus.inline}</div>
@@ -513,7 +603,7 @@ export function StrategyBuilder() {
             }
           />
           {!isDirty && previousDsl && compare && compare.changes.length > 0 && (
-            <p className="m-0 pt-3 text-[12px] text-fg-3">
+            <p className="m-0 px-5 pt-3 text-[12px] text-fg-3">
               Values struck through are version {serverVersion - 1}’s. The marks clear when you make
               your next change.
             </p>
@@ -523,6 +613,8 @@ export function StrategyBuilder() {
     </section>
   );
 
+  // phone2 A: a saved strategy on a phone reads as its sentence, one value changed at a time.
+  const phoneRead = phone && !!strategyId && !isEmptyDraft && viewMode === 'tree';
   const rail = isEmptyDraft ? (
     <StartRail />
   ) : openFocus ? (
@@ -545,7 +637,6 @@ export function StrategyBuilder() {
     </div>
   );
 
-  const selectedIf = ui.selectedBlockId ? tree.blocks[ui.selectedBlockId]?.type === 'if' : false;
   return (
     <div className="page max-w-[1400px]">
       {header}
@@ -554,14 +645,28 @@ export function StrategyBuilder() {
       {showProposal && proposal && <ProposalBanner proposal={proposal} />}
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_330px]">
         <div className="grid min-w-0 gap-6">
-          {rulesPanel}
+          {phoneRead ? (
+            <PhoneRulesView
+              name={strategyName}
+              tree={tree}
+              timeframe={timeframe}
+              savedTree={savedTree}
+              nextVersion={nextVersion}
+              saving={saving}
+              onCondition={store.updateCondition}
+              onSave={(note) => save(note).catch(() => undefined)}
+              onRevert={() => undefined}
+            />
+          ) : (
+            rulesPanel
+          )}
           {afterRules}
         </div>
-        <div className="grid gap-4 lg:sticky lg:top-[72px]">{rail}</div>
+        {!phoneRead && <div className="grid gap-4 lg:sticky lg:top-[72px]">{rail}</div>}
       </div>
       {run && savedTree && !phone && !isEmptyDraft && (
         <div className="mt-6">
-          <SideHistory run={run} tree={savedTree} lit={selectedIf || focus?.kind === 'condition'} />
+          <SideHistory run={run} tree={savedTree} every={savedEvery} lit={litSide} />
         </div>
       )}
     </div>

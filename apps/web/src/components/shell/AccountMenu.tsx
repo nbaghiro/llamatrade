@@ -7,6 +7,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { formatMoney } from '../../lib/format';
 import { useAuthStore } from '../../store/auth';
 import { useThemeStore } from '../../store/theme';
+import { planLabel } from '../billing/format';
 import { Avatar } from '../common/Avatar';
 import { ModeBadge } from '../ui/ModeBadge';
 import { Popover } from '../ui/Popover';
@@ -168,7 +169,7 @@ export function AccountMenu() {
             <Item
               to="/settings/plan"
               icon={CreditCard}
-              label={plan ? `${plan} plan` : 'Plan and usage'}
+              label={plan ? planLabel(`${plan} plan`, subscription?.isBeta) : 'Plan and usage'}
               aside="Billing"
               onClick={close}
             />

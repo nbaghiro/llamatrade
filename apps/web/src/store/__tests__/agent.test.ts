@@ -23,7 +23,13 @@ import { describeConfirmation } from '@llamatrade/core/agent/confirmation';
 import { dayBucket, groupSessionsByDay, sessionWhen } from '@llamatrade/core/agent/history';
 import { fixedTargets, strategyStructure } from '@llamatrade/core/agent/structure';
 import { StreamEventType } from '@llamatrade/core/proto/agent_pb';
-import { CHANGE_PROMPT, isServiceUnavailable, useAgentStore } from '@llamatrade/core/stores/agent';
+import {
+  CHANGE_PROMPT,
+  isServiceUnavailable,
+  useAgentStore,
+  withStoredToolCalls,
+  type AgentMessage,
+} from '@llamatrade/core/stores/agent';
 
 async function* completeStream() {
   yield { eventType: StreamEventType.COMPLETE, messageId: 'm1', contentDelta: '' } as never;
@@ -476,5 +482,26 @@ describe('conversation history by day', () => {
     expect(sessionWhen(at(new Date(2026, 10, 16, 10, 31)).seconds, now)).toBe('10:31');
     expect(sessionWhen(at(new Date(2026, 10, 8, 10, 31)).seconds, now)).toBe('Nov 8');
     expect(sessionWhen(undefined, now)).toBe('');
+  });
+});
+
+describe('withStoredToolCalls', () => {
+  const msg = (id: string, tools: string[]): AgentMessage =>
+    ({
+      id,
+      content: '',
+      toolCalls: tools.map((name) => ({ id: name, name })),
+    }) as unknown as AgentMessage;
+
+  it('fills tool calls a streamed message lacks from its stored copy', () => {
+    const out = withStoredToolCalls([msg('a', []), msg('b', [])], [msg('b', ['get_positions'])]);
+    expect(out[0].toolCalls).toHaveLength(0);
+    expect(out[1].toolCalls.map((t) => t.name)).toEqual(['get_positions']);
+  });
+
+  it('keeps tool calls a message already has and ignores unknown ids', () => {
+    const local = [msg('a', ['get_strategy'])];
+    const out = withStoredToolCalls(local, [msg('a', ['get_positions']), msg('z', ['x'])]);
+    expect(out[0]).toBe(local[0]);
   });
 });

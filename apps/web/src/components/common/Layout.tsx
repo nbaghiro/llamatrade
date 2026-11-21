@@ -6,8 +6,6 @@ import NewStrategyDialog from '../../components/strategies/NewStrategyDialog';
 import StrategyPreviewDialog from '../../components/strategies/StrategyPreviewDialog';
 import { useOnline } from '../../hooks/useOnline';
 import { useUIStore } from '../../store/ui';
-import { AgentFAB } from '../agent/AgentFAB';
-import { CopilotSidePanel } from '../agent/CopilotSidePanel';
 import { CommandPalette } from '../shell/CommandPalette';
 import { MobileTabBar } from '../shell/MobileTabBar';
 import { TopBar } from '../shell/TopBar';
@@ -55,8 +53,6 @@ export default function Layout() {
       <MobileTabBar />
       <CommandPalette />
 
-      <AgentFAB />
-      <CopilotSidePanel />
       <NewStrategyDialog isOpen={newStrategyDialogOpen} onClose={closeNewStrategyDialog} />
       <StrategyPreviewDialog />
     </div>

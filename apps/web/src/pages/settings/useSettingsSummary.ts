@@ -6,6 +6,7 @@ import { useBrokerStore } from '@llamatrade/core/stores/broker';
 import { useNotificationsStore } from '@llamatrade/core/stores/notifications';
 import { useEffect, useMemo } from 'react';
 
+import { planLabel } from '../../components/billing/format';
 import { useSessionRows } from '../../components/shell/useSessionRows';
 import { nextRebalanceDate } from '../../lib/sessionState';
 import { useThemeStore } from '../../store/theme';
@@ -84,7 +85,7 @@ export function useSettingsSummary(): SettingsSummary {
         broker,
         notifications: { text: email && !email.enabled ? 'Email off' : 'Email on' },
         appearance: { text: MODE_LABEL[mode] },
-        plan: tier ? { text: PLAN_TIER_BY_KEY[tier].name } : null,
+        plan: tier ? { text: planLabel(PLAN_TIER_BY_KEY[tier].name, subscription?.isBeta) } : null,
       },
     };
   }, [rows, credentials, lastCheck, preferences, subscription, brokerLoaded, mode]);

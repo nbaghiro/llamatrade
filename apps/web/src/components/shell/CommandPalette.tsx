@@ -6,6 +6,7 @@ import { useStrategiesStore } from '@llamatrade/core/stores/strategies';
 import { useTradingStore } from '@llamatrade/core/stores/trading';
 import {
   AlertTriangle,
+  CalendarClock,
   ArrowRight,
   Clock3,
   CornerDownLeft,
@@ -16,14 +17,20 @@ import {
   Plus,
   Receipt,
   Search,
-  Sparkles,
-  type LucideIcon,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 
-import { formatMoney, formatPct, pnlTone } from '../../lib/format';
+import { formatMoney, formatPct, moveTone, TONE_TEXT } from '../../lib/format';
 import { etParts } from '../../lib/marketClock';
 import {
   COPILOT_RESULT_ID,
@@ -39,6 +46,8 @@ import {
   type RecentEntry,
 } from '../../lib/palette';
 import { useUIStore } from '../../store/ui';
+import { CopilotMark } from '../common/Logo';
+import { etDay, homeSessions, marketPhase, rebalancingToday } from '../home/homeModel';
 import { useAttentionEntries } from '../home/useAttentionEntries';
 import { Kbd } from '../ui/Kbd';
 import { ModeBadge } from '../ui/ModeBadge';
@@ -48,7 +57,13 @@ import { usePalette } from './usePalette';
 import { useSessionRows } from './useSessionRows';
 
 const PAGES: ReadonlyArray<PaletteItem & { to: string }> = [
-  { id: 'page:home', kind: 'page', label: 'Home', to: '/dashboard', keywords: ['dashboard'] },
+  {
+    id: 'page:home',
+    kind: 'page',
+    label: 'Home',
+    to: '/dashboard',
+    keywords: ['dashboard', 'copilot', 'chat'],
+  },
   {
     id: 'page:markets',
     kind: 'page',
@@ -79,7 +94,13 @@ const PAGES: ReadonlyArray<PaletteItem & { to: string }> = [
     to: '/trading',
     keywords: ['orders', 'trading'],
   },
-  { id: 'page:copilot', kind: 'page', label: 'Copilot', to: '/copilot' },
+  {
+    id: 'page:copilot',
+    kind: 'page',
+    label: 'Conversations',
+    to: '/dashboard?view=history',
+    keywords: ['copilot', 'chat', 'history'],
+  },
   {
     id: 'page:settings',
     kind: 'page',
@@ -124,7 +145,7 @@ const ACTIONS: ReadonlyArray<PaletteItem & { id: ActionId }> = [
   {
     id: 'action:deploy',
     kind: 'action',
-    label: 'Deploy a strategy',
+    label: 'Start a strategy',
     hint: 'Runs in paper',
     keywords: ['run', 'start', 'session'],
   },
@@ -132,7 +153,6 @@ const ACTIONS: ReadonlyArray<PaletteItem & { id: ActionId }> = [
 
 const FALLBACK_EMPTY_IDS = ['action:new', 'action:backtest', 'page:markets', 'page:copilot'];
 const RECENT_KEY = 'llamatrade-palette-recent';
-const TONE_CLASS = { gain: 'text-gain', loss: 'text-loss', flat: '' } as const;
 const PALETTE_SESSIONS = 6;
 
 const STATUS_HINT: Partial<Record<StrategyStatus, string>> = {
@@ -142,17 +162,19 @@ const STATUS_HINT: Partial<Record<StrategyStatus, string>> = {
   [StrategyStatus.ARCHIVED]: 'Archived',
 };
 
-const KIND_ICON: Record<PaletteKind, LucideIcon> = {
+type PaletteIcon = ComponentType<{ className?: string }>;
+
+const KIND_ICON: Record<PaletteKind, PaletteIcon> = {
   today: Clock3,
   session: LineChart,
   recent: History,
   strategy: LineChart,
   page: FileText,
   action: Plus,
-  copilot: Sparkles,
+  copilot: CopilotMark,
 };
 
-const ACTION_ICON: Record<ActionId, LucideIcon> = {
+const ACTION_ICON: Record<ActionId, PaletteIcon> = {
   'action:new': Plus,
   'action:backtest': FlaskConical,
   'action:funds': Plus,
@@ -189,7 +211,7 @@ function writeRecent(list: readonly RecentEntry[]) {
 /** What a row shows beyond its label, and where it goes. */
 interface RowExtra {
   to?: string;
-  icon?: LucideIcon;
+  icon?: PaletteIcon;
   mode?: 'live' | 'paper';
   dot?: 'accent' | 'muted' | 'risk';
   right?: ReactNode;
@@ -264,6 +286,26 @@ function PaletteDialog() {
       });
     }
 
+    const phase = marketPhase(now);
+    if (phase.open) {
+      for (const s of rebalancingToday(homeSessions(sessionRows, []), etDay(now))) {
+        const id = `today:rebalance:${s.id}`;
+        extras.set(id, {
+          to: s.href,
+          icon: CalendarClock,
+          mode: s.mode,
+          dot: s.state === 'frozen' ? 'risk' : 'accent',
+          right: s.state === 'frozen' ? 'Waits for review' : `Before the ${phase.closeClock} close`,
+        });
+        today.push({
+          id,
+          kind: 'today',
+          label: `${s.name} rebalances today`,
+          keywords: ['rebalance'],
+        });
+      }
+    }
+
     const sessionItems: PaletteItem[] = [...sessionRows]
       .sort((a, b) => Number(b.view.open) - Number(a.view.open))
       .slice(0, PALETTE_SESSIONS)
@@ -274,7 +316,7 @@ function PaletteDialog() {
         const right = r.view.open ? (
           <>
             {move !== null && (
-              <span className={`num ${TONE_CLASS[pnlTone(move * 100)]}`}>
+              <span className={`num ${TONE_TEXT[moveTone(move * 100)]}`}>
                 {formatPct(move, { signed: true })}
               </span>
             )}

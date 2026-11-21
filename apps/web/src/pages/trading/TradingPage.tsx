@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
 import { Panel } from '../../components/backtest/parts';
+import { liveFreeCash, useLiveAccount } from '../../components/portfolio/useLiveAccount';
 import {
   Blotter,
   buildSessionRow,
@@ -20,6 +21,7 @@ import {
 } from '../../components/sessions';
 import { needsYou } from '../../components/sessions/needs';
 import { NeedsYou } from '../../components/sessions/NeedsYou';
+import { relativeDay, rowNextRun } from '../../components/sessions/sessionRows';
 import { SessionsPhoneList } from '../../components/sessions/SessionsPhoneList';
 import { SessionTimeline, type TimelineGroup } from '../../components/sessions/SessionTimeline';
 import {
@@ -36,19 +38,12 @@ import {
   windowed,
 } from '../../components/sessions/timeline';
 import { usePageScope } from '../../components/shell/usePageScope';
-import {
-  ModeBadge,
-  PageArt,
-  PageHead,
-  ScopeControl,
-  Segmented,
-  StatList,
-} from '../../components/ui';
+import { ModeBadge, PageHead, ScopeControl, Segmented, StatList } from '../../components/ui';
 import { Money } from '../../components/ui/Num';
 import { PanelError } from '../../components/ui/PanelError';
 import { SkeletonRows } from '../../components/ui/Skeleton';
 import { formatMoney, formatNumber } from '../../lib/format';
-import { inScope, maskedKey } from '../../lib/scope';
+import { alpacaAccountLabel, inScope } from '../../lib/scope';
 
 const COMPACT_OVER = 12;
 const qty = (v: number) => formatNumber(v, { dp: Number.isInteger(v) ? 0 : 2 });
@@ -76,6 +71,8 @@ export default function TradingPage() {
   const fundingResolved = useFundingStore((s) => s.resolved);
   const resolveAccount = useFundingStore((s) => s.resolveAccount);
   const [range, setRange] = useState<TimeRange>('3M');
+  const liveAccount = useLiveAccount();
+  const liveFree = liveFreeCash(liveAccount);
 
   useEffect(() => {
     loadBlotter()
@@ -132,11 +129,9 @@ export default function TradingPage() {
     .sort((a, b) => a.getTime() - b.getTime())[0];
   const start = rangeStart(range, now, earliest ?? null);
 
-  const accountLabel = (live: boolean) => {
-    const cred = credentials.find((c) => c.isActive && c.isPaper === !live);
-    const key = cred ? maskedKey(cred.apiKeyPrefix) : '';
-    return `Alpaca ${live ? 'live' : 'paper'}${key ? ` ${key}` : ''}`;
-  };
+  const numberOf = (live: boolean) =>
+    credentials.find((c) => c.isActive && c.isPaper === !live)?.accountNumber;
+  const accountLabel = (live: boolean) => alpacaAccountLabel(live, numberOf(live), numberOf(!live));
   const groups: TimelineGroup[] = [true, false]
     .map((live) => {
       const rs = rows.filter((r) => isLive(r) === live);
@@ -171,6 +166,10 @@ export default function TradingPage() {
   const accounts = new Set(rows.map(isLive)).size;
   const running = rows.filter((r) => r.view.open).length;
   const stopped = rows.length - running;
+  const nextRun = rows
+    .map((r) => rowNextRun(r, now))
+    .filter((d): d is Date => d !== null)
+    .sort((a, b) => a.getTime() - b.getTime())[0];
   const sub = loaded && !error && !empty && (
     <>
       {[
@@ -179,6 +178,7 @@ export default function TradingPage() {
           : null,
         `${rows.length} ${rows.length === 1 ? 'session' : 'sessions'} on ${accounts} Alpaca ${accounts === 1 ? 'account' : 'accounts'}`,
         `${running} open${stopped ? `, ${stopped} stopped` : ''}`,
+        nextRun ? `next rebalance ${relativeDay(nextRun, today)}` : null,
       ]
         .filter(Boolean)
         .join(' · ')}
@@ -204,14 +204,16 @@ export default function TradingPage() {
           },
         ]
       : []),
+    ...(liveFree !== null && scope !== 'paper'
+      ? [{ label: 'Free cash, live', value: formatMoney(liveFree) }]
+      : []),
     ...(fundingResolved && scope !== 'live'
-      ? [{ label: 'Free cash in paper', value: formatMoney(paperFree) }]
+      ? [{ label: 'Free cash, paper', value: formatMoney(paperFree) }]
       : []),
   ];
 
   return (
     <div className="page relative isolate">
-      <PageArt shape="live" />
       <PageHead
         title="Sessions"
         sub={sub}
@@ -232,7 +234,7 @@ export default function TradingPage() {
               />
               <Link to="/trading?deploy=1" className="btn btn-primary">
                 <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                Deploy a strategy
+                Start a strategy
               </Link>
             </>
           )

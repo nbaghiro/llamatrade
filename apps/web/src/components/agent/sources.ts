@@ -22,6 +22,10 @@ export interface SourceView {
   note: string;
   seconds: number | null;
   ok: boolean;
+  /** Where the record came from, e.g. "Strategy" or "Ledger · positions". */
+  kind: string;
+  /** The page that shows the record, when the call names one. */
+  href: string | null;
 }
 
 type ToolCall = AgentMessage['toolCalls'][number];
@@ -76,6 +80,52 @@ function rows(entries: [string, unknown][]): SourceRow[] {
 
 function count(n: number, one: string, many = `${one}s`): string {
   return `${n.toLocaleString('en-US')} ${n === 1 ? one : many}`;
+}
+
+const KIND: Record<string, string> = {
+  get_strategy: 'Strategy',
+  list_strategies: 'Strategies',
+  list_templates: 'Templates',
+  get_backtest_results: 'Backtest',
+  list_backtests: 'Backtests',
+  run_backtest: 'Backtest',
+  get_portfolio_summary: 'Portfolio',
+  get_portfolio_performance: 'Portfolio · performance',
+  get_positions: 'Portfolio · positions',
+  validate_dsl: 'Strategy check',
+  get_asset_info: 'Market data · asset',
+  recall_memory: 'Copilot memory',
+  get_user_profile: 'Copilot memory',
+  search_past_strategies: 'Strategies',
+};
+
+/** The page that shows what a call read, from the ids in its arguments or result. */
+function sourceHref(name: string, args: Json, data: Json | null): string | null {
+  const pick = (...vals: unknown[]) => vals.map(str).find((v) => v.trim() !== '') ?? '';
+  switch (name) {
+    case 'get_strategy':
+    case 'validate_dsl': {
+      const id = pick(data?.id, args.strategy_id);
+      return id ? `/strategies/${id}` : null;
+    }
+    case 'get_backtest_results':
+    case 'run_backtest': {
+      const id = pick(data?.backtest_id, args.backtest_id);
+      return id ? `/backtest/${id}` : null;
+    }
+    case 'list_backtests':
+      return '/backtest';
+    case 'list_strategies':
+      return '/strategies';
+    case 'list_templates':
+      return '/strategies/templates';
+    case 'get_portfolio_summary':
+    case 'get_portfolio_performance':
+    case 'get_positions':
+      return '/portfolio';
+    default:
+      return null;
+  }
 }
 
 function describe(
@@ -194,6 +244,8 @@ export function describeSource(tc: ToolCall): Omit<SourceView, 'n' | 'messageId'
   const args = parse(tc.argumentsJson) ?? {};
   const data = parse(tc.resultJson);
   const seconds = tc.durationMs > 0 ? tc.durationMs / 1000 : null;
+  const kind = KIND[tc.name] ?? 'Copilot';
+  const href = tc.success ? sourceHref(tc.name, args, data) : null;
   if (!tc.success || !data) {
     const error = tc.resultJson.replace(/^Error:\s*/, '').trim();
     return {
@@ -206,6 +258,8 @@ export function describeSource(tc: ToolCall): Omit<SourceView, 'n' | 'messageId'
       note: tc.success ? error : error || 'This call failed, so the answer does not use it.',
       seconds,
       ok: tc.success,
+      kind,
+      href,
     };
   }
   const view = describe(tc.name, args, data);
@@ -220,6 +274,8 @@ export function describeSource(tc: ToolCall): Omit<SourceView, 'n' | 'messageId'
     note: view.note,
     seconds,
     ok: true,
+    kind,
+    href,
   };
 }
 
@@ -233,11 +289,4 @@ export function threadSources(messages: readonly AgentMessage[]): SourceView[] {
     }
   }
   return out;
-}
-
-/** "3 tool calls · 1.8 s", or just the count when no call reported its time. */
-export function sourcesSummary(sources: readonly SourceView[]): string {
-  const total = sources.reduce((sum, s) => sum + (s.seconds ?? 0), 0);
-  const calls = count(sources.length, 'tool call');
-  return total > 0 ? `${calls} · ${total.toFixed(1)} s` : calls;
 }

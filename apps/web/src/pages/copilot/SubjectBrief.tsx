@@ -16,6 +16,7 @@ import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
 import { ChatInput, SubjectChip } from '../../components/agent/ChatInput';
+import { conversationPath } from '../../components/agent/entry';
 import {
   askPlaceholder,
   earlierAbout,
@@ -181,7 +182,7 @@ export function SubjectBrief({
           {earlier.map((s) => (
             <Link
               key={s.id}
-              to={`/copilot/${s.id}`}
+              to={conversationPath(s.id)}
               className="flex items-baseline justify-between gap-4 border-b border-line py-2.5 text-[13.5px] hover:text-accent"
             >
               <span className="min-w-0 truncate font-medium">{s.title || 'Untitled'}</span>

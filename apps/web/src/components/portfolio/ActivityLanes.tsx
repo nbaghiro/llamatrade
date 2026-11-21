@@ -104,7 +104,7 @@ export function ActivityLanes({
   const ticks = weekTicks(start, end);
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)] gap-y-1 md:grid-cols-[190px_minmax(0,1fr)]">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-y-1 md:grid-cols-[236px_minmax(0,1fr)]">
       <LaneLegend
         className="mb-1 md:col-span-2"
         items={[

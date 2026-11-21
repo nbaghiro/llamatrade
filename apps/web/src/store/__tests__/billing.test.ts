@@ -33,7 +33,7 @@ vi.mock('@llamatrade/core/net', () => ({
 
 import { Code, ConnectError } from '@connectrpc/connect';
 import { BillingInterval } from '@llamatrade/core/proto/billing_pb';
-import { ExecutionStatus } from '@llamatrade/core/proto/common_pb';
+import { ExecutionMode, ExecutionStatus } from '@llamatrade/core/proto/common_pb';
 import {
   PLAN_TIERS,
   PLAN_TIER_BY_KEY,
@@ -221,9 +221,10 @@ describe('fetchUsageCounts', () => {
     });
     usage.listStrategyPerformance.mockResolvedValue({
       strategies: [
-        { status: ExecutionStatus.RUNNING },
-        { status: ExecutionStatus.RUNNING },
-        { status: ExecutionStatus.STOPPED },
+        { status: ExecutionStatus.RUNNING, mode: ExecutionMode.LIVE },
+        { status: ExecutionStatus.RUNNING, mode: ExecutionMode.LIVE },
+        { status: ExecutionStatus.RUNNING, mode: ExecutionMode.PAPER },
+        { status: ExecutionStatus.STOPPED, mode: ExecutionMode.LIVE },
       ],
     });
     usage.listSessions.mockResolvedValue({
@@ -245,7 +246,7 @@ describe('fetchUsageCounts', () => {
     expect(useBillingStore.getState().usageCounts).toEqual({
       strategies: 7,
       backtests: 2, // only this calendar month, whatever the all-time total says
-      liveSessions: 2, // only RUNNING executions count
+      liveSessions: 2, // only running live executions count
       copilotMessages: 7, // conversations active this month, falling back to createdAt
     });
   });

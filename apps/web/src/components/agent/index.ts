@@ -1,17 +1,19 @@
-export { AgentFAB } from './AgentFAB';
-export { CopilotAskField, CopilotInlineAnswer } from './AskInPlace';
-export { useInlineAsk } from './inlineAsk';
 export { ChatInput, SubjectChip } from './ChatInput';
 export { ChatMessage } from './ChatMessage';
 export { ComposerApproval } from './ComposerApproval';
-export { CopilotConversation, CopilotUnavailableNotice } from './CopilotConversation';
-export { CopilotSidePanel } from './CopilotSidePanel';
-export { CopilotUnavailable } from './CopilotUnavailable';
+export { CopilotConversation } from './CopilotConversation';
+export { DraftChoices } from './DraftChoices';
+export {
+  answersMessage,
+  DEFAULTS_MESSAGE,
+  parseDraftQuestions,
+  presetPicks,
+  type DraftPicks,
+  type DraftQuestion,
+} from './draftQuestions';
 export { askCopilotHref } from './entry';
 export { PendingArtifactCard } from './PendingArtifactCard';
-export { SourcesPane } from './SourcesPane';
 export { StreamingIndicator } from './StreamingIndicator';
 export { ThinkingBlock } from './ThinkingBlock';
 export { ToolCallIndicator } from './ToolCallIndicator';
 export { ToolConfirmationCard } from './ToolConfirmationCard';
-export { useRouteSubject } from './useRouteSubject';

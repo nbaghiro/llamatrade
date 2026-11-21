@@ -2,18 +2,15 @@ import { OrderSide, type Order } from '@llamatrade/core/proto/trading_pb';
 import { describe, expect, it } from 'vitest';
 
 import {
-  accountHistory,
   allocationSteps,
   byDay,
   estimateRebalance,
   etDayKey,
   fillFor,
-  freeCashSteps,
   maxDrawdown,
   sleeveFills,
   sleeveInitials,
   valueAt,
-  windowFrom,
   type SleeveFill,
 } from '../history';
 
@@ -97,65 +94,14 @@ describe('valueAt', () => {
   });
 });
 
-describe('accountHistory', () => {
-  const deposit = T('2026-01-06T15:00:00Z');
-  const alloc = T('2026-01-15T14:01:00Z');
-  const now = T('2026-11-17T15:00:00Z');
-  const sleeve = {
-    points: [
-      { t: T('2026-01-15T16:00:00Z'), v: 35_000 },
-      { t: T('2026-06-01T16:00:00Z'), v: 36_000 },
-    ],
-    allocations: [{ t: alloc, amount: 35_000 }],
-  };
-  const cash = [
-    { t: deposit, amount: 100_000 },
-    { t: alloc, amount: -35_000 },
-  ];
-
-  it('adds sleeves and free cash, with the allocation standing in before the curve starts', () => {
-    const h = accountHistory([sleeve], cash, now);
-    const at = (iso: string) => h.dates.findIndex((d) => d.getTime() === T(iso));
-    expect(h.equity[at('2026-01-15T14:01:00Z')]).toBe(100_000);
-    expect(h.equity[at('2026-06-01T16:00:00Z')]).toBe(101_000);
-    expect(h.added[h.added.length - 1]).toBe(100_000);
-    expect(h.dates[h.dates.length - 1].getTime()).toBe(now);
-  });
-
-  it('starts at the first money and draws risers just before each step', () => {
-    const h = accountHistory([sleeve], cash, now);
-    expect(h.dates[0].getTime()).toBe(deposit);
-    expect(h.dates.some((d) => d.getTime() === alloc - 60_000)).toBe(true);
-  });
-
-  it('ignores anything after now', () => {
-    const h = accountHistory([sleeve], [...cash, { t: now + 1, amount: 5 }], now);
-    expect(h.equity[h.equity.length - 1]).toBe(101_000);
-  });
-
-  it('windows from a start, opening with the value there', () => {
-    const h = accountHistory([sleeve], cash, now);
-    const start = new Date('2026-03-01T00:00:00Z');
-    const w = windowFrom(h, start);
-    expect(w.dates[0]).toBe(start);
-    expect(w.equity[0]).toBe(100_000);
-    expect(windowFrom(h, new Date(0))).toBe(h);
-  });
-});
-
-describe('cash steps from activity rows', () => {
+describe('allocation steps from activity rows', () => {
   const rows = [
     { kind: 'deposit', sublabel: 'Paper credit', amount: 100, signed: 100, at: new Date(1) },
     { kind: 'allocation', sublabel: 'Risk Parity', amount: 30, signed: -30, at: new Date(2) },
     { kind: 'allocation', sublabel: 'Other', amount: 5, signed: -5, at: new Date(3) },
     { kind: 'buy', sublabel: '1 at 2', amount: 2, signed: 0, at: new Date(4) },
   ];
-  it('reads free-cash movements and per-sleeve allocations', () => {
-    expect(freeCashSteps(rows)).toEqual([
-      { t: 1, amount: 100 },
-      { t: 2, amount: -30 },
-      { t: 3, amount: -5 },
-    ]);
+  it('reads per-sleeve allocations', () => {
     expect(allocationSteps(rows, 'Risk Parity')).toEqual([{ t: 2, amount: 30 }]);
   });
 });

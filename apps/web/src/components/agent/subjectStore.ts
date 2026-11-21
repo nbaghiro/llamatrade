@@ -6,17 +6,22 @@ import type { CopilotSubject } from './subjects';
 interface SubjectState {
   /** What the current question is about; shown as a chip in the composer. */
   subject: CopilotSubject | null;
-  /** A question kept because Copilot couldn't be reached when it was sent. */
+  /** A question kept because Copilot couldn't take it when it was sent; `text` is what was sent. */
   unsent: { text: string; at: Date } | null;
+  /** When Copilot was first seen unreachable or limited, for the notice's "Since 10:38". */
+  downSince: Date | null;
   setSubject: (subject: CopilotSubject | null) => void;
   setUnsent: (text: string | null) => void;
+  setDownSince: (at: Date | null) => void;
 }
 
 export const useCopilotSubject = create<SubjectState>()((set) => ({
   subject: null,
   unsent: null,
+  downSince: null,
   setSubject: (subject) => set({ subject }),
   setUnsent: (text) => set({ unsent: text ? { text, at: new Date() } : null }),
+  setDownSince: (at) => set({ downSince: at }),
 }));
 
 /** The strategy name and code Copilot is given as context for a subject. */

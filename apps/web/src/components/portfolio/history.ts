@@ -24,6 +24,8 @@ export interface SleeveFill {
   side: 'buy' | 'sell';
   qty: number;
   price: number;
+  /** The order's client id, from which the ledger derives the fill's event id. */
+  clientOrderId?: string;
 }
 
 const tsMs = (ts: { seconds: bigint } | undefined): number =>
@@ -49,9 +51,18 @@ export function sleeveFills(
       side: o.side === OrderSide.SELL ? 'sell' : 'buy',
       qty,
       price: num(o.averageFillPrice) || num(o.limitPrice),
+      clientOrderId: o.clientOrderId || undefined,
     });
   }
   return out.sort((a, b) => b.at.getTime() - a.at.getTime());
+}
+
+const MONTH_MS = 30 * 86_400_000;
+
+/** The last 30 days of a curve, closing on the value now. */
+export function lastMonth(points: readonly TimedValue[], value: number, now: Date): number[] {
+  const from = now.getTime() - MONTH_MS;
+  return [...points.filter((p) => p.t >= from && p.t <= now.getTime()).map((p) => p.v), value];
 }
 
 /** "2026-11-17": the New York calendar day a moment falls on. */
@@ -90,87 +101,6 @@ export function valueAt(points: readonly TimedValue[], t: number): number | null
     out = p.v;
   }
   return out;
-}
-
-function sumUpTo(steps: readonly CashStep[], t: number): number {
-  let s = 0;
-  for (const step of steps) if (step.t <= t) s += step.amount;
-  return s;
-}
-
-export interface SleeveHistory {
-  /** The sleeve's equity curve, oldest first. */
-  points: readonly TimedValue[];
-  /** Money moved into the sleeve (positive) or out of it (negative). */
-  allocations: readonly CashStep[];
-}
-
-export interface AccountHistory {
-  dates: Date[];
-  /** Sleeves plus unallocated cash. */
-  equity: number[];
-  /** Money placed in the sleeves plus unallocated cash: what was added, before any gain. */
-  added: number[];
-}
-
-/** Just before a step, so a dashed step line draws a riser rather than a ramp. */
-const STEP_LEAD = 60_000;
-
-/**
- * The account over time: each sleeve's curve (its allocations stand in before the curve starts)
- * plus unallocated cash, and the money added under it as a step line. The gap between the two
- * is what the sleeves earned.
- */
-export function accountHistory(
-  sleeves: readonly SleeveHistory[],
-  freeCash: readonly CashStep[],
-  now: number
-): AccountHistory {
-  const sorted = sleeves.map((s) => ({
-    points: [...s.points].sort((a, b) => a.t - b.t),
-    allocations: s.allocations,
-  }));
-  const stepTimes = [
-    ...freeCash.map((c) => c.t),
-    ...sorted.flatMap((s) => s.allocations.map((a) => a.t)),
-  ];
-  const times = new Set<number>([now]);
-  for (const t of stepTimes) {
-    times.add(t);
-    times.add(t - STEP_LEAD);
-  }
-  for (const s of sorted) for (const p of s.points) times.add(p.t);
-  const ordered = [...times].filter((t) => t <= now).sort((a, b) => a - b);
-
-  const out: AccountHistory = { dates: [], equity: [], added: [] };
-  for (const t of ordered) {
-    const cash = sumUpTo(freeCash, t);
-    let equity = cash;
-    let added = cash;
-    for (const s of sorted) {
-      const allocated = sumUpTo(s.allocations, t);
-      equity += valueAt(s.points, t) ?? allocated;
-      added += allocated;
-    }
-    if (out.dates.length === 0 && equity === 0 && added === 0) continue;
-    out.dates.push(new Date(t));
-    out.equity.push(equity);
-    out.added.push(added);
-  }
-  return out;
-}
-
-/** The part of a history from `start`, opening with its value at `start`. */
-export function windowFrom(history: AccountHistory, start: Date): AccountHistory {
-  const s = start.getTime();
-  const firstIn = history.dates.findIndex((d) => d.getTime() >= s);
-  if (firstIn <= 0) return history;
-  const before = firstIn - 1;
-  return {
-    dates: [start, ...history.dates.slice(firstIn)],
-    equity: [history.equity[before], ...history.equity.slice(firstIn)],
-    added: [history.added[before], ...history.added.slice(firstIn)],
-  };
 }
 
 /** The largest fall from a running peak, as a negative fraction (0 when it never fell). */
@@ -216,6 +146,31 @@ export function estimateRebalance(
   return out;
 }
 
+/**
+ * The ledger's event id for a fill: the first 16 bytes of SHA-256 over the order's client id, as
+ * a UUID (`deterministic_event_id` in the portfolio service). ListTransactions returns it as the
+ * transaction id, so a fill row can be tied to its order exactly.
+ */
+export async function ledgerFillId(clientOrderId: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(clientOrderId));
+  const hex = [...new Uint8Array(digest).slice(0, 16)]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/** Each fill keyed by its ledger event id; fills without a client order id are left out. */
+export async function fillsByLedgerId(
+  fills: readonly SleeveFill[]
+): Promise<Map<string, SleeveFill>> {
+  const keyed = await Promise.all(
+    fills
+      .filter((f): f is SleeveFill & { clientOrderId: string } => Boolean(f.clientOrderId))
+      .map(async (f) => [await ledgerFillId(f.clientOrderId), f] as const)
+  );
+  return new Map(keyed);
+}
+
 /** The sleeve that booked a ledger fill: the order fill with the same symbol, side and size. */
 export function fillFor(
   row: { kind: string; symbol: string; qty: number; at: Date },
@@ -250,11 +205,6 @@ interface CashRow {
   amount: number;
   signed: number;
   at: Date;
-}
-
-/** Changes to unallocated cash, from the activity rows' effect on free cash. */
-export function freeCashSteps(rows: readonly CashRow[]): CashStep[] {
-  return rows.filter((r) => r.signed !== 0).map((r) => ({ t: r.at.getTime(), amount: r.signed }));
 }
 
 /** Allocations into one sleeve: the ledger names the receiving sleeve on each allocation row. */

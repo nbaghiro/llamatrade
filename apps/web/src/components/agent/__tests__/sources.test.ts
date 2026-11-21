@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { describeSource, figure, sourcesSummary, threadSources } from '../sources';
+import { describeSource, figure, threadSources } from '../sources';
 
 import { message, tool } from './helpers';
 
@@ -87,7 +87,27 @@ describe('threadSources', () => {
       [2, 'a1'],
       [3, 'a2'],
     ]);
-    expect(sourcesSummary(sources)).toBe('3 tool calls · 0.6 s');
-    expect(sourcesSummary(sources.slice(0, 1))).toBe('1 tool call');
+  });
+});
+
+describe('source links', () => {
+  it('links each call to the page that shows what it read', () => {
+    const strategy = describeSource(
+      tool({ name: 'get_strategy', resultJson: JSON.stringify({ id: 'st1', name: 'X' }) })
+    );
+    expect([strategy.kind, strategy.href]).toEqual(['Strategy', '/strategies/st1']);
+    const run = describeSource(
+      tool({
+        name: 'get_backtest_results',
+        argumentsJson: JSON.stringify({ backtest_id: 'b1' }),
+        resultJson: '{"status":"COMPLETED"}',
+      })
+    );
+    expect(run.href).toBe('/backtest/b1');
+    expect(
+      describeSource(tool({ name: 'get_positions', resultJson: '{"positions":[]}' })).href
+    ).toBe('/portfolio');
+    expect(describeSource(tool({ name: 'recall_memory', resultJson: '{}' })).href).toBeNull();
+    expect(describeSource(tool({ name: 'get_strategy', success: false })).href).toBeNull();
   });
 });

@@ -224,8 +224,12 @@ describe('month by month and the check ladder render', () => {
         ]}
       />
     );
-    expect(out).toContain('Jan 3, 2025 · Defensive');
-    expect(out).toContain('TLT');
+    expect(out).toContain('2025 in this backtest');
+    expect(out).toContain('One switch, 1 order.');
+    expect(out).toContain('Jan 3, 2025');
+    expect(out).toContain('Defensive');
+    expect(out).toContain('+10 TLT');
+    expect(out).not.toContain('Branch');
   });
 
   it('marks only the stopping check', () => {

@@ -5,7 +5,15 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 
-import { displayName, keyMismatch, planLine, primaryCredential } from '../model';
+import { planLabel } from '../../../components/billing/format';
+import {
+  alpacaSignIn,
+  displayName,
+  identityLine,
+  keyMismatch,
+  planLine,
+  primaryCredential,
+} from '../model';
 import { SECTION_GROUPS, SECTIONS, resolveSection, sectionPath } from '../sections';
 import SettingsPage from '../SettingsPage';
 
@@ -55,24 +63,35 @@ describe('section routing', () => {
 
   it.each([
     ['/settings/profile', 'Profile and security', 'Read only for now'],
-    ['/settings/broker', 'Broker', 'Settings'],
+    ['/settings/broker', 'Broker', 'aria-busy="true"'],
     ['/settings/notifications', 'Notifications', 'Delivery'],
-    ['/settings/appearance', 'Appearance', 'Saved on this device'],
+    ['/settings/appearance', 'Appearance', 'Graphite'],
     ['/settings/plan', 'Plan and usage', 'Invoices'],
-  ])('opens %s with only its sidebar item current', (path, label, content) => {
+  ])('opens %s with only its tab selected', (path, label, content) => {
     const html = render(path);
-    const current =
-      html.match(/aria-current="page"[^>]*>(?:<svg.*?<\/svg>)?(?:<span[^>]*>)?([^<]+)</g) ?? [];
-    expect(current).toHaveLength(1);
-    expect(current[0]).toContain(label);
+    const start = html.indexOf('aria-label="Settings"');
+    const tablist = html.slice(start, html.indexOf('</div>', start));
+    const selected = tablist.match(/aria-selected="true"[^>]*>([^<]+)</g) ?? [];
+    expect(selected).toHaveLength(1);
+    expect(selected[0]).toContain(label);
+    expect(tablist.match(/role="tab"/g)).toHaveLength(5);
     expect(html).toContain(content);
   });
 
   it('opens the section a legacy ?tab= names', () => {
     const html = render('/settings?tab=billing');
-    expect(html).toMatch(
-      /aria-current="page"[^>]*>(?:<svg.*?<\/svg>)?(?:<span[^>]*>)?Plan and usage</
-    );
+    expect(html).toMatch(/aria-selected="true"[^>]*>Plan and usage</);
+  });
+
+  it('puts the person and Sign out above the tabs', () => {
+    const html = render('/settings/profile');
+    expect(html.indexOf('Sign out')).toBeLessThan(html.indexOf('role="tablist"'));
+    expect(html).toContain('Workspace');
+  });
+
+  it('lists Alpaca sign-in under Security while the account is read', () => {
+    const html = render('/settings/profile');
+    expect(html.indexOf('Alpaca sign-in')).toBeGreaterThan(html.indexOf('Security'));
   });
 
   it('shows the Account list at /settings on a phone', () => {
@@ -103,6 +122,17 @@ describe('settings view models', () => {
     expect(keyMismatch('PKZZ123', 'PK7Q')).toContain('PK7Q••••');
     expect(keyMismatch(' PK7Q123 ', 'PK7Q')).toBeNull();
     expect(keyMismatch('anything', '')).toBeNull();
+  });
+
+  it('writes the header line from whatever is known', () => {
+    const since = new Date(2026, 8, 14);
+    expect(
+      identityLine({ email: 'sam@example.com', workspace: 'Rivera', memberSince: since })
+    ).toBe('sam@example.com · Rivera workspace · member since September 2026');
+    expect(identityLine({ email: 'sam@example.com', workspace: '  ', memberSince: null })).toBe(
+      'sam@example.com'
+    );
+    expect(identityLine({})).toBe('');
   });
 
   it('builds a display name from whichever parts exist', () => {
@@ -152,6 +182,33 @@ describe('settings view models', () => {
       amount: '$0',
       badge: null,
     });
+  });
+
+  it('shows the closed beta at no charge, and an ending beta as ending', () => {
+    const beta = planLine(sub({ isBeta: true }), PLAN_TIER_BY_KEY.pro);
+    expect(beta).toMatchObject({
+      badge: 'Closed beta',
+      note: 'No charge during the closed beta.',
+      amount: '$0',
+      ending: false,
+    });
+    const ending = planLine(sub({ isBeta: true, cancelAtPeriodEnd: true }), PLAN_TIER_BY_KEY.pro);
+    expect(ending.badge).toBe('Ending');
+  });
+
+  it('adds the closed beta to the plan name only when the subscription is in it', () => {
+    expect(planLabel('Pro', true)).toBe('Pro · closed beta');
+    expect(planLabel('Pro', false)).toBe('Pro');
+    expect(planLabel('Pro', undefined)).toBe('Pro');
+  });
+
+  it('describes Alpaca sign-in when linked, not linked and unknown', () => {
+    expect(alpacaSignIn(true)).toEqual({
+      sub: 'Linked. You can sign in with Alpaca or your password.',
+      status: 'Linked',
+    });
+    expect(alpacaSignIn(false).status).toBe('Not linked');
+    expect(alpacaSignIn(null)).toEqual({ sub: "Couldn't be checked just now.", status: null });
   });
 
   it('falls back to the tier name and price when the plan carries none', () => {

@@ -135,6 +135,8 @@ describe('diffStrategies', () => {
     expect(diff.lines.filter((l) => l.status === 'removed').map((l) => l.symbol ?? l.kind)).toEqual(
       ['weight', 'TLT', 'GLD']
     );
+    const keys = diff.lines.map((l) => l.key);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 
   it('keeps the old sentence when a rule changes shape', () => {

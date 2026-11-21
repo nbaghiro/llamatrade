@@ -20,7 +20,12 @@ import {
 import { Info, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 
-import { indicatorLabel, isValidSymbol, normaliseSymbol } from '../../../lib/outline';
+import {
+  comparatorPhrase,
+  indicatorLabel,
+  isValidSymbol,
+  normaliseSymbol,
+} from '../../../lib/outline';
 import { matchBlocks } from '../../../lib/strategyDiff';
 import { marketDataClient } from '../../../services/grpc-client';
 import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
@@ -338,7 +343,7 @@ export function useConditionFocus(
             >
               {COMPARATORS.map((c) => (
                 <option key={c.value} value={c.value}>
-                  {c.verboseLabel}
+                  {comparatorPhrase(c.value)}
                 </option>
               ))}
             </select>
@@ -435,6 +440,7 @@ export function useConditionFocus(
   );
 
   const showSaved = savedStats !== null && savedThreshold !== null && savedThreshold !== threshold;
+  const twoColumns = savedStats !== null && savedThreshold !== null;
   const rail = (
     <div className="grid gap-4">
       <RailPanel
@@ -447,7 +453,7 @@ export function useConditionFocus(
       >
         {stats ? (
           <div>
-            {showSaved && (
+            {twoColumns && (
               <div className="grid grid-cols-[minmax(0,1fr)_72px_72px] pb-1 text-right font-mono text-[10.5px] uppercase tracking-[0.06em] text-fg-3">
                 <span />
                 <span>
@@ -470,7 +476,7 @@ export function useConditionFocus(
                     ] as const)),
               ] as ReadonlyArray<readonly [string, (s: ConditionStats) => string]>
             ).map(([label, pick]) =>
-              showSaved && savedStats ? (
+              twoColumns && savedStats ? (
                 <div
                   key={label}
                   className="grid grid-cols-[minmax(0,1fr)_72px_72px] border-b border-line py-2 text-[12.5px] last:border-b-0"

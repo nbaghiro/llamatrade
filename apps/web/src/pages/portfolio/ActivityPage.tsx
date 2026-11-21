@@ -10,23 +10,31 @@ import {
   type DateRange,
 } from '../../components/portfolio/ActivityLanes';
 import {
+  accountsByRow,
   monthBounds,
   monthsWithEntries,
   OTHER_LANE,
+  rowAccount,
   statementRows,
   totals,
   UNALLOCATED_LANE,
+  type AccountKind,
   type StatementRow,
 } from '../../components/portfolio/activityView';
 import { byDay } from '../../components/portfolio/history';
 import { sleeveColor } from '../../components/portfolio/sleeveView';
-import { useAllActivity, useSleeveFills } from '../../components/portfolio/usePortfolioData';
+import {
+  useAllActivity,
+  useFillsByLedgerId,
+  useResolvedSleeves,
+  useSleeveFills,
+} from '../../components/portfolio/usePortfolioData';
 import {
   EmptyState,
   LoadingLabel,
   ModeBadge,
+  Money,
   NoMatch,
-  Num,
   PageHead,
   PanelError,
   Segmented,
@@ -94,12 +102,14 @@ function Tag({ tag }: { tag: string }) {
 export default function ActivityPage() {
   const { rows, loading, error } = useAllActivity();
   const { fills } = useSleeveFills();
-  const { sleeves, loaded, fetchPortfolio } = usePortfolioStore();
+  const { sleeves: portfolioSleeves, loaded, fetchPortfolio } = usePortfolioStore();
+  const sleeves = useResolvedSleeves(portfolioSleeves);
   const hasMore = useActivityStore((s) => s.hasMore);
   const loadMore = useActivityStore((s) => s.loadMore);
   const loadingMore = useActivityStore((s) => s.loadingMore);
   const [filter, setFilter] = useState<ActivityFilter>('all');
   const [lane, setLane] = useState<string>(ALL);
+  const [account, setAccount] = useState<AccountKind | typeof ALL>(ALL);
   const [month, setMonth] = useState<string | null>(null);
   const [range, setRange] = useState<DateRange | null>(null);
   const [now] = useState(() => new Date());
@@ -108,7 +118,14 @@ export default function ActivityPage() {
     if (!loaded) fetchPortfolio();
   }, [loaded, fetchPortfolio]);
 
-  const statement = useMemo(() => statementRows(rows, fills, sleeves), [rows, fills, sleeves]);
+  const byLedgerId = useFillsByLedgerId(fills);
+  const statement = useMemo(
+    () => statementRows(rows, fills, sleeves, byLedgerId),
+    [rows, fills, sleeves, byLedgerId]
+  );
+  const accounts = useMemo(() => accountsByRow(rows, sleeves), [rows, sleeves]);
+  const accountOf = (r: StatementRow) => rowAccount(r, sleeves, accounts);
+  const bothAccounts = new Set(sleeves.map((s) => s.live)).size > 1;
   const months = useMemo(() => monthsWithEntries(rows).slice(0, 3), [rows]);
   const activeMonth = month ?? months[0] ?? null;
   const span = useMemo(() => {
@@ -137,12 +154,14 @@ export default function ActivityPage() {
     (r) =>
       (filter === 'all' || r.row.group === filter) &&
       (lane === ALL || r.lane === lane) &&
+      (account === ALL || accountOf(r) === account) &&
       (!range || (r.row.at >= range.from && r.row.at <= range.to))
   );
   const sums = totals(filtered);
 
   const lanes: ActivityLane[] = laneMeta
     .filter((l) => lane === ALL || l.id === lane)
+    .filter((l) => account === ALL || l.live === undefined || (account === 'live') === l.live)
     .map((l) => {
       const own = inWindow.filter((r) => r.lane === l.id);
       const trades = own.filter((r) => r.row.kind === 'buy' || r.row.kind === 'sell');
@@ -242,6 +261,21 @@ export default function ActivityPage() {
                   { key: ALL, label: 'All' },
                 ]}
               />
+            )}
+            {bothAccounts && (
+              <select
+                aria-label="Account"
+                value={account}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setAccount(v === 'live' || v === 'paper' ? v : ALL);
+                }}
+                className="btn btn-secondary h-[34px] pr-7"
+              >
+                <option value={ALL}>Both accounts</option>
+                <option value="live">Live</option>
+                <option value="paper">Paper</option>
+              </select>
             )}
             <select
               aria-label="Sleeve"
@@ -353,12 +387,14 @@ export default function ActivityPage() {
                 filters={[
                   ACTIVITY_FILTERS.find((f) => f.key === filter)?.label ?? '',
                   lane === ALL ? '' : nameOf(lane),
+                  account === ALL ? '' : account === 'live' ? 'Live' : 'Paper',
                   range ? heading : '',
                 ].filter(Boolean)}
                 total={inWindow.length}
                 onClear={() => {
                   setFilter('all');
                   setLane(ALL);
+                  setAccount(ALL);
                   setRange(null);
                 }}
               />
@@ -409,10 +445,10 @@ export default function ActivityPage() {
                             </td>
                             <td className={`${TD} max-w-[360px] truncate`}>{r.entry}</td>
                             <td className={`${TD} text-right`}>
-                              {r.paidIn ? <Num value={r.paidIn} className="text-gain" /> : null}
+                              {r.paidIn ? <Money value={r.paidIn} /> : null}
                             </td>
                             <td className={`${TD} text-right`}>
-                              {r.paidOut ? <Num value={r.paidOut} /> : null}
+                              {r.paidOut ? <Money value={r.paidOut} /> : null}
                             </td>
                           </tr>
                         );
@@ -441,9 +477,9 @@ export default function ActivityPage() {
                             </span>
                           </span>
                           {r.paidIn ? (
-                            <Num value={r.paidIn} signed />
+                            <Money value={r.paidIn} signed />
                           ) : r.paidOut ? (
-                            <Num value={-r.paidOut} />
+                            <Money value={-r.paidOut} />
                           ) : null}
                         </div>
                       ))}

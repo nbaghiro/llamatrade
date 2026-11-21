@@ -5,13 +5,37 @@ export interface EmailPreview {
   body: string;
 }
 
-const SYM = '[symbol]';
-const REASON = ': [reason]';
-const AMT = ' ([amount])';
+/** Made-up example values for the fields a real notice fills in; the preview says so. */
+const SYM = 'TLT';
+const REASON = '{reason}';
+const AMT = ' ($3,797.22)';
+
+/** An example reason that fits each kind of notice; anything unlisted was stopped by you. */
+const SAMPLE_REASON: Partial<Record<C, string>> = {
+  [C.SLEEVE_FROZEN]: 'Alpaca and the ledger disagree on TLT',
+  [C.FILL_QUARANTINED]: 'the fill matched no open order',
+  [C.ORDER_REJECTED]: 'insufficient buying power',
+  [C.RISK_BREACH]: 'it would exceed the position limit',
+  [C.POSITION_DRIFT]: 'the share counts differ',
+  [C.RECONCILIATION_DRIFT]: 'the share counts differ',
+  [C.EVALUATION_STALLED]: 'no new prices for 10 minutes',
+  [C.SYMBOL_NOT_TRADABLE]: 'trading is halted',
+  [C.CONNECTION_LOST]: 'the price feed disconnected',
+  [C.STRATEGY_ERROR]: 'a rule referred to a missing price',
+  [C.SESSION_ERROR]: 'Alpaca rejected the keys',
+  [C.CIRCUIT_BREAKER_TRIGGERED]: 'the daily loss limit was reached',
+  [C.FUNDING_FAILED]: 'not enough free cash',
+  [C.PLAN_LIMIT_REACHED]: 'backtests this month',
+  [C.BACKTEST_FAILED]: 'no prices for TLT before 2002',
+  [C.SUBSCRIPTION_UPDATED]: 'moved to the monthly plan',
+  [C.PRICE_ALERT_TRIGGERED]: 'it crossed $90.00',
+  [C.WEBHOOK_DISABLED]: 'ten failed deliveries in a row',
+  [C.EXECUTION_CANCELLED]: 'you cancelled it',
+};
 
 /**
- * The email each kind of notice sends, mirroring services/notification/src/templates.py.
- * Bracketed words stand for the fields the real notice fills in.
+ * The email each kind of notice sends, mirroring services/notification/src/templates.py,
+ * with example values where the real notice fills in its own.
  */
 const TEMPLATES: Partial<Record<C, [string, string]>> = {
   [C.SLEEVE_FROZEN]: [
@@ -70,10 +94,10 @@ const TEMPLATES: Partial<Record<C, [string, string]>> = {
     'Reconciliation drift',
     `Reconciliation found a discrepancy ${SYM}${REASON}`,
   ],
-  [C.EXECUTION_STARTED]: ['Strategy deployed', 'Your strategy is funded and running.'],
+  [C.EXECUTION_STARTED]: ['Session started', 'Your strategy is funded and running.'],
   [C.EXECUTION_STOPPED]: ['Strategy stopped', `Your strategy stopped${REASON}`],
   [C.FUNDING_FAILED]: [
-    'Deploy failed at funding',
+    'Start failed at funding',
     `Your strategy could not be funded and did not go live${REASON}`,
   ],
   [C.SLEEVE_RELEASE_DEFERRED]: [
@@ -102,7 +126,7 @@ const TEMPLATES: Partial<Record<C, [string, string]>> = {
   [C.SUBSCRIPTION_UPDATED]: ['Subscription updated', `Your subscription changed${REASON}`],
   [C.SUBSCRIPTION_CANCELED]: [
     'Subscription canceled',
-    'Your subscription was canceled. Running strategies keep trading; new live deploys are blocked.',
+    'Your subscription was canceled. Running strategies keep trading; new live sessions can’t be started.',
   ],
   [C.CONFIRMATION_PENDING]: [
     'Copilot action awaiting approval',
@@ -117,5 +141,6 @@ const TEMPLATES: Partial<Record<C, [string, string]>> = {
 
 export function emailPreview(category: C): EmailPreview {
   const [title, body] = TEMPLATES[category] ?? ['Notification', 'You have a new notification.'];
-  return { subject: `LlamaTrade: ${title}`, body };
+  const reason = SAMPLE_REASON[category] ?? 'you stopped it';
+  return { subject: `LlamaTrade: ${title}`, body: body.replace(REASON, `: ${reason}`) };
 }

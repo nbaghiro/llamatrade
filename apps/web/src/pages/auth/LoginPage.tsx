@@ -98,6 +98,11 @@ export default function LoginPage() {
       <OrDivider />
       <AlpacaButton label="Continue with Alpaca" onClick={startAuthWithAlpaca} disabled={loading} />
       <FormFoot>
+        New here?{' '}
+        <a href="/home#join" className={LINK}>
+          Request an invite
+        </a>
+        <br />
         Have an invite?{' '}
         <Link to="/register" className={LINK}>
           Create an account

@@ -4,7 +4,7 @@ import { OrderSide, OrderStatus, type Order } from '@llamatrade/core/proto/tradi
 import { toDate, toNumber } from '@llamatrade/core/stores/backtest';
 import type { DashboardStrategy } from '@llamatrade/core/stores/dashboard';
 
-import { formatMoney, formatNumber } from '../../lib/format';
+import { formatMoney, formatNumber, formatPct, pnlTone } from '../../lib/format';
 import { etParts, etToDate } from '../../lib/marketClock';
 import { isTradingDay, marketDay, tradingDaysBetween } from '../../lib/marketHolidays';
 import type { SessionState, SessionStateView } from '../../lib/sessionState';
@@ -206,9 +206,59 @@ export function blendEquity(sessions: readonly HomeSession[]): EquitySeries {
   return { dates: times.map((t) => new Date(t)), values };
 }
 
-export type HomeRange = '1M' | '3M' | '1Y' | 'ALL';
-export const HOME_RANGES: HomeRange[] = ['1M', '3M', '1Y', 'ALL'];
-const RANGE_DAYS: Record<HomeRange, number | null> = { '1M': 31, '3M': 92, '1Y': 366, ALL: null };
+export type HomeRange = '1W' | '1M' | '3M' | '1Y' | 'ALL';
+export const HOME_RANGES: HomeRange[] = ['1W', '1M', '3M', '1Y', 'ALL'];
+const RANGE_DAYS: Record<HomeRange, number | null> = {
+  '1W': 8,
+  '1M': 31,
+  '3M': 92,
+  '1Y': 366,
+  ALL: null,
+};
+
+/** After the close Home opens on the last week; there is no intraday equity for a 1D view yet. */
+export const defaultRange = (phase: Pick<MarketPhase, 'open'>): HomeRange =>
+  phase.open ? '3M' : '1W';
+
+/**
+ * SPY's move on `day` (an ET date) as a fraction, from the benchmark's percent curve; null when
+ * the curve has no point on that day or none before it.
+ */
+export function benchDayMove(benchmark: readonly CurvePoint[], day: Date): number | null {
+  let last = -1;
+  for (let i = 0; i < benchmark.length; i++) {
+    const t = new Date(benchmark[i].timestamp);
+    if (Number.isNaN(t.getTime())) continue;
+    const d = etDay(t).getTime();
+    if (d === day.getTime()) last = i;
+    else if (d > day.getTime()) break;
+  }
+  if (last < 1) return null;
+  const today = new Date(benchmark[last].timestamp);
+  let prev = last - 1;
+  while (
+    prev >= 0 &&
+    etDay(new Date(benchmark[prev].timestamp)).getTime() === etDay(today).getTime()
+  )
+    prev -= 1;
+  if (prev < 0) return null;
+  const base = 1 + benchmark[prev].value / 100;
+  return base > 0 ? (1 + benchmark[last].value / 100) / base - 1 : null;
+}
+
+export interface DailyBars {
+  /** When the latest daily bar opened. */
+  at: Date;
+  close: number;
+  previousClose: number;
+}
+
+/** A symbol's move on `day` from its latest daily bar, when that bar is from that day. */
+export function snapshotDayMove(bars: DailyBars | null, day: Date): number | null {
+  if (!bars || bars.previousClose <= 0 || bars.close <= 0) return null;
+  if (etDay(bars.at).getTime() !== day.getTime()) return null;
+  return bars.close / bars.previousClose - 1;
+}
 
 export interface CurveWindow extends EquitySeries {
   start: Date;
@@ -290,6 +340,16 @@ export function rebalancesOn(rebalance: string, day: Date): boolean {
     return Math.floor(prev.getUTCMonth() / 3) !== Math.floor(day.getUTCMonth() / 3);
   if (freq === 'annually') return prev.getUTCFullYear() !== day.getUTCFullYear();
   return false;
+}
+
+/** The first scheduled rebalance after `today`, looking up to a year ahead. */
+export function nextRebalance(rebalance: string, today: Date): Date | null {
+  if (!rebalance) return null;
+  for (let i = 1; i <= 370; i++) {
+    const d = addDays(today, i);
+    if (rebalancesOn(rebalance, d)) return d;
+  }
+  return null;
 }
 
 /** Sessions whose schedule still runs: running, starting or waiting on a frozen sleeve. */
@@ -383,10 +443,6 @@ export function todayLine(sessions: readonly HomeSession[], today: Date): string
   return n ? `${plural(n, 'rebalance')} today` : 'no rebalances today';
 }
 
-export function attentionLine(count: number): string {
-  return count === 0 ? 'nothing needs you' : `${count} ${count === 1 ? 'needs' : 'need'} you`;
-}
-
 /** The Live and Paper parts of a set of sessions. */
 export function splitByMode(sessions: readonly HomeSession[]): { live: number; paper: number } {
   let live = 0;
@@ -451,3 +507,26 @@ export function opensWords(nextOpen: Date, now: Date): string {
         : `${new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: 'UTC' }).format(etDay(nextOpen))} `;
   return `${when}at 09:30 ET`;
 }
+
+/** A return given in percent, signed, e.g. "+2.30%". */
+export const signedPct = (pct: number, dp = 2) => formatPct(pct / 100, { signed: true, dp });
+
+/** Gain or loss text tone for a value in percent or dollars. */
+export const toneText = (v: number | null | undefined) =>
+  v === null || v === undefined
+    ? 'text-fg-3'
+    : pnlTone(v) === 'gain'
+      ? 'text-gain'
+      : pnlTone(v) === 'loss'
+        ? 'text-loss'
+        : 'text-fg-2';
+
+/** The same tone as `toneText`, for SVG text. */
+export const toneFill = (v: number | null | undefined) =>
+  v === null || v === undefined
+    ? 'fill-fg-3'
+    : pnlTone(v) === 'gain'
+      ? 'fill-gain'
+      : pnlTone(v) === 'loss'
+        ? 'fill-loss'
+        : 'fill-fg-2';

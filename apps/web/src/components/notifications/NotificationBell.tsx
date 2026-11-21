@@ -12,10 +12,12 @@ import { Link } from 'react-router-dom';
 import { etClock, etParts } from '../../lib/marketClock';
 import { needsAttention, noticeTime } from '../../lib/notifications';
 import { LaneMarker } from '../charts/LaneMarker';
+import { etDay, homeSessions, rebalancingToday } from '../home/homeModel';
 import { useAttentionEntries } from '../home/useAttentionEntries';
 import { useSessionRows } from '../shell/useSessionRows';
 import { Popover } from '../ui/Popover';
 
+import { collapseRepeats, plainMessage } from './earlier';
 import {
   CLOSE_MIN,
   dayFraction,
@@ -27,6 +29,8 @@ import {
 
 const POLL_INTERVAL_MS = 60_000;
 const SHOWN_AT_FIRST = 5;
+/** Where a rebalance due today sits: just before the close, since its exact minute isn't known. */
+const PLANNED_AT = 0.97;
 
 const longDay = (d: Date) =>
   d.toLocaleDateString('en-US', {
@@ -68,8 +72,32 @@ export function TodayLanes({ lanes, now }: { lanes: readonly TodayLane[]; now: D
             <span className="relative h-6">
               <i
                 aria-hidden="true"
-                className={`absolute inset-x-0 top-1/2 border-t ${l.frozen ? 'border-t-[1.5px] border-risk' : 'border-dashed border-line-strong'}`}
+                className={`absolute inset-x-0 top-1/2 border-t ${l.frozen && l.frozenMinute === null ? 'border-t-[1.5px] border-risk' : 'border-dashed border-line-strong'}`}
               />
+              {l.frozenMinute !== null && (
+                <>
+                  <i
+                    aria-hidden="true"
+                    className="absolute right-0 top-1/2 border-t-[1.5px] border-risk"
+                    style={{ left: pct(dayFraction(l.frozenMinute)) }}
+                  />
+                  <LaneMarker
+                    shape="ring"
+                    tone="risk"
+                    positioned
+                    title={`Frozen at ${minuteLabel(l.frozenMinute)} ET`}
+                    style={{ left: pct(dayFraction(l.frozenMinute)) }}
+                  />
+                </>
+              )}
+              {l.planned && (
+                <LaneMarker
+                  shape="planned"
+                  positioned
+                  title="Rebalances before the close"
+                  style={{ left: pct(PLANNED_AT) }}
+                />
+              )}
               {l.fills.map((f) => (
                 <LaneMarker
                   key={f.minute}
@@ -141,12 +169,17 @@ export function NotificationBell() {
       ...(dashboardFrozen ?? []).map((f) => f.id),
       ...sleeves.filter((s) => s.status === SleeveStatus.FROZEN).map((s) => s.id),
     ]);
+    const home = homeSessions(sessionRows, []);
+    const due = new Set(rebalancingToday(home, etDay(new Date())).map((h) => h.id));
+    const frozenAt = new Map(home.map((h) => [h.id, h.frozenAt]));
     return todayLanes(
       sessionRows.map((r) => ({
         id: r.session.id,
         name: r.name,
         isActive: r.session.isActive,
         sleeveId: r.session.sleeveId,
+        rebalancesToday: due.has(r.session.id),
+        frozenAt: frozenAt.get(r.session.id) ?? null,
       })),
       orders.map((o) => ({
         sessionId: o.sessionId,
@@ -159,7 +192,7 @@ export function NotificationBell() {
   }, [sessionRows, orders, sleeves, dashboardFrozen]);
 
   const raised = new Set(attention.map((a) => a.id));
-  const earlier = notifications.filter((n) => !raised.has(`notice-${n.id}`));
+  const earlier = collapseRepeats(notifications.filter((n) => !raised.has(`notice-${n.id}`)));
   const shown = showAll ? earlier : earlier.slice(0, SHOWN_AT_FIRST);
   const hidden = earlier.length - shown.length;
   const todayCount = notifications.filter((n) => {
@@ -255,7 +288,7 @@ export function NotificationBell() {
               earlier.length > 0 && (
                 <section>
                   <div className="kicker px-4 pb-1 pt-3 uppercase tracking-[0.06em]">Earlier</div>
-                  {shown.map((n) => {
+                  {shown.map(({ notice: n, count, ids, unread }) => {
                     const amber = needsAttention(n);
                     const Icon = amber ? AlertTriangle : noticeIcon(n);
                     return (
@@ -263,7 +296,8 @@ export function NotificationBell() {
                         key={n.id}
                         type="button"
                         onClick={() => {
-                          if (!n.isRead) markAsRead(n.id).catch(() => undefined);
+                          if (!unread) return;
+                          for (const id of ids) markAsRead(id).catch(() => undefined);
                         }}
                         className="grid w-full grid-cols-[26px_minmax(0,1fr)_auto] items-start gap-2.5 border-b border-line px-4 py-[11px] text-left last:border-b-0 hover:bg-sunk"
                       >
@@ -273,14 +307,21 @@ export function NotificationBell() {
                           <Icon className="h-3.5 w-3.5" />
                         </span>
                         <span className="min-w-0">
-                          <span className="block text-[13px] text-fg">{n.title}</span>
+                          <span className="block text-[13px] text-fg">
+                            {n.title}
+                            {count > 1 && (
+                              <span className="ml-1.5 font-mono text-[11.5px] text-fg-3">
+                                ×{count}
+                              </span>
+                            )}
+                          </span>
                           <span className="mt-0.5 block text-[12.5px] text-fg-2 line-clamp-2">
-                            {n.message}
+                            {plainMessage(n.message)}
                           </span>
                         </span>
                         <em className="flex items-center gap-1.5 whitespace-nowrap font-mono text-[11.5px] not-italic text-fg-3">
                           {noticeTime(toDate(n.createdAt), now)}
-                          {!n.isRead && (
+                          {unread && (
                             <i
                               aria-label="Unread"
                               className="h-[7px] w-[7px] rounded-full bg-accent"

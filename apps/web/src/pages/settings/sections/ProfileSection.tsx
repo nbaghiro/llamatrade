@@ -1,48 +1,23 @@
-import { toDate } from '@llamatrade/core/format';
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
 
 import { Skeleton } from '../../../components/ui';
 import { authClient } from '../../../services/grpc-client';
 import { useAuthStore } from '../../../store/auth';
-import { displayName } from '../model';
+import { alpacaSignIn, displayName, monthYear } from '../model';
 import { KV, ListRow, Panel } from '../parts';
+import { useAccountIdentity } from '../useAccountIdentity';
 
 function roleLabel(roles: readonly string[] | undefined): string {
   if (!roles?.length) return 'Member';
   return roles.map((r) => r.charAt(0).toUpperCase() + r.slice(1).toLowerCase()).join(', ');
 }
 
-const monthYear = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
-
-interface AccountDates {
-  memberSince: Date | null;
-}
-
 type ResetState = 'idle' | 'sending' | 'sent' | 'failed';
 
 export function ProfileSection() {
-  const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
-  const logout = useAuthStore((s) => s.logout);
-  const [dates, setDates] = useState<AccountDates | null>(null);
+  const identity = useAccountIdentity();
   const [reset, setReset] = useState<ResetState>('idle');
-
-  useEffect(() => {
-    let live = true;
-    authClient
-      .getCurrentUser({})
-      .then((res) => {
-        if (!live) return;
-        setDates({ memberSince: toDate(res.user?.createdAt) });
-      })
-      .catch(() => {
-        if (live) setDates({ memberSince: null });
-      });
-    return () => {
-      live = false;
-    };
-  }, []);
 
   const sendReset = () => {
     if (!user?.email) return;
@@ -54,6 +29,7 @@ export function ProfileSection() {
   };
 
   const name = displayName(user);
+  const alpaca = alpacaSignIn(identity.alpacaLinked);
   const resetNote =
     reset === 'sent'
       ? `Sent to ${user?.email}. The link opens a page where you choose a new password.`
@@ -62,17 +38,24 @@ export function ProfileSection() {
         : 'We email you a link that opens a page where you choose a new one.';
 
   return (
-    <div className="grid gap-3">
+    <div className="grid items-start gap-3 lg:grid-cols-2">
       <Panel title="Profile" aside={<span className="badge">Read only for now</span>}>
         <div className="px-3.5 py-3">
           <KV label="Name">{name || 'Not set'}</KV>
           <KV label="Email">{user?.email ?? 'Not set'}</KV>
+          <KV label="Workspace">
+            {!identity.loaded ? (
+              <Skeleton className="ml-auto h-2.5 w-16" />
+            ) : (
+              (identity.workspace ?? 'Not available')
+            )}
+          </KV>
           <KV label="Role">{roleLabel(user?.roles)}</KV>
           <KV label="Member since">
-            {dates === null ? (
+            {!identity.loaded ? (
               <Skeleton className="ml-auto h-2.5 w-16" />
-            ) : dates.memberSince ? (
-              monthYear(dates.memberSince)
+            ) : identity.memberSince ? (
+              monthYear(identity.memberSince)
             ) : (
               'Not available'
             )}
@@ -109,23 +92,25 @@ export function ProfileSection() {
           sub="Not available yet. Signing out ends this session only."
           end={<span className="badge">Later</span>}
         />
+        <ListRow
+          title="Alpaca sign-in"
+          sub={identity.loaded ? alpaca.sub : <Skeleton className="mt-1 h-2.5 w-40" />}
+          end={
+            !identity.loaded || !alpaca.status ? undefined : identity.alpacaLinked ? (
+              <span className="inline-flex items-center gap-1.5 text-fg-2">
+                <i aria-hidden="true" className="h-[7px] w-[7px] rounded-full bg-accent" />
+                {alpaca.status}
+              </span>
+            ) : (
+              <span className="badge">{alpaca.status}</span>
+            )
+          }
+        />
       </Panel>
 
-      <div className="flex flex-wrap items-center justify-between gap-2.5">
-        <span className="text-xs text-fg-3">
-          Name and email can&apos;t be changed here yet. Editing them is planned.
-        </span>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => {
-            logout();
-            navigate('/');
-          }}
-        >
-          Sign out
-        </button>
-      </div>
+      <p className="m-0 text-xs text-fg-3 lg:col-span-2">
+        Name and email can&apos;t be changed here yet. Editing them is planned.
+      </p>
     </div>
   );
 }

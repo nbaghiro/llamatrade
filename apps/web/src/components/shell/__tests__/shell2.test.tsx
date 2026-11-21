@@ -7,8 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { etToDate } from '../../../lib/marketClock';
 import { dayFraction, minuteLabel, todayLanes } from '../../notifications/todayLanes';
 import { OfflineBannerView } from '../../states/OfflineBanner';
-import { entryArea, frozenFromSleeves, groupMarks } from '../attention';
-import { BarClockView } from '../BarClock';
+import { entryArea, frozenFromSleeves, groupMarks, isFrozenMark, seamNotice } from '../attention';
 import { connectionRows } from '../connections';
 
 const at = (h: number, m: number) => etToDate(2026, 10, 17, h * 60 + m);
@@ -52,8 +51,8 @@ describe('connections in the account menu', () => {
   it('lists live first with what runs on each', () => {
     const rows = connectionRows(
       [
-        { id: 'p', name: 'Paper', apiKeyPrefix: 'PKXXPA92', isPaper: true, isActive: true },
-        { id: 'l', name: 'Live', apiKeyPrefix: 'AKXX4821', isPaper: false, isActive: false },
+        { id: 'p', name: 'Paper', accountNumber: 'PA3XXPA92', isPaper: true, isActive: true },
+        { id: 'l', name: 'Live', accountNumber: '904124821', isPaper: false, isActive: false },
       ],
       [
         { mode: ExecutionMode.PAPER, isActive: true, equity: 100.5 },
@@ -66,6 +65,14 @@ describe('connections in the account menu', () => {
       ['live', '••4821', false, 0, null],
       ['paper', '••PA92', true, 3, 150.5],
     ]);
+  });
+
+  it('leaves the mask blank until the account number is known', () => {
+    const rows = connectionRows(
+      [{ id: 'p', name: 'Paper account', accountNumber: '', isPaper: true, isActive: true }],
+      []
+    );
+    expect(rows.map((r) => [r.masked, r.name])).toEqual([['', 'Paper account']]);
   });
 });
 
@@ -100,6 +107,30 @@ describe('today drawn as lanes', () => {
     ]);
   });
 
+  it('marks a rebalance still to come and a freeze that happened today', () => {
+    const lanes = todayLanes(
+      [
+        { ...sessions[0], rebalancesToday: true },
+        { ...sessions[1], frozenAt: at(10, 5) },
+        { id: 's4', name: 'Older freeze', isActive: true, sleeveId: 'sl4', frozenAt: at(10, 5) },
+      ],
+      [],
+      new Set(['sl2']),
+      at(15, 0)
+    );
+    const byName = new Map(lanes.map((l) => [l.name, l]));
+    expect(byName.get('Recession Radar')?.planned).toBe(true);
+    expect(byName.get('Momentum Sectors')?.frozenMinute).toBe(10 * 60 + 5);
+    expect(byName.get('Older freeze')?.frozenMinute).toBeNull();
+    const afterClose = todayLanes(
+      [{ ...sessions[0], rebalancesToday: true }],
+      [],
+      new Set(),
+      at(16, 5)
+    );
+    expect(afterClose[0].planned).toBe(false);
+  });
+
   it('runs from the open to the close', () => {
     expect(dayFraction(9 * 60 + 30)).toBe(0);
     expect(dayFraction(16 * 60)).toBe(1);
@@ -108,16 +139,31 @@ describe('today drawn as lanes', () => {
   });
 });
 
-describe('clock and offline strip', () => {
-  it('stops the clock at the last update when offline', () => {
-    const html = renderToStaticMarkup(
-      <BarClockView time="10:38 ET" state="open" open detail="" stopped />
-    );
-    expect(html).toContain('10:38 ET');
-    expect(html).toContain('last update');
-    expect(html).not.toContain('bg-accent');
+describe('the amber seam', () => {
+  it('names the first frozen sleeve and counts the rest once each', () => {
+    expect(
+      seamNotice([
+        { id: 'a', name: 'Momentum Sectors', executionId: 'e1' },
+        { id: 'a', name: 'Momentum Sectors', executionId: 'e1' },
+        { id: 'b', name: '', executionId: '' },
+      ])
+    ).toEqual({
+      title: 'Momentum Sectors is frozen',
+      detail: "Its holdings don't match Alpaca",
+      href: '/trading/e1',
+      more: 1,
+    });
+    expect(seamNotice([{ id: 'b', name: '', executionId: '' }])?.href).toBe('/portfolio/sleeves/b');
+    expect(seamNotice([])).toBeNull();
   });
 
+  it('keeps frozen marks off the nav', () => {
+    expect(isFrozenMark({ id: 'frozen-a', area: 'sessions', title: '', href: '' })).toBe(true);
+    expect(isFrozenMark({ id: 'rejected-a', area: 'sessions', title: '', href: '' })).toBe(false);
+  });
+});
+
+describe('offline strip', () => {
   it('says trading continues, in grey', () => {
     const html = renderToStaticMarkup(
       <OfflineBannerView

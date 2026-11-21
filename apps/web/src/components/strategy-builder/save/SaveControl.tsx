@@ -7,6 +7,8 @@ export interface SaveWarning {
   message: string;
   /** Where it is, e.g. "rule 3". */
   where?: string;
+  /** Its line in the code, when the rules and the code line up. */
+  line?: number | null;
 }
 
 export type SaveMode = 'confirm' | 'note';
@@ -27,6 +29,8 @@ interface SaveControlProps {
   onSave: (note: string) => void;
   /** Opens the confirmation from outside, e.g. on ⌘S with warnings. */
   openRequest?: number;
+  /** Opens the code at a warning's line. */
+  onGoToLine?: (line: number) => void;
 }
 
 /** problems2 A and save2 A: errors block, warnings ask, a clean draft saves at once. */
@@ -41,6 +45,7 @@ export function SaveControl({
   sessionLine,
   onSave,
   openRequest = 0,
+  onGoToLine,
 }: SaveControlProps) {
   const [mode, setMode] = useState<SaveMode | null>(null);
   const [note, setNote] = useState(suggestedNote);
@@ -79,7 +84,8 @@ export function SaveControl({
   else if (warnings.length > 0)
     label = `Save with ${warnings.length} ${warnings.length === 1 ? 'warning' : 'warnings'}`;
 
-  const primary = !justSaved && !blocked;
+  const primary = !justSaved && !blocked && warnings.length === 0;
+  const firstLine = warnings.find((w) => w.line)?.line ?? null;
   return (
     <div ref={root} className="relative flex">
       <button
@@ -126,7 +132,11 @@ export function SaveControl({
                   <AlertTriangle className="mt-0.5 h-3.5 w-3.5 text-risk" aria-hidden="true" />
                   <span className="font-mono text-[12px] text-fg">
                     {w.message}
-                    {w.where && <span className="font-sans text-fg-3"> · {w.where}</span>}
+                    {w.line ? (
+                      <span className="font-sans text-fg-3"> · line {w.line}</span>
+                    ) : (
+                      w.where && <span className="font-sans text-fg-3"> · {w.where}</span>
+                    )}
                   </span>
                 </li>
               ))}
@@ -144,7 +154,19 @@ export function SaveControl({
           </label>
           <p className="m-0 text-[11.5px] text-fg-3">{sessionLine}</p>
           <div className="flex justify-end gap-2 border-t border-line pt-3">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={close}>
+            {mode === 'confirm' && firstLine !== null && onGoToLine && (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm mr-auto"
+                onClick={() => {
+                  close();
+                  onGoToLine(firstLine);
+                }}
+              >
+                Go to line {firstLine}
+              </button>
+            )}
+            <button type="button" className="btn btn-secondary btn-sm" onClick={close}>
               Cancel
             </button>
             <button type="submit" className="btn btn-primary btn-sm">

@@ -17,13 +17,12 @@ import {
   useRunView,
 } from '../../components/backtest';
 import { HistoryTable } from '../../components/backtest/HistoryTable';
-import { Cells, Panel } from '../../components/backtest/parts';
+import { Panel } from '../../components/backtest/parts';
 import { isFinished } from '../../components/backtest/runData';
-import { PageArt } from '../../components/ui';
+import { SetupRanges } from '../../components/backtest/SetupRanges';
 import { SkeletonRows } from '../../components/ui/Skeleton';
-import { asFrequency, scheduledRebalances } from '../../lib/backtestView';
+import { asFrequency } from '../../lib/backtestView';
 import { formatNumber } from '../../lib/format';
-import { rebalanceWord } from '../../types/backtest';
 
 const isoDay = (ts: Parameters<typeof toDate>[0]) => toDate(ts)?.toISOString().slice(0, 10) ?? '';
 
@@ -81,7 +80,7 @@ export default function BacktestPage() {
     fetchStrategies()
       .catch(() => undefined)
       .finally(() => setListFetched(true));
-    loadHistory(1, 5).catch(() => undefined);
+    loadHistory(1, 50).catch(() => undefined);
     return () => stopStreaming();
   }, [fetchStrategies, loadHistory, stopStreaming]);
 
@@ -156,18 +155,10 @@ export default function BacktestPage() {
   const active = phase === 'pending' || phase === 'running';
   const selected = strategies.find((s) => s.id === config.strategyId);
   const freq = asFrequency(selected?.rebalance);
-  const start = config.startDate ? new Date(`${config.startDate}T00:00:00Z`) : null;
-  const end = config.endDate ? new Date(`${config.endDate}T00:00:00Z`) : null;
-  const schedule = start && end ? scheduledRebalances(start, end, freq) : null;
-  const months =
-    start && end
-      ? Math.max(
-          0,
-          (end.getUTCFullYear() - start.getUTCFullYear()) * 12 +
-            end.getUTCMonth() -
-            start.getUTCMonth()
-        )
-      : 0;
+  const savedAt = toDate(selected?.updatedAt);
+  const versionLine = selected
+    ? `v${selected.version}${savedAt ? `, saved ${savedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : ''}`
+    : undefined;
 
   const sentenceEnd = active ? (
     <>
@@ -205,7 +196,6 @@ export default function BacktestPage() {
 
   return (
     <div className="page relative isolate grid gap-3.5">
-      <PageArt shape="backtest" />
       <h1 className="sr-only">Backtest</h1>
       <Panel>
         <div className="px-4 py-3.5">
@@ -226,61 +216,41 @@ export default function BacktestPage() {
 
       {phase === null ? (
         <>
-          <Panel>
-            <Cells
-              cols={4}
-              cells={[
-                {
-                  label: 'Symbols',
-                  value: selected ? formatNumber(selected.symbols.length, { dp: 0 }) : '·',
-                  sub: selected?.symbols.slice(0, 5).join(' · ') || 'from the strategy',
-                },
-                {
-                  label: 'Rebalances',
-                  value: schedule ? formatNumber(schedule.total, { dp: 0 }) : '·',
-                  sub: selected ? rebalanceWord(selected.rebalance) : 'choose a strategy',
-                },
-                {
-                  label: 'Range',
-                  value: months ? `${formatNumber(months, { dp: 0 })} months` : '·',
-                  sub: 'daily bars, IEX',
-                },
-                {
-                  label: 'Benchmark',
-                  value: config.benchmarkSymbol || 'None',
-                  sub: config.benchmarkSymbol ? 'drawn beside the curve' : 'no comparison line',
-                },
-              ]}
-            />
-          </Panel>
-          <div className="grid h-[250px] place-items-center rounded-panel border border-line bg-panel px-6 text-center">
-            <span className="text-[12.5px] text-fg-3">
-              The run log, curve, drawdown and metrics fill this space as soon as the run starts.
-            </span>
-          </div>
-          <Panel
-            title="Recent runs"
-            aside={
-              <Link to="/backtests" className="text-accent hover:underline">
-                All {history.total || ''}
-              </Link>
-            }
-          >
-            {history.loading && !history.loaded ? (
-              <SkeletonRows rows={3} cols={4} />
-            ) : history.runs.length === 0 ? (
-              <p className="m-0 px-3.5 py-4 text-[12.5px] text-fg-3">
-                No runs yet. Your first one will appear here.
-              </p>
-            ) : (
-              <HistoryTable
-                compact
-                runs={history.runs.slice(0, 3)}
-                metrics={history.metrics}
-                strategies={strategies}
-              />
-            )}
-          </Panel>
+          <SetupRanges
+            strategyName={selected?.name ?? null}
+            strategyId={config.strategyId}
+            versionLine={versionLine}
+            config={config}
+            onChange={setConfig}
+            rebalance={freq}
+            runs={history.runs}
+            metrics={history.metrics}
+          />
+          {!selected && (
+            <Panel
+              title="Recent runs"
+              aside={
+                <Link to="/backtests" className="text-accent hover:underline">
+                  All {history.total || ''}
+                </Link>
+              }
+            >
+              {history.loading && !history.loaded ? (
+                <SkeletonRows rows={3} cols={4} />
+              ) : history.runs.length === 0 ? (
+                <p className="m-0 px-3.5 py-4 text-[12.5px] text-fg-3">
+                  No runs yet. Your first one will appear here.
+                </p>
+              ) : (
+                <HistoryTable
+                  compact
+                  runs={history.runs.slice(0, 3)}
+                  metrics={history.metrics}
+                  strategies={strategies}
+                />
+              )}
+            </Panel>
+          )}
         </>
       ) : (
         <>

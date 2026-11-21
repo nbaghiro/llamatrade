@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { asSentence, formatMoney, formatNumber, formatPct, pnlTone } from '../format';
+import {
+  asSentence,
+  formatMoney,
+  formatNumber,
+  formatPct,
+  moveTone,
+  pnlTone,
+  QUIET_MOVE_PCT,
+} from '../format';
 
 const MINUS = '−';
 
@@ -72,5 +80,25 @@ describe('asSentence', () => {
     expect(asSentence('')).toBe('');
     expect(asSentence(undefined)).toBe('');
     expect(asSentence(null)).toBe('');
+  });
+});
+
+describe('moveTone', () => {
+  it('keeps moves under the quiet threshold flat', () => {
+    expect(moveTone(0)).toBe('flat');
+    expect(moveTone(0.12)).toBe('flat');
+    expect(moveTone(-0.24)).toBe('flat');
+  });
+
+  it('tones moves at or past the threshold', () => {
+    expect(moveTone(QUIET_MOVE_PCT)).toBe('gain');
+    expect(moveTone(-QUIET_MOVE_PCT)).toBe('loss');
+    expect(moveTone(1.84)).toBe('gain');
+    expect(moveTone(-0.38)).toBe('loss');
+  });
+
+  it('treats non-finite input as flat', () => {
+    expect(moveTone(Number.NaN)).toBe('flat');
+    expect(moveTone(Number.POSITIVE_INFINITY)).toBe('flat');
   });
 });

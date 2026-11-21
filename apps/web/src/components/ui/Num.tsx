@@ -3,10 +3,9 @@ import {
   formatNumber,
   formatPct,
   pnlTone,
+  TONE_TEXT,
   type FormatOptions,
 } from '../../lib/format';
-
-const TONE_CLASS = { gain: 'text-gain', loss: 'text-loss', flat: '' } as const;
 
 interface FigureProps extends FormatOptions {
   value: number;
@@ -16,7 +15,7 @@ interface FigureProps extends FormatOptions {
 }
 
 function toneClass(value: number, pnl: boolean, dp: number): string {
-  return pnl ? TONE_CLASS[pnlTone(value, dp)] : '';
+  return pnl ? TONE_TEXT[pnlTone(value, dp)] : '';
 }
 
 /** A plain figure in mono tabular digits. */

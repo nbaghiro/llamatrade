@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 
 import Layout from './components/common/Layout';
 import MarketingPage from './marketing/MarketingPage';
@@ -17,7 +17,6 @@ import PaymentMethodsPage from './pages/billing/PaymentMethodsPage';
 import PlansPage from './pages/billing/PlansPage';
 import ConnectAlpacaPage from './pages/connect/ConnectAlpacaPage';
 import CopilotPage from './pages/copilot/CopilotPage';
-import DashboardPage from './pages/dashboard/DashboardPage';
 import MarketsPage from './pages/markets/MarketsPage';
 import NotificationsPage from './pages/notifications/NotificationsPage';
 import WelcomePage from './pages/onboarding/WelcomePage';
@@ -58,6 +57,12 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   return <>{children}</>;
+}
+
+/** /copilot is Home's chat; any question or subject in the address goes along. */
+function CopilotHome() {
+  const { search } = useLocation();
+  return <Navigate to={`/dashboard${search}`} replace />;
 }
 
 /** Public "/" — the marketing page for visitors, the app for signed-in users. */
@@ -130,7 +135,7 @@ export default function App() {
           </ProtectedRoute>
         }
       >
-        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/dashboard" element={<CopilotPage />} />
         <Route path="/markets" element={<MarketsPage />} />
 
         <Route path="/strategies" element={<StrategiesPage />} />
@@ -159,7 +164,7 @@ export default function App() {
         <Route path="/portfolio/checks" element={<ChecksPage />} />
         <Route path="/wallet" element={<Navigate to="/portfolio/activity" replace />} />
 
-        <Route path="/copilot" element={<CopilotPage />} />
+        <Route path="/copilot" element={<CopilotHome />} />
         <Route path="/copilot/:sessionId" element={<CopilotPage />} />
 
         <Route path="/settings" element={<SettingsPage />} />

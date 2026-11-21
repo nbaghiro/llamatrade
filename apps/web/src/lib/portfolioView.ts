@@ -101,12 +101,6 @@ export function dayChange(value: number, returnPct: number): number {
   return (finite(value) * r) / (1 + r);
 }
 
-/** Today's change as a fraction of yesterday's value. */
-export function dayChangeFraction(total: number, change: number): number {
-  const before = finite(total) - finite(change);
-  return before > 0 ? finite(change) / before : 0;
-}
-
 export interface FundsPreviewRow {
   key: 'unallocated' | 'sleeves' | 'total';
   label: string;
@@ -114,7 +108,7 @@ export interface FundsPreviewRow {
   after: number;
 }
 
-/** Paper funds land in unallocated cash only, so sleeves stay the same and the total grows. */
+/** Added funds land in unallocated cash only, so sleeves stay the same and the total grows. */
 export function fundsPreview(totals: AccountTotals, amount: number): FundsPreviewRow[] {
   const add = Number.isFinite(amount) && amount > 0 ? amount : 0;
   return [

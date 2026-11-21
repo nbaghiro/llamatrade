@@ -1,7 +1,7 @@
 /* LlamaTrade theme tokens.
    Solid colours are RGB channels so Tailwind's `/alpha` modifiers work: rgb(var(--fg) / 0.5).
-   Mode and surface live on <html>: data-mode (dark|light), data-theme (slate|black),
-   data-light (warm|white) and data-acc (see src/theme/accents.ts). public/theme-init.js
+   Surfaces are neutral greys with no blue cast. Mode and surface live on <html>: data-mode
+   (dark|light), data-theme (slate|black: near-black or pure black), data-light (warm|white) and data-acc (see src/theme/accents.ts). public/theme-init.js
    sets them before first paint. */
 
 :root {
@@ -11,32 +11,32 @@
   --font-display: var(--font-sans);
   --display-tracking: -0.035em;
 
-  --canvas: 15 19 22;
-  --panel: 21 26 31;
-  --sunk: 28 34 40;
-  --line: 37 44 52;
-  --line-strong: 54 64 74;
-  --fg: 230 234 238;
-  --fg-2: 170 179 189;
-  --fg-3: 127 137 148;
-  --chart-1: 230 234 238;
-  --chart-2: 170 179 189;
-  --chart-3: 127 137 148;
-  --chart-4: 86 96 107;
-  --chart-5: 54 63 72;
-  --grid: 37 44 52;
-  --hatch: rgba(228, 232, 236, 0.16);
+  --canvas: 10 10 10;
+  --panel: 17 17 17;
+  --sunk: 22 22 22;
+  --line: 38 38 38;
+  --line-strong: 56 56 56;
+  --fg: 237 237 237;
+  --fg-2: 163 163 163;
+  --fg-3: 122 122 122;
+  --chart-1: 237 237 237;
+  --chart-2: 163 163 163;
+  --chart-3: 122 122 122;
+  --chart-4: 82 82 82;
+  --chart-5: 52 52 52;
+  --grid: 32 32 32;
+  --hatch: rgba(237, 237, 237, 0.14);
 
-  --gain: 63 191 122;
-  --loss: 242 85 90;
+  --gain: 116 176 142;
+  --loss: 208 138 130;
   --risk: 240 166 58;
   --risk-soft: rgba(240, 166, 58, 0.1);
   --risk-line: rgba(240, 166, 58, 0.45);
 
-  --accent: 76 194 255;
+  --accent: 222 222 222;
   --accent-fill: var(--accent);
-  --accent-ink: 4 18 28;
-  --accent-soft: rgb(var(--accent) / 0.16);
+  --accent-ink: 10 10 10;
+  --accent-soft: rgb(var(--accent) / 0.08);
 
   --radius-sm: 2px;
   --radius: 3px;
@@ -45,9 +45,9 @@
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow: 0 6px 16px -8px rgba(0, 0, 0, 0.6);
-  --shadow-lg: 0 16px 36px -14px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.03);
-  --shadow-xl: 0 50px 90px -40px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.03);
-  --scrim: rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 16px 36px -14px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --shadow-xl: 0 50px 90px -40px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --scrim: rgba(0, 0, 0, 0.6);
 
   --label-size: 11px;
   --label-tracking: 0;
@@ -142,26 +142,25 @@
 }
 
 :root[data-theme='black'] {
-  --canvas: 10 10 10;
-  --panel: 17 17 17;
-  --sunk: 24 24 24;
-  --line: 34 34 34;
+  --canvas: 0 0 0;
+  --panel: 10 10 10;
+  --sunk: 17 17 17;
+  --line: 30 30 30;
   --line-strong: 46 46 46;
-  --fg: 237 237 237;
-  --fg-2: 163 163 163;
-  --fg-3: 118 118 118;
-  --chart-1: 237 237 237;
-  --chart-2: 163 163 163;
-  --chart-3: 118 118 118;
-  --chart-4: 77 77 77;
-  --chart-5: 46 46 46;
-  --grid: 36 36 36;
-  --hatch: rgba(237, 237, 237, 0.16);
+  --grid: 26 26 26;
   --shadow-lg: 0 16px 36px -14px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.04);
   --shadow-xl: 0 50px 90px -40px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
-/* Dark accents. Blue and Slate blue fill buttons with a deeper colour than their text accent. */
+/* Dark accents. Ink (neutral) is the base above. Blue and Slate blue fill buttons with a deeper
+   colour than their text accent. */
+:root:not([data-mode='light']):not([data-acc='neutral']) {
+  --accent-soft: rgb(var(--accent) / 0.16);
+}
+:root:not([data-mode='light'])[data-acc='neutral'] {
+  --accent: 222 222 222;
+  --accent-ink: 10 10 10;
+}
 :root:not([data-mode='light'])[data-acc='silver'] {
   --accent: 161 161 170;
   --accent-ink: 10 10 10;
@@ -217,41 +216,41 @@
 
 :root[data-mode='light'] {
   color-scheme: light;
-  --canvas: 250 249 246;
-  --panel: 255 255 255;
-  --sunk: 242 240 234;
-  --line: 232 229 222;
-  --line-strong: 207 203 194;
-  --fg: 21 25 31;
-  --fg-2: 68 75 86;
-  --fg-3: 107 113 124;
-  --chart-1: 42 47 55;
-  --chart-2: 84 91 102;
-  --chart-3: 135 141 151;
-  --chart-4: 182 186 193;
-  --chart-5: 220 222 226;
-  --grid: 236 233 226;
-  --hatch: rgb(var(--accent) / 0.16);
-  --gain: 23 112 63;
-  --loss: 179 38 30;
+  --canvas: 255 255 255;
+  --panel: 250 250 250;
+  --sunk: 244 244 245;
+  --line: 232 232 232;
+  --line-strong: 212 212 212;
+  --fg: 23 23 23;
+  --fg-2: 82 82 82;
+  --fg-3: 115 115 115;
+  --chart-1: 38 38 38;
+  --chart-2: 82 82 82;
+  --chart-3: 138 138 138;
+  --chart-4: 186 186 186;
+  --chart-5: 222 222 222;
+  --grid: 240 240 240;
+  --hatch: rgb(var(--fg) / 0.1);
+  --gain: 58 120 88;
+  --loss: 163 82 74;
   --risk: 138 90 0;
   --risk-soft: #fbf3e2;
   --risk-line: #e7cf9d;
 
-  --accent: 31 59 115;
+  --accent: 23 23 23;
   --accent-fill: var(--accent);
   --accent-ink: 255 255 255;
-  --accent-soft: color-mix(in srgb, rgb(var(--accent)) 10%, #fff);
+  --accent-soft: color-mix(in srgb, rgb(var(--accent)) 6%, #fff);
 
   --radius: 2px;
   --radius-panel: 2px;
   --radius-window: 8px;
 
-  --shadow-sm: 0 1px 2px rgba(21, 25, 31, 0.06);
-  --shadow: 0 4px 12px -6px rgba(21, 25, 31, 0.16);
-  --shadow-lg: 0 16px 36px -16px rgba(21, 25, 31, 0.28), 0 2px 6px rgba(21, 25, 31, 0.06);
-  --shadow-xl: 0 34px 60px -30px rgba(21, 25, 31, 0.32), 0 2px 6px rgba(21, 25, 31, 0.06);
-  --scrim: rgba(21, 25, 31, 0.32);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow: 0 4px 12px -6px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 16px 36px -16px rgba(0, 0, 0, 0.22), 0 1px 4px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 34px 60px -30px rgba(0, 0, 0, 0.26), 0 1px 4px rgba(0, 0, 0, 0.05);
+  --scrim: rgba(0, 0, 0, 0.3);
 
   --label-size: 9.5px;
   --label-tracking: 0.08em;
@@ -261,26 +260,22 @@
   --grid-dash: 0;
 }
 
-:root[data-mode='light'][data-light='white'] {
-  --canvas: 251 251 252;
+:root[data-mode='light'][data-light='warm'] {
+  --canvas: 250 249 246;
   --panel: 255 255 255;
-  --sunk: 244 245 247;
-  --line: 236 238 241;
-  --line-strong: 220 223 227;
-  --fg: 17 20 24;
-  --fg-2: 71 77 86;
-  --fg-3: 107 113 122;
-  --chart-1: 35 39 45;
-  --chart-2: 80 86 95;
-  --chart-3: 133 139 148;
-  --chart-4: 181 185 191;
-  --chart-5: 221 224 228;
-  --grid: 238 240 242;
-  --shadow-lg: 0 16px 36px -16px rgba(17, 20, 24, 0.24), 0 1px 4px rgba(17, 20, 24, 0.05);
-  --shadow-xl: 0 34px 60px -30px rgba(17, 20, 24, 0.26), 0 1px 4px rgba(17, 20, 24, 0.05);
+  --sunk: 242 240 234;
+  --line: 232 229 222;
+  --line-strong: 207 203 194;
+  --grid: 236 233 226;
 }
 
-/* Light accents: white ink, soft is a 10% mix into white. */
+/* Light accents: white ink, soft is a 10% mix into white. Ink (neutral) is the base above. */
+:root[data-mode='light']:not([data-acc='neutral']) {
+  --accent-soft: color-mix(in srgb, rgb(var(--accent)) 10%, #fff);
+}
+:root[data-mode='light'][data-acc='neutral'] {
+  --accent: 23 23 23;
+}
 :root[data-mode='light'][data-acc='charcoal'] {
   --accent: 58 63 71;
 }

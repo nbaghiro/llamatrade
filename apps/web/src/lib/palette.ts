@@ -217,7 +217,7 @@ export function highlightRuns(
 /** The URL that hands a palette query to Copilot. */
 export function copilotUrl(query: string): string {
   const q = query.trim();
-  return q ? `/copilot?q=${encodeURIComponent(q)}` : '/copilot';
+  return q ? `/dashboard?q=${encodeURIComponent(q)}` : '/dashboard';
 }
 
 /** A leading ">" narrows the palette to actions. */

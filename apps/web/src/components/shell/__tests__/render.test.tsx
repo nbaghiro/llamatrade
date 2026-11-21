@@ -25,33 +25,25 @@ const at = (path: string, node: JSX.Element) =>
   renderToStaticMarkup(<MemoryRouter initialEntries={[path]}>{node}</MemoryRouter>);
 
 describe('shell', () => {
-  it('renders the seven areas as text links with the clock beside search', () => {
+  it('renders five areas, with the market status as the way into Markets', () => {
     const html = at('/strategies/abc', <TopBar />);
-    const labels = [
-      'Home',
-      'Markets',
-      'Strategies',
-      'Backtests',
-      'Sessions',
-      'Portfolio',
-      'Copilot',
-    ];
-    for (const label of labels) {
+    for (const label of ['Home', 'Strategies', 'Backtests', 'Sessions', 'Portfolio']) {
       expect(html).toMatch(new RegExp(`>${label}</a>`));
     }
-    expect(html).toContain('Search or jump to');
-    expect(html).toMatch(/\d{1,2}:\d{2} ET<span[^>]*>(open|closed|pre-market|after hours)</);
+    expect(html).not.toMatch(/>Copilot<\/a>/);
+    expect(html).not.toMatch(/>Markets<\/a>/);
+    expect(html).toContain('href="/markets"');
+    expect(html).toMatch(/Market (open|closed|pre-market|after hours)/);
+    expect(html).not.toContain('Search or jump to');
     expect(html).toMatch(/aria-current="page"[^>]*>Strategies<\/a>/);
     expect(html).not.toContain('>Paper<');
   });
 
-  it('gives the phone tabs for checking in, with Sessions active for an order', () => {
+  it('gives Markets the second phone tab and Sessions for an order', () => {
     const html = at('/trading/orders/o1', <MobileTabBar />);
     expect(html).toMatch(/aria-current="page"[^>]*>.*?Sessions<\/a>/);
-    for (const label of ['Home', 'Sessions', 'Markets', 'Activity', 'Account']) {
-      expect(html).toContain(`${label}</a>`);
-    }
-    expect(html).not.toContain('Strategies');
+    const labels = [...html.matchAll(/([A-Za-z]+)<\/a>/g)].map((m) => m[1]);
+    expect(labels).toEqual(['Home', 'Markets', 'Sessions', 'Strategies', 'Portfolio']);
   });
 
   it('renders the Candlesticks mark with the accent candle', () => {
@@ -61,10 +53,10 @@ describe('shell', () => {
     expect(html).toContain('LlamaTrade');
   });
 
-  it('renders the appearance picker with twelve accents', () => {
+  it('renders the appearance picker with thirteen accents', () => {
     const html = renderToStaticMarkup(<AppearancePicker />);
     expect(html).toContain('System');
-    expect(html.match(/role="radio" aria-checked="(true|false)" aria-label=/g)).toHaveLength(12);
+    expect(html.match(/role="radio" aria-checked="(true|false)" aria-label=/g)).toHaveLength(13);
   });
 });
 

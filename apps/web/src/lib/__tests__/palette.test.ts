@@ -148,8 +148,8 @@ describe('highlightRuns', () => {
 
 describe('copilotUrl', () => {
   it('encodes the query', () => {
-    expect(copilotUrl(' why is radar frozen? ')).toBe('/copilot?q=why%20is%20radar%20frozen%3F');
-    expect(copilotUrl('')).toBe('/copilot');
+    expect(copilotUrl(' why is radar frozen? ')).toBe('/dashboard?q=why%20is%20radar%20frozen%3F');
+    expect(copilotUrl('')).toBe('/dashboard');
   });
 });
 

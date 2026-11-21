@@ -5,9 +5,8 @@ import { useMemo } from 'react';
 import { formatMoney, formatNumber, formatPct } from '../../lib/format';
 import { etClock } from '../../lib/marketClock';
 import { weightRows } from '../../lib/portfolioView';
-import { nextRebalanceDate } from '../../lib/sessionState';
 import { AnnotatedCurve, type CurveLane, type CurvePin } from '../charts';
-import { dayLabel, etToday } from '../sessions/sessionRows';
+import { etToday, isDaily, nextRun, relativeDay } from '../sessions/sessionRows';
 import { StatList } from '../ui';
 
 import {
@@ -53,7 +52,8 @@ export function SleeveCurve({ sleeve, curve, fills, rows, now }: SleeveCurveProp
   }, [curve, sleeve.value, t]);
 
   const state = sleeveRunState(sleeve);
-  const next = state === 'running' ? nextRebalanceDate(sleeve.rebalance, today) : null;
+  const next = state === 'running' ? nextRun(sleeve.rebalance, now) : null;
+  const daily = isDaily(sleeve.rebalance);
   const futureEnd = new Date(
     Math.max(today.getTime() + 15 * DAY, (next?.getTime() ?? 0) + 3 * DAY)
   );
@@ -70,7 +70,7 @@ export function SleeveCurve({ sleeve, curve, fills, rows, now }: SleeveCurveProp
   const marks = (list: readonly SleeveFill[]) =>
     list.map((f) => ({
       at: f.at,
-      shape: f.side === 'buy' ? ('ring' as const) : ('dot' as const),
+      shape: f.side === 'buy' ? ('dot' as const) : ('ring' as const),
       title: `${f.side === 'buy' ? 'Bought' : 'Sold'} ${sharesText(f.qty)} ${f.symbol} at ${formatMoney(f.price)}`,
     }));
 
@@ -98,7 +98,11 @@ export function SleeveCurve({ sleeve, curve, fills, rows, now }: SleeveCurveProp
               ],
             }
           : next
-            ? { events: [{ at: next, shape: 'planned', title: `Rebalance ${dayLabel(next)}` }] }
+            ? {
+                events: [
+                  { at: next, shape: 'planned', title: `Rebalance ${relativeDay(next, today)}` },
+                ],
+              }
             : undefined,
     };
   });
@@ -158,7 +162,7 @@ export function SleeveCurve({ sleeve, curve, fills, rows, now }: SleeveCurveProp
           },
         ]
       : []),
-    { label: 'Max drawdown', value: formatPct(dd), tone: dd < 0 ? ('loss' as const) : undefined },
+    { label: 'Max drawdown', value: formatPct(dd) },
     { label: 'Rebalances', value: String(byDay(fills).length) },
     { label: 'Fills', value: String(fills.length) },
   ];
@@ -181,7 +185,13 @@ export function SleeveCurve({ sleeve, curve, fills, rows, now }: SleeveCurveProp
       now={{ label: `Now ${etClock(now)}` }}
       future={{
         end: futureEnd,
-        title: next ? `Rebalance ${dayLabel(next)}` : state === 'stopped' ? 'Stopped' : 'Next',
+        title: next
+          ? daily
+            ? `Each trading day, next ${relativeDay(next, today)}`
+            : `Rebalance ${relativeDay(next, today)}`
+          : state === 'stopped'
+            ? 'Stopped'
+            : 'Next',
         content: next ? (
           estimates.length ? (
             <div className="grid gap-1">
@@ -216,8 +226,8 @@ export function SleeveCurve({ sleeve, curve, fills, rows, now }: SleeveCurveProp
       side={<StatList items={stats} />}
       lanes={lanes}
       legend={[
-        { shape: 'ring', label: 'Buy' },
-        { shape: 'dot', label: 'Sell' },
+        { shape: 'dot', label: 'Buy' },
+        { shape: 'ring', label: 'Sell' },
         { shape: 'diamondFilled', label: 'Money in' },
       ]}
       tooltip={(i) => (

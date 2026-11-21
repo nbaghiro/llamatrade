@@ -1,9 +1,9 @@
 import { MessageRole } from '@llamatrade/core/proto/agent_pb';
 import { useAgentStore } from '@llamatrade/core/stores/agent';
-import { Sparkles } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 
 import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
+import { CopilotMark } from '../../common/Logo';
 
 /** Ask Copilot about this draft. A proposed change comes back as a tracked edit in the outline. */
 export function CopilotAsk() {
@@ -27,7 +27,7 @@ export function CopilotAsk() {
   return (
     <form onSubmit={submit} className="mb-4 grid gap-1.5">
       <label className="flex h-10 items-center gap-2 rounded-[6px] border border-line-strong bg-panel px-3 focus-within:border-accent">
-        <Sparkles className="h-4 w-4 flex-none text-fg-3" aria-hidden="true" />
+        <CopilotMark className="h-4 w-4 text-fg-3" />
         <span className="sr-only">Ask Copilot about this strategy</span>
         <input
           value={text}

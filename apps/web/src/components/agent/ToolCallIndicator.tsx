@@ -37,7 +37,7 @@ export function ToolCallIndicator({
       {status === 'running' || status === 'waiting' ? (
         <span
           aria-hidden="true"
-          className={`h-2 w-2 flex-none rounded-full bg-accent ${status === 'running' ? 'motion-safe:animate-pulse' : ''}`}
+          className={`h-2 w-2 flex-none rounded-full bg-fg-3 ${status === 'running' ? 'motion-safe:animate-pulse' : ''}`}
         />
       ) : status === 'error' ? (
         <AlertTriangle className="h-3.5 w-3.5 flex-none" />

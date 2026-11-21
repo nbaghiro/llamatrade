@@ -1,17 +1,20 @@
 import { useBacktestStore } from '@llamatrade/core/stores/backtest';
 import { AlertTriangle, Columns2, Download } from 'lucide-react';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 
 import { CompareChart } from '../../components/backtest/CompareChart';
 import { compareColor } from '../../components/backtest/compareColors';
 import { CompareHeld } from '../../components/backtest/CompareHeld';
+import { changedLines, compareSettings, orderCount } from '../../components/backtest/compareView';
 import { csvRow, downloadText } from '../../components/backtest/files';
-import { Panel } from '../../components/backtest/parts';
+import { Panel, type Cell } from '../../components/backtest/parts';
 import { runMeta, toCurve } from '../../components/backtest/runData';
 import { strategyNameOf } from '../../components/backtest/runLabels';
+import { openSessionLabel, sessionForVersion } from '../../components/backtest/strategySessions';
 import { T } from '../../components/backtest/tableStyles';
 import { useRunTrades } from '../../components/backtest/useRunTrades';
+import { useStrategySessions } from '../../components/backtest/useStrategySessions';
 import { DrawdownBand } from '../../components/charts';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Pct } from '../../components/ui/Num';
@@ -29,6 +32,7 @@ import {
   type PerfFigures,
 } from '../../lib/backtestView';
 import { formatMoney, formatNumber, formatPct } from '../../lib/format';
+import type { CodeLine } from '../../lib/strategyDiff';
 
 interface Row {
   id: string;
@@ -47,6 +51,8 @@ export default function BacktestComparePage() {
   const loadComparison = useBacktestStore((s) => s.loadComparison);
   const strategies = useBacktestStore((s) => s.strategies);
   const fetchStrategies = useBacktestStore((s) => s.fetchStrategies);
+  const fetchVersionDsl = useBacktestStore((s) => s.fetchVersionDsl);
+  const { sessions } = useStrategySessions();
 
   useEffect(() => {
     fetchStrategies().catch(() => undefined);
@@ -101,8 +107,56 @@ export default function BacktestComparePage() {
   const pairIds = useMemo(() => model?.runs.slice(0, 2).map((r) => r.id) ?? [], [model]);
   const pairTrades = useRunTrades(pairIds);
 
+  // Two runs of one strategy read as a pair: v3 against v2 (compare2 A).
+  const pair =
+    model?.range && model.runs.length === 2 && model.runs[0].strategyId === model.runs[1].strategyId
+      ? {
+          a: model.runs[0],
+          b: model.runs[1],
+          name: strategyNameOf(strategies, model.runs[0].strategyId),
+          aLabel: `v${model.runs[0].strategyVersion}`,
+          bLabel: `v${model.runs[1].strategyVersion}`,
+          sameVersion: model.runs[0].strategyVersion === model.runs[1].strategyVersion,
+        }
+      : null;
+  const pairKey = pair
+    ? `${pair.a.strategyId}:${pair.b.strategyVersion}:${pair.a.strategyVersion}`
+    : '';
+  const [changes, setChanges] = useState<{ key: string; lines: CodeLine[] | null }>();
+  useEffect(() => {
+    if (!pairKey) return;
+    const [strategyId, from, to] = pairKey.split(':');
+    let live = true;
+    Promise.all([
+      fetchVersionDsl(strategyId, Number(from)),
+      fetchVersionDsl(strategyId, Number(to)),
+    ])
+      .then(([before, after]) => {
+        if (live) setChanges({ key: pairKey, lines: changedLines(before, after) });
+      })
+      .catch(() => {
+        if (live) setChanges({ key: pairKey, lines: null });
+      });
+    return () => {
+      live = false;
+    };
+  }, [pairKey, fetchVersionDsl]);
+
   const missing = ids.length - comparison.runs.length;
-  const title = `Compare ${ids.length} runs`;
+  const pairTitle = pair
+    ? pair.sameVersion
+      ? `${pair.name} ${pair.aLabel}, two runs`
+      : `${pair.name} ${pair.aLabel} against ${pair.bLabel}`
+    : null;
+  const runRef = (r: { id: string; strategyVersion: number }, label: string, second: boolean) => ({
+    id: r.id,
+    label: pair?.sameVersion ? `${label} ${second ? 'second' : 'first'}` : label,
+  });
+  const title = pairTitle ?? `Compare ${ids.length} runs`;
+  const session = pair
+    ? sessionForVersion(sessions, pair.a.strategyId, pair.a.strategyVersion)
+    : null;
+  const settings = pair ? compareSettings(pair.a, pair.b) : null;
 
   if (ids.length < 2) {
     return (
@@ -153,7 +207,13 @@ export default function BacktestComparePage() {
     downloadText('backtest-comparison.csv', lines.join('\n'));
   };
 
-  const meta = model?.range ? (
+  const meta = settings ? (
+    <span>
+      {settings.identical
+        ? `Identical settings: ${settings.shared.join(' · ')}`
+        : `Different settings: ${settings.differences.join(' · ')}`}
+    </span>
+  ) : model?.range ? (
     <span className="num">
       {dayKey(model.range.start)} → {dayKey(model.range.end)}
       {model.sameCapital ? ` · ${formatMoney(model.sameCapital, { dp: 0 })} each` : ''}
@@ -165,6 +225,9 @@ export default function BacktestComparePage() {
     <div className="page grid gap-3.5">
       <PageHead
         title={title}
+        badges={
+          pair ? <span className="text-[12px] font-medium text-fg-3">Backtests</span> : undefined
+        }
         sub={meta}
         actions={
           <>
@@ -180,6 +243,11 @@ export default function BacktestComparePage() {
               <Download className="h-3.5 w-3.5" aria-hidden="true" />
               Export CSV
             </button>
+            {session?.href && pair && (
+              <Link to={session.href} className="btn btn-primary">
+                {openSessionLabel(session, true)}
+              </Link>
+            )}
           </>
         }
       />
@@ -233,6 +301,39 @@ export default function BacktestComparePage() {
             }
           />
         </Panel>
+      ) : pair && model.range ? (
+        <>
+          <Panel>
+            <FigureRow
+              cells={pairCells(
+                model.rows,
+                pair.aLabel,
+                pair.bLabel,
+                pairTrades
+                  ? [pairTrades[pair.a.id] ?? null, pairTrades[pair.b.id] ?? null].map((t) =>
+                      t ? orderCount(t) : null
+                    )
+                  : [null, null]
+              )}
+            />
+          </Panel>
+          <CompareHeld
+            dates={model.range.dates}
+            a={model.range.series[0]}
+            b={model.range.series[1]}
+            bench={model.bench ? model.range.series[2] : null}
+            benchLabel={model.bench}
+            runA={runRef(pair.a, pair.aLabel, false)}
+            runB={runRef(pair.b, pair.bLabel, true)}
+            aTrades={pairTrades ? (pairTrades[pair.a.id] ?? []) : null}
+            bTrades={pairTrades ? (pairTrades[pair.b.id] ?? []) : null}
+            changes={pair.sameVersion ? [] : changes?.key === pairKey ? changes.lines : undefined}
+          />
+          <p className="m-0 text-[11.5px] text-fg-3">
+            Figures are worked out over {rangeLabel(model.range.start, model.range.end)} from daily
+            closes, the way the engine does it: 252 trading days and a 2% risk-free rate.
+          </p>
+        </>
       ) : (
         <>
           <Panel>
@@ -267,24 +368,6 @@ export default function BacktestComparePage() {
               />
             </div>
           </Panel>
-          {model.runs.length >= 2 && model.runs[0].strategyId === model.runs[1].strategyId && (
-            <Panel
-              title={`${model.rows[0].label} against ${model.rows[1].label}`}
-              aside={model.runs.length > 2 ? 'the first two runs' : 'what each held'}
-            >
-              <div className="px-3.5 py-3">
-                <CompareHeld
-                  dates={model.range.dates}
-                  a={model.range.series[0]}
-                  b={model.range.series[1]}
-                  aLabel={model.rows[0].label}
-                  bLabel={model.rows[1].label}
-                  aTrades={pairTrades ? (pairTrades[model.rows[0].id] ?? []) : null}
-                  bTrades={pairTrades ? (pairTrades[model.rows[1].id] ?? []) : null}
-                />
-              </div>
-            </Panel>
-          )}
           <Panel
             footer={
               <>
@@ -338,12 +421,10 @@ export default function BacktestComparePage() {
                         <td className={T.tdN}>
                           {f ? <Pct value={f.totalReturn} pnl dp={1} /> : '·'}
                         </td>
-                        <td className={T.tdN}>{f ? <Pct value={f.cagr} pnl dp={1} /> : '·'}</td>
+                        <td className={T.tdN}>{f ? <Pct value={f.cagr} signed dp={1} /> : '·'}</td>
                         <td className={T.tdN}>{f ? formatNumber(f.sharpe, { dp: 2 }) : '·'}</td>
                         <td className={T.tdN}>{f ? formatNumber(f.sortino, { dp: 2 }) : '·'}</td>
-                        <td className={T.tdN}>
-                          {f ? <Pct value={f.maxDrawdown} pnl dp={1} /> : '·'}
-                        </td>
+                        <td className={T.tdN}>{f ? <Pct value={f.maxDrawdown} dp={1} /> : '·'}</td>
                         <td className={T.tdN}>{f ? formatPct(f.volatility, { dp: 1 }) : '·'}</td>
                         <td className={T.tdN}>
                           {r.trades === null ? '·' : formatNumber(r.trades, { dp: 0 })}
@@ -358,5 +439,83 @@ export default function BacktestComparePage() {
         </>
       )}
     </div>
+  );
+}
+
+/** The pair's figure row: the first run large, the second beside it, the benchmark under each. */
+function pairCells(
+  rows: readonly Row[],
+  aLabel: string,
+  bLabel: string,
+  orders: readonly (number | null)[]
+): Cell[] {
+  const [a, b] = rows;
+  const bench = rows.find((r) => r.color === null);
+  const pct = (v: number) => formatPct(v, { dp: 1, signed: true });
+  const ratio = (v: number) => formatNumber(v, { dp: 2 });
+  const cell = (
+    label: string,
+    pick: (f: PerfFigures) => number,
+    fmt: (v: number) => string,
+    pnl = false
+  ): Cell => ({
+    label: `${label} · ${aLabel}, ${bLabel}`,
+    value:
+      a.figures && b.figures ? (
+        <>
+          {pnl ? <Pct value={pick(a.figures)} pnl dp={1} /> : fmt(pick(a.figures))}{' '}
+          <span className="text-[12.5px] text-fg-3">{fmt(pick(b.figures))}</span>
+        </>
+      ) : (
+        '·'
+      ),
+    sub: bench?.figures ? `${bench.label} ${fmt(pick(bench.figures))}` : undefined,
+  });
+  const [oa, ob] = orders;
+  return [
+    cell('Total return', (f) => f.totalReturn, pct, true),
+    cell('Sharpe', (f) => f.sharpe, ratio),
+    cell('Max drawdown', (f) => f.maxDrawdown, pct),
+    cell(
+      'Volatility',
+      (f) => f.volatility,
+      (v) => formatPct(v, { dp: 1 })
+    ),
+    {
+      label: `Orders · ${aLabel}, ${bLabel}`,
+      value:
+        oa === null || ob === null ? (
+          '·'
+        ) : (
+          <>
+            {formatNumber(oa, { dp: 0 })}{' '}
+            <span className="text-[12.5px] text-fg-3">{formatNumber(ob, { dp: 0 })}</span>
+          </>
+        ),
+      sub: 'entries and exits',
+    },
+  ];
+}
+
+function FigureRow({ cells }: { cells: readonly Cell[] }) {
+  return (
+    <dl className="m-0 grid grid-cols-2 sm:grid-cols-5">
+      {cells.map((c) => (
+        <div
+          key={c.label}
+          className="min-w-0 border-b border-r border-line px-3.5 py-[11px] sm:border-b-0 sm:last:border-r-0"
+        >
+          <dt className="truncate text-[11px] font-medium text-fg-3">{c.label}</dt>
+          <dd className="m-0 mt-1 whitespace-nowrap font-mono text-[19px] font-medium leading-tight tracking-[-0.02em] tabular-nums">
+            {c.value}
+          </dd>
+          {c.sub && (
+            <dd className="m-0 mt-0.5 whitespace-nowrap font-mono text-[11px] text-fg-3">
+              {c.sub}
+            </dd>
+          )}
+        </div>
+      ))}
+    </dl>
   );
 }

@@ -20,7 +20,7 @@ const MODES: ReadonlyArray<{ key: ModePreference; label: string }> = [
 ];
 
 const DARK_SURFACES: ReadonlyArray<{ key: DarkSurface; label: string }> = [
-  { key: 'slate', label: 'Slate' },
+  { key: 'slate', label: 'Graphite' },
   { key: 'black', label: 'Black' },
 ];
 const LIGHT_SURFACES: ReadonlyArray<{ key: LightSurface; label: string }> = [
@@ -67,7 +67,7 @@ function SurfaceChips<K extends DarkSurface | LightSurface>({
   );
 }
 
-function AccentDots({ mode }: { mode: ThemeMode }) {
+export function AccentDots({ mode }: { mode: ThemeMode }) {
   const darkAccent = useThemeStore((s) => s.darkAccent);
   const lightAccent = useThemeStore((s) => s.lightAccent);
   const setAccent = useThemeStore((s) => s.setAccent);

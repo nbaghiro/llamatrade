@@ -1,12 +1,15 @@
 import { useAgentStore } from '@llamatrade/core/stores/agent';
-import { Code2, Sparkles } from 'lucide-react';
+import { Code2 } from 'lucide-react';
 import { useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import { diffCode } from '../../../lib/strategyDiff';
 import {
   UNTITLED_STRATEGY,
   useStrategyBuilderStoreWithContext,
 } from '../../../store/strategy-builder';
+import { CHAT_HOME, conversationPath } from '../../agent/entry';
+import { CopilotMark } from '../../common/Logo';
 import { Pct } from '../../ui';
 import { RailPanel } from '../rail/RailPanel';
 
@@ -82,14 +85,16 @@ function useAccept(proposal: Proposal) {
 /** copilot2 A: the proposal across the top, with the decision beside it. */
 export function ProposalBanner({ proposal }: { proposal: Proposal }) {
   const { accept, decline } = useAccept(proposal);
-  const openPanel = useAgentStore((s) => s.openPanel);
+  const currentSessionId = useAgentStore((s) => s.currentSessionId);
+  const navigate = useNavigate();
+  const reply = () => navigate(currentSessionId ? conversationPath(currentSessionId) : CHAT_HOME);
   const { artifact, diff } = proposal;
   return (
     <aside
       aria-label="Copilot proposal"
       className="mb-4 flex flex-col gap-3 rounded-panel border border-accent/50 bg-panel px-4 py-3.5 shadow-[0_0_0_3px_var(--accent-soft)] md:flex-row md:items-center md:gap-5"
     >
-      <Sparkles className="hidden h-4 w-4 flex-none text-accent md:block" aria-hidden="true" />
+      <CopilotMark className="hidden h-4 w-4 text-fg md:block" />
       <p className="m-0 min-w-0 flex-1 text-[13.5px] text-fg-2">
         <b className="font-semibold text-fg">
           Copilot suggests {artifact.name ? artifact.name : 'a change'}.
@@ -98,7 +103,7 @@ export function ProposalBanner({ proposal }: { proposal: Proposal }) {
         {diff.changes.length === 0 && ' This matches the draft as it stands.'}
       </p>
       <div className="flex flex-none flex-wrap gap-2">
-        <button type="button" onClick={openPanel} className="btn btn-ghost">
+        <button type="button" onClick={reply} className="btn btn-ghost">
           Reply
         </button>
         <button type="button" onClick={decline} className="btn btn-secondary">

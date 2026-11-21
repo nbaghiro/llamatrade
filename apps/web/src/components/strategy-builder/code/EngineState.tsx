@@ -1,26 +1,30 @@
-import type { ValidationIssue } from '@llamatrade/core/strategy/validator';
-import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react';
 
 import type { EngineCheck } from '../hooks/useEngineCheck';
+import { plural } from '../save/checkList';
 
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-
-/** The engine's answer for the draft, in a panel header: passed, errors, or warnings. */
+/** The engine's answer for the draft, in a panel header: passed, or "0 errors · 2 warnings". */
 export function EngineState({
   engine,
-  warnings = [],
+  counts,
 }: {
   engine: EngineCheck;
-  warnings?: readonly ValidationIssue[];
+  /** Open errors and warnings from the checks; defaults to the engine's errors alone. */
+  counts?: { errors: number; warnings: number };
 }) {
-  const errors = engine.status === 'problems' ? (engine.errors?.length ?? 0) : 0;
-  const warn = warnings.length;
+  const errors =
+    counts?.errors ?? (engine.status === 'problems' ? (engine.errors?.length ?? 0) : 0);
+  const warn = counts?.warnings ?? 0;
 
-  if (engine.status === 'problems' || warn > 0) {
+  if (engine.status === 'problems' || errors > 0 || warn > 0) {
     return (
       <span role="status" className="flex items-center gap-3 text-[12.5px]">
-        <span className={`flex items-center gap-1 ${errors ? 'text-loss' : 'text-fg-2'}`}>
-          <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+        <span className={`flex items-center gap-1 ${errors ? 'text-risk' : 'text-fg-3'}`}>
+          {errors ? (
+            <XCircle className="h-3.5 w-3.5" aria-hidden="true" />
+          ) : (
+            <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
           {plural(errors, 'error', 'errors')}
         </span>
         {warn > 0 && (

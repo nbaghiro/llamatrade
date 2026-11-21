@@ -173,6 +173,12 @@ const COMPARATOR_WORDS: Record<Comparator, { lead: string; token: string }> = {
   cross_below: { lead: '', token: 'crosses below' },
 };
 
+/** "is above", "crosses below": the comparison as the outline reads it. */
+export function comparatorPhrase(c: Comparator): string {
+  const w = COMPARATOR_WORDS[c];
+  return `${w.lead}${w.token}`;
+}
+
 const PRICE_WORDS: Record<PriceField, string> = {
   current: 'price',
   open: 'open',
@@ -777,6 +783,14 @@ export function writtenScenarios(tree: StrategyTree): WrittenScenario[] {
     out.push({ label: label ? `If ${label}` : 'Always', ...result });
   }
   return out;
+}
+
+/** What the strategy holds as written when each if block takes the given side. */
+export function holdingsWhen(
+  tree: StrategyTree,
+  choices: ReadonlyMap<BlockId, boolean>
+): Pick<WrittenScenario, 'holdings' | 'rankedBy'> {
+  return holdingsFor(tree, choices);
 }
 
 /** Longest lookback in days, the history a backtest needs before its first rebalance. */

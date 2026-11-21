@@ -8,14 +8,15 @@ import {
   isValidSymbol,
   metaParts,
   normaliseSymbol,
-  OUTLINE_MAX_DEPTH,
 } from '../../../lib/outline';
+import { heldPath } from '../../../lib/outlineTree';
 import type { StrategyDiff } from '../../../lib/strategyDiff';
 import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
 import { Popover } from '../../ui';
 import { useDismiss } from '../../ui/useDismiss';
 
-import { Outline, Parts, type AnyLine } from './Outline';
+import { Parts } from './Outline';
+import { OutlineTree, type TreeLine } from './OutlineTree';
 import type { TokenOpenHandler } from './Token';
 import { useTokenEdit } from './useTokenEdit';
 
@@ -39,8 +40,14 @@ interface BuilderOutlineProps {
   hideMeta?: boolean;
   onOpen?: TokenOpenHandler;
   openKey?: string | null;
-  below?: (line: AnyLine) => ReactNode;
+  below?: (line: TreeLine) => ReactNode;
+  /** Errors to show on their block, in the validator's words. */
+  issues?: ReadonlyMap<string, string>;
+  /** Symbols the running session holds, to mark the branch in effect today. */
+  held?: ReadonlySet<string>;
 }
+
+const NONE: ReadonlySet<string> = new Set();
 
 export function BuilderOutline({
   tracked,
@@ -51,15 +58,25 @@ export function BuilderOutline({
   onOpen,
   openKey,
   below,
+  issues,
+  held = NONE,
 }: BuilderOutlineProps) {
   const store = useStrategyBuilderStoreWithContext();
-  const { tree, timeframe, benchmark, ui } = store;
-  const [expanded, setExpanded] = useState<ReadonlySet<BlockId>>(new Set());
-
-  const lines = useMemo(
-    () => buildOutline(tree, { maxDepth: OUTLINE_MAX_DEPTH, expanded }),
-    [tree, expanded]
+  const { tree, timeframe, benchmark, ui, strategyName } = store;
+  const [closed, setClosed] = useState<ReadonlySet<string>>(new Set());
+  const toggle = useCallback(
+    (id: string) =>
+      setClosed((c) => {
+        const next = new Set(c);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        return next;
+      }),
+    []
   );
+
+  const lines = useMemo(() => buildOutline(tree), [tree]);
+  const live = useMemo(() => (tracked ? NONE : heldPath(tree, held)), [tree, held, tracked]);
   const meta = useMemo(() => metaParts({ timeframe, benchmark }), [timeframe, benchmark]);
 
   const notes = useMemo(() => {
@@ -69,8 +86,12 @@ export function BuilderOutline({
       const problem = allocationProblem(tree, b.id);
       if (problem) out.set(b.id, problem);
     }
+    issues?.forEach((message, id) => {
+      const had = out.get(id);
+      out.set(id, had && had !== message ? `${had} ${message}` : message);
+    });
     return out;
-  }, [tree]);
+  }, [tree, issues]);
 
   const onEdit = useTokenEdit();
 
@@ -95,7 +116,7 @@ export function BuilderOutline({
   );
 
   const lineActions = useCallback(
-    (line: AnyLine) => (
+    (line: TreeLine) => (
       <>
         {CONTAINERS.has(line.kind) && line.kind !== 'filter' && (
           <AddHolding
@@ -147,16 +168,26 @@ export function BuilderOutline({
       )}
       <div>
         {tracked ? (
-          <Outline lines={tracked.lines} label="Strategy outline with the proposed change" />
+          <OutlineTree
+            name={strategyName}
+            lines={tracked.lines}
+            live={live}
+            closed={closed}
+            onToggle={toggle}
+            label="Strategy outline with the proposed change"
+          />
         ) : (
-          <Outline
+          <OutlineTree
+            name={strategyName}
             lines={showsChanges && compare ? compare.lines : lines}
+            live={live}
+            closed={closed}
+            onToggle={toggle}
             label="Strategy outline"
             onEdit={editable ? onEdit : undefined}
             onOpen={editable ? onOpen : undefined}
             openKey={openKey}
             below={below}
-            onExpand={(id) => setExpanded((s) => new Set(s).add(id))}
             selectedId={editable ? ui.selectedBlockId : null}
             onSelect={
               editable
@@ -168,6 +199,22 @@ export function BuilderOutline({
           />
         )}
       </div>
+      {(live.size > 0 || tracked) && (
+        <div className="flex flex-wrap gap-x-6 gap-y-1 border-t border-line px-4 py-3 text-[12.5px] text-fg-3">
+          {live.size > 0 && (
+            <span className="inline-flex items-center gap-2">
+              <i aria-hidden="true" className="inline-block w-3.5 border-t-[1.5px] border-fg" />
+              In effect today, from the running session&apos;s holdings
+            </span>
+          )}
+          {tracked && (
+            <span className="inline-flex items-center gap-2">
+              <i aria-hidden="true" className="inline-block h-3 w-0.5 bg-accent" />
+              Proposed by Copilot
+            </span>
+          )}
+        </div>
+      )}
       {lines.length === 0 && !tracked && (
         <p className="m-0 py-6 text-center text-[13px] text-fg-3">
           Nothing here yet. Add a rule to say what the strategy holds.

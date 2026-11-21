@@ -219,11 +219,11 @@ export function RunSummary({ run, strategyName }: { run: BacktestRun; strategyNa
           {gap >= 0 ? 'ahead of' : 'behind'} {bench}
         </>
       )}
-      . Its largest drawdown was <Pct value={mdd} pnl dp={1} />
+      . Its largest drawdown was <Pct value={mdd} dp={1} />
       {benchFig && bench && (
         <>
           {' '}
-          against {bench}&apos;s <Pct value={benchFig.maxDrawdown} pnl dp={1} />
+          against {bench}&apos;s <Pct value={benchFig.maxDrawdown} dp={1} />
         </>
       )}
       {recovery === null ? (

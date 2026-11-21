@@ -1,33 +1,34 @@
 import { BacktestStatus } from '@llamatrade/core/proto/backtest_pb';
 import { useBacktestStore } from '@llamatrade/core/stores/backtest';
-import { ArrowLeft, Download } from 'lucide-react';
+import { ArrowLeft, Columns2, Download, RotateCw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 
-import {
-  MonthByMonth,
-  RunFailure,
-  RunPanel,
-  RunSections,
-  RunSummary,
-  useRunView,
-} from '../../components/backtest';
+import { MonthByMonth, RunFailure, RunPanel, useRunView } from '../../components/backtest';
 import { csvRow, downloadText } from '../../components/backtest/files';
 import { RunStatus } from '../../components/backtest/parts';
+import {
+  previousVersionRun,
+  resultMetaLine,
+  untestedRange,
+} from '../../components/backtest/resultLinks';
+import { ResultView } from '../../components/backtest/ResultView';
 import { isFinished, runMeta, runSeconds, toTradeInputs } from '../../components/backtest/runData';
-import { YearCurve } from '../../components/backtest/YearCurve';
+import { stoppedStage } from '../../components/backtest/runSteps';
+import { openSessionLabel, sessionForVersion } from '../../components/backtest/strategySessions';
+import { useStrategySessions } from '../../components/backtest/useStrategySessions';
 import { DeploySheet } from '../../components/sessions/DeploySheet';
 import { PageHead } from '../../components/ui/PageHead';
 import { PanelError } from '../../components/ui/PanelError';
 import { SkeletonChart, SkeletonFigure } from '../../components/ui/Skeleton';
+import type { CuratedRange } from '../../lib/backtestRanges';
 import {
-  dayKey,
   groupRebalances,
   latestTradedMonth,
   parseMonthHash,
   tradesToOrders,
 } from '../../lib/backtestView';
-import { formatMoney, formatNumber } from '../../lib/format';
+import { formatNumber } from '../../lib/format';
 
 /** /backtest/:runId: a finished run as a dense panel; #trades or #month-YYYY-MM for month by month. */
 export default function BacktestRunPage() {
@@ -44,10 +45,12 @@ export default function BacktestRunPage() {
   const fullTrades = useBacktestStore((s) => s.fullTrades);
   const tradesLoading = useBacktestStore((s) => s.tradesLoading);
   const loadAllTrades = useBacktestStore((s) => s.loadAllTrades);
-  const fetchVersionDsl = useBacktestStore((s) => s.fetchVersionDsl);
+  const history = useBacktestStore((s) => s.history);
+  const loadHistory = useBacktestStore((s) => s.loadHistory);
+  const setConfig = useBacktestStore((s) => s.setConfig);
 
   const view = useRunView(run);
-  const [dsl, setDsl] = useState<string | null | undefined>(undefined);
+  const { sessions: sessionList } = useStrategySessions();
   const [deployOpen, setDeployOpen] = useState(false);
   const tradesFor = useRef<string | null>(null);
 
@@ -68,12 +71,8 @@ export default function BacktestRunPage() {
   }, [run, navigate]);
 
   useEffect(() => {
-    if (!run || run.status !== BacktestStatus.COMPLETED) return;
-    setDsl(undefined);
-    fetchVersionDsl(run.strategyId, run.strategyVersion)
-      .then(setDsl)
-      .catch(() => setDsl(null));
-  }, [run, fetchVersionDsl]);
+    if (!history.loaded && !history.loading) loadHistory().catch(() => undefined);
+  }, [history.loaded, history.loading, loadHistory]);
 
   useEffect(() => {
     if (!run || run.status !== BacktestStatus.COMPLETED) return;
@@ -131,17 +130,33 @@ export default function BacktestRunPage() {
   }
 
   const meta = runMeta(run);
-  const name = `${view.strategyName} · version ${run.strategyVersion}`;
+  const completed = view.phase === 'completed';
+  const stopNote =
+    view.phase === 'failed' && run.progressPercent > 0
+      ? ` · stopped at ${formatNumber(run.progressPercent, { dp: 0 })}%, ${stoppedStage(run.progressPercent)}`
+      : '';
   const metaLine = (
     <span className="num">
-      {meta.start ? dayKey(meta.start) : '·'} → {meta.end ? dayKey(meta.end) : '·'} ·{' '}
-      {formatMoney(meta.capital, { dp: 0 })}
-      {meta.benchmark ? ` · benchmark ${meta.benchmark}` : ''}
+      {resultMetaLine(run, completed)}
+      {stopNote}
     </span>
   );
   const secs = runSeconds(run);
   const strategy = strategies.find((s) => s.id === run.strategyId);
-  const completed = view.phase === 'completed';
+  const session = sessionForVersion(sessionList, run.strategyId, run.strategyVersion);
+  const compareWith = previousVersionRun(history.runs, run);
+  const next = completed ? untestedRange(history.runs, run, new Date()) : null;
+  const testRange = (range: CuratedRange) => {
+    setConfig({
+      strategyId: run.strategyId,
+      strategyVersion: run.strategyVersion,
+      startDate: range.start,
+      endDate: range.end,
+      initialCapital: meta.capital,
+      ...(meta.benchmark ? { benchmarkSymbol: meta.benchmark } : {}),
+    });
+    navigate('/backtest');
+  };
 
   const exportCsv = async () => {
     if (!fullTrades || tradesFor.current !== run.id) {
@@ -171,8 +186,6 @@ export default function BacktestRunPage() {
   };
 
   if (tradesView && completed) {
-    const orderCount = trades ? tradesToOrders(trades).length : null;
-    const rebalanceCount = trades ? groupRebalances(tradesToOrders(trades)).length : null;
     return (
       <div className="page grid gap-3.5">
         <Link
@@ -182,32 +195,18 @@ export default function BacktestRunPage() {
           <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
           Back to results
         </Link>
-        <PageHead
-          title={`${view.strategyName} · trades and monthly returns`}
-          sub={
-            orderCount === null
-              ? 'Loading the orders…'
-              : `${formatNumber(orderCount, { dp: 0 })} simulated orders over ${formatNumber(rebalanceCount ?? 0, { dp: 0 })} rebalances · pick a month`
-          }
+        <MonthByMonth
+          run={run}
+          trades={trades}
+          month={month}
+          strategyName={view.strategyName}
+          onMonth={(m: string) => navigate({ hash: `month-${m}` }, { replace: true })}
           actions={
             <button type="button" className="btn btn-secondary" onClick={exportCsv}>
               <Download className="h-3.5 w-3.5" aria-hidden="true" />
               CSV
             </button>
           }
-        />
-        <YearCurve
-          run={run}
-          trades={trades}
-          month={month}
-          strategyName={view.strategyName}
-          onMonth={(m) => navigate({ hash: `month-${m}` }, { replace: true })}
-        />
-        <MonthByMonth
-          run={run}
-          trades={trades}
-          month={month}
-          onMonth={(m) => navigate({ hash: `month-${m}` }, { replace: true })}
         />
       </div>
     );
@@ -216,62 +215,110 @@ export default function BacktestRunPage() {
   return (
     <div className="page grid gap-3.5">
       <PageHead
-        title={name}
+        title={view.strategyName}
+        documentTitle={`${view.strategyName} v${run.strategyVersion} backtest`}
+        badges={
+          <>
+            <span className="rounded border border-line-strong px-1.5 py-px font-mono text-[11px] text-fg-2">
+              v{run.strategyVersion}
+            </span>
+            <span className="text-[12px] text-fg-3">Backtest</span>
+          </>
+        }
         sub={metaLine}
         actions={
           <>
-            <RunStatus
-              phase={view.phase}
-              label={
-                completed && secs !== null
-                  ? `Completed in ${formatNumber(secs, { dp: 1 })} s`
-                  : view.phase === 'failed'
-                    ? 'Failed'
-                    : undefined
-              }
-            />
+            {!completed && (
+              <RunStatus
+                phase={view.phase}
+                label={view.phase === 'failed' ? "Couldn't finish" : undefined}
+              />
+            )}
+            {completed && compareWith && (
+              <Link
+                to={`/backtests/compare?runs=${run.id},${compareWith.id}`}
+                className="btn btn-secondary"
+              >
+                <Columns2 className="h-3.5 w-3.5" aria-hidden="true" />
+                Compare
+              </Link>
+            )}
             {completed && (
-              <button type="button" className="btn btn-secondary" onClick={exportCsv}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={exportCsv}
+                title={
+                  secs !== null ? `Completed in ${formatNumber(secs, { dp: 1 })} s` : undefined
+                }
+              >
                 <Download className="h-3.5 w-3.5" aria-hidden="true" />
                 Export
               </button>
             )}
-            <Link to={`/backtest?rerun=${run.id}`} className="btn btn-secondary">
+            {!completed && (
+              <Link to={`/backtest?rerun=${run.id}`} className="btn btn-secondary">
+                Edit settings
+              </Link>
+            )}
+            <Link
+              to={`/backtest?rerun=${run.id}`}
+              className={completed ? 'btn btn-secondary' : 'btn btn-primary'}
+            >
+              <RotateCw className="h-3.5 w-3.5" aria-hidden="true" />
               Run again
             </Link>
-            {completed && (
-              <button type="button" className="btn btn-primary" onClick={() => setDeployOpen(true)}>
-                Deploy to paper
-              </button>
-            )}
+            {completed &&
+              (session?.href ? (
+                <Link to={session.href} className="btn btn-primary">
+                  {openSessionLabel(session)}
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => setDeployOpen(true)}
+                >
+                  Start on paper
+                </button>
+              ))}
           </>
         }
       />
-      {completed && <RunSummary run={run} strategyName={view.strategyName} />}
-      <RunPanel
-        run={run}
-        phase={view.phase}
-        log={view.log}
-        partial={view.partial}
-        progress={view.progress}
-        currentDate={view.currentDate}
-        strategyName={view.strategyName}
-        rebalance={view.rebalance}
-        trades={trades}
-        failure={
-          view.phase === 'failed' || view.phase === 'cancelled' ? (
-            <RunFailure
-              phase={view.phase}
-              message={run.statusMessage}
-              strategyId={run.strategyId}
-              onBack={() => navigate('/backtest')}
-              run={run}
-            />
-          ) : undefined
-        }
-      />
-      {completed && (
-        <RunSections run={run} dsl={dsl} onOpenTrades={() => navigate({ hash: 'trades' })} />
+      {completed ? (
+        <ResultView
+          run={run}
+          strategyName={view.strategyName}
+          trades={trades}
+          rebalance={view.rebalance}
+          session={session}
+          next={next}
+          onNext={testRange}
+          onOpenTrades={() => navigate({ hash: 'trades' })}
+        />
+      ) : (
+        <RunPanel
+          run={run}
+          phase={view.phase}
+          log={view.log}
+          partial={view.partial}
+          progress={view.progress}
+          currentDate={view.currentDate}
+          strategyName={view.strategyName}
+          rebalance={view.rebalance}
+          trades={trades}
+          failure={
+            view.phase === 'failed' || view.phase === 'cancelled' ? (
+              <RunFailure
+                phase={view.phase}
+                message={run.statusMessage}
+                strategyId={run.strategyId}
+                onBack={() => navigate('/backtest')}
+                run={run}
+              />
+            ) : undefined
+          }
+        />
       )}
       {completed && (
         <DeploySheet

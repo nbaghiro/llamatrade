@@ -87,3 +87,21 @@ export function symbolsLabel(symbols: readonly string[], max = 3): string {
     return `${symbols.slice(0, -1).join(', ')} and ${symbols[symbols.length - 1]}`;
   return `${symbols.slice(0, max).join(', ')} and ${symbols.length - max} more`;
 }
+
+const dropPct = (depth: number) => `${(Math.abs(depth) * 100).toFixed(1)}%`;
+
+/**
+ * "SPY's worst drop was 18.8%, against 12.3% for Recession Radar.", from both curves over the
+ * same dates, or null when either curve never fell.
+ */
+export function dropComparison(
+  bench: string,
+  benchValues: readonly number[] | undefined,
+  strategyDepth: number | null,
+  name: string
+): string | null {
+  if (!bench || !benchValues || benchValues.length < 2 || !strategyDepth) return null;
+  const benchDepth = Math.min(...drawdownOf(benchValues));
+  if (!(benchDepth < 0) || !(strategyDepth < 0)) return null;
+  return `${bench}'s worst drop was ${dropPct(benchDepth)}, against ${dropPct(strategyDepth)} for ${name}.`;
+}

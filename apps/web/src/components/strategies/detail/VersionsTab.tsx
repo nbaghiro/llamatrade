@@ -2,12 +2,15 @@ import { toDate } from '@llamatrade/core/format';
 import { BacktestStatus, type BacktestRun } from '@llamatrade/core/proto/backtest_pb';
 import { ExecutionMode } from '@llamatrade/core/proto/common_pb';
 import type { Strategy } from '@llamatrade/core/proto/strategy_pb';
+import { fromDSLString } from '@llamatrade/core/strategy/serializer';
 import { useMemo } from 'react';
 
 import { etClock } from '../../../lib/marketClock';
+import { tradingDaysBetween } from '../../../lib/marketHolidays';
 import { AnnotatedCurve, type CurveLane, type LaneEvent } from '../../charts';
 import { dayLabel, etToday } from '../../sessions/sessionRows';
-import { Money, Pct, SkeletonChart } from '../../ui';
+import { rebalanceEvery, rebalanceIndexes } from '../../strategy-builder/blocks/conditionHistory';
+import { Money, Pct, SkeletonChart, StatList } from '../../ui';
 import { dailyCloses } from '../sameDates';
 import type { useVersions } from '../versions/useVersions';
 import { VersionsView } from '../versions/VersionsView';
@@ -110,6 +113,43 @@ export function VersionsTab({
   ];
 
   const behind = sessionVersion !== null && strategy.version > sessionVersion;
+  const parsed = useMemo(() => fromDSLString(strategy.dslCode), [strategy.dslCode]);
+  const every = rebalanceEvery(parsed?.metadata.timeframe ?? '1D');
+  const sessionDays = sessionStart
+    ? tradingDaysBetween(etToday(sessionStart), etToday(now)) + 1
+    : 0;
+  const rebalances = rebalanceIndexes(
+    daily.map((d) => d.at),
+    every
+  ).length;
+  const whileItRan =
+    row && sessionVersion && daily.length > 1 ? (
+      <div className="grid gap-1.5 text-[12px]">
+        <span className="text-fg-3">While it ran</span>
+        <span className="font-mono">
+          v{sessionVersion}{' '}
+          {row.figures.totalPct !== null && <Pct value={row.figures.totalPct} pnl dp={1} />}{' '}
+          <span className="text-fg-3">{sessionDays} days</span>
+        </span>
+        <StatList
+          className="mt-2"
+          items={[
+            ...(sessionStart
+              ? [
+                  {
+                    label: `${live ? 'Live' : 'Paper'} since`,
+                    value: dayLabel(etToday(sessionStart)),
+                  },
+                ]
+              : []),
+            { label: `Rebalances on v${sessionVersion}`, value: String(rebalances) },
+          ]}
+        />
+        <span className="mt-1 text-[11.5px] leading-[1.5] text-fg-3">
+          Sessions keep the version they started with, so other versions have no paper record.
+        </span>
+      </div>
+    ) : undefined;
 
   return (
     <div className="grid gap-6">
@@ -158,7 +198,9 @@ export function VersionsTab({
             now={{ label: `Now ${etClock(now)}` }}
             lanes={lanes}
             side={
-              daily.length > 1 ? undefined : (
+              daily.length > 1 ? (
+                whileItRan
+              ) : (
                 <p className="m-0 text-[12px] text-fg-3">
                   No session has run yet, so there is no curve to draw.
                 </p>

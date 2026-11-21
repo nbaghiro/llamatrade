@@ -1,13 +1,15 @@
 import { readForms } from '@llamatrade/core/strategy/forms';
-import type { ValidationIssue } from '@llamatrade/core/strategy/validator';
 import { ChevronRight, Code2 } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
 import { CodeEditor } from '../CodeEditor';
 import type { CodeProblem } from '../codemirror/problemModel';
 import type { EngineCheck } from '../hooks/useEngineCheck';
 import { KeyValue, RailPanel } from '../rail/RailPanel';
+import { checkCounts, nextProblemLine } from '../save/checkList';
+import { ChecksPanel } from '../save/ChecksPanel';
+import type { Checks } from '../save/useChecks';
 
 import { cursorInfo, fileName, keywordRows } from './cursorInfo';
 import { EngineState } from './EngineState';
@@ -15,7 +17,9 @@ import { EngineState } from './EngineState';
 interface CodeWorkspaceProps {
   engine: EngineCheck;
   problems: readonly CodeProblem[];
-  warnings: readonly ValidationIssue[];
+  checks: Checks;
+  jump: { line: number; seq: number } | null;
+  onJump: (line: number) => void;
 }
 
 interface Cursor {
@@ -29,7 +33,7 @@ const Kw = ({ children }: { children: string }) => (
 );
 
 /** The code view: the editor with where the cursor sits, and what each form accepts. */
-export function CodeWorkspace({ engine, problems, warnings }: CodeWorkspaceProps) {
+export function CodeWorkspace({ engine, problems, checks, jump, onJump }: CodeWorkspaceProps) {
   const dslCode = useStrategyBuilderStoreWithContext((s) => s.dslCode);
   const strategyName = useStrategyBuilderStoreWithContext((s) => s.strategyName);
   const [cursor, setCursor] = useState<Cursor>({ offset: 0, line: 1, column: 1 });
@@ -45,6 +49,23 @@ export function CodeWorkspace({ engine, problems, warnings }: CodeWorkspaceProps
   );
   const rows = useMemo(() => keywordRows(), []);
   const lineCount = dslCode === '' ? 0 : dslCode.split('\n').length;
+  const counts = checkCounts(checks.items);
+  const hasProblems = counts.errors + counts.warnings > 0;
+
+  const cursorLine = useRef(cursor.line);
+  cursorLine.current = cursor.line;
+  const items = checks.items;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'F8') return;
+      const next = nextProblemLine(items, cursorLine.current);
+      if (next === null) return;
+      e.preventDefault();
+      onJump(next);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [items, onJump]);
 
   return (
     <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_330px] lg:gap-9">
@@ -56,7 +77,7 @@ export function CodeWorkspace({ engine, problems, warnings }: CodeWorkspaceProps
               {fileName(strategyName)}
             </b>
           </span>
-          <EngineState engine={engine} warnings={warnings} />
+          <EngineState engine={engine} counts={counts} />
         </header>
         <div className="flex min-h-[37px] flex-wrap items-center justify-between gap-x-4 gap-y-1 border-b border-line px-4 py-2 font-mono text-[12px] text-fg-3">
           <nav aria-label="Where the cursor sits" className="flex flex-wrap items-center gap-1">
@@ -73,20 +94,35 @@ export function CodeWorkspace({ engine, problems, warnings }: CodeWorkspaceProps
           </nav>
           {info.accepts.length > 0 && <span>accepts {info.accepts.join(' ')}</span>}
         </div>
-        <CodeEditor problems={problems} onCursor={onCursor} />
+        <CodeEditor problems={problems} onCursor={onCursor} jump={jump} />
         <footer className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-line px-4 py-2 font-mono text-[11.5px] text-fg-3">
           <span>
             Line {cursor.line}, column {cursor.column} · {lineCount}{' '}
             {lineCount === 1 ? 'line' : 'lines'}
           </span>
           <span className="hidden gap-4 sm:flex">
-            <span>Tab accept</span>
-            <span>Ctrl Space all options</span>
+            {hasProblems ? (
+              <span>F8 next problem</span>
+            ) : (
+              <>
+                <span>Tab accept</span>
+                <span>Ctrl Space all options</span>
+              </>
+            )}
           </span>
         </footer>
       </section>
 
       <div className="grid gap-4 lg:sticky lg:top-[72px]">
+        <ChecksPanel items={checks.items} checkedAt={checks.checkedAt} onGoToLine={onJump} />
+        {hasProblems && (
+          <section className="rounded-panel bg-sunk px-4 py-3 text-[12.5px] leading-[1.6] text-fg-2">
+            <span className="kicker mb-1.5 block">How saving works</span>
+            <b className="font-semibold text-fg">Errors</b> stop a strategy from running, so Save
+            stays off until they’re fixed. <b className="font-semibold text-fg">Warnings</b> flag
+            something that may not be what you meant. You can save with them after a look.
+          </section>
+        )}
         <RailPanel title="At the cursor">
           {info.form ? (
             <>
@@ -134,15 +170,6 @@ export function CodeWorkspace({ engine, problems, warnings }: CodeWorkspaceProps
           The list follows the parser’s own vocabulary, so a keyword that isn’t offered here would
           fail to parse.
         </p>
-
-        {warnings.length > 0 && (
-          <section className="rounded-panel bg-sunk px-4 py-3 text-[12.5px] leading-[1.6] text-fg-2">
-            <span className="kicker mb-1.5 block">How saving works</span>
-            <b className="font-semibold text-fg">Errors</b> stop a strategy from running, so Save
-            stays off until they’re fixed. <b className="font-semibold text-fg">Warnings</b> flag
-            something that may not be what you meant. You can save with them after a look.
-          </section>
-        )}
       </div>
     </div>
   );

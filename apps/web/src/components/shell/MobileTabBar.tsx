@@ -2,10 +2,10 @@ import { Link, useLocation } from 'react-router-dom';
 
 import { activeDestination, MOBILE_TABS } from '../../lib/navigation';
 
-import { useAreaMarks } from './attention';
+import { isFrozenMark, useAreaMarks } from './attention';
 import { DESTINATION_ICON } from './icons';
 
-/** Five tabs under 768px, built for checking in (phone-nav2 D). Building stays on the web. */
+/** Five tabs under 768px with Markets second (phone-nav2 A); Account sits behind the avatar. */
 export function MobileTabBar() {
   const { pathname } = useLocation();
   const active = activeDestination(pathname, MOBILE_TABS);
@@ -19,14 +19,14 @@ export function MobileTabBar() {
       {MOBILE_TABS.map((t) => {
         const Icon = DESTINATION_ICON[t.key];
         const on = active === t.key;
-        const flagged = (marks[t.key]?.length ?? 0) > 0;
+        const flagged = (marks[t.key] ?? []).some((m) => !isFrozenMark(m));
         return (
           <Link
             key={t.key}
             to={t.to}
             aria-current={on ? 'page' : undefined}
             aria-label={flagged ? `${t.label}, needs attention` : undefined}
-            className={`relative flex flex-col items-center gap-1 text-[10.5px] font-medium ${on ? 'text-accent' : 'text-fg-3'}`}
+            className={`relative flex flex-col items-center gap-1 text-[10.5px] ${on ? 'font-semibold text-fg' : 'font-medium text-fg-3'}`}
           >
             <Icon className="h-[22px] w-[22px]" strokeWidth={1.6} />
             {flagged && (

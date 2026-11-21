@@ -1,7 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
-import { Logo } from '../../components/common/Logo';
+import { BrandLockup } from '../../components/common/Logo';
 import { useAuthStore } from '../../store/auth';
 import { useOnboardingStore } from '../../store/onboarding';
 
@@ -38,7 +38,7 @@ export function OnboardingLayout({ step, children }: OnboardingLayoutProps) {
     <div className="flex min-h-screen flex-col bg-canvas">
       <header className="flex h-14 flex-none items-center justify-between gap-4 border-b border-line px-4 md:px-[26px]">
         <span className="hidden md:inline-flex">
-          <Logo size={22} showText />
+          <BrandLockup />
         </span>
         <span className="flex items-center gap-1.5 text-[12.5px] md:text-[12px]">
           <span className="num mr-1.5 text-fg-3">

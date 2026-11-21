@@ -1,77 +1,33 @@
 import type { BacktestRun } from '@llamatrade/core/proto/backtest_pb';
-import { toNumber } from '@llamatrade/core/stores/backtest';
 import type { StrategyTree } from '@llamatrade/core/strategy/types';
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 
-import { alignTo, rangeLabel } from '../../../lib/backtestView';
+import { rangeLabel } from '../../../lib/backtestView';
 import { formatPct } from '../../../lib/format';
-import { toCurve, toTradeInputs } from '../../backtest/runData';
 import { AnnotatedCurve, type CurveBand, type CurveLane } from '../../charts';
-import { StatList } from '../../ui';
+import { Pct, StatList } from '../../ui';
+import type { RebalanceEvery } from '../blocks/conditionHistory';
 
-import { conditionSides, sideSpans, sidesAtRebalances } from './sides';
+import { shortCondition, sideHistoryView } from './sideHistoryView';
+import type { SideKey } from './sides';
 
 interface SideHistoryProps {
   run: BacktestRun;
   /** The rules the lanes are read against: the saved version's tree. */
   tree: StrategyTree;
-  /** True while the condition the lanes describe is selected in the outline. */
-  lit?: boolean;
+  every: RebalanceEvery;
+  /** The side whose rule is selected in the outline, drawn lit. */
+  lit?: SideKey | null;
 }
 
 /** blocks2 A: the last backtest's curve, with a lane for each side of the condition. */
-export function SideHistory({ run, tree, lit = false }: SideHistoryProps) {
-  const view = useMemo(() => {
-    const curve = toCurve(run.results?.equityCurve);
-    if (curve.dates.length < 2) return null;
-    const benchCurve = toCurve(run.results?.benchmarkEquityCurve);
-    const aligned = benchCurve.dates.length ? alignTo(curve.dates, benchCurve) : [];
-    const firstBench = aligned.find((v): v is number => v !== null);
-    const benchmark =
-      firstBench !== undefined
-        ? aligned.map((v) => ((v ?? firstBench) / firstBench) * curve.values[0])
-        : undefined;
-    const start = curve.dates[0];
-    const end = curve.dates[curve.dates.length - 1];
-    const trades = toTradeInputs(run.results?.trades ?? []);
-    const sides = conditionSides(tree);
-    const points = sides ? sidesAtRebalances(trades, sides) : [];
-    const rebalanceDates = sides
-      ? points.map((p) => p.date)
-      : [
-          ...new Set(
-            trades
-              .flatMap((t) => [t.entryTime, t.exitTime])
-              .flatMap((d) => (d ? [d.getTime()] : []))
-          ),
-        ]
-          .sort((a, b) => a - b)
-          .map((t) => new Date(t));
-    const spans = sides ? sideSpans(points, end) : [];
-    const known = points.filter((p) => p.side !== null).length;
-    const whenCount = points.filter((p) => p.side === 'when').length;
-    const otherCount = points.filter((p) => p.side === 'otherwise').length;
-    return {
-      curve,
-      benchmark,
-      start,
-      end,
-      sides,
-      spans,
-      rebalanceDates,
-      known,
-      whenCount,
-      otherCount,
-      unknown: points.length - known,
-    };
-  }, [run, tree]);
+export function SideHistory({ run, tree, every, lit = null }: SideHistoryProps) {
+  const view = useMemo(() => sideHistoryView(run, tree, every), [run, tree, every]);
 
   if (!view) return null;
-  const m = run.results?.metrics;
-  const totalReturn = m ? toNumber(m.totalReturn) : null;
-  const benchReturn = m ? toNumber(m.benchmarkReturn) : null;
-  const bench = run.results?.benchmarkSymbol || run.config?.benchmarkSymbol || 'Benchmark';
+  const { totalReturn, benchReturn, counts } = view;
+  const bench = view.benchSymbol;
 
   const bands: CurveBand[] = view.spans
     .filter((s) => s.side === 'when')
@@ -82,25 +38,31 @@ export function SideHistory({ run, tree, lit = false }: SideHistoryProps) {
     lanes.push(
       {
         id: 'when',
-        label: `When ${view.sides.condition}`,
+        label: `When ${shortCondition(view.sides.condition)}`,
         value: (
           <span className="num text-[11.5px] text-fg-3">
-            {view.whenCount} of {view.known}
+            {counts.when} of {counts.known}
           </span>
         ),
-        tone: lit ? 'default' : 'muted',
+        tone: lit === 'when' ? 'default' : 'muted',
         spans: view.spans
           .filter((s) => s.side === 'when')
-          .map((s) => ({ from: s.from, to: s.to, style: 'bar' as const, tone: 'muted' as const })),
+          .map((s) => ({
+            from: s.from,
+            to: s.to,
+            style: 'bar' as const,
+            ...(lit === 'when' ? {} : { tone: 'muted' as const }),
+          })),
       },
       {
         id: 'otherwise',
         label: 'Otherwise',
         value: (
           <span className="num text-[11.5px] text-fg-3">
-            {view.otherCount} of {view.known}
+            {counts.otherwise} of {counts.known}
           </span>
         ),
+        tone: lit === 'when' ? 'muted' : 'default',
         spans: view.spans
           .filter((s) => s.side === 'otherwise')
           .map((s) => ({ from: s.from, to: s.to, style: 'bar' as const })),
@@ -109,7 +71,7 @@ export function SideHistory({ run, tree, lit = false }: SideHistoryProps) {
   }
   lanes.push({
     id: 'rebalances',
-    label: 'Days with orders',
+    label: view.scheduled ? 'Rebalances' : 'Days with orders',
     value: <span className="num text-[11.5px] text-fg-3">{view.rebalanceDates.length}</span>,
     spans: [],
     events: view.rebalanceDates.map((at) => ({ at, shape: 'start' as const })),
@@ -137,11 +99,7 @@ export function SideHistory({ run, tree, lit = false }: SideHistoryProps) {
           <span className="flex items-center gap-1.5">
             <i className="inline-block h-[2px] w-4 bg-accent" aria-hidden="true" />
             Version {run.strategyVersion}
-            {totalReturn !== null && (
-              <span className="num text-gain">
-                {formatPct(totalReturn, { dp: 1, signed: true })}
-              </span>
-            )}
+            {totalReturn !== null && <Pct value={totalReturn} pnl dp={1} />}
           </span>
           {view.benchmark && (
             <span className="flex items-center gap-1.5">
@@ -159,22 +117,21 @@ export function SideHistory({ run, tree, lit = false }: SideHistoryProps) {
       </header>
       <AnnotatedCurve
         label={`Backtest of version ${run.strategyVersion}, with the side held on each day it traded`}
-        dates={view.curve.dates}
-        values={view.curve.values}
+        dates={view.dates}
+        values={view.values}
         benchmark={view.benchmark}
         bands={bands}
         lanes={lanes}
         height={150}
         side={
-          m ? (
+          view.maxDrawdown !== null && view.sharpe !== null ? (
             <StatList
               items={[
                 {
                   label: 'Max drawdown',
-                  value: formatPct(-Math.abs(toNumber(m.maxDrawdown)), { dp: 1, signed: true }),
-                  tone: 'loss',
+                  value: formatPct(view.maxDrawdown, { dp: 1, signed: true }),
                 },
-                { label: 'Sharpe', value: toNumber(m.sharpeRatio).toFixed(2) },
+                { label: 'Sharpe', value: view.sharpe.toFixed(2) },
               ]}
             />
           ) : undefined
@@ -182,7 +139,7 @@ export function SideHistory({ run, tree, lit = false }: SideHistoryProps) {
       />
       <p className="m-0 mt-2 text-[12px] text-fg-3">
         {view.sides
-          ? `Each side is read from what the backtest held at the end of each day it traded${view.unknown > 0 ? `; ${view.unknown} ${view.unknown === 1 ? 'day held' : 'days held'} a mix and ${view.unknown === 1 ? 'is' : 'are'} left out` : ''}. These lanes describe version ${run.strategyVersion} until a newer version is backtested.`
+          ? `Each side is read from what the backtest held at the end of ${view.scheduled ? 'each scheduled rebalance' : 'each day it traded'}${counts.unknown > 0 ? `; ${counts.unknown} held a mix or nothing and ${counts.unknown === 1 ? 'is' : 'are'} left out` : ''}. These lanes describe version ${run.strategyVersion} until a newer version is backtested.`
           : `The rules don't split into two sides that hold different symbols, so only the days with orders are drawn.`}
       </p>
     </section>

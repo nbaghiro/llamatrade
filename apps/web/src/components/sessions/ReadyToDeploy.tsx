@@ -56,7 +56,7 @@ export function ReadyToDeploy() {
   return (
     <div className="grid items-start gap-3.5 lg:grid-cols-[minmax(0,1fr)_300px]">
       <Panel
-        title="Ready to deploy"
+        title="Ready to start"
         aside="strategies with a completed backtest"
         footer={
           <span className="flex justify-between gap-3">
@@ -73,7 +73,7 @@ export function ReadyToDeploy() {
           <div className="grid justify-items-start gap-2 px-4 py-5">
             <p className="m-0 text-[13px] text-fg-2">
               No strategy has a completed backtest yet. Run one to see how it would have done, then
-              deploy it from its results.
+              start it from its results.
             </p>
             <Link to="/backtest" className="btn btn-primary">
               Set up a backtest
@@ -124,7 +124,7 @@ export function ReadyToDeploy() {
                     </span>
                     <span className="hidden text-right md:block" title="Max drawdown">
                       <span className="sr-only">Max drawdown </span>
-                      {m ? <Pct value={-Math.abs(toNumber(m.maxDrawdown))} pnl dp={1} /> : '·'}
+                      {m ? <Pct value={-Math.abs(toNumber(m.maxDrawdown))} dp={1} /> : '·'}
                     </span>
                     <span className="hidden md:block">
                       <Sparkline
@@ -140,7 +140,7 @@ export function ReadyToDeploy() {
                         className={`btn w-full md:w-auto ${i === 0 ? 'btn-primary' : 'btn-secondary'}`}
                         onClick={() => setDeploying(r)}
                       >
-                        Deploy to paper
+                        Start on paper
                       </button>
                     </span>
                   </li>

@@ -3,24 +3,24 @@ import {
   Bell,
   CandlestickChart,
   FlaskConical,
-  Home,
   LineChart,
-  Sparkles,
   User,
   Wallet,
-  type LucideIcon,
 } from 'lucide-react';
+import type { ComponentType } from 'react';
 
 import type { DestinationKey } from '../../lib/navigation';
+import { CopilotMark } from '../common/Logo';
 
-export const DESTINATION_ICON: Record<DestinationKey, LucideIcon> = {
-  home: Home,
+type DestinationIcon = ComponentType<{ className?: string; strokeWidth?: number | string }>;
+
+export const DESTINATION_ICON: Record<DestinationKey, DestinationIcon> = {
+  home: CopilotMark,
   markets: CandlestickChart,
   portfolio: Wallet,
   strategies: LineChart,
   backtests: FlaskConical,
   sessions: Activity,
-  copilot: Sparkles,
   activity: Bell,
   account: User,
 };

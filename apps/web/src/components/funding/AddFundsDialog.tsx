@@ -339,7 +339,7 @@ export function AddFundsDialog({
               <span>
                 <b className="font-semibold">Keep it unallocated</b>
                 <span className="block text-[12.5px] text-fg-2">
-                  It waits in paper cash until you deploy a strategy or top up a sleeve.
+                  It waits in paper cash until you start a strategy or top up a sleeve.
                 </span>
               </span>
             </label>

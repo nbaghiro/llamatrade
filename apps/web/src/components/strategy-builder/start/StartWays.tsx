@@ -1,11 +1,11 @@
 import type { ConditionExpression } from '@llamatrade/core/strategy/types';
-import { Sparkles } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 
 import { CATEGORY_LABELS } from '../../../data/strategy-templates';
 import { isValidSymbol, normaliseSymbol } from '../../../lib/outline';
 import { useStrategyBuilderStoreWithContext } from '../../../store/strategy-builder';
+import { CopilotMark } from '../../common/Logo';
 import { FEATURED_TEMPLATES, pickTemplates } from '../../strategies/templateModel';
 import { useTemplates } from '../../strategies/useTemplates';
 import { Skeleton } from '../../ui';
@@ -94,7 +94,7 @@ export function StartWays({ onDescribe, onTemplate, blocks = true }: StartWaysPr
           />
           <span className="flex items-center gap-2">
             <span className="flex items-center gap-1.5 text-[12px] text-fg-2">
-              <Sparkles className="h-3.5 w-3.5 text-accent" aria-hidden="true" />
+              <CopilotMark className="h-3.5 w-3.5 text-fg" />
               Asks first, then drafts
             </span>
             <button

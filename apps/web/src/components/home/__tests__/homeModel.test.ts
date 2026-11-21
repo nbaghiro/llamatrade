@@ -3,18 +3,21 @@ import { describe, expect, it } from 'vitest';
 
 import { sessionStateView, type SessionState } from '../../../lib/sessionState';
 import {
-  attentionLine,
+  benchDayMove,
   blendEquity,
   curveWindow,
+  defaultRange,
   fillDays,
   fillsOf,
   foldSessions,
   homeStage,
   marketPhase,
+  nextRebalance,
   opensWords,
   rebalancesOn,
   rebalancingToday,
   sessionsLine,
+  snapshotDayMove,
   splitByMode,
   todayLine,
   upcoming,
@@ -296,12 +299,6 @@ describe('header lines', () => {
     expect(rebalancingToday([session({ state: 'paused' })], day('2026-12-01'))).toEqual([]);
   });
 
-  it('words attention', () => {
-    expect(attentionLine(0)).toBe('nothing needs you');
-    expect(attentionLine(1)).toBe('1 needs you');
-    expect(attentionLine(2)).toBe('2 need you');
-  });
-
   it('splits value by account kind and skips unknown values', () => {
     expect(
       splitByMode([
@@ -345,5 +342,51 @@ describe('marketPhase', () => {
     const p = marketPhase(now);
     expect(p.close.toISOString()).toBe('2026-11-16T21:00:00.000Z');
     expect(opensWords(p.nextOpen as Date, now)).toBe('at 09:30 ET');
+  });
+});
+
+describe('the closed Home', () => {
+  const pt = (iso: string, value: number) => ({ timestamp: iso, value });
+  const day = new Date(Date.UTC(2026, 10, 17));
+
+  it("reads SPY's move on the day from the percent curve", () => {
+    const curve = [
+      pt('2026-11-13T21:00:00Z', 1),
+      pt('2026-11-16T21:00:00Z', 2),
+      pt('2026-11-17T21:00:00Z', 3.02),
+    ];
+    expect(benchDayMove(curve, day)).toBeCloseTo(1.0302 / 1.02 - 1, 10);
+  });
+
+  it('gives no SPY figure without a point on that day or one before it', () => {
+    expect(benchDayMove([pt('2026-11-16T21:00:00Z', 2)], day)).toBeNull();
+    expect(benchDayMove([pt('2026-11-17T21:00:00Z', 2)], day)).toBeNull();
+    expect(benchDayMove([], day)).toBeNull();
+  });
+
+  it("falls back to SPY's daily bars when they are from that day", () => {
+    const bars = { at: new Date('2026-11-17T14:30:00Z'), close: 612.48, previousClose: 610 };
+    expect(snapshotDayMove(bars, day)).toBeCloseTo(612.48 / 610 - 1, 10);
+    expect(snapshotDayMove({ ...bars, at: new Date('2026-11-16T14:30:00Z') }, day)).toBeNull();
+    expect(snapshotDayMove({ ...bars, previousClose: 0 }, day)).toBeNull();
+    expect(snapshotDayMove(null, day)).toBeNull();
+  });
+
+  it('opens on the last week after the close', () => {
+    expect(defaultRange({ open: false })).toBe('1W');
+    expect(defaultRange({ open: true })).toBe('3M');
+  });
+});
+
+describe('nextRebalance', () => {
+  const today = new Date('2026-11-17T00:00:00Z');
+
+  it('finds the first rebalance after today', () => {
+    expect(nextRebalance('Weekly', today)?.toISOString().slice(0, 10)).toBe('2026-11-23');
+    expect(nextRebalance('Monthly', today)?.toISOString().slice(0, 10)).toBe('2026-12-01');
+  });
+
+  it('finds no next rebalance without a schedule', () => {
+    expect(nextRebalance('', today)).toBeNull();
   });
 });

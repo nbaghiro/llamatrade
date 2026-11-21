@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { draftRequest } from '../draftQuestions';
 import {
   conversationKinds,
   highlight,
@@ -70,5 +71,12 @@ describe('conversation kinds and outcome', () => {
     expect(outcomeLabel(built)).toBe('1 draft · 2 backtests');
     expect(conversationKinds([message('a', 'Hi')])).toEqual([]);
     expect(outcomeLabel([message('a', 'Hi')])).toBe('');
+  });
+});
+
+describe('paragraphs without markup', () => {
+  it('drops citation markers and the draft instruction', () => {
+    expect(paragraphs('Holds TLT [1] and GLD[2, 3].')).toEqual(['Holds TLT and GLD.']);
+    expect(paragraphs(draftRequest('Hold SPY and BND'))).toEqual(['Hold SPY and BND']);
   });
 });

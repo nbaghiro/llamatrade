@@ -67,7 +67,7 @@ export function AuthSplitLayout({
           {children}
         </main>
         <footer className="hidden text-[12px] text-fg-3 md:block">
-          Invite only · paper and live trading on Alpaca
+          Closed beta · invite only · paper and live trading on Alpaca
         </footer>
       </div>
       <aside className="auth-aside relative hidden flex-col items-center justify-center overflow-hidden px-8 py-12 md:flex lg:px-14">

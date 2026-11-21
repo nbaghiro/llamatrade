@@ -1,80 +1,55 @@
 import { useFundingStore } from '@llamatrade/core/stores/funding';
 import { usePortfolioStore } from '@llamatrade/core/stores/portfolio';
-import { Layers, Plus, PlugZap } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Layers, Plus, PlugZap, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { AddFundsDialog } from '../../components/funding/AddFundsDialog';
-import { AccountSplit, type AccountHalf } from '../../components/portfolio/AccountSplit';
-import { MoneyCurve, type MoneyRange } from '../../components/portfolio/MoneyCurve';
+import { AccountOverview } from '../../components/home/AccountOverview';
 import { SleeveStatement } from '../../components/portfolio/SleeveStatement';
-import { shortDate, sinceStart } from '../../components/portfolio/sleeveView';
 import { useEquityCurves } from '../../components/portfolio/useEquityCurves';
-import { useAllActivity, useSleeveFills } from '../../components/portfolio/usePortfolioData';
+import { liveFreeCash, useLiveAccount } from '../../components/portfolio/useLiveAccount';
+import { useResolvedSleeves } from '../../components/portfolio/usePortfolioData';
 import { usePageScope } from '../../components/shell/usePageScope';
 import {
   AttentionLine,
   EmptyState,
   LoadingLabel,
-  Money,
-  PageArt,
   PageHead,
   PanelError,
-  Pct,
-  Segmented,
-  Skeleton,
-  SkeletonChart,
+  ScopeControl,
   SkeletonRows,
 } from '../../components/ui';
 import { formatMoney } from '../../lib/format';
-import {
-  accountTotals,
-  causeSentence,
-  dayChange,
-  dayChangeFraction,
-} from '../../lib/portfolioView';
+import { accountTotals, causeSentence } from '../../lib/portfolioView';
 import { inScope } from '../../lib/scope';
 
-/** Where "Deploy a strategy" opens the sessions package's deploy sheet. */
+/** Where "Start a strategy" opens the sessions package's deploy sheet. */
 const DEPLOY_PATH = '/trading?deploy=1';
 
-const RANGES: readonly { key: MoneyRange; label: string }[] = [
-  { key: '1M', label: '1M' },
-  { key: '3M', label: '3M' },
-  { key: 'all', label: 'Since start' },
-];
-
-function Figure({ label, children }: { label: string; children: ReactNode }) {
+function SleevesSkeleton() {
   return (
-    <div className="min-w-0">
-      <span className="kicker">{label}</span>
-      <div className="mt-0.5 text-[17px] font-medium">{children}</div>
-    </div>
-  );
-}
-
-function OverviewSkeleton() {
-  return (
-    <div aria-busy="true" className="grid gap-4">
-      <LoadingLabel>Loading your portfolio</LoadingLabel>
-      <div className="panel-rim grid gap-4 px-5 py-4">
-        <Skeleton className="h-10 w-64" />
-        <SkeletonChart height={260} />
-      </div>
-      <div className="panel">
-        <SkeletonRows rows={4} cols={6} />
-      </div>
+    <div aria-busy="true" className="panel">
+      <LoadingLabel>Loading your sleeves</LoadingLabel>
+      <SkeletonRows rows={4} cols={6} />
     </div>
   );
 }
 
 export default function PortfolioPage() {
   const navigate = useNavigate();
-  const { sleeves, unallocated, summaryTotal, loading, loaded, error, fetchPortfolio } =
-    usePortfolioStore();
+  const {
+    sleeves: portfolioSleeves,
+    unallocated,
+    summaryTotal,
+    loading,
+    loaded,
+    error,
+    fetchPortfolio,
+  } = usePortfolioStore();
+  const sleeves = useResolvedSleeves(portfolioSleeves);
   const { resolved, accountId } = useFundingStore();
   const [fundsOpen, setFundsOpen] = useState(false);
-  const [range, setRange] = useState<MoneyRange>('all');
   const [now] = useState(() => new Date());
   const closeFunds = useCallback(() => setFundsOpen(false), []);
   const refresh = useCallback(() => fetchPortfolio(), [fetchPortfolio]);
@@ -103,7 +78,9 @@ export default function PortfolioPage() {
       ),
     [paperSleeves, unallocated, summaryTotal]
   );
-  const liveTotal = liveSleeves.reduce((s, x) => s + x.value, 0);
+  const liveAccount = useLiveAccount();
+  const liveFree = liveFreeCash(liveAccount);
+  const liveTotal = liveSleeves.reduce((s, x) => s + x.value, 0) + (liveFree ?? 0);
   const allTotal = totals.total + liveTotal;
 
   const { scope, setScope, options } = usePageScope('portfolio', {
@@ -112,39 +89,17 @@ export default function PortfolioPage() {
     paper: totals.total,
   });
 
-  const { rows } = useAllActivity();
-  const { fills } = useSleeveFills();
   const executionIds = useMemo(() => sleeves.map((s) => s.executionId), [sleeves]);
   const { curves } = useEquityCurves(executionIds);
 
   const indexed = sleeves.map((sleeve, index) => ({ sleeve, index }));
   const shown = indexed.filter(({ sleeve }) => inScope(scope, sleeve.live));
   const shownUnallocated = scope === 'live' ? null : totals.unallocated;
+  const shownLiveFree = scope === 'paper' ? null : liveFree;
+  const freeShown = (shownUnallocated ?? 0) + (shownLiveFree ?? 0);
   const shownSleeves = shown.map((x) => x.sleeve);
-  const total = shownSleeves.reduce((s, x) => s + x.value, 0) + (shownUnallocated ?? 0);
-  const today = shownSleeves.reduce((s, x) => s + dayChange(x.value, x.dayReturnPct), 0);
-  const added = shownSleeves.reduce((s, x) => s + x.allocatedCapital, 0) + (shownUnallocated ?? 0);
-  const gained = shownSleeves.reduce((s, x) => s + sinceStart(x), 0);
-  const firstStart = shownSleeves
-    .map((s) => s.startedAt)
-    .filter((d): d is Date => d !== null)
-    .sort((a, b) => a.getTime() - b.getTime())[0];
-
-  const halfOf = (kind: 'live' | 'paper'): AccountHalf => {
-    const list = kind === 'live' ? liveSleeves : paperSleeves;
-    const label = options.find((o) => o.key === kind)?.label ?? kind;
-    return {
-      kind,
-      label: `Alpaca ${label.replace(/^(Live|Paper)/, (m) => m.toLowerCase())}`,
-      value: kind === 'live' ? liveTotal : totals.total,
-      today: list.reduce((s, x) => s + dayChange(x.value, x.dayReturnPct), 0),
-      sleeves: list.map((s) => ({ id: s.executionId, name: s.name, value: s.value })),
-    };
-  };
-  const kinds = options.filter((o) => o.key !== 'all').map((o) => o.key as 'live' | 'paper');
-  const halves = (kinds.length ? kinds : (['paper'] as const)).map(halfOf);
-  const bothAccounts = halves.length > 1;
-  const scopeName = scope === 'all' ? 'paper and live' : scope;
+  const total = shownSleeves.reduce((s, x) => s + x.value, 0) + freeShown;
+  const bothAccounts = options.filter((o) => o.key !== 'all').length > 1;
 
   const frozen = sleeves.filter((s) => s.frozen);
   const firstLoad = !loaded || (loading && sleeves.length === 0 && !error);
@@ -163,22 +118,32 @@ export default function PortfolioPage() {
         Add paper funds
       </button>
       <button type="button" className="btn btn-primary" onClick={() => navigate(DEPLOY_PATH)}>
-        Deploy a strategy
+        Start a strategy
       </button>
     </>
   );
 
   return (
-    <div className="page relative isolate">
-      <PageArt shape="join" />
+    <div className="page">
       <PageHead
         title="Portfolio"
-        sub="Where the money sits in each Alpaca account and how it got there."
+        sub="Your account against SPY, each session's rules and holdings, and the cash in each sleeve."
         actions={actions}
+        scope={
+          options.length > 1 ? (
+            <ScopeControl options={options} value={scope} onChange={setScope} />
+          ) : undefined
+        }
       />
 
+      {!noAccount && (
+        <div className="mb-6">
+          <AccountOverview scope={scope} />
+        </div>
+      )}
+
       {firstLoad ? (
-        <OverviewSkeleton />
+        <SleevesSkeleton />
       ) : error && sleeves.length === 0 ? (
         <div className="panel">
           <PanelError
@@ -194,7 +159,7 @@ export default function PortfolioPage() {
           <EmptyState
             icon={PlugZap}
             title="Connect an Alpaca paper account"
-            body="Your sleeves and paper funds live in an Alpaca paper account. Connect one to add funds and deploy strategies."
+            body="Your sleeves and paper funds live in an Alpaca paper account. Connect one to add funds and start strategies."
             actions={
               <Link to="/settings/broker" className="btn btn-primary">
                 Connect paper account
@@ -221,71 +186,28 @@ export default function PortfolioPage() {
             />
           )}
 
-          <section className="panel-rim mb-4 px-5 pb-1.5 pt-4">
-            <div className="mb-3 flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
-              <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
-                <div>
-                  <span className="kicker">Total equity · {scopeName}</span>
-                  <div className="flex flex-wrap items-baseline gap-x-3">
-                    <Money
-                      value={total}
-                      className="text-[34px] font-medium leading-[1.1] tracking-[-0.03em] md:text-[36px]"
-                    />
-                    <span className="text-[13px]">
-                      <Money value={today} pnl /> ·{' '}
-                      <Pct value={dayChangeFraction(total, today)} pnl />{' '}
-                      <span className="text-fg-3">today</span>
-                    </span>
-                  </div>
-                </div>
-                {bothAccounts && scope === 'all' && (
-                  <>
-                    <Figure label="Live">
-                      <Money value={liveTotal} />
-                    </Figure>
-                    <Figure label="Paper">
-                      <Money value={totals.total} />
-                    </Figure>
-                  </>
-                )}
-                <Figure label="Money added">
-                  <Money value={added} />
-                </Figure>
-                {firstStart && (
-                  <Figure label={`Gain since ${shortDate(firstStart)}`}>
-                    <Money value={gained} pnl />
-                  </Figure>
-                )}
-              </div>
-              <Segmented label="Range" options={RANGES} value={range} onChange={setRange} />
-            </div>
-            <MoneyCurve
-              sleeves={shownSleeves}
-              unallocated={shownUnallocated}
-              rows={rows}
-              fills={fills}
-              curves={curves}
-              range={range}
-              now={now}
-            />
-          </section>
-
-          <div className="mb-4">
-            <AccountSplit halves={halves} scope={scope} onScope={setScope} />
-          </div>
-
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <div className="mb-2 flex flex-wrap items-center gap-2.5">
             <h2 className="m-0 text-[15px] font-semibold">
               {scope === 'all' ? 'Sleeves' : scope === 'live' ? 'Live sleeves' : 'Paper sleeves'}
             </h2>
             {bothAccounts && scope !== 'all' && (
               <button
                 type="button"
-                className="btn btn-secondary btn-sm"
+                className="inline-flex h-6 items-center gap-1.5 rounded-full border border-line-strong bg-sunk px-2.5 text-[12px] text-fg hover:border-accent"
                 onClick={() => setScope('all')}
+                aria-label={`Show both accounts, not ${scope} only`}
               >
-                Show both accounts
+                {scope === 'live' ? 'Live only' : 'Paper only'}
+                <X className="h-3 w-3 text-fg-3" aria-hidden="true" />
               </button>
+            )}
+            {bothAccounts && scope !== 'all' && (
+              <Link
+                to="/portfolio/checks"
+                className="ml-auto text-[12px] text-fg-3 hover:text-fg hover:underline max-md:hidden"
+              >
+                How this account compares with Alpaca
+              </Link>
             )}
           </div>
 
@@ -293,8 +215,8 @@ export default function PortfolioPage() {
             <div className="panel">
               <EmptyState
                 icon={Layers}
-                title="No strategies are deployed"
-                body="Each deployed strategy gets its own sleeve here. Until then, paper funds wait in unallocated cash."
+                title="No strategies are running"
+                body="Each strategy you start gets its own sleeve here. Until then, paper funds wait in unallocated cash."
                 actions={
                   <>
                     <button
@@ -309,7 +231,7 @@ export default function PortfolioPage() {
                       className="btn btn-primary"
                       onClick={() => navigate(DEPLOY_PATH)}
                     >
-                      Deploy a strategy
+                      Start a strategy
                     </button>
                   </>
                 }
@@ -319,12 +241,18 @@ export default function PortfolioPage() {
             <SleeveStatement
               sleeves={shown}
               unallocated={shownUnallocated}
+              liveUnallocated={shownLiveFree}
+              focus={bothAccounts && scope !== 'all' ? scope : null}
+              curves={curves}
+              now={now}
               footnote={
                 bothAccounts && scope === 'all'
                   ? `Live ${formatMoney(liveTotal)} + paper ${formatMoney(totals.total)}`
-                  : `${shown.length} ${shown.length === 1 ? 'sleeve' : 'sleeves'}${
-                      shownUnallocated !== null ? ' + unallocated cash' : ''
-                    }`
+                  : bothAccounts
+                    ? `Sleeves ${formatMoney(total - freeShown)} + unallocated ${formatMoney(freeShown)}`
+                    : `${shown.length} ${shown.length === 1 ? 'sleeve' : 'sleeves'}${
+                        shownUnallocated !== null ? ' + unallocated cash' : ''
+                      }`
               }
             />
           )}

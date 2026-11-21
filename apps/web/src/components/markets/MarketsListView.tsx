@@ -2,7 +2,7 @@ import { Search, X } from 'lucide-react';
 import { useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 
-import { formatMoney, formatNumber } from '../../lib/format';
+import { formatMoney, formatNumber, moveTone, TONE_TEXT } from '../../lib/format';
 import { etClock } from '../../lib/marketClock';
 import { nextRebalanceDate } from '../../lib/sessionState';
 import { Sparkline } from '../charts';
@@ -16,7 +16,7 @@ import { RANGES, type MarketsModel } from './useMarketsModel';
 
 function ChangeText({ value, pct }: { value: number; pct: number }) {
   return (
-    <span className={`num ${pct > 0 ? 'text-gain' : pct < 0 ? 'text-loss' : 'text-fg-3'}`}>
+    <span className={`num ${moveTone(pct) === 'flat' ? 'text-fg-3' : TONE_TEXT[moveTone(pct)]}`}>
       {formatNumber(pct, { signed: true })}%
       <span className="sr-only"> ({formatMoney(value, { signed: true })})</span>
     </span>
@@ -263,10 +263,8 @@ export function MarketsListView({ m }: { m: MarketsModel }) {
               {quote ? quote.price.toFixed(2) : '·'}
             </span>
             {quote && (
-              <span className="num rounded-[4px] bg-sunk px-1.5 py-0.5 text-[13px]">
-                <span
-                  className={quote.change > 0 ? 'text-gain' : quote.change < 0 ? 'text-loss' : ''}
-                >
+              <span className="num text-[13px]">
+                <span className={TONE_TEXT[moveTone(quote.changePercent)]}>
                   {formatNumber(quote.change, { signed: true })} ·{' '}
                   {formatNumber(quote.changePercent, { signed: true })}%
                 </span>

@@ -1,35 +1,32 @@
-import type { Strategy } from '@llamatrade/core/proto/strategy_pb';
 import { useStrategiesStore } from '@llamatrade/core/stores/strategies';
+import { useTradingStore } from '@llamatrade/core/stores/trading';
 import { Plus, Search } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import { LaneLegend } from '../../components/charts';
-import { DeploySheet } from '../../components/sessions/DeploySheet';
-import { etToday } from '../../components/sessions/sessionRows';
 import { useSessionRows } from '../../components/shell/useSessionRows';
-import { stageRow, trackSummary } from '../../components/strategies/stageModel';
-import {
-  StageTrackHead,
-  StageTrackPhoneRow,
-  StageTrackRow,
-} from '../../components/strategies/StageTrackTable';
+import { listSummary, splitByRunning } from '../../components/strategies/runningModel';
+import { NotRunningSection, RunningSection } from '../../components/strategies/RunningVsBacktest';
 import { StrategiesEmpty } from '../../components/strategies/StrategiesEmpty';
 import { useMediaQuery } from '../../components/strategies/useMediaQuery';
-import { NoMatch, PageArt, PageHead, PanelError, Skeleton } from '../../components/ui';
-import { useUIStore } from '../../store/ui';
+import { NoMatch, PageHead, PanelError, Skeleton } from '../../components/ui';
 
 const PAGE_SIZE = 100;
 
 export default function StrategiesPage() {
   const { strategies, loading, error, fetchStrategies } = useStrategiesStore();
-  const openNewStrategyDialog = useUIStore((s) => s.openNewStrategyDialog);
   const sessions = useSessionRows();
   const [query, setQuery] = useState('');
   const [requested, setRequested] = useState(false);
-  const [deploying, setDeploying] = useState<Strategy | null>(null);
-  const wide = useMediaQuery('(min-width: 1024px)');
-  const today = useMemo(() => etToday(), []);
+  const wide = useMediaQuery('(min-width: 768px)');
+  const tradingLoaded = useTradingStore((s) => s.loaded);
+  const tradingLoading = useTradingStore((s) => s.loading);
+  const tradingError = useTradingStore((s) => s.error);
+  const loadBlotter = useTradingStore((s) => s.loadBlotter);
+
+  useEffect(() => {
+    if (!tradingLoaded && !tradingLoading) loadBlotter().catch(() => undefined);
+  }, [tradingLoaded, tradingLoading, loadBlotter]);
 
   useEffect(() => {
     useStrategiesStore.setState({
@@ -51,17 +48,17 @@ export default function StrategiesPage() {
     );
   }, [strategies, query]);
 
-  const summary = useMemo(
-    () => trackSummary(strategies.map((s) => stageRow(s, null, sessions, today))),
-    [strategies, sessions, today]
-  );
+  const all = useMemo(() => splitByRunning(strategies, sessions), [strategies, sessions]);
+  const split = useMemo(() => splitByRunning(shown, sessions), [shown, sessions]);
+  const summary = listSummary(all.running.length, all.notRunning.length);
 
-  const firstLoad = (!requested || loading) && strategies.length === 0;
+  const firstLoad =
+    ((!requested || loading) && strategies.length === 0) ||
+    (strategies.length > 0 && !tradingLoaded && !tradingError);
 
   if (!firstLoad && !error && strategies.length === 0) {
     return (
       <div className="page relative isolate">
-        <PageArt shape="build" />
         <PageHead
           title="Make your first strategy"
           documentTitle="Strategies"
@@ -90,11 +87,8 @@ export default function StrategiesPage() {
     </label>
   );
 
-  const Row = wide ? StageTrackRow : StageTrackPhoneRow;
-
   return (
     <div className="page relative isolate">
-      <PageArt shape="own" />
       <PageHead
         title="Strategies"
         sub={firstLoad ? ' ' : summary}
@@ -104,80 +98,49 @@ export default function StrategiesPage() {
             <Link to="/strategies/templates" className="btn btn-secondary">
               Templates
             </Link>
-            <button type="button" onClick={openNewStrategyDialog} className="btn btn-primary">
+            <Link to="/strategies/builder" className="btn btn-primary">
               <Plus className="h-4 w-4" />
               New strategy
-            </button>
+            </Link>
           </>
         }
       />
 
-      <section className="panel-rim overflow-hidden" aria-label="Strategies by stage">
-        <div role="table" aria-label="Strategies by stage">
-          {wide && <StageTrackHead />}
-          {firstLoad ? (
-            <div aria-busy="true">
-              {[0, 1, 2, 3].map((i) => (
-                <div key={i} className="grid gap-2 border-t border-line px-5 py-4 first:border-t-0">
-                  <Skeleton className="h-3 w-40" />
-                  <Skeleton className="h-2.5 w-full" />
-                </div>
-              ))}
+      {firstLoad ? (
+        <div aria-busy="true" className="grid gap-4 md:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="panel grid gap-3 px-4 py-4">
+              <Skeleton className="h-3 w-40" />
+              <Skeleton className="h-5 w-28" />
+              <Skeleton className="h-[110px] w-full" />
             </div>
-          ) : error ? (
-            <PanelError
-              title="Strategies couldn’t be loaded"
-              cause={error}
-              onRetry={() => {
-                fetchStrategies().catch(() => undefined);
-              }}
-            />
-          ) : shown.length === 0 ? (
-            <NoMatch
-              noun="strategies"
-              query={query}
-              filters={[]}
-              total={strategies.length}
-              onClear={() => setQuery('')}
-            />
-          ) : (
-            <div className="[&>div:first-child]:border-t-0">
-              {shown.map((s) => (
-                <Row
-                  key={s.id}
-                  strategy={s}
-                  sessions={sessions}
-                  today={today}
-                  onDeploy={setDeploying}
-                />
-              ))}
-            </div>
-          )}
+          ))}
         </div>
-      </section>
-
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 text-[12px] text-fg-3">
-        <p className="m-0 max-w-[760px]">
-          Backtested shows each strategy’s latest completed backtest against its benchmark. Paper
-          and Live show the session’s value on Alpaca.
-        </p>
-        <LaneLegend
-          items={[
-            { shape: 'dot', label: 'Current stage' },
-            { shape: 'planned', label: 'Next step' },
-          ]}
-        />
-      </div>
-
-      {deploying && (
-        <DeploySheet
-          open
-          onClose={() => setDeploying(null)}
-          strategyId={deploying.id}
-          strategyName={deploying.name}
-          strategyVersion={deploying.version}
-          rebalance={deploying.rebalance || undefined}
-        />
+      ) : error ? (
+        <div className="panel">
+          <PanelError
+            title="Strategies couldn’t be loaded"
+            cause={error}
+            onRetry={() => {
+              fetchStrategies().catch(() => undefined);
+            }}
+          />
+        </div>
+      ) : shown.length === 0 ? (
+        <div className="panel">
+          <NoMatch
+            noun="strategies"
+            query={query}
+            filters={[]}
+            total={strategies.length}
+            onClear={() => setQuery('')}
+          />
+        </div>
+      ) : (
+        <>
+          <RunningSection items={split.running} wide={wide} />
+          <NotRunningSection strategies={split.notRunning} sessions={sessions} wide={wide} />
+        </>
       )}
     </div>
   );

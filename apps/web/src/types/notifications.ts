@@ -92,7 +92,7 @@ const CATEGORY_LABELS: Partial<Record<NotificationCategory, string>> = {
   [NotificationCategory.STOP_LOSS_HIT]: 'Stop loss hit',
   [NotificationCategory.TAKE_PROFIT_HIT]: 'Take profit hit',
   [NotificationCategory.RECONCILIATION_DRIFT]: 'Reconciliation drift',
-  [NotificationCategory.EXECUTION_STARTED]: 'Strategy deployed',
+  [NotificationCategory.EXECUTION_STARTED]: 'Session started',
   [NotificationCategory.EXECUTION_STOPPED]: 'Strategy stopped',
   [NotificationCategory.FUNDING_FAILED]: 'Funding failed',
   [NotificationCategory.SLEEVE_RELEASE_DEFERRED]: 'Capital release delayed',

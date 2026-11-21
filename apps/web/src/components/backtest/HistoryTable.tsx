@@ -92,11 +92,7 @@ export function HistoryTable({
                 </td>
                 {!compact && (
                   <td className={T.tdN}>
-                    {done && m ? (
-                      <Pct value={-Math.abs(toNumber(m.maxDrawdown))} pnl dp={1} />
-                    ) : (
-                      dot
-                    )}
+                    {done && m ? <Pct value={-Math.abs(toNumber(m.maxDrawdown))} dp={1} /> : dot}
                   </td>
                 )}
                 {!compact && (

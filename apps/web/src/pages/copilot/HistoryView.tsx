@@ -2,7 +2,16 @@ import { sessionWhen } from '@llamatrade/core/agent/history';
 import { MessageRole, type AgentMessage, type AgentSession } from '@llamatrade/core/stores/agent';
 import { ArrowLeft, Plus, Search, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 
+import {
+  answerObjects,
+  objectText,
+  resultPicture,
+  type AnswerObject,
+  type ResultPicture,
+} from '../../components/agent/answerObjects';
+import { UserBubble } from '../../components/agent/ChatMessage';
 import {
   conversationKinds,
   highlight,
@@ -13,7 +22,10 @@ import {
   type ConversationKind,
   type SearchHit,
 } from '../../components/agent/historySearch';
+import { CitationMark } from '../../components/agent/SourceMarks';
+import { threadSources } from '../../components/agent/sources';
 import { SEARCH_DEPTH, useConversationIndex } from '../../components/agent/useConversationIndex';
+import { CopilotMark } from '../../components/common/Logo';
 import { Skeleton } from '../../components/ui';
 
 type Filter = 'all' | ConversationKind;
@@ -35,6 +47,167 @@ function Marked({ text, query }: { text: string; query: string }) {
   );
 }
 
+const PCT = (w: number) => `${(w * 100).toFixed(1)}%`;
+
+/** The small picture beside a result: the holdings or symbols the conversation read. */
+function Picture({ picture, query }: { picture: ResultPicture; query: string }) {
+  const q = query.trim().toLowerCase();
+  return (
+    <span
+      aria-hidden="true"
+      className="grid h-10 w-16 flex-none place-items-center overflow-hidden rounded-[7px] border border-line bg-panel px-1.5"
+    >
+      {picture.kind === 'holdings' ? (
+        <span className="grid w-full gap-[3px]">
+          {picture.rows.map((r) => (
+            <span key={r.symbol} className="flex items-center gap-1">
+              <span
+                className={`w-6 font-mono text-[8.5px] ${q && r.symbol.toLowerCase().includes(q) ? 'text-accent' : 'text-fg-3'}`}
+              >
+                {r.symbol}
+              </span>
+              <span className="h-[3px] flex-1 rounded-full bg-sunk">
+                <i
+                  className="block h-full rounded-full bg-accent/70"
+                  style={{ width: `${Math.max(6, r.weight * 100)}%` }}
+                />
+              </span>
+            </span>
+          ))}
+        </span>
+      ) : picture.kind === 'symbols' ? (
+        <span className="truncate font-mono text-[10px] text-fg-2">
+          {picture.symbols.map((sym, i) => (
+            <span
+              key={sym}
+              className={q && sym.toLowerCase().includes(q) ? 'font-semibold text-accent' : ''}
+            >
+              {i > 0 ? ' · ' : ''}
+              {sym}
+            </span>
+          ))}
+        </span>
+      ) : (
+        <CopilotMark className="h-4 w-4 text-fg-3" />
+      )}
+    </span>
+  );
+}
+
+function MatchTag() {
+  return (
+    <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.06em] text-accent">
+      Match
+    </span>
+  );
+}
+
+/** A record the answer read, drawn as a card; the one matching the search is outlined. */
+function ObjectCard({ object, query }: { object: AnswerObject; query: string }) {
+  const q = query.trim().toLowerCase();
+  const hit = q !== '' && objectText(object).toLowerCase().includes(q);
+  const frame = `grid gap-2.5 rounded-[10px] border bg-panel px-3.5 py-3 ${
+    hit ? 'border-accent/45 shadow-[0_0_0_3px_var(--accent-soft)]' : 'border-line'
+  }`;
+  if (object.kind === 'holdings') {
+    return (
+      <div className={frame}>
+        <div className="flex items-center gap-2">
+          <b className="text-[13px] font-semibold">Positions</b>
+          <CitationMark n={object.n} />
+          <span className="text-[12px] text-fg-3">across your account</span>
+          <span className="flex-1" />
+          {hit && <MatchTag />}
+        </div>
+        <div className="grid gap-1.5">
+          {object.rows.map((r) => {
+            const on = q !== '' && r.symbol.toLowerCase().includes(q);
+            return (
+              <div
+                key={r.symbol}
+                className="grid grid-cols-[52px_minmax(0,1fr)_56px] items-center gap-3 text-[12.5px]"
+              >
+                <span className={`font-mono ${on ? 'font-semibold text-fg' : 'text-fg-2'}`}>
+                  {on ? <Marked text={r.symbol} query={query} /> : r.symbol}
+                </span>
+                <span className="h-1.5 rounded-full bg-sunk">
+                  <i
+                    className={`block h-full rounded-full ${on ? 'bg-accent' : 'bg-fg-3/45'}`}
+                    style={{ width: `${Math.max(2, r.weight * 100)}%` }}
+                  />
+                </span>
+                <span className="num text-right text-fg-2">{PCT(r.weight)}</span>
+              </div>
+            );
+          })}
+        </div>
+        {object.more > 0 && (
+          <span className="text-[12px] text-fg-3">
+            {object.more} more {object.more === 1 ? 'position' : 'positions'}
+          </span>
+        )}
+      </div>
+    );
+  }
+  if (object.kind === 'strategy') {
+    return (
+      <div className={frame}>
+        <div className="flex flex-wrap items-center gap-2">
+          <b className="text-[13px] font-semibold">
+            <Marked text={object.name} query={query} />
+          </b>
+          {object.version && (
+            <span className="text-[12px] text-fg-3">version {object.version}</span>
+          )}
+          <CitationMark n={object.n} />
+          <span className="flex-1" />
+          {hit && <MatchTag />}
+          {object.href && (
+            <Link to={object.href} className="text-[12.5px] text-accent hover:underline">
+              Open
+            </Link>
+          )}
+        </div>
+        {object.symbols.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {object.symbols.map((sym) => (
+              <span
+                key={sym}
+                className="rounded-[5px] border border-line px-1.5 py-0.5 font-mono text-[11.5px] text-fg-2"
+              >
+                <Marked text={sym} query={query} />
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div className={frame}>
+      <div className="flex items-center gap-2">
+        <b className="text-[13px] font-semibold">{object.title}</b>
+        <CitationMark n={object.n} />
+        <span className="flex-1" />
+        {hit && <MatchTag />}
+        {object.href && (
+          <Link to={object.href} className="text-[12.5px] text-accent hover:underline">
+            Open
+          </Link>
+        )}
+      </div>
+      <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-1 text-[12.5px]">
+        {object.figures.map((f) => (
+          <div key={f.label} className="flex justify-between gap-2">
+            <dt className="text-fg-3">{f.label}</dt>
+            <dd className="num m-0">{f.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
 function Reading({
   session,
   messages,
@@ -52,12 +225,14 @@ function Reading({
   useEffect(() => {
     ref.current?.querySelector('[data-hit]')?.scrollIntoView({ block: 'center' });
   }, [hit, messages]);
+  const sources = useMemo(() => threadSources(messages ?? []), [messages]);
+  const firstOf = (id: string) => sources.find((s) => s.messageId === id)?.n ?? 1;
 
   return (
     <section aria-label={session.title || 'Conversation'} className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-none items-center justify-between gap-3 border-b border-line px-6 py-4">
+      <div className="flex flex-none items-center justify-between gap-3 border-b border-line px-6 py-3.5">
         <div className="flex min-w-0 items-baseline gap-2.5">
-          <b className="truncate text-[14.5px] font-semibold">{session.title || 'Untitled'}</b>
+          <b className="truncate text-[14px] font-semibold">{session.title || 'Untitled'}</b>
           <span className="flex-none text-[12px] text-fg-3">
             {sessionWhen(session.lastActivityAt?.seconds)}
           </span>
@@ -67,26 +242,24 @@ function Reading({
         </button>
       </div>
       <div ref={ref} className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto grid max-w-[640px] gap-5 px-6 py-7">
+        <div className="mx-auto grid max-w-[600px] gap-5 px-6 py-6">
           {!messages ? (
             <div className="grid gap-3">
               <Skeleton className="ml-auto h-9 w-1/2" />
               <Skeleton className="h-16 w-full" />
             </div>
           ) : (
-            messages.map((m) =>
-              m.role === MessageRole.USER ? (
-                <div key={m.id} className="grid justify-items-end">
-                  <div className="max-w-[80%] whitespace-pre-wrap rounded-[10px] bg-fg px-3.5 py-2.5 text-[14px] text-canvas">
-                    {m.content}
-                  </div>
-                </div>
-              ) : (
-                <div key={m.id} className="grid gap-2 text-[14px] leading-[1.6]">
-                  <span className="font-mono text-[11px] text-fg-3">
+            messages.map((m) => {
+              if (m.role === MessageRole.USER) return <UserBubble key={m.id} text={m.content} />;
+              const mine = sources.filter((s) => s.messageId === m.id);
+              const objects = answerObjects(m, firstOf(m.id));
+              return (
+                <div key={m.id} className="grid gap-2.5 text-[14px] leading-[1.6]">
+                  <span className="flex items-center gap-1.5 font-mono text-[11px] text-fg-3">
+                    <CopilotMark className="h-3.5 w-3.5 text-fg-2" />
                     Copilot
-                    {m.toolCalls.length > 0 &&
-                      ` · ${m.toolCalls.length} ${m.toolCalls.length === 1 ? 'source' : 'sources'}`}
+                    {mine.length > 0 &&
+                      ` · ${mine.length} ${mine.length === 1 ? 'source' : 'sources'}`}
                   </span>
                   {paragraphs(m.content).map((p, i) => {
                     const on = hit?.messageId === m.id && hit.paragraph === i;
@@ -100,9 +273,28 @@ function Reading({
                       </p>
                     );
                   })}
+                  {objects.map((o) => (
+                    <ObjectCard key={`${o.kind}-${o.n}`} object={o} query={query} />
+                  ))}
+                  {mine.length > 0 && (
+                    <div className="flex flex-wrap gap-x-3.5 gap-y-1 text-[12px] text-fg-3">
+                      {mine.map((s) => (
+                        <span key={s.n} className="inline-flex items-center gap-1.5">
+                          <CitationMark n={s.n} />
+                          {s.href ? (
+                            <Link to={s.href} className="hover:text-accent">
+                              {s.title}
+                            </Link>
+                          ) : (
+                            s.title
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )
-            )
+              );
+            })
           )}
         </div>
       </div>
@@ -222,7 +414,7 @@ export function HistoryView({
             ))}
           </div>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">
           {loading && sessions.length === 0 ? (
             <div className="grid gap-4 pt-2" aria-hidden="true">
               {[0, 1, 2].map((i) => (
@@ -245,33 +437,32 @@ export function HistoryView({
             results.map(({ session: s, messages, hit }) => {
               const on = current?.session.id === s.id;
               return (
-                <div key={s.id} className="group relative border-b border-line">
+                <div key={s.id} className="group relative">
                   <button
                     type="button"
                     onClick={() => setSelected(s.id)}
                     aria-current={on ? 'true' : undefined}
-                    className={`grid w-full gap-1.5 py-3.5 pr-8 text-left ${on ? '' : 'opacity-90 hover:opacity-100'}`}
+                    className={`flex w-full items-start gap-3 rounded-[10px] px-2.5 py-3 pr-8 text-left ${on ? 'bg-sunk' : 'hover:bg-sunk/60'}`}
                   >
-                    <span className="flex items-baseline justify-between gap-3">
-                      <b
-                        className={`truncate text-[13.5px] font-semibold ${on ? 'text-accent' : ''}`}
-                      >
-                        {s.title || 'Untitled'}
-                      </b>
-                      <span className="flex-none font-mono text-[11.5px] text-fg-3">
-                        {sessionWhen(s.lastActivityAt?.seconds)}
+                    {messages && <Picture picture={resultPicture(messages)} query={query} />}
+                    <span className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)] gap-1">
+                      <span className="flex min-w-0 items-baseline justify-between gap-3">
+                        <b className="truncate text-[13.5px] font-semibold">
+                          {s.title || 'Untitled'}
+                        </b>
+                        <span className="flex-none font-mono text-[11.5px] text-fg-3">
+                          {sessionWhen(s.lastActivityAt?.seconds)}
+                        </span>
                       </span>
+                      {hit && hit.paragraph >= 0 && (
+                        <span className="line-clamp-2 text-[13px] leading-[1.5] text-fg-2">
+                          <Marked text={hit.text} query={query} />
+                        </span>
+                      )}
+                      {messages && outcomeLabel(messages) && (
+                        <span className="text-[12px] text-fg-3">{outcomeLabel(messages)}</span>
+                      )}
                     </span>
-                    {hit && hit.paragraph >= 0 && (
-                      <span
-                        className={`line-clamp-3 border-l-2 pl-3 text-[13px] leading-[1.55] text-fg-2 ${on ? 'border-accent' : 'border-line-strong'}`}
-                      >
-                        <Marked text={hit.text} query={query} />
-                      </span>
-                    )}
-                    {messages && outcomeLabel(messages) && (
-                      <span className="text-[12px] text-fg-3">{outcomeLabel(messages)}</span>
-                    )}
                   </button>
                   {confirming === s.id ? (
                     <span className="absolute right-0 top-3 flex items-center gap-1 rounded-[7px] border border-line-strong bg-panel px-1.5 py-1 text-xs shadow-sm">

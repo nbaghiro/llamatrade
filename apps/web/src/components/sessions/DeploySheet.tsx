@@ -1,15 +1,16 @@
 import { ExecutionMode } from '@llamatrade/core/proto/common_pb';
-import { toDate } from '@llamatrade/core/stores/backtest';
+import { toDate, useBacktestStore } from '@llamatrade/core/stores/backtest';
 import { useBrokerStore } from '@llamatrade/core/stores/broker';
 import { useDeployStore, validateDeploy } from '@llamatrade/core/stores/deploy';
 import { useFundingStore } from '@llamatrade/core/stores/funding';
 import { useStrategiesStore } from '@llamatrade/core/stores/strategies';
 import { useTradingStore } from '@llamatrade/core/stores/trading';
+import { BarChart3 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { formatMoney } from '../../lib/format';
-import { maskedKey } from '../../lib/scope';
+import { alpacaAccountLabel } from '../../lib/scope';
 import { DEFAULT_RISK_LIMITS } from '../../lib/sessionState';
 import { KvList } from '../backtest/parts';
 import { AnnotatedCurve, type CurveLane } from '../charts';
@@ -17,6 +18,7 @@ import { useSessionRows } from '../shell/useSessionRows';
 import { ModeBadge } from '../ui/ModeBadge';
 import { Sheet } from '../ui/Sheet';
 
+import { backtestLine, holidayNote } from './deployNotes';
 import { dayLabel, etToday, rowNextRebalance } from './sessionRows';
 import { etDayLabel, etHm, fillDays, nextRebalances } from './timeline';
 
@@ -75,6 +77,8 @@ export function DeploySheet({
   const rows = useSessionRows();
   const strategiesLoaded = useStrategiesStore((s) => s.strategies.length > 0);
   const fetchStrategies = useStrategiesStore((s) => s.fetchStrategies);
+  const recentRuns = useBacktestStore((s) => s.recentRuns);
+  const fetchRecentRuns = useBacktestStore((s) => s.fetchRecentRuns);
   const [draft, setDraft] = useState('');
   const [name, setName] = useState(strategyName);
   const [touched, setTouched] = useState(false);
@@ -93,7 +97,16 @@ export function DeploySheet({
     if (!open) return;
     if (!loaded) loadBlotter().catch(() => undefined);
     if (!strategiesLoaded) fetchStrategies().catch(() => undefined);
-  }, [open, loaded, loadBlotter, strategiesLoaded, fetchStrategies]);
+    if (recentRuns.length === 0) fetchRecentRuns(24).catch(() => undefined);
+  }, [
+    open,
+    loaded,
+    loadBlotter,
+    strategiesLoaded,
+    fetchStrategies,
+    recentRuns.length,
+    fetchRecentRuns,
+  ]);
 
   useEffect(() => {
     if (!open || !resolved) return;
@@ -114,8 +127,9 @@ export function DeploySheet({
     : null;
   const noKeys = resolved && credentialId === null;
   const cred = credentials.find((c) => c.id === credentialId);
-  const account = `Alpaca paper${cred ? ` ${maskedKey(cred.apiKeyPrefix)}` : ''}`;
+  const account = alpacaAccountLabel(false, cred?.accountNumber);
 
+  const tested = backtestLine(recentRuns, strategyId, strategyVersion);
   const now = new Date();
   const today = etToday(now);
   const planned = nextRebalances(rebalance ?? '', today, 2);
@@ -166,7 +180,12 @@ export function DeploySheet({
       spans: [{ from: now, style: 'off' }],
       events: [],
       future: {
-        events: planned.map((at) => ({ at, shape: 'planned' as const })),
+        events: planned.map((at, i) => ({
+          at,
+          shape: 'planned' as const,
+          text:
+            i === 0 && amount > 0 ? `${formatMoney(amount, { dp: 0 })} waits as cash` : undefined,
+        })),
         note: planned.length ? undefined : 'Starts with the next market data',
       },
     },
@@ -210,7 +229,7 @@ export function DeploySheet({
       title={
         <span className="grid gap-0.5">
           <span className="flex items-center gap-2">
-            Deploy {strategyName}
+            Start {strategyName}
             <ModeBadge mode="paper" size="sm" />
           </span>
           <span className="text-xs font-normal text-fg-3">
@@ -239,7 +258,7 @@ export function DeploySheet({
             }
             onClick={onStart}
           >
-            {deploying ? 'Starting…' : 'Start paper session'}
+            {deploying ? 'Starting…' : 'Start on paper'}
           </button>
         </>
       }
@@ -281,20 +300,28 @@ export function DeploySheet({
             </Step>
             <Step when={PERIOD[freq] ?? 'After that'} title="One rebalance">
               {planned[1]
-                ? `The next one runs on ${dayLabel(planned[1])}, the first trading day of its period.`
+                ? `The next one runs on ${dayLabel(planned[1])}, the first trading day of its period.${
+                    holidayNote(planned[1]) ? ` ${holidayNote(planned[1])}` : ''
+                  }`
                 : 'It rebalances on its schedule, and nothing trades in between.'}
             </Step>
           </ol>
         </div>
 
         <div className="grid content-start gap-4">
+          {tested && (
+            <p className="m-0 flex gap-2 rounded-[8px] border border-line bg-sunk px-3 py-2.5 text-[12.5px] text-fg-2">
+              <BarChart3 className="mt-0.5 h-3.5 w-3.5 flex-none text-fg-3" aria-hidden="true" />
+              <span>{tested}</span>
+            </p>
+          )}
           {noKeys ? (
             <div
               role="alert"
               className="rounded-[8px] border border-risk-line bg-risk-soft px-3 py-2.5 text-[12.5px]"
             >
               <b className="block font-semibold text-risk">Alpaca paper isn&apos;t connected</b>
-              Connect your paper keys in Settings, then deploy from here.{' '}
+              Connect your paper keys in Settings, then start from here.{' '}
               <Link to="/settings/broker" className="text-accent hover:underline">
                 Open Settings
               </Link>

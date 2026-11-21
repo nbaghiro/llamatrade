@@ -1,3 +1,4 @@
+import { fixedTargets } from '@llamatrade/core/agent/structure';
 import { ExecutionMode } from '@llamatrade/core/proto/common_pb';
 import { OrderSide, type Order } from '@llamatrade/core/proto/trading_pb';
 import { toDate, toNumber, useBacktestStore } from '@llamatrade/core/stores/backtest';
@@ -8,10 +9,23 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import { Panel } from '../../components/backtest/parts';
-import { AnnotatedCurve, type CurveLane, type CurvePin } from '../../components/charts';
+import {
+  AnnotatedCurve,
+  type CurveLane,
+  type CurvePin,
+  type LaneEvent,
+} from '../../components/charts';
 import { Blotter, buildSessionRow, etToday, rowNextRebalance } from '../../components/sessions';
 import { FrozenPanel } from '../../components/sessions/FrozenPanel';
-import { dayLabel } from '../../components/sessions/sessionRows';
+import { describeRejection, isRefused, ordersToday } from '../../components/sessions/rejection';
+import { RejectionCard } from '../../components/sessions/RejectionCard';
+import {
+  dayLabel,
+  isDaily,
+  marketNotes,
+  relativeDay,
+  rowNextRun,
+} from '../../components/sessions/sessionRows';
 import { StopDialog } from '../../components/sessions/StopDialog';
 import {
   asOf,
@@ -29,6 +43,7 @@ import {
   windowed,
   type TimeRange,
 } from '../../components/sessions/timeline';
+import { useStrategyRules } from '../../components/sessions/useStrategyRules';
 import {
   Menu,
   ModeBadge,
@@ -42,11 +57,25 @@ import { Money, Pct } from '../../components/ui/Num';
 import { PanelError } from '../../components/ui/PanelError';
 import { SkeletonChart, SkeletonFigure } from '../../components/ui/Skeleton';
 import { formatMoney, formatNumber, formatPct } from '../../lib/format';
-import { maskedKey } from '../../lib/scope';
+import { etParts } from '../../lib/marketClock';
+import { marketDay } from '../../lib/marketHolidays';
+import { alpacaAccountLabel } from '../../lib/scope';
 
 const DAY_MS = 86_400_000;
 const MAX_LANES = 6;
 const qty = (v: number) => formatNumber(v, { dp: Number.isInteger(v) ? 0 : 2 });
+
+type SessionRange = TimeRange | 'today';
+const SESSION_RANGES: readonly { key: SessionRange; label: string }[] = [
+  { key: 'today', label: 'Today' },
+  ...RANGE_OPTIONS,
+];
+
+/** A New York wall-clock time on the same day as `now`, e.g. 09:30. */
+function etTimeToday(now: Date, minutes: number): Date {
+  const p = etParts(now);
+  return new Date(now.getTime() + (minutes - p.minutes) * 60_000 - now.getSeconds() * 1000);
+}
 
 /** /trading/:sessionId: the session on its own annotated curve (detail2 A), amber when frozen (frozen2 A). */
 export default function SessionPage() {
@@ -63,7 +92,17 @@ export default function SessionPage() {
   const fetchStrategies = useBacktestStore((s) => s.fetchStrategies);
   const credentials = useBrokerStore((s) => s.credentials);
   const fetchCredentials = useBrokerStore((s) => s.fetch);
-  const [range, setRange] = useState<TimeRange>('all');
+  const placeOrder = useTradingStore((s) => s.placeOrder);
+  const placing = useTradingStore((s) => s.placing);
+  const placeError = useTradingStore((s) => s.placeError);
+  const [chosenRange, setRange] = useState<SessionRange | null>(null);
+  const sessionStrategy = useTradingStore((s) =>
+    s.detail?.session.id === sessionId ? s.detail.session.strategyId : ''
+  );
+  const sessionVersion = useTradingStore((s) =>
+    s.detail?.session.id === sessionId ? (s.detail.execution?.version ?? 0) : 0
+  );
+  const rules = useStrategyRules(sessionStrategy, sessionVersion);
   const [stopping, setStopping] = useState(false);
 
   const reload = useCallback(() => {
@@ -133,9 +172,18 @@ export default function SessionPage() {
   const ended = row.view.open ? null : (toDate(session.endedAt) ?? toDate(execution?.stoppedAt));
   const end = ended ?? now;
   const next = rowNextRebalance(row, today);
+  const nextCheck = rowNextRun(row, now);
+  const daily = isDaily(row.rebalance);
   const frozen = row.state === 'frozen';
   const cred = credentials.find((c) => c.id === execution?.credentialsId);
-  const account = `Alpaca ${mode}${cred ? ` ${maskedKey(cred.apiKeyPrefix)}` : ''}`;
+  const other = cred
+    ? credentials.find((c) => c.isActive && c.isPaper !== cred.isPaper)
+    : undefined;
+  const account = alpacaAccountLabel(mode === 'live', cred?.accountNumber, other?.accountNumber);
+  const refusedToday = ordersToday(orders, now);
+  const range: SessionRange =
+    chosenRange ?? (refusedToday.refused > 0 && row.view.open ? 'today' : 'all');
+  const isToday = range === 'today';
   const allocated = execution?.allocatedCapital ? toNumber(execution.allocatedCapital) : null;
   const cash = row.sleeve?.cash ? toNumber(row.sleeve.cash.balance) : null;
 
@@ -144,9 +192,21 @@ export default function SessionPage() {
     .filter((x) => x.q !== 0)
     .sort((a, b) => b.value - a.value);
   const equityForWeights = f.equity ?? held.reduce((s, x) => s + x.value, 0) + (cash ?? 0);
+  const rulesKnown = Boolean(rules?.trim());
+  const targets = rules && rulesKnown ? fixedTargets(rules) : null;
+  const weightOf = (symbol: string) => {
+    const h = held.find((x) => x.p.symbol === symbol);
+    return h && equityForWeights > 0 ? h.value / equityForWeights : 0;
+  };
 
   const full = toSeries(detail.curve);
-  const start = rangeStart(range, end, started);
+  const openToday = etTimeToday(now, 9 * 60 + 30);
+  const dayStart = openToday < end ? openToday : new Date(end.getTime() - 6.5 * 3_600_000);
+  const start = isToday
+    ? started && started > dayStart && started < end
+      ? started
+      : dayStart
+    : rangeStart(range, end, started);
   const series = windowed(full, start, end, row.view.open ? f.equity : null);
   const bench = detail.benchmark.length ? asOf(toSeries(detail.benchmark), series.dates) : [];
   const benchmark = bench.some(Number.isFinite) ? bench : undefined;
@@ -166,6 +226,14 @@ export default function SessionPage() {
     .filter((x) => etDayKey(x.at) === todayKey)
     .sort((a, b) => a.at.getTime() - b.at.getTime());
   const value = (o: Order) => toNumber(o.filledQuantity) * toNumber(o.averageFillPrice);
+  const todayList = [
+    ...todays.map((x) => ({ ...x, rejection: null })),
+    ...orders
+      .filter(isRefused)
+      .map((o) => describeRejection(o, orders))
+      .filter((r): r is NonNullable<typeof r> => r !== null && etDayKey(r.at) === todayKey)
+      .map((r) => ({ o: r.order, at: r.at, rejection: r })),
+  ].sort((a, b) => a.at.getTime() - b.at.getTime());
   const largest = [...filled].sort((a, b) => value(b.o) - value(a.o))[0];
   const inWindow = (d: Date) => d >= start && d <= end;
 
@@ -194,13 +262,57 @@ export default function SessionPage() {
       : []),
   ];
 
-  const lanesFor = symbolLanes(
-    orders,
-    held.map((x) => x.p.symbol)
-  );
+  const refused = orders.filter(isRefused);
+  const lanesFor = symbolLanes(orders, [
+    ...held.map((x) => x.p.symbol),
+    ...refused.map((o) => o.symbol),
+  ]);
+  const refusedEvents = (symbol: string): LaneEvent[] =>
+    refused
+      .filter((o) => o.symbol === symbol)
+      .map((o) => describeRejection(o, orders))
+      .filter((r): r is NonNullable<typeof r> => r !== null)
+      .map((r) => ({
+        at: r.at,
+        shape: 'dot' as const,
+        tone: 'risk' as const,
+        title: `${r.title}, ${etDayLabel(r.at)} ${etHm(r.at)}`,
+        card: (close: () => void) => (
+          <RejectionCard
+            rejection={r}
+            canPlace={row.state === 'running'}
+            placing={placing}
+            error={placeError}
+            nextLabel={nextCheck ? relativeDay(nextCheck, today) : null}
+            onPlace={async () => {
+              const placed = await placeOrder({
+                sessionId: r.order.sessionId,
+                symbol: r.order.symbol,
+                side: r.order.side === OrderSide.SELL ? 'sell' : 'buy',
+                quantity: r.fits,
+                strategyId: r.order.strategyId,
+                sleeveId: r.order.sleeveId,
+              });
+              if (placed) {
+                close();
+                reload();
+              }
+            }}
+          />
+        ),
+      }));
   const planned = next
     ? [{ at: next, shape: 'planned' as const, title: `Rebalance ${dayLabel(next)}` }]
     : [];
+  const laneSub = (symbol: string, h: (typeof held)[number] | undefined) => {
+    if (!h) return 'not held';
+    const w = weightOf(symbol);
+    const target = targets?.[symbol];
+    if (target !== undefined && equityForWeights > 0) {
+      return `${formatPct(w, { dp: 1 })} → ${formatPct(target, { dp: 0 })}`;
+    }
+    return `${qty(h.q)} shares${equityForWeights > 0 ? ` · ${formatPct(w, { dp: 1 })}` : ''}`;
+  };
   const fillEvents = (fills: (typeof lanesFor)[number]['fills']) =>
     fills.map((x) => ({
       at: x.at,
@@ -215,7 +327,10 @@ export default function SessionPage() {
             label: 'Orders',
             sub: `${lanesFor.length} symbols · ${filled.length} fills`,
             tone: frozen ? 'risk' : row.view.open ? 'default' : 'muted',
-            events: fillEvents(lanesFor.flatMap((l) => l.fills)),
+            events: [
+              ...fillEvents(lanesFor.flatMap((l) => l.fills)),
+              ...lanesFor.flatMap((l) => refusedEvents(l.symbol)),
+            ],
             future: { events: planned },
           },
         ]
@@ -224,9 +339,7 @@ export default function SessionPage() {
           return {
             id: l.symbol,
             label: <span className="font-mono">{l.symbol}</span>,
-            sub: h
-              ? `${qty(h.q)} shares${equityForWeights > 0 ? ` · ${formatPct(h.value / equityForWeights, { dp: 1 })}` : ''}`
-              : 'not held',
+            sub: laneSub(l.symbol, h),
             tone: frozen ? 'risk' : h ? 'default' : 'muted',
             spans: [
               {
@@ -235,28 +348,63 @@ export default function SessionPage() {
                 style: h ? 'on' : 'off',
               },
             ],
-            events: fillEvents(l.fills),
+            events: [...fillEvents(l.fills), ...refusedEvents(l.symbol)],
             future: row.view.open ? { events: planned } : { note: 'Stopped' },
           };
         });
 
-  const futureEnd = new Date(end.getTime() + 14 * DAY_MS);
-  const futureRows = row.view.open
+  const closeMin = marketDay(today).earlyClose ? 13 * 60 : 16 * 60;
+  const futureEnd = isToday
+    ? new Date(Math.max(etTimeToday(now, closeMin).getTime(), end.getTime() + 60 * 60_000))
+    : new Date(end.getTime() + 14 * DAY_MS);
+  const notes = marketNotes(today, new Date(today.getTime() + 14 * DAY_MS));
+  const scheduled: [string, string][] = isToday
+    ? [
+        ...(nextCheck && nextCheck.getTime() === today.getTime()
+          ? [
+              ['Today', daily ? 'Daily rebalance' : `${row.rebalance} rebalance`] as [
+                string,
+                string,
+              ],
+            ]
+          : []),
+        [
+          marketDay(today).earlyClose ? '13:00' : '16:00',
+          marketDay(today).closed ? 'Market closed today' : 'Market closes',
+        ],
+      ]
+    : daily
+      ? [
+          [
+            nextCheck
+              ? nextCheck.getTime() === today.getTime()
+                ? 'Today'
+                : dayLabel(nextCheck)
+              : '·',
+            'Daily rebalance, then each trading day',
+          ],
+          ...notes.map((n): [string, string] => [dayLabel(n.at), n.text]),
+        ]
+      : next && next.getTime() <= futureEnd.getTime()
+        ? [
+            [dayLabel(next), `${row.rebalance || 'Scheduled'} rebalance`],
+            ...notes.map((n): [string, string] => [dayLabel(n.at), n.text]),
+          ]
+        : [
+            [
+              next ? dayLabel(next) : '·',
+              next ? 'Next rebalance, after this window' : 'Nothing scheduled',
+            ],
+          ];
+  const futureRows: [string, string][] = row.view.open
     ? frozen
       ? [
           ['Waiting on you', ''],
-          ...(next ? [[dayLabel(next), 'Rebalance runs once resolved']] : []),
+          ...(next ? [[dayLabel(next), 'Rebalance runs once resolved'] as [string, string]] : []),
         ]
       : row.state === 'paused'
         ? [['Paused', 'Rebalances are skipped until you resume']]
-        : next && next.getTime() <= futureEnd.getTime()
-          ? [[dayLabel(next), `${row.rebalance || 'Scheduled'} rebalance`]]
-          : [
-              [
-                next ? dayLabel(next) : '·',
-                next ? 'Next rebalance, after this window' : 'Nothing scheduled',
-              ],
-            ]
+        : scheduled
     : [];
 
   const meta = [
@@ -268,8 +416,8 @@ export default function SessionPage() {
     row.rebalance ? `rebalances ${row.rebalance.toLowerCase()}` : null,
     ended
       ? `stopped ${etDayLabel(ended)}`
-      : next && row.state === 'running'
-        ? `next ${dayLabel(next)}`
+      : nextCheck && row.state === 'running'
+        ? `next ${relativeDay(nextCheck, today)}`
         : null,
   ]
     .filter(Boolean)
@@ -334,7 +482,7 @@ export default function SessionPage() {
               )}
               {canGoLive && (
                 <Link to={`/trading/${sessionId}/live`} className="btn btn-primary">
-                  Go live
+                  Run on live
                 </Link>
               )}
               {!row.view.open && (
@@ -444,18 +592,8 @@ export default function SessionPage() {
                     )}
                     {f.today !== null && row.view.open && (
                       <span className="flex items-center gap-1.5 text-[12px]">
-                        <span
-                          className={`rounded px-1.5 py-0.5 ${f.today < 0 ? 'bg-loss/10' : 'bg-gain/10'}`}
-                        >
-                          <Money value={f.today} pnl />
-                        </span>
-                        {f.todayPct !== null && (
-                          <span
-                            className={`rounded px-1.5 py-0.5 ${f.today < 0 ? 'bg-loss/10' : 'bg-gain/10'}`}
-                          >
-                            <Pct value={f.todayPct} pnl />
-                          </span>
-                        )}
+                        <Money value={f.today} pnl />
+                        {f.todayPct !== null && <Pct value={f.todayPct} pnl />}
                         <span className="text-fg-3">today</span>
                       </span>
                     )}
@@ -472,16 +610,29 @@ export default function SessionPage() {
                   </Figure>
                 )}
                 {cash !== null && (
-                  <Figure label="Cash">
+                  <Figure label="Cash in the sleeve">
                     <Money value={cash} />
                   </Figure>
                 )}
+                {(refusedToday.filled > 0 || refusedToday.refused > 0) && (
+                  <Figure label="Orders today">
+                    <span className="num">
+                      {refusedToday.filled} filled
+                      {refusedToday.refused > 0 && (
+                        <>
+                          {' · '}
+                          <span className="text-risk">{refusedToday.refused} not placed</span>
+                        </>
+                      )}
+                    </span>
+                  </Figure>
+                )}
               </div>
-              <Segmented<TimeRange>
+              <Segmented<SessionRange>
                 label="Time range"
                 value={range}
                 onChange={setRange}
-                options={RANGE_OPTIONS}
+                options={row.view.open ? SESSION_RANGES : RANGE_OPTIONS}
               />
             </div>
             {series.dates.length > 1 ? (
@@ -497,7 +648,7 @@ export default function SessionPage() {
                   row.view.open
                     ? {
                         end: futureEnd,
-                        title: 'Next two weeks',
+                        title: isToday ? 'Later today' : 'Next two weeks',
                         content: (
                           <div className="grid gap-1">
                             {futureRows.map(([a, b]) => (
@@ -521,7 +672,6 @@ export default function SessionPage() {
                         {
                           label: 'Max drawdown',
                           value: formatPct(stats.maxDrawdown, { dp: 1 }),
-                          tone: stats.maxDrawdown < 0 ? 'loss' : undefined,
                         },
                         { label: 'Fills', value: String(filled.length) },
                       ]}
@@ -532,6 +682,9 @@ export default function SessionPage() {
                 legend={[
                   { shape: 'dot', label: 'Buy' },
                   { shape: 'ring', label: 'Sell' },
+                  ...(refused.length
+                    ? [{ shape: 'dot' as const, tone: 'risk' as const, label: 'Not placed' }]
+                    : []),
                   { shape: 'planned', label: 'Planned' },
                 ]}
                 tooltip={(i) => (
@@ -549,86 +702,131 @@ export default function SessionPage() {
           </div>
 
           <div className="grid gap-3.5 md:grid-cols-3">
-            <Panel title="Mix now" aside="share of the sleeve">
-              <div className="grid gap-2 px-3.5 py-3">
-                {equityForWeights > 0 && (held.length > 0 || cash) ? (
-                  <>
-                    {[
-                      ...held.map((x) => ({ k: x.p.symbol, v: x.value, cash: false })),
-                      ...(cash ? [{ k: 'Cash', v: cash, cash: true }] : []),
-                    ].map((w) => (
-                      <div
-                        key={w.k}
-                        className="grid grid-cols-[42px_minmax(0,1fr)_48px] items-center gap-2.5 text-xs"
-                      >
-                        <span className={w.cash ? 'text-fg-2' : 'font-mono font-semibold'}>
-                          {w.k}
-                        </span>
-                        <WeightBar
-                          weight={w.v / equityForWeights}
-                          height={5}
-                          frozen={frozen}
-                          label={`${w.k} weight`}
-                          color={w.cash ? 'rgb(var(--fg-3))' : undefined}
-                        />
-                        <span className="num text-right text-fg-2">
-                          {formatPct(w.v / equityForWeights, { dp: 1 })}
-                        </span>
-                      </div>
-                    ))}
-                    <p className="m-0 text-[11.5px] text-fg-3">
-                      The target mix isn&apos;t recorded, so these are current weights only.
+            <div className="grid min-w-0">
+              <Panel
+                title={targets ? 'Holdings against targets' : 'Mix now'}
+                aside={targets ? 'now / target' : 'share of the sleeve'}
+              >
+                <div className="grid gap-2 px-3.5 py-3">
+                  {equityForWeights > 0 && (held.length > 0 || cash) ? (
+                    <>
+                      {[
+                        ...held.map((x) => ({ k: x.p.symbol, v: x.value, cash: false })),
+                        ...(targets
+                          ? Object.keys(targets)
+                              .filter((sym) => !held.some((x) => x.p.symbol === sym))
+                              .map((sym) => ({ k: sym, v: 0, cash: false }))
+                          : []),
+                        ...(cash ? [{ k: 'Cash', v: cash, cash: true }] : []),
+                      ].map((w) => (
+                        <div
+                          key={w.k}
+                          className={`grid ${targets ? 'grid-cols-[42px_minmax(0,1fr)_92px]' : 'grid-cols-[42px_minmax(0,1fr)_48px]'} items-center gap-2.5 text-xs`}
+                        >
+                          <span className={w.cash ? 'text-fg-2' : 'font-mono font-semibold'}>
+                            {w.k}
+                          </span>
+                          <WeightBar
+                            weight={w.v / equityForWeights}
+                            target={targets ? (w.cash ? 0 : (targets[w.k] ?? 0)) : undefined}
+                            height={5}
+                            frozen={frozen}
+                            label={`${w.k} weight`}
+                            color={w.cash ? 'rgb(var(--fg-3))' : undefined}
+                          />
+                          <span className="num text-right text-fg-2">
+                            {formatPct(w.v / equityForWeights, { dp: 1 })}
+                            {targets && (
+                              <span className="text-fg-3">
+                                {' / '}
+                                {formatPct(w.cash ? 0 : (targets[w.k] ?? 0), { dp: 0 })}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                      ))}
+                      {!targets && (
+                        <p className="m-0 text-[11.5px] text-fg-3">
+                          {rulesKnown
+                            ? 'The rules choose what this strategy holds, so there is no fixed target to compare with.'
+                            : "The target mix isn't recorded, so these are current weights only."}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="m-0 text-[12.5px] text-fg-3">
+                      {row.view.open
+                        ? 'The sleeve holds cash until its first rebalance.'
+                        : 'No positions are held.'}
                     </p>
-                  </>
-                ) : (
-                  <p className="m-0 text-[12.5px] text-fg-3">
-                    {row.view.open
-                      ? 'The sleeve holds cash until its first rebalance.'
-                      : 'No positions are held.'}
+                  )}
+                </div>
+              </Panel>
+            </div>
+            <div className="grid min-w-0">
+              <Panel
+                title="Today's orders"
+                aside={todayList.length ? String(todayList.length) : undefined}
+              >
+                {todayList.length === 0 ? (
+                  <p className="m-0 px-3.5 py-3 text-[12.5px] text-fg-3">
+                    Nothing traded today.
+                    {nextCheck && row.state === 'running'
+                      ? ` The next rebalance is ${relativeDay(nextCheck, today)}.`
+                      : ''}
                   </p>
+                ) : (
+                  <ol className="m-0 list-none p-0">
+                    {todayList.map(({ o, at, rejection }) => (
+                      <li key={o.id} className="border-b border-line last:border-b-0">
+                        <Link
+                          to={`/trading/orders/${o.id}`}
+                          className="flex items-center gap-3 px-3.5 py-2.5 hover:bg-sunk"
+                        >
+                          <span
+                            className={`rounded-sm px-[5px] py-[3px] font-mono text-[10px] font-semibold leading-none ring-1 ring-inset ${
+                              rejection ? 'text-risk ring-risk-line' : 'ring-line-strong'
+                            }`}
+                          >
+                            {o.side === OrderSide.SELL ? 'SELL' : 'BUY'}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[12.5px]">
+                              {rejection
+                                ? `${qty(toNumber(o.quantity))} ${o.symbol}${
+                                    rejection.price > 0
+                                      ? ` at about ${formatMoney(rejection.price)}`
+                                      : ''
+                                  }`
+                                : `${qty(toNumber(o.filledQuantity))} ${o.symbol} at ${formatMoney(
+                                    toNumber(o.averageFillPrice)
+                                  )}`}
+                            </span>
+                            <span
+                              className={`block truncate text-[11px] ${rejection ? 'text-risk' : 'text-fg-3'}`}
+                            >
+                              {rejection
+                                ? `${rejection.title.endsWith('not sent') ? 'Not sent' : 'Rejected'} ${etHm(at)}`
+                                : `Filled ${etHm(at)}`}
+                            </span>
+                          </span>
+                          {rejection ? (
+                            rejection.price > 0 && (
+                              <Money
+                                value={rejection.price * toNumber(o.quantity)}
+                                className="text-[12px] text-fg-3"
+                              />
+                            )
+                          ) : (
+                            <Money value={value(o)} className="text-[12px]" />
+                          )}
+                        </Link>
+                      </li>
+                    ))}
+                  </ol>
                 )}
-              </div>
-            </Panel>
-            <Panel
-              title="Today"
-              aside={
-                todays.length
-                  ? `${todays.length} ${todays.length === 1 ? 'fill' : 'fills'}`
-                  : undefined
-              }
-            >
-              {todays.length === 0 ? (
-                <p className="m-0 px-3.5 py-3 text-[12.5px] text-fg-3">
-                  Nothing traded today.
-                  {next && row.state === 'running'
-                    ? ` The next rebalance is ${dayLabel(next)}.`
-                    : ''}
-                </p>
-              ) : (
-                <ol className="m-0 list-none p-0">
-                  {todays.map(({ o, at }) => (
-                    <li key={o.id} className="border-b border-line last:border-b-0">
-                      <Link
-                        to={`/trading/orders/${o.id}`}
-                        className="flex items-center gap-3 px-3.5 py-2.5 hover:bg-sunk"
-                      >
-                        <span className="rounded-sm px-[5px] py-[3px] font-mono text-[10px] font-semibold leading-none ring-1 ring-inset ring-line-strong">
-                          {o.side === OrderSide.SELL ? 'SELL' : 'BUY'}
-                        </span>
-                        <span className="min-w-0 flex-1 truncate text-[12.5px]">
-                          {qty(toNumber(o.filledQuantity))} {o.symbol} at{' '}
-                          {formatMoney(toNumber(o.averageFillPrice))}
-                        </span>
-                        <span className="text-right">
-                          <Money value={value(o)} className="block text-[12px]" />
-                          <span className="num text-[11px] text-fg-3">{etHm(at)}</span>
-                        </span>
-                      </Link>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </Panel>
+              </Panel>
+            </div>
             <Panel title="Sleeve">
               <div className="px-3.5 py-1">
                 <StatList

@@ -110,7 +110,8 @@ function EmailPanel({ category, emailOn }: { category: NotificationCategory; ema
           Send a test
         </button>
         <span className="text-[11.5px] text-fg-3">
-          Test emails aren&apos;t available yet. Words in brackets are filled in by the real notice.
+          An example with made-up figures. The real notice fills in your own. Test emails
+          aren&apos;t available yet.
         </span>
       </div>
     </div>

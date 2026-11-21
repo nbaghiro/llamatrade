@@ -9,7 +9,6 @@ import { changedHunk } from '../copilot/hunk';
 import { clearLocalDraft, readLocalDraft, writeLocalDraft } from '../draft/localDraft';
 import { defaultSettings, handoffConfig } from '../handoff/useHandoffRun';
 import { conditionSides, sideSpans, sidesAtRebalances } from '../history/sides';
-import { questionsFirstPrompt } from '../start/draftPrompts';
 
 const RADAR = `(strategy "Recession Radar"
   :rebalance monthly
@@ -184,13 +183,5 @@ describe('changedHunk', () => {
 
   it('is empty when nothing changed', () => {
     expect(changedHunk(diffCode('a\nb', 'a\nb'))).toEqual([]);
-  });
-});
-
-describe('questionsFirstPrompt', () => {
-  it('keeps the description and asks for questions first', () => {
-    const p = questionsFirstPrompt('Hold bonds when RSI is high.');
-    expect(p.startsWith('Hold bonds when RSI is high.')).toBe(true);
-    expect(p).toContain('ask me');
   });
 });

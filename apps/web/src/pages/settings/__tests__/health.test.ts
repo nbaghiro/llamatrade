@@ -109,11 +109,20 @@ describe('monthForecast', () => {
 });
 
 describe('emailPreview', () => {
-  it('mirrors the service template, with brackets for the filled-in fields', () => {
+  it('mirrors the service template, with example values in the filled-in fields', () => {
     expect(emailPreview(NotificationCategory.ORDER_REJECTED)).toEqual({
       subject: 'LlamaTrade: Order rejected',
-      body: 'Your order [symbol] was rejected: [reason]',
+      body: 'Your order TLT was rejected: insufficient buying power',
     });
+    expect(emailPreview(NotificationCategory.SLEEVE_FROZEN).body).toContain(
+      'frozen: Alpaca and the ledger disagree on TLT.'
+    );
+    expect(emailPreview(NotificationCategory.SESSION_STOPPED).body).toBe(
+      'A live trading session stopped: you stopped it'
+    );
+    expect(emailPreview(NotificationCategory.ORDER_FILLED).body).toBe(
+      'Your order TLT ($3,797.22) filled.'
+    );
   });
 
   it('falls back for a kind with no template', () => {

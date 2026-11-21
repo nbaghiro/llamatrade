@@ -11,9 +11,19 @@ import { StatList } from '../ui/StatList';
 
 import { runMeta, toCurve } from './runData';
 import { runWhen } from './runLabels';
+import { openSessionLabel, type StrategySession } from './strategySessions';
 
-/** The newest finished run with its curve and three figures, above the list (backtests/phone A). */
-export function LatestRunCard({ run, strategyName }: { run: BacktestRun; strategyName: string }) {
+/** The newest finished run with its curve and figures, above the list (backtests/phone A). */
+export function LatestRunCard({
+  run,
+  strategyName,
+  session = null,
+}: {
+  run: BacktestRun;
+  strategyName: string;
+  /** The session running this run's version, when one does. */
+  session?: StrategySession | null;
+}) {
   const meta = runMeta(run);
   const m = run.results?.metrics;
   const curve = useMemo(() => {
@@ -34,19 +44,29 @@ export function LatestRunCard({ run, strategyName }: { run: BacktestRun; strateg
 
   return (
     <section className="panel-rim min-w-0 overflow-hidden px-4 pb-3 pt-3.5">
-      <div className="text-[11px] font-medium text-fg-3">
-        Latest result · finished {runWhen(run)}
+      <div className="flex items-baseline justify-between gap-3 text-[11px] font-medium text-fg-3">
+        <span>Latest result · finished {runWhen(run)}</span>
+        <span>Backtest</span>
       </div>
-      <div className="mt-1 flex flex-wrap items-baseline gap-x-2.5">
+      <div className="mt-1 text-[13px] font-semibold">
+        {strategyName} v{run.strategyVersion}
+      </div>
+      <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2.5">
         <span className="font-mono text-[28px] font-medium tracking-[-0.02em]">
           <Pct value={total} pnl dp={1} />
         </span>
-        <span className="text-[12px] text-fg-2">
-          {strategyName} v{run.strategyVersion}
-          {gap !== null &&
-            `, ${formatNumber(Math.abs(gap), { dp: 1 })} points ${gap >= 0 ? 'ahead of' : 'behind'} ${bench}`}
-        </span>
+        {bench && m.benchmarkReturn && (
+          <span className="num text-[12px] text-fg-2">
+            {bench} {formatPct(toNumber(m.benchmarkReturn), { dp: 1, signed: true })}
+          </span>
+        )}
       </div>
+      {gap !== null && (
+        <p className="m-0 mt-0.5 text-[12px] text-fg-2">
+          {formatNumber(Math.abs(gap), { dp: 1 })} points {gap >= 0 ? 'more' : 'less'} than {bench}{' '}
+          over the same dates.
+        </p>
+      )}
       {curve.values.length > 1 && (
         <div className="mt-2">
           <AnnotatedCurve
@@ -72,11 +92,16 @@ export function LatestRunCard({ run, strategyName }: { run: BacktestRun; strateg
           {
             label: 'Max drawdown',
             value: `${formatPct(-Math.abs(toNumber(m.maxDrawdown)), { dp: 1 })}${vs(curve.benchFig?.maxDrawdown)}`,
-            tone: 'loss',
           },
+          { label: 'Trades', value: formatNumber(m.totalTrades, { dp: 0 }) },
         ]}
       />
-      <Link to={`/backtest/${run.id}`} className="btn btn-secondary mt-2.5 w-full justify-center">
+      {session?.href && (
+        <Link to={session.href} className="btn btn-primary mt-2.5 w-full justify-center">
+          {openSessionLabel(session)}
+        </Link>
+      )}
+      <Link to={`/backtest/${run.id}`} className="btn btn-secondary mt-2 w-full justify-center">
         Open result
       </Link>
     </section>

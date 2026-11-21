@@ -59,6 +59,18 @@ export function pnlTone(v: number, dp = 2): Tone {
   return 'flat';
 }
 
+/** Day moves smaller than this many percent read as flat. */
+export const QUIET_MOVE_PCT = 0.25;
+
+/** Tone of a day move given in percent: under QUIET_MOVE_PCT either way it stays flat. */
+export function moveTone(pct: number): Tone {
+  if (!Number.isFinite(pct) || Math.abs(pct) < QUIET_MOVE_PCT) return 'flat';
+  return pct > 0 ? 'gain' : 'loss';
+}
+
+/** Text colour for a tone; flat is ink. */
+export const TONE_TEXT: Record<Tone, string> = { gain: 'text-gain', loss: 'text-loss', flat: '' };
+
 /** A service message as a sentence: trimmed, with a closing full stop when it has none. */
 export function asSentence(message: string | null | undefined): string {
   const t = message?.trim() ?? '';

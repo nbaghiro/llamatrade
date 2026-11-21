@@ -61,7 +61,7 @@ export function usePageScope(
       scopeChoices(
         credentials
           .filter((c) => c.isActive)
-          .map((c) => ({ isPaper: c.isPaper, keyPrefix: c.apiKeyPrefix }))
+          .map((c) => ({ isPaper: c.isPaper, accountNumber: c.accountNumber }))
       ),
     [credentials]
   );

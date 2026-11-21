@@ -7,6 +7,7 @@ import { ACCENTS, DARK_ACCENTS, LIGHT_ACCENTS } from '../../theme/accents';
 import {
   applyTheme,
   DEFAULT_THEME,
+  migrateTheme,
   resolveTheme,
   sanitizeTheme,
   THEME_STORAGE_KEY,
@@ -26,13 +27,13 @@ describe('sanitizeTheme', () => {
     expect(sanitizeTheme(undefined)).toEqual(DEFAULT_THEME);
   });
 
-  it('defaults to system mode, Slate and White surfaces, Slate blue and Ocean accents', () => {
+  it('defaults to system mode, Graphite and White surfaces, and the neutral Ink accent', () => {
     expect(DEFAULT_THEME).toEqual({
       mode: 'system',
       darkSurface: 'slate',
       lightSurface: 'white',
-      darkAccent: 'slate',
-      lightAccent: 'ocean',
+      darkAccent: 'neutral',
+      lightAccent: 'neutral',
     });
   });
 
@@ -50,18 +51,33 @@ describe('sanitizeTheme', () => {
       darkSurface: 'slate',
       lightSurface: 'warm',
       darkAccent: 'pink',
+      lightAccent: 'neutral',
+    });
+  });
+
+  it('migrates version 1 default accents to Ink and keeps chosen ones', () => {
+    expect(migrateTheme({ darkAccent: 'slate', lightAccent: 'ocean' }, 1)).toMatchObject({
+      darkAccent: 'neutral',
+      lightAccent: 'neutral',
+    });
+    expect(migrateTheme({ darkAccent: 'pink', lightAccent: 'rust' }, 1)).toMatchObject({
+      darkAccent: 'pink',
+      lightAccent: 'rust',
+    });
+    expect(migrateTheme({ darkAccent: 'slate', lightAccent: 'ocean' }, 2)).toMatchObject({
+      darkAccent: 'slate',
       lightAccent: 'ocean',
     });
   });
 
   it('rejects an accent that belongs to the other mode', () => {
     const prefs = sanitizeTheme({ darkAccent: 'navy', lightAccent: 'cyan' });
-    expect(prefs.darkAccent).toBe('slate');
-    expect(prefs.lightAccent).toBe('ocean');
+    expect(prefs.darkAccent).toBe('neutral');
+    expect(prefs.lightAccent).toBe('neutral');
   });
 
   it('rejects the dropped dark Amber accent', () => {
-    expect(sanitizeTheme({ darkAccent: 'amber' }).darkAccent).toBe('slate');
+    expect(sanitizeTheme({ darkAccent: 'amber' }).darkAccent).toBe('neutral');
   });
 
   it('ignores the retired Monolith shape', () => {
@@ -215,8 +231,20 @@ describe('public/theme-init.js', () => {
       'data-mode': 'dark',
       'data-theme': 'slate',
       'data-light': 'white',
-      'data-acc': 'slate',
+      'data-acc': 'neutral',
     });
+  });
+
+  it('moves a version 1 default accent to Ink, as the store migration does', () => {
+    const v1 = { version: 1, state: { mode: 'dark', darkAccent: 'slate', lightAccent: 'ocean' } };
+    expect(runInit(v1, false).acc).toBe('neutral');
+    expect(runInit(v1, true).acc).toBe('neutral');
+    expect(runInit({ version: 2, state: { mode: 'dark', darkAccent: 'slate' } }, false).acc).toBe(
+      'slate'
+    );
+    expect(runInit({ version: 1, state: { mode: 'dark', darkAccent: 'pink' } }, false).acc).toBe(
+      'pink'
+    );
   });
 
   it('uses the page default mode when nothing is stored', () => {
@@ -243,9 +271,9 @@ describe('tokens.css', () => {
     }
   });
 
-  it('has 12 accents per mode and no Amber', () => {
-    expect(DARK_ACCENTS).toHaveLength(12);
-    expect(LIGHT_ACCENTS).toHaveLength(12);
+  it('has 13 accents per mode and no Amber', () => {
+    expect(DARK_ACCENTS).toHaveLength(13);
+    expect(LIGHT_ACCENTS).toHaveLength(13);
     expect(css).not.toContain("data-acc='amber'");
   });
 });
