@@ -152,11 +152,17 @@ class TestTradeStreamSupervisor:
             )
             assert recorded_sleep.delays[0] == 1.0
 
+            alerts.on_connection_restored.assert_not_awaited()
+
             stream.add_fill(
                 "o-2", "AAPL", "buy", Decimal("5"), Decimal("151"), client_order_id="o-2"
             )
             await _wait_for(lambda: runner._fills_processed == 2)
             assert runner.positions["AAPL"].quantity == Decimal("15")
+            alerts.on_connection_restored.assert_awaited_once_with(
+                tenant_id=runner.config.tenant_id,
+                session_id=runner.config.execution_id,
+            )
         finally:
             await _shut_down(runner, task)
 

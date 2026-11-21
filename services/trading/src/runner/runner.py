@@ -444,6 +444,10 @@ class StrategyRunner:
             raise RuntimeError("Failed to subscribe to trade updates")
 
         logger.info("Connected to trade stream for fill updates")
+        if self.alerts:
+            await self.alerts.on_connection_restored(
+                tenant_id=self.config.tenant_id, session_id=self.config.execution_id
+            )
 
         self._running = True
         # Staleness is measured from here until the gate first opens.
@@ -1276,12 +1280,19 @@ class StrategyRunner:
         """
         logger.info("Starting trade stream supervisor loop")
         backoff = _TRADE_STREAM_RESTART_BASE_DELAY_S
+        stream_lost = False
         while self._running:
             try:
                 async for event in self.trade_stream.stream():
                     if not self._running:
                         return
                     backoff = _TRADE_STREAM_RESTART_BASE_DELAY_S  # healthy feed
+                    if stream_lost and self.alerts:
+                        await self.alerts.on_connection_restored(
+                            tenant_id=self.config.tenant_id,
+                            session_id=self.config.execution_id,
+                        )
+                    stream_lost = False
                     record_trade_stream_event(event.event_type.value)
                     try:
                         await self._handle_trade_event(event)
@@ -1305,6 +1316,7 @@ class StrategyRunner:
                 backoff,
             )
             record_strategy_error("trade_stream_exhausted")
+            stream_lost = True
             if self.alerts:
                 await self.alerts.on_connection_lost(
                     tenant_id=self.config.tenant_id,

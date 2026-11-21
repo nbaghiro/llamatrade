@@ -43,6 +43,20 @@ def test_reason_interpolates() -> None:
     assert "quantity mismatch on TLT" in rendered.message
 
 
+def test_connection_lost_is_plain_and_hides_stream_ids() -> None:
+    """Older producers put the stream id in ``reason``; it never reaches the reader."""
+    rendered = render(
+        events_pb2.NotificationEvent(
+            category=_E.NOTIFICATION_CATEGORY_CONNECTION_LOST,
+            reason="bar_stream",
+            extra={"service": "bar_stream"},
+        )
+    )
+    assert rendered.title == "Broker connection lost"
+    assert "Alpaca" in rendered.message
+    assert "stream" not in rendered.message
+
+
 def test_missing_fields_degrade_readably() -> None:
     rendered = render(
         events_pb2.NotificationEvent(category=_E.NOTIFICATION_CATEGORY_ORDER_REJECTED)

@@ -107,7 +107,10 @@ def render(event: events_pb2.NotificationEvent) -> Rendered:
             "A decision is needed on the affected position.",
         )
     if c == e.NOTIFICATION_CATEGORY_CONNECTION_LOST:
-        return Rendered("Broker connection lost", f"A live data connection dropped{_reason(event)}")
+        return Rendered(
+            "Broker connection lost",
+            "The live connection to Alpaca dropped. LlamaTrade keeps trying to reconnect.",
+        )
     if c == e.NOTIFICATION_CATEGORY_STRATEGY_ERROR:
         return Rendered("Strategy error", f"A live strategy hit an error{_reason(event)}")
     if c == e.NOTIFICATION_CATEGORY_SESSION_STARTED:

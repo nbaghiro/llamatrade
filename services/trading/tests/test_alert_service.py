@@ -23,6 +23,7 @@ from src.services.alert_service import (
     AlertPriority,
     AlertService,
     AlertType,
+    ConnectionOutages,
     get_alert_service,
 )
 
@@ -38,9 +39,25 @@ def transport() -> FakeTransport:
     return FakeTransport()
 
 
+class _Clock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
 @pytest.fixture
-def service(transport: FakeTransport) -> AlertService:
-    return AlertService(events=NotificationEvents(bus=EventBus(transport)))
+def clock() -> _Clock:
+    return _Clock()
+
+
+@pytest.fixture
+def service(transport: FakeTransport, clock: _Clock) -> AlertService:
+    return AlertService(
+        events=NotificationEvents(bus=EventBus(transport)),
+        outages=ConnectionOutages(renotify_after=3600.0, clock=clock),
+    )
 
 
 def _published(transport: FakeTransport) -> list[EventEnvelope]:
@@ -219,6 +236,7 @@ class TestEventMethods:
         event = _payload(_published(transport)[0])
         assert event.category == _E.NOTIFICATION_CATEGORY_CONNECTION_LOST
         assert event.extra["service"] == "trade_stream"
+        assert event.reason == ""  # no stream id in the user-facing text
 
     async def test_circuit_breaker_events(
         self, service: AlertService, transport: FakeTransport
@@ -277,3 +295,59 @@ class TestDedupSemantics:
 
 def test_get_alert_service_returns_publisher() -> None:
     assert isinstance(get_alert_service(), AlertService)
+
+
+class TestConnectionOutages:
+    """One broker outage raises one connection-lost notice, not one per restart."""
+
+    async def test_repeats_within_an_outage_are_swallowed(
+        self, service: AlertService, transport: FakeTransport
+    ) -> None:
+        other_session = uuid4()
+        for _ in range(50):
+            await service.on_connection_lost(TENANT_ID, SESSION_ID, "bar_stream")
+        await service.on_connection_lost(TENANT_ID, other_session, "trade_stream")
+
+        assert len(_published(transport)) == 1
+
+    async def test_new_outage_after_every_session_reconnects(
+        self, service: AlertService, transport: FakeTransport
+    ) -> None:
+        other_session = uuid4()
+        await service.on_connection_lost(TENANT_ID, SESSION_ID, "bar_stream")
+        await service.on_connection_lost(TENANT_ID, other_session, "bar_stream")
+        await service.on_connection_restored(TENANT_ID, SESSION_ID)
+        await service.on_connection_lost(TENANT_ID, SESSION_ID, "bar_stream")
+        assert len(_published(transport)) == 1  # other_session still down: same outage
+
+        await service.on_connection_restored(TENANT_ID, SESSION_ID)
+        await service.on_connection_restored(TENANT_ID, other_session)
+        await service.on_connection_lost(TENANT_ID, SESSION_ID, "bar_stream")
+        assert len(_published(transport)) == 2
+
+    async def test_long_outage_is_announced_again_after_the_window(
+        self, service: AlertService, transport: FakeTransport, clock: _Clock
+    ) -> None:
+        await service.on_connection_lost(TENANT_ID, SESSION_ID, "bar_stream")
+        clock.now = 3599.0
+        await service.on_connection_lost(TENANT_ID, SESSION_ID, "bar_stream")
+        clock.now = 3600.0
+        await service.on_connection_lost(TENANT_ID, SESSION_ID, "bar_stream")
+
+        assert len(_published(transport)) == 2
+
+    async def test_outages_are_per_tenant(
+        self, service: AlertService, transport: FakeTransport
+    ) -> None:
+        await service.on_connection_lost(TENANT_ID, SESSION_ID, "bar_stream")
+        await service.on_connection_lost(uuid4(), uuid4(), "bar_stream")
+
+        assert len(_published(transport)) == 2
+
+    async def test_restore_without_an_outage_is_a_no_op(
+        self, service: AlertService, transport: FakeTransport
+    ) -> None:
+        await service.on_connection_restored(TENANT_ID, SESSION_ID)
+        await service.on_connection_lost(TENANT_ID, SESSION_ID, "bar_stream")
+
+        assert len(_published(transport)) == 1

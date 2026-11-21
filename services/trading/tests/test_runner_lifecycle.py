@@ -231,6 +231,9 @@ class TestStart:
         await asyncio.wait_for(runner.start(), timeout=5.0)
 
         alerts.on_session_started.assert_awaited_once()
+        alerts.on_connection_restored.assert_awaited_once_with(
+            tenant_id=runner.config.tenant_id, session_id=runner.config.execution_id
+        )
 
     async def test_bar_stream_connect_failure_alerts_and_raises(self):
         alerts = AsyncMock(spec=AlertService)

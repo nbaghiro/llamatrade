@@ -9,6 +9,9 @@ fire-and-forget and never raise into the trading path.
 from __future__ import annotations
 
 import logging
+import os
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -107,11 +110,57 @@ class Alert:
     timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
+class ConnectionOutages:
+    """Open broker-connection outages per tenant, so one outage raises one notice.
+
+    An outage opens when any of a tenant's sessions loses its connection and
+    closes once every session that lost it has reconnected. A failing session is
+    restarted by its supervisor many times a minute, so repeats inside an open
+    outage are swallowed; one still open after ``renotify_after`` seconds is
+    announced again. State is per process.
+    """
+
+    def __init__(self, renotify_after: float, clock: Callable[[], float] = time.monotonic) -> None:
+        self._renotify_after = renotify_after
+        self._clock = clock
+        self._down: dict[UUID, set[UUID]] = {}
+        self._announced_at: dict[UUID, float] = {}
+
+    def lost(self, tenant_id: UUID, session_id: UUID) -> bool:
+        """Record a lost connection; True when this outage should be announced."""
+        self._down.setdefault(tenant_id, set()).add(session_id)
+        now = self._clock()
+        announced = self._announced_at.get(tenant_id)
+        if announced is not None and now - announced < self._renotify_after:
+            return False
+        self._announced_at[tenant_id] = now
+        return True
+
+    def restored(self, tenant_id: UUID, session_id: UUID) -> None:
+        down = self._down.get(tenant_id)
+        if down is None:
+            return
+        down.discard(session_id)
+        if not down:
+            del self._down[tenant_id]
+            self._announced_at.pop(tenant_id, None)
+
+
+_connection_outages = ConnectionOutages(
+    float(os.getenv("CONNECTION_LOST_RENOTIFY_SECONDS", "21600"))
+)
+
+
 class AlertService:
     """Publishes trading alerts onto the ``notifications`` stream."""
 
-    def __init__(self, events: NotificationEvents | None = None) -> None:
+    def __init__(
+        self,
+        events: NotificationEvents | None = None,
+        outages: ConnectionOutages | None = None,
+    ) -> None:
         self._events = events or shared_notification_events()
+        self._outages = outages or _connection_outages
 
     async def send(self, alert: Alert) -> bool:
         """Publish one alert; fire-and-forget, returns False on publish failure."""
@@ -437,16 +486,22 @@ class AlertService:
         )
 
     async def on_connection_lost(self, tenant_id: UUID, session_id: UUID, service: str) -> None:
+        """Announce a broker outage once; ``service`` is kept for diagnosis, not shown."""
+        if not self._outages.lost(tenant_id, session_id):
+            return
         await self.send(
             Alert(
                 tenant_id=tenant_id,
                 session_id=session_id,
                 alert_type=AlertType.CONNECTION_LOST,
                 priority=AlertPriority.HIGH,
-                reason=service,
                 metadata={"service": service},
             )
         )
+
+    async def on_connection_restored(self, tenant_id: UUID, session_id: UUID) -> None:
+        """Close this session's part of an outage (no notice is sent)."""
+        self._outages.restored(tenant_id, session_id)
 
     async def on_circuit_breaker_triggered(
         self, tenant_id: UUID, session_id: UUID, reason: str, details: dict[str, Any]
