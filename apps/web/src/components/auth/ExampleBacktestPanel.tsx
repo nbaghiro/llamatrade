@@ -5,7 +5,7 @@ import { formatMoney } from '../../lib/format';
 import { exampleBacktest } from '../../lib/illustrative';
 import { LineChart } from '../charts';
 import { useWidth } from '../charts/useWidth';
-import { Num, Pct } from '../ui';
+import { Num, Pct } from '../ui/Num';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const day = (d: Date) => `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
