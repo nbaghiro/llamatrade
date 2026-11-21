@@ -13,6 +13,7 @@ re-validated through Pydantic on read.
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from math import sqrt
 from typing import Any
 
 from llamatrade_db.models.backtest import Backtest, BacktestResult
@@ -23,6 +24,7 @@ from llamatrade_proto.timestamps import to_proto_timestamp
 # Scale for computed (divided) statistics, to keep Decimal strings bounded.
 _COMPUTED_SCALE = Decimal("0.00000001")
 _ZERO = Decimal("0")
+_TRADING_DAYS = 252
 
 
 def _dec(value: Decimal | int | str) -> common_pb2.Decimal:
@@ -102,6 +104,25 @@ def backtest_trade_to_proto(raw: dict[str, Any]) -> backtest_pb2.BacktestTrade:
     )
 
 
+def annualized_volatility(
+    daily_returns: list[float] | None, equity_curve: list[dict[str, Any]] | None
+) -> Decimal | None:
+    """Annualized volatility as a fraction, with the Sharpe convention (population std, 252 days).
+
+    Reads the persisted daily returns, falling back to the equity curve; None when
+    fewer than two returns exist.
+    """
+    returns = [float(x) for x in daily_returns or []]
+    if len(returns) < 2 and equity_curve:
+        values = [float(_to_decimal(p.get("equity"))) for p in equity_curve]
+        returns = [b / a - 1 for a, b in zip(values, values[1:], strict=False) if a > 0]
+    if len(returns) < 2:
+        return None
+    mean = sum(returns) / len(returns)
+    variance = sum((x - mean) ** 2 for x in returns) / len(returns)
+    return Decimal(str(sqrt(variance) * sqrt(_TRADING_DAYS))).quantize(_COMPUTED_SCALE)
+
+
 def backtest_metrics_to_proto(
     b: Backtest,
     r: BacktestResult,
@@ -163,6 +184,10 @@ def backtest_metrics_to_proto(
         peak_capital=_dec(peak_equity),
         total_commission=_dec(total_commission),
     )
+
+    volatility = annualized_volatility(r.daily_returns, r.equity_curve)
+    if volatility is not None:
+        metrics.volatility.CopyFrom(_dec(volatility))
 
     # Undefined (no trades / no losses): leave unset rather than writing a fake 0.
     if r.profit_factor is not None:

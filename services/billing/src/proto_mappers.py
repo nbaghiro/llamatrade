@@ -71,6 +71,11 @@ def plan_to_proto(plan: Plan) -> billing_pb2.Plan:
     )
 
 
+def _is_beta(sub: Subscription) -> bool:
+    """Closed-beta subscriptions carry ``{"beta": true}`` in their metadata."""
+    return bool(sub.metadata_ and sub.metadata_.get("beta") is True)
+
+
 def subscription_to_proto(sub: Subscription) -> billing_pb2.Subscription:
     """Map a persisted Subscription row (with its ``plan`` loaded) to a proto Subscription.
 
@@ -101,6 +106,7 @@ def subscription_to_proto(sub: Subscription) -> billing_pb2.Subscription:
         stripe_customer_id=sub.stripe_customer_id or "",
         created_at=to_proto_timestamp(sub.created_at),
         updated_at=to_proto_timestamp(sub.updated_at),
+        is_beta=_is_beta(sub),
     )
     if sub.trial_end is not None:
         proto.trial_end.CopyFrom(to_proto_timestamp(sub.trial_end))

@@ -13,10 +13,14 @@ from google.protobuf.message import Message
 from llamatrade_db.models.backtest import Backtest, BacktestResult
 from llamatrade_proto.generated import common_pb2
 
-from src.proto_mappers import backtest_results_to_proto, backtest_trade_to_proto
+from src.proto_mappers import (
+    annualized_volatility,
+    backtest_results_to_proto,
+    backtest_trade_to_proto,
+)
 
 # Metrics the engine does not currently compute (proto fields intentionally unset).
-_METRICS_UNSET_ALLOWLIST = {"volatility", "downside_deviation"}
+_METRICS_UNSET_ALLOWLIST = {"downside_deviation"}
 
 
 def _decimal_field_names(message: Message) -> list[str]:
@@ -195,3 +199,36 @@ def test_trade_mapper_maps_fields() -> None:
     assert trade.symbol == "MSFT"
     assert Decimal(trade.pnl.value) == Decimal("50")
     assert isinstance(trade.exit_time, common_pb2.Timestamp)
+
+
+def test_volatility_from_daily_returns_matches_sharpe_convention() -> None:
+    returns = [0.01, -0.01, 0.02, -0.02]
+    mean = sum(returns) / len(returns)
+    expected = (sum((x - mean) ** 2 for x in returns) / len(returns)) ** 0.5 * 252**0.5
+    vol = annualized_volatility(returns, None)
+    assert vol is not None
+    assert abs(float(vol) - expected) < 1e-7
+
+
+def test_volatility_falls_back_to_equity_curve() -> None:
+    curve = [{"equity": 100}, {"equity": 110}, {"equity": 99}]
+    from_curve = annualized_volatility([], curve)
+    from_returns = annualized_volatility([0.1, -0.1], None)
+    assert from_curve is not None and from_curve == from_returns
+
+
+def test_volatility_unset_without_enough_returns() -> None:
+    assert annualized_volatility(None, None) is None
+    assert annualized_volatility([0.01], [{"equity": 100}]) is None
+    b, r = _make_rows()
+    r.equity_curve = [{"date": "2024-01-01T00:00:00", "equity": 100000}]
+    r.daily_returns = None
+    assert not backtest_results_to_proto(b, r, trades_preview=10).metrics.HasField("volatility")
+
+
+def test_volatility_mapped_onto_metrics() -> None:
+    b, r = _make_rows()
+    r.daily_returns = [0.1, 0.045454545]
+    m = backtest_results_to_proto(b, r, trades_preview=10).metrics
+    assert m.HasField("volatility")
+    assert Decimal(m.volatility.value) == annualized_volatility(r.daily_returns, None)

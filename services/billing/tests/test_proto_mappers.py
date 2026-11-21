@@ -21,6 +21,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
+import pytest
 from google.protobuf.message import Message
 
 from llamatrade_db.models import Invoice, PaymentMethod, Plan, Subscription
@@ -230,6 +231,24 @@ def test_subscription_nullable_timestamps_unset_when_none() -> None:
     # Non-nullable timestamps still populated.
     assert proto.HasField("current_period_start")
     assert proto.HasField("updated_at")
+
+
+@pytest.mark.parametrize(
+    ("metadata", "expected"),
+    [
+        ({"beta": True}, True),
+        ({"beta": False}, False),
+        ({"beta": "true"}, False),  # only a real boolean marks beta
+        ({}, False),
+        (None, False),
+    ],
+)
+def test_subscription_is_beta_from_metadata(
+    metadata: dict[str, object] | None, expected: bool
+) -> None:
+    sub = _make_subscription()
+    sub.metadata_ = metadata
+    assert subscription_to_proto(sub).is_beta is expected
 
 
 # === payment_method_to_proto ===
