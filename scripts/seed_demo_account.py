@@ -863,22 +863,69 @@ class RunSpec:
     version: int
     completed: datetime
     end: date
+    years: int = 2
+    failed: str | None = None
 
 
-def _completed_run(version: int, days: int, hour: int = 20, minute: int = 10) -> RunSpec:
+def _completed_run(
+    version: int, days: int, hour: int = 20, minute: int = 10, years: int = 2
+) -> RunSpec:
     at = et(days_ago(days), hour, minute)
-    return RunSpec(version, at, prev_trading_day(days_ago(days)))
+    return RunSpec(version, at, prev_trading_day(days_ago(days)), years)
 
 
+def _failed_run(version: int, days: int, error: str, hour: int = 19, minute: int = 5) -> RunSpec:
+    at = et(days_ago(days), hour, minute)
+    return RunSpec(version, at, prev_trading_day(days_ago(days)), failed=error)
+
+
+def run_start(run: RunSpec) -> date:
+    if run.years >= 2:
+        return BT_START
+    return max(BT_START, trading_on_or_after(run.end - timedelta(days=365 * run.years)))
+
+
+# Every saved version has a run, some get a one-year re-run, and two runs failed.
 # Running strategies get a fresh run after yesterday's close, so each session has
-# a completed backtest that covers its own dates.
+# a completed backtest that covers its own dates. Dual Momentum v2 and Pullback
+# Buyer stay unbacktested on purpose.
 BACKTEST_RUNS: dict[str, list[RunSpec]] = {
-    "all-weather": [_completed_run(1, 179), RunSpec(2, et(PREV_DAY, 18, 40), PREV_DAY)],
-    "recession-radar": [_completed_run(1, 174), RunSpec(3, et(PREV_DAY, 18, 42), PREV_DAY)],
-    "momentum-sectors": [_completed_run(1, 59), RunSpec(5, et(PREV_DAY, 18, 44), PREV_DAY)],
-    "tech-momentum-rotation": [_completed_run(4, 74)],
-    "risk-parity": [_completed_run(1, 48)],
-    "dual-momentum": [_completed_run(1, 7)],
+    "all-weather": [
+        _completed_run(1, 179),
+        _completed_run(1, 150, years=1),
+        _failed_run(2, 111, "Market data error: Failed to fetch bars: read timed out"),
+        _completed_run(2, 110),
+        _completed_run(2, 60, years=1),
+        RunSpec(2, et(PREV_DAY, 18, 40), PREV_DAY),
+    ],
+    "recession-radar": [
+        _completed_run(1, 174),
+        _completed_run(1, 130, years=1),
+        _completed_run(2, 119),
+        _completed_run(2, 90, years=1),
+        _completed_run(3, 13),
+        RunSpec(3, et(PREV_DAY, 18, 42), PREV_DAY),
+    ],
+    "momentum-sectors": [
+        _completed_run(1, 59),
+        _failed_run(2, 51, "Backtest worker was lost; run reaped after exceeding the time limit"),
+        _completed_run(2, 50),
+        _completed_run(3, 46),
+        _completed_run(4, 43),
+        _completed_run(4, 30, years=1),
+        _completed_run(5, 26),
+        RunSpec(5, et(PREV_DAY, 18, 44), PREV_DAY),
+    ],
+    "tech-momentum-rotation": [
+        _completed_run(1, 119),
+        _completed_run(2, 99),
+        _completed_run(3, 84),
+        _completed_run(3, 80, years=1),
+        _completed_run(4, 74),
+        _completed_run(4, 40, years=1),
+    ],
+    "risk-parity": [_completed_run(1, 48), _completed_run(1, 20, years=1)],
+    "dual-momentum": [_completed_run(1, 11, years=1), _completed_run(1, 7)],
 }
 
 # (win rate, profit factor, trade count) for each strategy's synthesized trade log.
@@ -1228,6 +1275,7 @@ class Seeder:
             name="Alpaca Paper (Demo)",
             api_key_encrypted=encrypt_value("PKDEMOSOFIARIVERA0001"),
             api_secret_encrypted=encrypt_value("demoSecretSofiaRivera00000000000000000001"),
+            account_number="PA3SR4KPA92",
             is_paper=True,
             is_active=True,
             created_at=et(RR_START - timedelta(days=3), 19, 30),
@@ -1238,6 +1286,7 @@ class Seeder:
             name="Alpaca Live (Demo)",
             api_key_encrypted=encrypt_value("AKDEMOSOFIARIVERA0001"),
             api_secret_encrypted=encrypt_value("demoLiveSecretSofiaRivera000000000000001"),
+            account_number="674214821",
             is_paper=False,
             is_active=True,
             created_at=et(AW_START - timedelta(days=3), 19, 30),
@@ -1302,6 +1351,7 @@ class Seeder:
             cancel_at_period_end=False,
             trial_start=dt(TENANT_CREATED, 0, 0),
             trial_end=dt(TENANT_CREATED + timedelta(days=14), 0, 0),
+            metadata_={"beta": True},
             created_at=dt(TENANT_CREATED, 14, 45),
         )
         self.db.add(sub)
@@ -1894,9 +1944,12 @@ class Seeder:
             for run in runs:
                 version = versions[run.version - 1]
                 symbols = list(version["symbols"])  # type: ignore[call-overload]
+                if run.failed:
+                    self._add_failed_backtest(strat, run, symbols)
+                    continue
                 rule = rule_for(sid, run.version)
                 daily = backtest_curve(
-                    rule, str(version["rebalance"]), BT_START, run.end, BT_INITIAL
+                    rule, str(version["rebalance"]), run_start(run), run.end, BT_INITIAL
                 )
                 spy = [(d, float(price("SPY", d))) for d, _ in daily]
                 await self._add_backtest(
@@ -1907,6 +1960,37 @@ class Seeder:
                     spy,
                     BacktestSpec(sid, win_rate, profit_factor, trades),
                 )
+
+    def _add_failed_backtest(self, strat: Strategy, run: RunSpec, symbols: list[str]) -> None:
+        started = run.completed - timedelta(minutes=2)
+        start = run_start(run)
+        self.db.add(
+            Backtest(
+                id=uuid4(),
+                tenant_id=self.tenant_id,
+                strategy_id=strat.id,
+                strategy_version=run.version,
+                name=f"{strat.name} v{run.version}, {start:%b %Y} to {run.end:%b %Y}",
+                status=backtest_pb2.BACKTEST_STATUS_FAILED,
+                config={
+                    "commission": 0.0,
+                    "slippage": 0.0,
+                    "timeframe": "1D",
+                    "benchmark_symbol": "SPY",
+                    "include_benchmark": True,
+                },
+                symbols=symbols,
+                start_date=start,
+                end_date=run.end,
+                initial_capital=Decimal(str(BT_INITIAL)),
+                started_at=started,
+                completed_at=run.completed,
+                error_message=run.failed,
+                created_by=self.user_id,
+                created_at=started,
+            )
+        )
+        self._bump("backtests")
 
     async def _add_backtest(
         self,
@@ -2374,10 +2458,12 @@ def dry_run() -> None:
     for sid, runs in BACKTEST_RUNS.items():
         versions: list[dict[str, object]] = load_strategy_data()[sid]["versions"]  # type: ignore[assignment]
         for run in runs:
+            if run.failed:
+                continue
             daily = backtest_curve(
                 rule_for(sid, run.version),
                 str(versions[run.version - 1]["rebalance"]),
-                BT_START,
+                run_start(run),
                 run.end,
                 BT_INITIAL,
             )
