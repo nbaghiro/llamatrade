@@ -24,7 +24,8 @@ export function validateDeploy({
   unallocatedCash,
   hasPaperCredential,
 }: DeployCheckInput): string | null {
-  if (!hasPaperCredential) return "Connect Alpaca paper keys before deploying.";
+  if (!hasPaperCredential)
+    return "Connect Alpaca paper keys before starting a session.";
   if (!Number.isFinite(allocation) || allocation <= 0)
     return "Enter an amount greater than $0.";
   const cents = (v: number) => Math.round(v * 100);
@@ -127,7 +128,7 @@ export const useDeployStore = create<DeployState>((set) => ({
         error:
           e instanceof ConnectError
             ? e.message
-            : "Could not deploy this strategy.",
+            : "Could not start this strategy. Please try again.",
       });
       return null;
     }

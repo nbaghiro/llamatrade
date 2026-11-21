@@ -170,6 +170,39 @@ function freshChatSession(seedPrompt: string): Partial<AgentState> {
 }
 
 /**
+ * Copies the tool calls of stored messages onto local ones that have none. The stream reports
+ * tool calls only by name, so a finished turn's sources come from the stored copy.
+ */
+export function withStoredToolCalls(
+  local: readonly AgentMessage[],
+  stored: readonly AgentMessage[],
+): AgentMessage[] {
+  const byId = new Map(stored.map((m) => [m.id, m]));
+  return local.map((m) => {
+    const found = byId.get(m.id);
+    return found && m.toolCalls.length === 0 && found.toolCalls.length > 0
+      ? { ...m, toolCalls: found.toolCalls }
+      : m;
+  });
+}
+
+async function loadStoredToolCalls(sessionId: string): Promise<void> {
+  const context = getTenantContext();
+  if (!context) return;
+  const response = await agentClient.getSession({
+    context,
+    sessionId,
+    includeMessages: true,
+    messageLimit: 200,
+  });
+  const { setState, getState } = useAgentStore;
+  if (getState().currentSessionId !== sessionId) return;
+  setState((state) => ({
+    messages: withStoredToolCalls(state.messages, response.messages),
+  }));
+}
+
+/**
  * Consume a server-streamed agent turn (from streamMessage or confirmToolCall),
  * driving streaming/tool/artifact/confirmation state and appending the final
  * assistant message on COMPLETE. Shared so both entry points behave identically.
@@ -267,6 +300,9 @@ async function consumeAgentStream(
           currentToolCall: null,
           pendingArtifactIdsForCurrentMessage: [],
         }));
+        if (event.messageId) {
+          loadStoredToolCalls(sessionId).catch(() => undefined);
+        }
         break;
       }
     }

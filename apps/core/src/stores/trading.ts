@@ -176,6 +176,8 @@ const COMMAND_ERROR: Record<SessionCommand, string> = {
   stop: "The session could not be stopped.",
 };
 
+let blotterInFlight: Promise<void> | null = null;
+
 export const useTradingStore = create<TradingState>((set, get) => ({
   sessions: [],
   orders: [],
@@ -204,66 +206,73 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   placing: false,
   placeError: null,
 
-  loadBlotter: async () => {
-    const context = getTenantContext();
-    if (!context) {
-      set({
-        error: "Please log in to view trading activity.",
-        loading: false,
-        loaded: true,
-      });
-      return;
-    }
+  loadBlotter: () => {
+    // Several views ask for the blotter on the same mount; they share one read.
+    if (blotterInFlight) return blotterInFlight;
+    blotterInFlight = (async () => {
+      const context = getTenantContext();
+      if (!context) {
+        set({
+          error: "Please log in to view trading activity.",
+          loading: false,
+          loaded: true,
+        });
+        return;
+      }
 
-    set({ loading: true, error: null });
-    try {
-      const [sessionsRes, ordersRes, executions, sleeves, performance] =
-        await Promise.all([
-          tradingClient.listSessions({
-            context,
-            pagination: { page: 1, pageSize: 100 },
-          }),
-          tradingClient.listOrders({
-            context,
-            pagination: { page: 1, pageSize: 200 },
-          }),
-          optional(readExecutions, [] as StrategyExecution[]),
-          optional(readSleeves, [] as Sleeve[]),
-          optional(
-            () =>
-              portfolioClient
-                .listStrategyPerformance({
-                  context,
-                  pagination: { page: 1, pageSize: 100 },
-                })
-                .then((r) => r.strategies),
-            [] as StrategyPerformanceSummary[],
+      set({ loading: true, error: null });
+      try {
+        const [sessionsRes, ordersRes, executions, sleeves, performance] =
+          await Promise.all([
+            tradingClient.listSessions({
+              context,
+              pagination: { page: 1, pageSize: 100 },
+            }),
+            tradingClient.listOrders({
+              context,
+              pagination: { page: 1, pageSize: 200 },
+            }),
+            optional(readExecutions, [] as StrategyExecution[]),
+            optional(readSleeves, [] as Sleeve[]),
+            optional(
+              () =>
+                portfolioClient
+                  .listStrategyPerformance({
+                    context,
+                    pagination: { page: 1, pageSize: 100 },
+                  })
+                  .then((r) => r.strategies),
+              [] as StrategyPerformanceSummary[],
+            ),
+          ]);
+
+        // ListPositions requires a session_id; one failure doesn't blank the rest.
+        const positionLists = await Promise.all(
+          sessionsRes.sessions.map((s) =>
+            tradingClient
+              .listPositions({ context, sessionId: s.id })
+              .then((r) => r.positions)
+              .catch(() => [] as Position[]),
           ),
-        ]);
+        );
 
-      // ListPositions requires a session_id; one failure doesn't blank the rest.
-      const positionLists = await Promise.all(
-        sessionsRes.sessions.map((s) =>
-          tradingClient
-            .listPositions({ context, sessionId: s.id })
-            .then((r) => r.positions)
-            .catch(() => [] as Position[]),
-        ),
-      );
-
-      set({
-        sessions: sessionsRes.sessions,
-        orders: ordersRes.orders,
-        positions: positionLists.flat(),
-        executions,
-        sleeves,
-        performance,
-        loading: false,
-        loaded: true,
-      });
-    } catch (error) {
-      set({ error: getErrorMessage(error), loading: false, loaded: true });
-    }
+        set({
+          sessions: sessionsRes.sessions,
+          orders: ordersRes.orders,
+          positions: positionLists.flat(),
+          executions,
+          sleeves,
+          performance,
+          loading: false,
+          loaded: true,
+        });
+      } catch (error) {
+        set({ error: getErrorMessage(error), loading: false, loaded: true });
+      }
+  })().finally(() => {
+      blotterInFlight = null;
+    });
+    return blotterInFlight;
   },
 
   loadSession: async (sessionId, since) => {

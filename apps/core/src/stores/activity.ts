@@ -10,6 +10,7 @@
 
 import { create } from "zustand";
 
+import { ExecutionMode } from "@llamatrade/core/proto/common_pb";
 import {
   TransactionType,
   type Transaction,
@@ -50,6 +51,10 @@ export interface ActivityRow {
   amount: number; // absolute magnitude
   signed: number; // effect on free cash: + in, − out, 0 neutral (inside a sleeve)
   at: Date;
+  /** The account the ledger booked the row on; null when the transaction doesn't say. */
+  account: "live" | "paper" | null;
+  /** The sleeve whose cash or positions the row moves; empty when unknown. */
+  sleeveId: string;
 }
 
 function toNumber(d?: { value: string }): number {
@@ -67,7 +72,14 @@ function tradeSublabel(t: Transaction): string {
   return t.symbol;
 }
 
-function mapRow(t: Transaction): ActivityRow {
+function accountOf(t: Transaction): ActivityRow["account"] {
+  if (t.executionMode === ExecutionMode.LIVE) return "live";
+  if (t.executionMode === ExecutionMode.PAPER) return "paper";
+  return null;
+}
+
+/** A ledger transaction as an activity row, with the account and sleeve it was booked on. */
+export function mapRow(t: Transaction): ActivityRow {
   const amount = toNumber(t.amount);
   const base = {
     id: t.id,
@@ -76,6 +88,8 @@ function mapRow(t: Transaction): ActivityRow {
     price: toNumber(t.price),
     amount,
     at: toDate(t.timestamp),
+    account: accountOf(t),
+    sleeveId: t.sleeveId,
   };
   switch (t.type) {
     case TransactionType.DEPOSIT:
@@ -84,7 +98,7 @@ function mapRow(t: Transaction): ActivityRow {
         kind: "deposit",
         group: "funding",
         label: "Deposit",
-        sublabel: t.description || "Paper credit",
+        sublabel: t.description || "Into unallocated cash",
         signed: amount,
       };
     case TransactionType.WITHDRAWAL:
@@ -93,7 +107,7 @@ function mapRow(t: Transaction): ActivityRow {
         kind: "withdrawal",
         group: "funding",
         label: "Withdrawal",
-        sublabel: t.description || "Paper credit",
+        sublabel: t.description || "From unallocated cash",
         signed: -amount,
       };
     case TransactionType.TRANSFER_IN:

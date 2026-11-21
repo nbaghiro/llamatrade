@@ -73,6 +73,8 @@ export interface LedgerLot {
 export interface SleeveDetail extends SleeveSummary {
   sleeveId: string;
   sleeveName: string;
+  /** The ledger account the sleeve belongs to. */
+  accountId: string;
   lots: LedgerLot[];
   /** Open quantity per symbol as the ledger records it. */
   ledgerQty: Record<string, number>;
@@ -353,6 +355,7 @@ export const usePortfolioStore = create<PortfolioState>((set, get) => ({
           ...base,
           sleeveId: sl.id,
           sleeveName: sl.name,
+          accountId: sl.accountId,
           holdings: perf?.positions.map(mapHolding) ?? [],
           lots,
           ledgerQty: ledgerQuantities(lots),

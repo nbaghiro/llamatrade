@@ -19,6 +19,7 @@ import {
   type Subscription,
 } from "@llamatrade/core/proto/billing_pb";
 import {
+  ExecutionMode,
   ExecutionStatus,
   type Timestamp,
 } from "@llamatrade/core/proto/common_pb";
@@ -224,8 +225,11 @@ export const useBillingStore = create<BillingState>((set) => ({
           })
           .then(
             (r) =>
-              r.strategies.filter((s) => s.status === ExecutionStatus.RUNNING)
-                .length,
+              r.strategies.filter(
+                (s) =>
+                  s.status === ExecutionStatus.RUNNING &&
+                  s.mode === ExecutionMode.LIVE,
+              ).length,
           )
           .catch(() => 0),
         agentClient

@@ -170,7 +170,8 @@ export interface LiveAccount {
   credentialsId: string;
   /** The credential's name, e.g. "Live account". */
   name: string;
-  apiKeyPrefix: string;
+  /** Alpaca account number; empty when not yet known. */
+  accountNumber: string;
   /** Free cash in the live account's Unallocated sleeve. */
   unallocatedCash: number;
 }
@@ -193,7 +194,7 @@ export async function readLiveAccount(): Promise<LiveAccount | null> {
   return {
     credentialsId: live.id,
     name: live.name,
-    apiKeyPrefix: live.apiKeyPrefix,
+    accountNumber: live.accountNumber,
     unallocatedCash: freeCash(unallocated),
   };
 }
